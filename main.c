@@ -76,6 +76,8 @@ int main() {
 	bool gpuOk = RenderGpu_InitBuffer(&gpu, WIDTH, HEIGHT, camera.framebuffer);
 	if (!gpuOk) {
 		fprintf(stderr, "GPU mode init failed, falling back to CPU\n");
+	} else {
+		printf("GPU scene raster path active\n");
 	}
 #endif
 
@@ -93,7 +95,11 @@ int main() {
 
 #ifdef USE_GPU
 		if (gpuOk) {
-			RenderGpu_RenderSceneBuffer(&gpu, objects, objectCount, &camera);
+			if (!RenderGpu_RenderSceneBuffer(&gpu, objects, objectCount, &camera)) {
+				for (int i = 0; i < objectCount; i++) {
+					RenderObject(&objects[i], &camera);
+				}
+			}
 		} else {
 			for (int i = 0; i < objectCount; i++) {
 				RenderObject(&objects[i], &camera);

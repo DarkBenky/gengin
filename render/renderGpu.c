@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,66 +29,64 @@
 
 #if RENDER_GPU_HAS_CL
 
-static const char *kRenderKernelSrc =
-	"__kernel void renderToTexture(write_only image2d_t outTex, float t) {                 \n"
-	"    const int2 id = (int2)(get_global_id(0), get_global_id(1));                       \n"
-	"    const int w = get_image_width(outTex);                                             \n"
-	"    const int h = get_image_height(outTex);                                            \n"
-	"    const float2 uv = (float2)(id.x / (float)w, id.y / (float)h);                     \n"
-	"    const float r = 0.5f + 0.5f * sin(6.28318f * (uv.x + t * 0.15f));                 \n"
-	"    const float g = 0.5f + 0.5f * sin(6.28318f * (uv.y + t * 0.20f));                 \n"
-	"    const float b = 0.5f + 0.5f * sin(6.28318f * (uv.x + uv.y + t * 0.10f));          \n"
-	"    write_imagef(outTex, id, (float4)(r, g, b, 1.0f));                                \n"
-	"}                                                                                      \n"
-	"__kernel void renderToBuffer(__global uint* outBuf, float t, int width, int height) { \n"
-	"    const int gid = get_global_id(0);                                                  \n"
-	"    const int x = gid % width;                                                         \n"
-	"    const int y = gid / width;                                                         \n"
-	"    if (x >= width || y >= height) return;                                             \n"
-	"    const float2 uv = (float2)(x / (float)width, y / (float)height);                  \n"
-	"    const uint r = (uint)(255.0f * (0.5f + 0.5f * sin(6.28318f * (uv.x + t * 0.15f))));\n"
-	"    const uint g = (uint)(255.0f * (0.5f + 0.5f * sin(6.28318f * (uv.y + t * 0.20f))));\n"
-	"    const uint b = (uint)(255.0f * (0.5f + 0.5f * sin(6.28318f * (uv.x + uv.y + t * 0.10f))));\n"
-	"    outBuf[gid] = 0xFF000000u | (r << 16) | (g << 8) | b;                             \n"
-	"}                                                                                      \n"
-	"float edgef(float ax, float ay, float bx, float by, float cx, float cy) {             \n"
-	"    return (cx - ax) * (by - ay) - (cy - ay) * (bx - ax);                              \n"
-	"}                                                                                      \n"
-	"__kernel void renderSceneBuffer(__global uint* outBuf,                                 \n"
-	"                                __global float4* triA,                                  \n"
-	"                                __global float4* triB,                                  \n"
-	"                                __global float4* triC,                                  \n"
-	"                                __global int4* triBounds,                               \n"
-	"                                __global uint* triColor,                                \n"
-	"                                int triCount, int width, int height) {                  \n"
-	"    const int gid = get_global_id(0);                                                   \n"
-	"    const int x = gid % width;                                                          \n"
-	"    const int y = gid / width;                                                          \n"
-	"    if (x >= width || y >= height) return;                                              \n"
-	"    float bestDepth = 3.402823466e+38f;                                                 \n"
-	"    uint bestColor = 0xFF000000u;                                                       \n"
-	"    const float px = (float)x + 0.5f;                                                   \n"
-	"    const float py = (float)y + 0.5f;                                                   \n"
-	"    for (int i = 0; i < triCount; i++) {                                                \n"
-	"        int4 b = triBounds[i];                                                          \n"
-	"        if (x < b.x || x > b.y || y < b.z || y > b.w) continue;                         \n"
-	"        float4 a = triA[i];                                                             \n"
-	"        float4 bb = triB[i];                                                            \n"
-	"        float4 c = triC[i];                                                             \n"
-	"        float w0 = edgef(a.z, a.w, bb.x, bb.y, px, py);                                 \n"
-	"        float w1 = edgef(bb.x, bb.y, a.x, a.y, px, py);                                 \n"
-	"        float w2 = edgef(a.x, a.y, a.z, a.w, px, py);                                   \n"
-	"        if ((w0 * c.y) >= 0.0f && (w1 * c.y) >= 0.0f && (w2 * c.y) >= 0.0f) {          \n"
-	"            float invZ = (w0 * bb.z + w1 * bb.w + w2 * c.x) * c.z;                     \n"
-	"            float depth = 1.0f / invZ;                                                  \n"
-	"            if (depth < bestDepth) {                                                    \n"
-	"                bestDepth = depth;                                                      \n"
-	"                bestColor = triColor[i];                                                \n"
-	"            }                                                                            \n"
-	"        }                                                                                \n"
-	"    }                                                                                    \n"
-	"    outBuf[gid] = bestColor;                                                             \n"
-	"}                                                                                      \n";
+static const char *kKernelFilePath = "render/kernel/render_gpu.cl";
+
+static bool ClOk(cl_int err);
+
+static char *ReadTextFile(const char *path, size_t *outLen) {
+	FILE *f = fopen(path, "rb");
+	if (!f) return NULL;
+	if (fseek(f, 0, SEEK_END) != 0) {
+		fclose(f);
+		return NULL;
+	}
+	long len = ftell(f);
+	if (len <= 0) {
+		fclose(f);
+		return NULL;
+	}
+	rewind(f);
+
+	char *data = (char *)malloc((size_t)len + 1);
+	if (!data) {
+		fclose(f);
+		return NULL;
+	}
+
+	size_t readN = fread(data, 1, (size_t)len, f);
+	fclose(f);
+	if (readN != (size_t)len) {
+		free(data);
+		return NULL;
+	}
+
+	data[len] = '\0';
+	if (outLen) *outLen = (size_t)len;
+	return data;
+}
+
+static cl_program CreateProgramFromKernelFile(cl_context context, cl_device_id device) {
+	size_t srcLen = 0;
+	char *src = ReadTextFile(kKernelFilePath, &srcLen);
+	if (!src) return NULL;
+
+	cl_int err = CL_SUCCESS;
+	const char *srcPtr = src;
+	cl_program program = clCreateProgramWithSource(context, 1, &srcPtr, &srcLen, &err);
+	if (!ClOk(err) || !program) {
+		free(src);
+		return NULL;
+	}
+
+	err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
+	free(src);
+	if (!ClOk(err)) {
+		clReleaseProgram(program);
+		return NULL;
+	}
+
+	return program;
+}
 
 typedef struct Float4Host {
 	float x;
@@ -280,16 +279,8 @@ bool RenderGpu_Init(RenderGpu *gpu, int width, int height, uint32_t glTexture) {
 		return false;
 	}
 
-	cl_program program = clCreateProgramWithSource(context, 1, &kRenderKernelSrc, NULL, &err);
-	if (!ClOk(err) || !program) {
-		clReleaseCommandQueue(queue);
-		clReleaseContext(context);
-		return false;
-	}
-
-	err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-	if (!ClOk(err)) {
-		clReleaseProgram(program);
+	cl_program program = CreateProgramFromKernelFile(context, device);
+	if (!program) {
 		clReleaseCommandQueue(queue);
 		clReleaseContext(context);
 		return false;
@@ -376,16 +367,8 @@ bool RenderGpu_InitBuffer(RenderGpu *gpu, int width, int height, uint32_t *hostF
 	if (!InitBase(&platform, &device, &context, &queue)) return false;
 
 	cl_int err = CL_SUCCESS;
-	cl_program program = clCreateProgramWithSource(context, 1, &kRenderKernelSrc, NULL, &err);
-	if (!ClOk(err) || !program) {
-		clReleaseCommandQueue(queue);
-		clReleaseContext(context);
-		return false;
-	}
-
-	err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-	if (!ClOk(err)) {
-		clReleaseProgram(program);
+	cl_program program = CreateProgramFromKernelFile(context, device);
+	if (!program) {
 		clReleaseCommandQueue(queue);
 		clReleaseContext(context);
 		return false;
