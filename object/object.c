@@ -87,6 +87,8 @@ void Object_Destroy(Object *obj) {
 void Object_UpdateWorldBounds(Object *obj) {
 	if (!obj) return;
 
+	Object_UpdateTransform(obj);
+
 	const float3 localMin = obj->BBmin;
 	const float3 localMax = obj->BBmax;
 
