@@ -1,17 +1,18 @@
 #include "color.h"
+#include "../../math/scalar.h"
 
-inline PackColor(float r, float g, float b) {
+Color PackColor(float r, float g, float b) {
 	uint8 r8 = (uint8)(r * 255.0f);
 	uint8 g8 = (uint8)(g * 255.0f);
 	uint8 b8 = (uint8)(b * 255.0f);
 	return (Color)((r8 << 16) | (g8 << 8) | b8);
 }
 
-inline Color PackColorF(float3 Color) {
+Color PackColorF(float3 Color) {
 	return PackColor(Color.x, Color.y, Color.z);
 }
 
-inline Color BlendColors(Color c1, Color c2, float t) {
+Color BlendColors(Color c1, Color c2, float t) {
 	float3 col1 = UnpackColor(c1);
 	float3 col2 = UnpackColor(c2);
 	float3 blended = {
@@ -21,14 +22,14 @@ inline Color BlendColors(Color c1, Color c2, float t) {
 	return PackColorF(blended);
 }
 
-inline float3 UnpackColor(Color c) {
+float3 UnpackColor(Color c) {
 	float r = ((c >> 16) & 0xFF) / 255.0f;
 	float g = ((c >> 8) & 0xFF) / 255.0f;
 	float b = (c & 0xFF) / 255.0f;
 	return (float3){r, g, b};
 }
 
-inline Color ApplyGamma(Color c, float gamma) {
+Color ApplyGamma(Color c, float gamma) {
 	float3 col = UnpackColor(c);
 	col.x = powf(col.x, 1.0f / gamma);
 	col.y = powf(col.y, 1.0f / gamma);
@@ -36,7 +37,7 @@ inline Color ApplyGamma(Color c, float gamma) {
 	return PackColorF(col);
 }
 
-inline Color ApplyExposure(Color c, float exposure) {
+Color ApplyExposure(Color c, float exposure) {
 	float3 col = UnpackColor(c);
 	float expFactor = powf(2.0f, exposure);
 	col.x *= expFactor;
@@ -45,7 +46,7 @@ inline Color ApplyExposure(Color c, float exposure) {
 	return PackColorF(col);
 }
 
-inline Color ApplyToneMapping(Color c) {
+Color ApplyToneMapping(Color c) {
 	float3 col = UnpackColor(c);
 	col.x = col.x / (col.x + 1.0f);
 	col.y = col.y / (col.y + 1.0f);
@@ -53,7 +54,7 @@ inline Color ApplyToneMapping(Color c) {
 	return PackColorF(col);
 }
 
-inline Color LerpColor(Color c1, Color c2, float t) {
+Color LerpColor(Color c1, Color c2, float t) {
 	float3 col1 = UnpackColor(c1);
 	float3 col2 = UnpackColor(c2);
 	float3 lerped = {
@@ -63,15 +64,15 @@ inline Color LerpColor(Color c1, Color c2, float t) {
 	return PackColorF(lerped);
 }
 
-inline Color ClampColor(Color c) {
+Color ClampColor(Color c) {
 	float3 col = UnpackColor(c);
-	col.x = MinF(1.0f, MaxF(0.0f, col.x));
-	col.y = MinF(1.0f, MaxF(0.0f, col.y));
-	col.z = MinF(1.0f, MaxF(0.0f, col.z));
+	col.x = MinF32(1.0f, MaxF32(0.0f, col.x));
+	col.y = MinF32(1.0f, MaxF32(0.0f, col.y));
+	col.z = MinF32(1.0f, MaxF32(0.0f, col.z));
 	return PackColorF(col);
 }
 
-inline Color AddColors(Color c1, Color c2) {
+Color AddColors(Color c1, Color c2) {
 	float3 col1 = UnpackColor(c1);
 	float3 col2 = UnpackColor(c2);
 	float3 added = {
@@ -81,7 +82,17 @@ inline Color AddColors(Color c1, Color c2) {
 	return PackColorF(added);
 }
 
-inline Color MultiplyColors(Color c1, Color c2) {
+Color SubtractColors(Color c1, Color c2) {
+	float3 col1 = UnpackColor(c1);
+	float3 col2 = UnpackColor(c2);
+	float3 subtracted = {
+		col1.x - col2.x,
+		col1.y - col2.y,
+		col1.z - col2.z};
+	return PackColorF(subtracted);
+}
+
+Color MultiplyColors(Color c1, Color c2) {
 	float3 col1 = UnpackColor(c1);
 	float3 col2 = UnpackColor(c2);
 	float3 multiplied = {
@@ -91,7 +102,7 @@ inline Color MultiplyColors(Color c1, Color c2) {
 	return PackColorF(multiplied);
 }
 
-inline Color ScaleColor(Color c, float s) {
+Color ScaleColor(Color c, float s) {
 	float3 col = UnpackColor(c);
 	col.x *= s;
 	col.y *= s;
@@ -99,7 +110,7 @@ inline Color ScaleColor(Color c, float s) {
 	return PackColorF(col);
 }
 
-inline Color ModulateColor(Color c, float r, float g, float b) {
+Color ModulateColor(Color c, float r, float g, float b) {
 	float3 col = UnpackColor(c);
 	col.x *= r;
 	col.y *= g;
@@ -107,7 +118,7 @@ inline Color ModulateColor(Color c, float r, float g, float b) {
 	return PackColorF(col);
 }
 
-inline Color ModulateColorF(Color c, float3 mod) {
+Color ModulateColorF(Color c, float3 mod) {
 	float3 col = UnpackColor(c);
 	col.x *= mod.x;
 	col.y *= mod.y;
@@ -115,7 +126,7 @@ inline Color ModulateColorF(Color c, float3 mod) {
 	return PackColorF(col);
 }
 
-inline Color InvertColor(Color c) {
+Color InvertColor(Color c) {
 	float3 col = UnpackColor(c);
 	col.x = 1.0f - col.x;
 	col.y = 1.0f - col.y;
@@ -123,13 +134,13 @@ inline Color InvertColor(Color c) {
 	return PackColorF(col);
 }
 
-inline Color GrayscaleColor(Color c) {
+Color GrayscaleColor(Color c) {
 	float3 col = UnpackColor(c);
 	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
 	return PackColor(gray, gray, gray);
 }
 
-inline Color DesaturateColor(Color c, float amount) {
+Color DesaturateColor(Color c, float amount) {
 	float3 col = UnpackColor(c);
 	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
 	col.x = col.x * (1.0f - amount) + gray * amount;
@@ -138,14 +149,14 @@ inline Color DesaturateColor(Color c, float amount) {
 	return PackColorF(col);
 }
 
-inline Color HueShiftColor(Color c, float shift) {
+Color HueShiftColor(Color c, float shift) {
 	float3 col = UnpackColor(c);
 	float r = col.x;
 	float g = col.y;
 	float b = col.z;
 
-	float max = MaxF(r, MaxF(g, b));
-	float min = MinF(r, MinF(g, b));
+	float max = MaxF32(r, MaxF32(g, b));
+	float min = MinF32(r, MinF32(g, b));
 	float delta = max - min;
 
 	if (delta < 1e-5f) return c; // No hue
@@ -207,7 +218,7 @@ inline Color HueShiftColor(Color c, float shift) {
 	return PackColor(r, g, b);
 }
 
-inline Color AdjustSaturation(Color c, float saturation) {
+Color AdjustSaturation(Color c, float saturation) {
 	float3 col = UnpackColor(c);
 	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
 	col.x = col.x * saturation + gray * (1.0f - saturation);
@@ -216,10 +227,19 @@ inline Color AdjustSaturation(Color c, float saturation) {
 	return PackColorF(col);
 }
 
-inline Color QuantizeColor(Color c, int levels) {
+Color QuantizeColor(Color c, int levels) {
 	float3 col = UnpackColor(c);
 	col.x = roundf(col.x * (levels - 1)) / (levels - 1);
 	col.y = roundf(col.y * (levels - 1)) / (levels - 1);
 	col.z = roundf(col.z * (levels - 1)) / (levels - 1);
+	return PackColorF(col);
+}
+
+Color DarkenColor(Color c, float amount) {
+	float3 col = UnpackColor(c);
+	float factor = 1.0f - amount;
+	col.x *= factor;
+	col.y *= factor;
+	col.z *= factor;
 	return PackColorF(col);
 }

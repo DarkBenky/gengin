@@ -5,7 +5,7 @@
 #include "../../object/object.h"
 #include "../render.h"
 
-void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera);
+void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, int resolution);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 
 #endif // RAY_H

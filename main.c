@@ -36,8 +36,10 @@ int main() {
 	}
 
 	printf("Demo scene loaded. Total Tris: %d\n", totalTriangles);
+	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
 
 	int frame = 0;
+	int shadowResolution = 3;
 	while (mfb_wait_sync(window)) {
 		frame++;
 		clearBuffers(&camera);
@@ -46,15 +48,15 @@ int main() {
 
 		RenderObjects(objects, objectCount, &camera);
 
-		// ShadowPostProcess(objects, objectCount, &camera);
+		ShadowPostProcess(objects, objectCount, &camera, shadowResolution);
 		clock_t end = clock();
 		double renderTime = (double)(end - start) / CLOCKS_PER_SEC;
 		double fps = 1.0 / renderTime;
 		double targetFrameTime = 1.0 / 60.0;
 		int maxTriangles60 = (int)(totalTriangles * (targetFrameTime / renderTime));
 		if ((frame % 30) == 0) {
-			printf("Frame %d  Render: %.3f ms  FPS: %.2f  Est Tris@60: %d\n",
-				   frame, renderTime * 1000.0, fps, maxTriangles60);
+			printf("Frame %d  Render: %.3f ms  FPS: %.2f  Est Tris@60: %d  ShadowRes: %d\n",
+				   frame, renderTime * 1000.0, fps, maxTriangles60, shadowResolution);
 		}
 
 		mfb_update(window, camera.framebuffer);

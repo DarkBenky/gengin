@@ -75,8 +75,8 @@ void Object_Destroy(Object *obj) {
 	}
 }
 
-void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax) {
-	if (!obj || !tMin || !tMax) return;
+void Object_UpdateWorldBounds(Object *obj) {
+	if (!obj) return;
 
 	const float3 localMin = obj->BBmin;
 	const float3 localMax = obj->BBmax;
@@ -91,37 +91,34 @@ void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *t
 		{localMin.x, localMax.y, localMax.z},
 		{localMax.x, localMax.y, localMax.z}};
 
-	float3 worldMin = {FLT_MAX, FLT_MAX, FLT_MAX};
-	float3 worldMax = {FLT_MIN, FLT_MIN, FLT_MIN};
+	obj->worldBBmin = (float3){FLT_MAX, FLT_MAX, FLT_MAX};
+	obj->worldBBmax = (float3){FLT_MIN, FLT_MIN, FLT_MIN};
 	for (int i = 0; i < 8; i++) {
 		float3 p = TransformPoint(obj, localCorners[i]);
-		worldMin.x = MinF32(worldMin.x, p.x);
-		worldMin.y = MinF32(worldMin.y, p.y);
-		worldMin.z = MinF32(worldMin.z, p.z);
-		worldMax.x = MaxF32(worldMax.x, p.x);
-		worldMax.y = MaxF32(worldMax.y, p.y);
-		worldMax.z = MaxF32(worldMax.z, p.z);
+		obj->worldBBmin.x = MinF32(obj->worldBBmin.x, p.x);
+		obj->worldBBmin.y = MinF32(obj->worldBBmin.y, p.y);
+		obj->worldBBmin.z = MinF32(obj->worldBBmin.z, p.z);
+		obj->worldBBmax.x = MaxF32(obj->worldBBmax.x, p.x);
+		obj->worldBBmax.y = MaxF32(obj->worldBBmax.y, p.y);
+		obj->worldBBmax.z = MaxF32(obj->worldBBmax.z, p.z);
 	}
+}
+
+void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax) {
+	if (!obj || !tMin || !tMax) return;
+
+	float3 worldMin = obj->worldBBmin;
+	float3 worldMax = obj->worldBBmax;
+
+	*tMin = 0.0f;
+	*tMax = FLT_MAX;
 
 	const float eps = 1e-8f;
-	float tNear = 0.0f;
-	float tFar = FLT_MAX;
-
-	float3 boundsMin = worldMin;
-	float3 boundsMax = worldMax;
-	float3 origin = rayOrigin;
-	float3 dir = rayDir;
-
-	float *minArr = &boundsMin.x;
-	float *maxArr = &boundsMax.x;
-	float *origArr = &origin.x;
-	float *dirArr = &dir.x;
-
 	for (int axis = 0; axis < 3; axis++) {
-		float d = dirArr[axis];
-		float o = origArr[axis];
-		float bmin = minArr[axis];
-		float bmax = maxArr[axis];
+		float d = axis == 0 ? rayDir.x : (axis == 1 ? rayDir.y : rayDir.z);
+		float o = axis == 0 ? rayOrigin.x : (axis == 1 ? rayOrigin.y : rayOrigin.z);
+		float bmin = axis == 0 ? worldMin.x : (axis == 1 ? worldMin.y : worldMin.z);
+		float bmax = axis == 0 ? worldMax.x : (axis == 1 ? worldMax.y : worldMax.z);
 
 		if (fabsf(d) < eps) {
 			if (o < bmin || o > bmax) {
@@ -141,17 +138,14 @@ void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *t
 			t1 = tmp;
 		}
 
-		tNear = MaxF32(tNear, t0);
-		tFar = MinF32(tFar, t1);
-		if (tNear > tFar) {
+		*tMin = MaxF32(*tMin, t0);
+		*tMax = MinF32(*tMax, t1);
+		if (*tMin > *tMax) {
 			*tMin = FLT_MAX;
 			*tMax = FLT_MIN;
 			return;
 		}
 	}
-
-	*tMin = tNear;
-	*tMax = tFar;
 }
 
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir) {

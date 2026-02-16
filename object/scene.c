@@ -20,6 +20,7 @@ void DemoScene_Build(Object *objects) {
 	if (!objects) return;
 
 	CreateCube(&objects[kGroundIndex], (float3){0.0f, kGroundY, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){20.0f, 0.2f, 20.0f}, (float3){0.32f, 0.34f, 0.38f});
+	Object_UpdateWorldBounds(&objects[kGroundIndex]);
 
 	for (int i = 0; i < kCubeCount; i++) {
 		float t = (float)i / (float)kCubeCount;
@@ -28,6 +29,7 @@ void DemoScene_Build(Object *objects) {
 		float3 cubeColor = (float3){0.25f + 0.55f * t, 0.35f + 0.45f * (1.0f - t), 0.55f + 0.35f * t};
 
 		CreateCube(&objects[kCubesStart + i], (float3){x, 0.2f, z}, (float3){0.0f, 0.0f, 0.0f}, (float3){0.9f, 0.9f, 0.9f}, cubeColor);
+		Object_UpdateWorldBounds(&objects[kCubesStart + i]);
 	}
 }
 
@@ -46,6 +48,8 @@ void DemoScene_Update(Object *objects, int frame) {
 		cube->position.x = baseX + 0.25f * sinf(orbit);
 		cube->position.z = baseZ + 0.25f * cosf(orbit * 0.8f);
 		cube->position.y = 0.2f + 0.15f * sinf(orbit * 0.6f + (float)i);
+
+		Object_UpdateWorldBounds(cube);
 	}
 }
 

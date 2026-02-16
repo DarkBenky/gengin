@@ -5,7 +5,7 @@ LDFLAGS = -flto -L/usr/local/lib
 LIBS = -lminifb -lX11 -lGL -lpthread -lm
 
 TARGET = main
-SRC = main.c object/object.c object/format.c object/scene.c render/render.c render/cpu/ray.c
+SRC = main.c object/object.c object/format.c object/scene.c render/render.c render/cpu/ray.c render/color/color.c
 
 .PHONY: all clean run
 
