@@ -1,6 +1,7 @@
 #include "render.h"
 #include <math.h>
 #include <string.h>
+#include "../math/matrix.h"
 
 static inline float3 Float3_Sub(float3 a, float3 b) {
 	return (float3){a.x - b.x, a.y - b.y, a.z - b.z};
@@ -102,18 +103,10 @@ void RenderObject(const Object *obj, const Camera *camera) {
 	for (int i = 0; i < obj->triangleCount; i++) {
 		Triangle tri = obj->triangles[i];
 
-		float3 v0 = RotateXYZ(tri.v1, obj->rotation);
-		float3 v1 = RotateXYZ(tri.v2, obj->rotation);
-		float3 v2 = RotateXYZ(tri.v3, obj->rotation);
-		float3 normal = Float3_Normalize(RotateXYZ(tri.normal, obj->rotation));
-
-		v0 = (float3){v0.x * obj->scale.x, v0.y * obj->scale.y, v0.z * obj->scale.z};
-		v1 = (float3){v1.x * obj->scale.x, v1.y * obj->scale.y, v1.z * obj->scale.z};
-		v2 = (float3){v2.x * obj->scale.x, v2.y * obj->scale.y, v2.z * obj->scale.z};
-
-		v0 = Float3_Add(v0, obj->position);
-		v1 = Float3_Add(v1, obj->position);
-		v2 = Float3_Add(v2, obj->position);
+		float3 v0 = Matrix_TransformPoint(obj->transform, tri.v1);
+		float3 v1 = Matrix_TransformPoint(obj->transform, tri.v2);
+		float3 v2 = Matrix_TransformPoint(obj->transform, tri.v3);
+		float3 normal = Float3_Normalize(Matrix_TransformVector(obj->transform, tri.normal));
 
 		float3 toCamera = Float3_Sub(camera->position, v0);
 		if (Float3_Dot(normal, toCamera) <= 0.0f) continue;

@@ -7,9 +7,16 @@
 
 #include "../math/scalar.h"
 #include "../math/transform.h"
+#include "../math/matrix.h"
+
+void Object_UpdateTransform(Object *obj) {
+	if (!obj) return;
+	obj->transform = Matrix_TRS(obj->position, obj->rotation, obj->scale);
+	obj->invTransform = Matrix_Invert(obj->transform);
+}
 
 static inline float3 TransformPoint(const Object *obj, float3 local) {
-	return TransformPointTRS(local, obj->position, obj->rotation, obj->scale);
+	return Matrix_TransformPoint(obj->transform, local);
 }
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename) {
@@ -17,6 +24,7 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
+	Object_UpdateTransform(obj);
 }
 
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color) {
@@ -65,6 +73,7 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	obj->triangleCount = 12;
 	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
 	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	Object_UpdateTransform(obj);
 }
 
 void Object_Destroy(Object *obj) {
