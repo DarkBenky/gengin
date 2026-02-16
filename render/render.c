@@ -57,40 +57,6 @@ static float EdgeFunction(float ax, float ay, float bx, float by, float cx, floa
 	return (cx - ax) * (by - ay) - (cy - ay) * (bx - ax);
 }
 
-static float3 RotateY(float3 v, float angle) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	return (float3){
-		v.x * c + v.z * s,
-		v.y,
-		-v.x * s + v.z * c};
-}
-
-static float3 RotateX(float3 v, float angle) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	return (float3){
-		v.x,
-		v.y * c - v.z * s,
-		v.y * s + v.z * c};
-}
-
-static float3 RotateZ(float3 v, float angle) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	return (float3){
-		v.x * c - v.y * s,
-		v.x * s + v.y * c,
-		v.z};
-}
-
-static float3 RotateXYZ(float3 v, float3 rotation) {
-	v = RotateX(v, rotation.x);
-	v = RotateY(v, rotation.y);
-	v = RotateZ(v, rotation.z);
-	return v;
-}
-
 void RenderObject(const Object *obj, const Camera *camera) {
 	if (!obj || !camera || !obj->triangles) return;
 
