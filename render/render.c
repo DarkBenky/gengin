@@ -34,6 +34,11 @@ static inline float3 Float3_Normalize(float3 v) {
 	return v;
 }
 
+static inline float3 Float3_Reflect(float3 i, float3 n) {
+	float k = 2.0f * Float3_Dot(n, i);
+	return Float3_Sub(i, Float3_Scale(n, k));
+}
+
 static inline int Min(int a, int b) {
 	return a < b ? a : b;
 }
@@ -199,11 +204,25 @@ void RenderObject(const Object *obj, const Camera *camera) {
 				if ((w0 * areaSign) >= 0.0f && (w1 * areaSign) >= 0.0f && (w2 * areaSign) >= 0.0f) {
 					float invZ = (w0 * invZ0 + w1 * invZ1 + w2 * invZ2) * invArea;
 					float depth = 1.0f / invZ;
+					float p0 = w0 * invZ0;
+					float p1 = w1 * invZ1;
+					float p2 = w2 * invZ2;
+					float pSum = p0 + p1 + p2;
 
 					int idx = y * camera->screenWidth + x;
 					if (depth < camera->depthBuffer[idx]) {
 						camera->depthBuffer[idx] = depth;
 						camera->normalBuffer[idx] = normal;
+						if (pSum != 0.0f) {
+							float invPSum = 1.0f / pSum;
+							float3 worldPos = (float3){
+								(v0.x * p0 + v1.x * p1 + v2.x * p2) * invPSum,
+								(v0.y * p0 + v1.y * p1 + v2.y * p2) * invPSum,
+								(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
+							camera->positionBuffer[idx] = worldPos;
+							float3 rayDir = Float3_Normalize(Float3_Sub(worldPos, camera->position));
+							camera->reflectBuffer[idx] = Float3_Normalize(Float3_Reflect(rayDir, normal));
+						}
 						camera->framebuffer[idx] = packedColor;
 					}
 				}

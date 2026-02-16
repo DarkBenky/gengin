@@ -1,0 +1,225 @@
+#include "color.h"
+
+inline PackColor(float r, float g, float b) {
+	uint8 r8 = (uint8)(r * 255.0f);
+	uint8 g8 = (uint8)(g * 255.0f);
+	uint8 b8 = (uint8)(b * 255.0f);
+	return (Color)((r8 << 16) | (g8 << 8) | b8);
+}
+
+inline Color PackColorF(float3 Color) {
+	return PackColor(Color.x, Color.y, Color.z);
+}
+
+inline Color BlendColors(Color c1, Color c2, float t) {
+	float3 col1 = UnpackColor(c1);
+	float3 col2 = UnpackColor(c2);
+	float3 blended = {
+		col1.x * (1.0f - t) + col2.x * t,
+		col1.y * (1.0f - t) + col2.y * t,
+		col1.z * (1.0f - t) + col2.z * t};
+	return PackColorF(blended);
+}
+
+inline float3 UnpackColor(Color c) {
+	float r = ((c >> 16) & 0xFF) / 255.0f;
+	float g = ((c >> 8) & 0xFF) / 255.0f;
+	float b = (c & 0xFF) / 255.0f;
+	return (float3){r, g, b};
+}
+
+inline Color ApplyGamma(Color c, float gamma) {
+	float3 col = UnpackColor(c);
+	col.x = powf(col.x, 1.0f / gamma);
+	col.y = powf(col.y, 1.0f / gamma);
+	col.z = powf(col.z, 1.0f / gamma);
+	return PackColorF(col);
+}
+
+inline Color ApplyExposure(Color c, float exposure) {
+	float3 col = UnpackColor(c);
+	float expFactor = powf(2.0f, exposure);
+	col.x *= expFactor;
+	col.y *= expFactor;
+	col.z *= expFactor;
+	return PackColorF(col);
+}
+
+inline Color ApplyToneMapping(Color c) {
+	float3 col = UnpackColor(c);
+	col.x = col.x / (col.x + 1.0f);
+	col.y = col.y / (col.y + 1.0f);
+	col.z = col.z / (col.z + 1.0f);
+	return PackColorF(col);
+}
+
+inline Color LerpColor(Color c1, Color c2, float t) {
+	float3 col1 = UnpackColor(c1);
+	float3 col2 = UnpackColor(c2);
+	float3 lerped = {
+		col1.x * (1.0f - t) + col2.x * t,
+		col1.y * (1.0f - t) + col2.y * t,
+		col1.z * (1.0f - t) + col2.z * t};
+	return PackColorF(lerped);
+}
+
+inline Color ClampColor(Color c) {
+	float3 col = UnpackColor(c);
+	col.x = MinF(1.0f, MaxF(0.0f, col.x));
+	col.y = MinF(1.0f, MaxF(0.0f, col.y));
+	col.z = MinF(1.0f, MaxF(0.0f, col.z));
+	return PackColorF(col);
+}
+
+inline Color AddColors(Color c1, Color c2) {
+	float3 col1 = UnpackColor(c1);
+	float3 col2 = UnpackColor(c2);
+	float3 added = {
+		col1.x + col2.x,
+		col1.y + col2.y,
+		col1.z + col2.z};
+	return PackColorF(added);
+}
+
+inline Color MultiplyColors(Color c1, Color c2) {
+	float3 col1 = UnpackColor(c1);
+	float3 col2 = UnpackColor(c2);
+	float3 multiplied = {
+		col1.x * col2.x,
+		col1.y * col2.y,
+		col1.z * col2.z};
+	return PackColorF(multiplied);
+}
+
+inline Color ScaleColor(Color c, float s) {
+	float3 col = UnpackColor(c);
+	col.x *= s;
+	col.y *= s;
+	col.z *= s;
+	return PackColorF(col);
+}
+
+inline Color ModulateColor(Color c, float r, float g, float b) {
+	float3 col = UnpackColor(c);
+	col.x *= r;
+	col.y *= g;
+	col.z *= b;
+	return PackColorF(col);
+}
+
+inline Color ModulateColorF(Color c, float3 mod) {
+	float3 col = UnpackColor(c);
+	col.x *= mod.x;
+	col.y *= mod.y;
+	col.z *= mod.z;
+	return PackColorF(col);
+}
+
+inline Color InvertColor(Color c) {
+	float3 col = UnpackColor(c);
+	col.x = 1.0f - col.x;
+	col.y = 1.0f - col.y;
+	col.z = 1.0f - col.z;
+	return PackColorF(col);
+}
+
+inline Color GrayscaleColor(Color c) {
+	float3 col = UnpackColor(c);
+	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
+	return PackColor(gray, gray, gray);
+}
+
+inline Color DesaturateColor(Color c, float amount) {
+	float3 col = UnpackColor(c);
+	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
+	col.x = col.x * (1.0f - amount) + gray * amount;
+	col.y = col.y * (1.0f - amount) + gray * amount;
+	col.z = col.z * (1.0f - amount) + gray * amount;
+	return PackColorF(col);
+}
+
+inline Color HueShiftColor(Color c, float shift) {
+	float3 col = UnpackColor(c);
+	float r = col.x;
+	float g = col.y;
+	float b = col.z;
+
+	float max = MaxF(r, MaxF(g, b));
+	float min = MinF(r, MinF(g, b));
+	float delta = max - min;
+
+	if (delta < 1e-5f) return c; // No hue
+
+	float hue;
+	if (max == r) {
+		hue = (g - b) / delta + (g < b ? 6.0f : 0.0f);
+	} else if (max == g) {
+		hue = (b - r) / delta + 2.0f;
+	} else {
+		hue = (r - g) / delta + 4.0f;
+	}
+	hue /= 6.0f;
+
+	hue += shift;
+	if (hue < 0.0f) hue += 1.0f;
+	if (hue >= 1.0f) hue -= 1.0f;
+
+	// Convert back to RGB
+	int i = (int)(hue * 6.0f);
+	float f = hue * 6.0f - i;
+	float p = max * (1.0f - delta);
+	float q = max * (1.0f - f * delta);
+	float t = max * (1.0f - (1.0f - f) * delta);
+
+	switch (i % 6) {
+	case 0:
+		r = max;
+		g = t;
+		b = p;
+		break;
+	case 1:
+		r = q;
+		g = max;
+		b = p;
+		break;
+	case 2:
+		r = p;
+		g = max;
+		b = t;
+		break;
+	case 3:
+		r = p;
+		g = q;
+		b = max;
+		break;
+	case 4:
+		r = t;
+		g = p;
+		b = max;
+		break;
+	case 5:
+		r = max;
+		g = p;
+		b = q;
+		break;
+	}
+
+	return PackColor(r, g, b);
+}
+
+inline Color AdjustSaturation(Color c, float saturation) {
+	float3 col = UnpackColor(c);
+	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
+	col.x = col.x * saturation + gray * (1.0f - saturation);
+	col.y = col.y * saturation + gray * (1.0f - saturation);
+	col.z = col.z * saturation + gray * (1.0f - saturation);
+	return PackColorF(col);
+}
+
+inline Color QuantizeColor(Color c, int levels) {
+	float3 col = UnpackColor(c);
+	col.x = roundf(col.x * (levels - 1)) / (levels - 1);
+	col.y = roundf(col.y * (levels - 1)) / (levels - 1);
+	col.z = roundf(col.z * (levels - 1)) / (levels - 1);
+	return PackColorF(col);
+}

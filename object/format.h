@@ -47,17 +47,23 @@ typedef struct Triangle {
 } Triangle;
 
 typedef struct Camera {
-    float3 position;
-    float3 forward;
-    float fov;
-    int screenWidth;
-    int screenHeight;
-    uint32* framebuffer;
-    float3* normalBuffer;
-    float *depthBuffer;
+	float3 position;
+	float3 forward;
+	float fov;
+	int screenWidth;
+	int screenHeight;
+	float3 lightDir;
+	uint32 *framebuffer;
+	float3 *normalBuffer;
+	float3 *positionBuffer;
+	float3 *reflectBuffer;
+	float3 *tempBuffer_1;
+	float3 *tempBuffer_2;
+	float *depthBuffer;
 } Camera;
 
-void clearBuffers(Camera* camera);
-void initCamera(Camera* camera, int width, int height, float fov, float3 position, float3 forward);
+void clearBuffers(Camera *camera);
+void initCamera(Camera *camera, int width, int height, float fov, float3 position, float3 forward, float3 lightDir);
+void destroyCamera(Camera *camera);
 
 #endif // FORMAT_H
