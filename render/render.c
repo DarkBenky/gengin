@@ -1,6 +1,7 @@
 #include "render.h"
 #include <math.h>
 #include <string.h>
+#include "../math/matrix.h"
 
 static inline float3 Float3_Sub(float3 a, float3 b) {
 	return (float3){a.x - b.x, a.y - b.y, a.z - b.z};
@@ -56,40 +57,6 @@ static float EdgeFunction(float ax, float ay, float bx, float by, float cx, floa
 	return (cx - ax) * (by - ay) - (cy - ay) * (bx - ax);
 }
 
-static float3 RotateY(float3 v, float angle) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	return (float3){
-		v.x * c + v.z * s,
-		v.y,
-		-v.x * s + v.z * c};
-}
-
-static float3 RotateX(float3 v, float angle) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	return (float3){
-		v.x,
-		v.y * c - v.z * s,
-		v.y * s + v.z * c};
-}
-
-static float3 RotateZ(float3 v, float angle) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	return (float3){
-		v.x * c - v.y * s,
-		v.x * s + v.y * c,
-		v.z};
-}
-
-static float3 RotateXYZ(float3 v, float3 rotation) {
-	v = RotateX(v, rotation.x);
-	v = RotateY(v, rotation.y);
-	v = RotateZ(v, rotation.z);
-	return v;
-}
-
 void RenderObject(const Object *obj, const Camera *camera) {
 	if (!obj || !camera || !obj->triangles) return;
 
@@ -102,18 +69,10 @@ void RenderObject(const Object *obj, const Camera *camera) {
 	for (int i = 0; i < obj->triangleCount; i++) {
 		Triangle tri = obj->triangles[i];
 
-		float3 v0 = RotateXYZ(tri.v1, obj->rotation);
-		float3 v1 = RotateXYZ(tri.v2, obj->rotation);
-		float3 v2 = RotateXYZ(tri.v3, obj->rotation);
-		float3 normal = Float3_Normalize(RotateXYZ(tri.normal, obj->rotation));
-
-		v0 = (float3){v0.x * obj->scale.x, v0.y * obj->scale.y, v0.z * obj->scale.z};
-		v1 = (float3){v1.x * obj->scale.x, v1.y * obj->scale.y, v1.z * obj->scale.z};
-		v2 = (float3){v2.x * obj->scale.x, v2.y * obj->scale.y, v2.z * obj->scale.z};
-
-		v0 = Float3_Add(v0, obj->position);
-		v1 = Float3_Add(v1, obj->position);
-		v2 = Float3_Add(v2, obj->position);
+		float3 v0 = Matrix_TransformPoint(obj->transform, tri.v1);
+		float3 v1 = Matrix_TransformPoint(obj->transform, tri.v2);
+		float3 v2 = Matrix_TransformPoint(obj->transform, tri.v3);
+		float3 normal = Float3_Normalize(Matrix_TransformVector(obj->transform, tri.normal));
 
 		float3 toCamera = Float3_Sub(camera->position, v0);
 		if (Float3_Dot(normal, toCamera) <= 0.0f) continue;
