@@ -9,8 +9,9 @@
 #include "object/scene.h"
 #include "render/render.h"
 #include "render/cpu/ray.h"
-#define WIDTH 800
-#define HEIGHT 600
+#define WIDTH 1000
+#define HEIGHT 800
+#define ACCUMULATE_STATS 128
 
 int main() {
 	const int objectCount = DemoScene_ObjectCount();
@@ -25,7 +26,6 @@ int main() {
 	}
 
 	DemoScene_Build(objects);
-	int totalTriangles = Scene_CountTriangles(objects, objectCount);
 
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
@@ -35,31 +35,56 @@ int main() {
 		return 1;
 	}
 
-	printf("Demo scene loaded. Total Tris: %d\n", totalTriangles);
+	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, objectCount));
 	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
+	mfb_set_target_fps(-1);
 
 	int frame = 0;
 	int shadowResolution = 3;
+	double accumRenderTime = 0.0;
+	double accumSyncTime = 0.0;
+	double accumPresentTime = 0.0;
+	int accumFrames = 0;
+
+	clock_t syncStart = clock();
 	while (mfb_wait_sync(window)) {
+		double syncTime = (double)(clock() - syncStart) / CLOCKS_PER_SEC;
+		accumSyncTime += syncTime;
+
 		frame++;
 		clearBuffers(&camera);
+		const float2 jitterPattern[4] = {
+			{0.25f, 0.25f}, {-0.25f, 0.25f}, {-0.25f, -0.25f}, {0.25f, -0.25f}};
+		camera.jitter = jitterPattern[frame & 3];
 		clock_t start = clock();
 		DemoScene_Update(objects, frame);
 
 		RenderObjects(objects, objectCount, &camera);
 
 		ShadowPostProcess(objects, objectCount, &camera, shadowResolution);
-		clock_t end = clock();
-		double renderTime = (double)(end - start) / CLOCKS_PER_SEC;
-		double fps = 1.0 / renderTime;
-		double targetFrameTime = 1.0 / 60.0;
-		int maxTriangles60 = (int)(totalTriangles * (targetFrameTime / renderTime));
-		if ((frame % 30) == 0) {
-			printf("Frame %d  Render: %.3f ms  FPS: %.2f  Est Tris@60: %d  ShadowRes: %d\n",
-				   frame, renderTime * 1000.0, fps, maxTriangles60, shadowResolution);
+		accumRenderTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+
+		clock_t presentStart = clock();
+		mfb_update(window, camera.framebuffer);
+		accumPresentTime += (double)(clock() - presentStart) / CLOCKS_PER_SEC;
+
+		accumFrames++;
+
+		if ((frame % ACCUMULATE_STATS) == 0) {
+			double avgRender = accumRenderTime / accumFrames * 1000.0;
+			double avgSync = accumSyncTime / accumFrames * 1000.0;
+			double avgPresent = accumPresentTime / accumFrames * 1000.0;
+			double avgTotal = avgRender + avgSync + avgPresent;
+			double avgFps = 1000.0 / avgTotal;
+			double targetFrameTime = 1.0 / 60.0;
+			int maxTriangles60 = (int)(Scene_CountTriangles(objects, objectCount) * ((targetFrameTime * 1000.0) / avgRender));
+			printf("Frame %d  render: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
+				   frame, avgRender, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
+			accumRenderTime = accumSyncTime = accumPresentTime = 0.0;
+			accumFrames = 0;
 		}
 
-		mfb_update(window, camera.framebuffer);
+		syncStart = clock();
 	}
 
 	mfb_close(window);

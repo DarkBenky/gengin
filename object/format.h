@@ -50,6 +50,7 @@ typedef struct Camera {
 	float3 position;
 	float3 forward;
 	float fov;
+	float2 jitter;
 	int screenWidth;
 	int screenHeight;
 	float3 lightDir;
@@ -57,8 +58,8 @@ typedef struct Camera {
 	float3 *normalBuffer;
 	float3 *positionBuffer;
 	float3 *reflectBuffer;
-	float3 *tempBuffer_1;
-	float3 *tempBuffer_2;
+	float *tempBuffer_1;
+	float *tempBuffer_2;
 	float *depthBuffer;
 } Camera;
 

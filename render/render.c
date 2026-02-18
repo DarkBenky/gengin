@@ -135,12 +135,12 @@ void RenderObject(const Object *obj, const Camera *camera) {
 		float x2 = Float3_Dot(v2Cam, right) / (z2 * fovScale * aspect);
 		float y2 = Float3_Dot(v2Cam, up) / (z2 * fovScale);
 
-		float sx0 = (x0 + 1.0f) * 0.5f * camera->screenWidth;
-		float sy0 = (1.0f - y0) * 0.5f * camera->screenHeight;
-		float sx1 = (x1 + 1.0f) * 0.5f * camera->screenWidth;
-		float sy1 = (1.0f - y1) * 0.5f * camera->screenHeight;
-		float sx2 = (x2 + 1.0f) * 0.5f * camera->screenWidth;
-		float sy2 = (1.0f - y2) * 0.5f * camera->screenHeight;
+		float sx0 = (x0 + 1.0f) * 0.5f * camera->screenWidth + camera->jitter.x;
+		float sy0 = (1.0f - y0) * 0.5f * camera->screenHeight + camera->jitter.y;
+		float sx1 = (x1 + 1.0f) * 0.5f * camera->screenWidth + camera->jitter.x;
+		float sy1 = (1.0f - y1) * 0.5f * camera->screenHeight + camera->jitter.y;
+		float sx2 = (x2 + 1.0f) * 0.5f * camera->screenWidth + camera->jitter.x;
+		float sy2 = (1.0f - y2) * 0.5f * camera->screenHeight + camera->jitter.y;
 
 		int minX = Max(0, (int)MinF(MinF(sx0, sx1), sx2));
 		int maxX = Min(camera->screenWidth - 1, (int)MaxF(MaxF(sx0, sx1), sx2));

@@ -8,46 +8,82 @@
 #include "../../math/vector3.h"
 #include "../color/color.h"
 
-void BlurBuffer(float3 *src, float3 *temp, int width, int height, int radius) {
+void BlurBuffer(float *src, float *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
+
+	// Pre-pass: skip blur entirely if no pixel deviates from 1.0
+	int hasShadow = 0;
+	for (int i = 0; i < width * height; i++) {
+		if (src[i] < 1.0f) {
+			hasShadow = 1;
+			break;
+		}
+	}
+	if (!hasShadow) return;
 
 	float invSize = 1.0f / (2 * radius + 1);
 
+	// Horizontal pass — skip rows that are entirely 1.0f
 	for (int y = 0; y < height; y++) {
 		int rowStart = y * width;
-		float sum = 0.0f;
 
+		int rowHasShadow = 0;
+		for (int x = 0; x < width; x++) {
+			if (src[rowStart + x] < 1.0f) {
+				rowHasShadow = 1;
+				break;
+			}
+		}
+		if (!rowHasShadow) {
+			for (int x = 0; x < width; x++)
+				temp[rowStart + x] = 1.0f;
+			continue;
+		}
+
+		float sum = 0.0f;
 		for (int x = 0; x < radius; x++) {
-			sum += src[rowStart + x].x;
+			sum += src[rowStart + x];
 		}
 
 		for (int x = 0; x < width; x++) {
 			int right = x + radius;
 			int left = x - radius - 1;
 
-			if (right < width) sum += src[rowStart + right].x;
-			if (left >= 0) sum -= src[rowStart + left].x;
+			if (right < width) sum += src[rowStart + right];
+			if (left >= 0) sum -= src[rowStart + left];
 
-			temp[rowStart + x].x = sum * invSize;
+			temp[rowStart + x] = sum * invSize;
 		}
 	}
 
+	// Vertical pass — skip columns that are entirely 1.0f after horizontal pass
 	for (int x = 0; x < width; x++) {
-		float sum = 0.0f;
+		int colHasShadow = 0;
+		for (int y = 0; y < height; y++) {
+			if (temp[y * width + x] < 1.0f) {
+				colHasShadow = 1;
+				break;
+			}
+		}
+		if (!colHasShadow) {
+			for (int y = 0; y < height; y++)
+				src[y * width + x] = 1.0f;
+			continue;
+		}
 
+		float sum = 0.0f;
 		for (int y = 0; y < radius; y++) {
-			sum += temp[y * width + x].x;
+			sum += temp[y * width + x];
 		}
 
 		for (int y = 0; y < height; y++) {
 			int bottom = y + radius;
 			int top = y - radius - 1;
 
-			if (bottom < height) sum += temp[bottom * width + x].x;
-			if (top >= 0) sum -= temp[top * width + x].x;
+			if (bottom < height) sum += temp[bottom * width + x];
+			if (top >= 0) sum -= temp[top * width + x];
 
-			float v = sum * invSize;
-			src[y * width + x] = (float3){v, v, v};
+			src[y * width + x] = sum * invSize;
 		}
 	}
 }
@@ -61,7 +97,7 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, i
 	int step = MaxF32(1, resolution);
 
 	for (int i = 0; i < width * height; i++) {
-		camera->tempBuffer_1[i] = (float3){1.0f, 1.0f, 1.0f};
+		camera->tempBuffer_1[i] = 1.0f;
 	}
 
 	for (int y = 0; y < height; y += step) {
@@ -83,7 +119,7 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, i
 						if (camera->depthBuffer[fillIdx] < FLT_MAX && camera->depthBuffer[fillIdx] > 0.0f) {
 							float3 fillNormal = camera->normalBuffer[fillIdx];
 							if (fillNormal.y >= 0.5f) {
-								camera->tempBuffer_1[fillIdx] = (float3){0.0f, 0.0f, 0.0f};
+								camera->tempBuffer_1[fillIdx] = 0.0f;
 							}
 						}
 					}
@@ -93,7 +129,7 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, i
 	}
 	BlurBuffer(camera->tempBuffer_1, camera->tempBuffer_2, width, height, 5);
 	for (int i = 0; i < width * height; i++) {
-		float shadowAmount = 1.0f - camera->tempBuffer_1[i].x;
+		float shadowAmount = 1.0f - camera->tempBuffer_1[i];
 		camera->framebuffer[i] = DarkenColor(camera->framebuffer[i], shadowAmount * 0.5f);
 	}
 }
