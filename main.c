@@ -8,7 +8,9 @@
 #include "object/object.h"
 #include "object/scene.h"
 #include "render/render.h"
+#include "render/cpu/font.h"
 #include "render/cpu/ray.h"
+#include "render/color/color.h"
 #define WIDTH 1000
 #define HEIGHT 800
 #define ACCUMULATE_STATS 128
@@ -34,6 +36,9 @@ int main() {
 		destroyCamera(&camera);
 		return 1;
 	}
+
+	struct Alphabet alphabet;
+	LoadAlphabet(&alphabet, "assets/chars");
 
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, objectCount));
 	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
@@ -62,6 +67,8 @@ int main() {
 		RenderObjects(objects, objectCount, &camera);
 
 		ShadowPostProcess(objects, objectCount, &camera, shadowResolution);
+		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
+		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
 		accumRenderTime += (double)(clock() - start) / CLOCKS_PER_SEC;
 
 		clock_t presentStart = clock();
@@ -88,6 +95,11 @@ int main() {
 	}
 
 	mfb_close(window);
+	for (int i = 0; i < 256; i++) {
+		if (alphabet.letters[i].tile.pixels) {
+			free((void *)alphabet.letters[i].tile.pixels);
+		}
+	}
 	Scene_Destroy(objects, objectCount);
 	destroyCamera(&camera);
 	return 0;
