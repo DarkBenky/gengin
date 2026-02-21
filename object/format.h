@@ -35,17 +35,6 @@ typedef struct float4 {
 	float w;
 } float4;
 
-typedef struct Triangle {
-	float3 v1;
-	float3 v2;
-	float3 v3;
-	float3 normal;
-	float3 color;
-	float Roughness;
-	float Metallic;
-	float Emission;
-} Triangle;
-
 typedef struct Camera {
 	float3 position;
 	float3 forward;

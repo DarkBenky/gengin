@@ -1,6 +1,7 @@
 #include "render.h"
 #include <math.h>
 #include <string.h>
+#define M_PI 3.14159265f
 
 static inline float3 Float3_Sub(float3 a, float3 b) {
 	return (float3){a.x - b.x, a.y - b.y, a.z - b.z};
@@ -90,8 +91,37 @@ static float3 RotateXYZ(float3 v, float3 rotation) {
 	return v;
 }
 
+static float3 ReflectBasedOnMaterial(float3 viewDir, float3 normal, float roughness, float metallic, float3 baseColor, float seed) {
+	float u = fmodf(seed * 127.1f + 311.7f, 1.0f);
+	float v = fmodf(seed * 269.5f + 183.3f, 1.0f);
+
+	float a = roughness * roughness;
+	float phi = 2.0f * M_PI * u;
+	float cosTheta = sqrtf((1.0f - v) / fmaxf(1.0f + (a * a - 1.0f) * v, 1e-6f));
+	float sinTheta = sqrtf(fmaxf(1.0f - cosTheta * cosTheta, 0.0f));
+
+	float3 H_tangent = (float3){sinTheta * cosf(phi), sinTheta * sinf(phi), cosTheta};
+
+	float3 up = (fabsf(normal.y) < 0.999f) ? (float3){0, 1, 0} : (float3){1, 0, 0};
+	float3 tangent = Float3_Normalize(Float3_Cross(up, normal));
+	float3 bitangent = Float3_Cross(normal, tangent);
+
+	float3 H = Float3_Normalize((float3){
+		H_tangent.x * tangent.x + H_tangent.y * bitangent.x + H_tangent.z * normal.x,
+		H_tangent.x * tangent.y + H_tangent.y * bitangent.y + H_tangent.z * normal.y,
+		H_tangent.x * tangent.z + H_tangent.y * bitangent.z + H_tangent.z * normal.z,
+	});
+
+	float3 reflectDir = Float3_Reflect(Float3_Scale(viewDir, -1.0f), H);
+
+	if (Float3_Dot(reflectDir, normal) < 0.0f)
+		reflectDir = Float3_Reflect(reflectDir, normal);
+
+	return Float3_Normalize(reflectDir);
+}
+
 void RenderObject(const Object *obj, const Camera *camera) {
-	if (!obj || !camera || !obj->triangles) return;
+	if (!obj || !camera || !obj->v1) return;
 
 	float3 right = Float3_Normalize(Float3_Cross((float3){0, 1, 0}, camera->forward));
 	float3 up = Float3_Cross(camera->forward, right);
@@ -100,12 +130,10 @@ void RenderObject(const Object *obj, const Camera *camera) {
 	float fovScale = tanf(camera->fov * 0.5f * 3.14159265f / 180.0f);
 
 	for (int i = 0; i < obj->triangleCount; i++) {
-		Triangle tri = obj->triangles[i];
-
-		float3 v0 = RotateXYZ(tri.v1, obj->rotation);
-		float3 v1 = RotateXYZ(tri.v2, obj->rotation);
-		float3 v2 = RotateXYZ(tri.v3, obj->rotation);
-		float3 normal = Float3_Normalize(RotateXYZ(tri.normal, obj->rotation));
+		float3 v0 = RotateXYZ(obj->v1[i], obj->rotation);
+		float3 v1 = RotateXYZ(obj->v2[i], obj->rotation);
+		float3 v2 = RotateXYZ(obj->v3[i], obj->rotation);
+		float3 normal = Float3_Normalize(RotateXYZ(obj->normals[i], obj->rotation));
 
 		v0 = (float3){v0.x * obj->scale.x, v0.y * obj->scale.y, v0.z * obj->scale.z};
 		v1 = (float3){v1.x * obj->scale.x, v1.y * obj->scale.y, v1.z * obj->scale.z};
@@ -162,12 +190,12 @@ void RenderObject(const Object *obj, const Camera *camera) {
 		float NdotL = MaxF(0.0f, Float3_Dot(norm, lightDir));
 		float3 halfVec = Float3_Normalize(Float3_Add(lightDir, viewDir));
 		float NdotH = MaxF(0.0f, Float3_Dot(norm, halfVec));
-		float roughness = tri.Roughness;
+		float roughness = obj->roughness[i];
 		float shininess = (1.0f - roughness) * 128.0f + 1.0f;
 		float spec = powf(NdotH, shininess);
 
-		float metallic = tri.Metallic;
-		float3 baseColor = tri.color;
+		float metallic = obj->metallic[i];
+		float3 baseColor = obj->colors[i];
 		float3 diffuse = Float3_Scale(baseColor, (1.0f - metallic) * NdotL);
 		float3 specColor = Float3_Scale(baseColor, metallic);
 		specColor = Float3_Add(specColor, Float3_Scale((float3){1, 1, 1}, 1.0f - metallic));

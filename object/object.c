@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "../math/scalar.h"
 #include "../math/transform.h"
@@ -24,55 +23,78 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	obj->rotation = rotation;
 	obj->scale = scale;
 
-	// Define the 8 vertices of the cube
-	float3 vertices[8] = {
-		{-0.5f, -0.5f, -0.5f},
-		{0.5f, -0.5f, -0.5f},
-		{0.5f, 0.5f, -0.5f},
-		{-0.5f, 0.5f, -0.5f},
-		{-0.5f, -0.5f, 0.5f},
-		{0.5f, -0.5f, 0.5f},
-		{0.5f, 0.5f, 0.5f},
-		{-0.5f, 0.5f, 0.5f}};
+	const int triCount = 12;
 
-	// Define the triangles for each face of the cube
-	Triangle triangles[12] = {
-		// Front face
-		{vertices[4], vertices[5], vertices[6], {0, 0, 1}, color, 0.5f, 0.0f, 0.0f},
-		{vertices[4], vertices[6], vertices[7], {0, 0, 1}, color, 0.5f, 0.0f, 0.0f},
-		// Back face
-		{vertices[1], vertices[0], vertices[3], {0, 0, -1}, color, 0.5f, 0.0f, 0.0f},
-		{vertices[1], vertices[3], vertices[2], {0, 0, -1}, color, 0.5f, 0.0f, 0.0f},
-		// Left face
-		{vertices[0], vertices[4], vertices[7], {-1, 0, 0}, color, 0.5f, 0.0f, 0.0f},
-		{vertices[0], vertices[7], vertices[3], {-1, 0, 0}, color, 0.5f, 0.0f, 0.0f},
-		// Right face
-		{vertices[5], vertices[1], vertices[2], {1, 0, 0}, color, 0.5f, 0.0f, 0.0f},
-		{vertices[5], vertices[2], vertices[6], {1, 0, 0}, color, 0.5f, 0.0f, 0.0f},
-		// Top face
-		{vertices[3], vertices[7], vertices[6], {0, 1, 0}, color, 0.5f, 0.0f, 0.0f},
-		{vertices[3], vertices[6], vertices[2], {0, 1, 0}, color, 0.5f, 0.0f, 0.0f},
-		// Bottom face
-		{vertices[0], vertices[1], vertices[5], {0, -1, 0}, color, 0.5f, 0.0f, 0.0f},
-		{vertices[0], vertices[5], vertices[4], {0, -1, 0}, color, 0.5f, 0.0f, 0.0f}};
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->colors = (float3 *)malloc(triCount * sizeof(float3));
+	obj->roughness = (float *)malloc(triCount * sizeof(float));
+	obj->metallic = (float *)malloc(triCount * sizeof(float));
+	obj->emission = (float *)malloc(triCount * sizeof(float));
 
-	obj->triangles = (Triangle *)malloc(12 * sizeof(Triangle));
-	if (obj->triangles == NULL) {
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->colors ||
+		!obj->roughness || !obj->metallic || !obj->emission) {
 		fprintf(stderr, "Error: Could not allocate memory for cube triangles.\n");
+		Object_Destroy(obj);
 		return;
 	}
-	memcpy(obj->triangles, triangles, 12 * sizeof(Triangle));
-	obj->triangleCount = 12;
+
+	const float3 verts[8] = {
+		{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}, {-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}};
+
+	typedef struct {
+		float3 a, b, c, n;
+	} FaceTri;
+	const FaceTri faces[12] = {
+		{verts[4], verts[5], verts[6], {0, 0, 1}},
+		{verts[4], verts[6], verts[7], {0, 0, 1}},
+		{verts[1], verts[0], verts[3], {0, 0, -1}},
+		{verts[1], verts[3], verts[2], {0, 0, -1}},
+		{verts[0], verts[4], verts[7], {-1, 0, 0}},
+		{verts[0], verts[7], verts[3], {-1, 0, 0}},
+		{verts[5], verts[1], verts[2], {1, 0, 0}},
+		{verts[5], verts[2], verts[6], {1, 0, 0}},
+		{verts[3], verts[7], verts[6], {0, 1, 0}},
+		{verts[3], verts[6], verts[2], {0, 1, 0}},
+		{verts[0], verts[1], verts[5], {0, -1, 0}},
+		{verts[0], verts[5], verts[4], {0, -1, 0}}};
+
+	for (int i = 0; i < triCount; i++) {
+		obj->v1[i] = faces[i].a;
+		obj->v2[i] = faces[i].b;
+		obj->v3[i] = faces[i].c;
+		obj->normals[i] = faces[i].n;
+		obj->colors[i] = color;
+		obj->roughness[i] = 0.5f;
+		obj->metallic[i] = 0.0f;
+		obj->emission[i] = 0.0f;
+	}
+	obj->triangleCount = triCount;
 	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
 	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
 }
 
 void Object_Destroy(Object *obj) {
-	if (obj && obj->triangles) {
-		free(obj->triangles);
-		obj->triangles = NULL;
-		obj->triangleCount = 0;
-	}
+	if (!obj) return;
+	free(obj->v1);
+	obj->v1 = NULL;
+	free(obj->v2);
+	obj->v2 = NULL;
+	free(obj->v3);
+	obj->v3 = NULL;
+	free(obj->normals);
+	obj->normals = NULL;
+	free(obj->colors);
+	obj->colors = NULL;
+	free(obj->roughness);
+	obj->roughness = NULL;
+	free(obj->metallic);
+	obj->metallic = NULL;
+	free(obj->emission);
+	obj->emission = NULL;
+	obj->triangleCount = 0;
 }
 
 void Object_UpdateWorldBounds(Object *obj) {
