@@ -35,7 +35,6 @@ inline bool isVisible(
 
 __kernel void renderObject(
     // Inputs
-    const int numTriangles,
     const int objectId,
 
     // Camera
@@ -58,6 +57,7 @@ __kernel void renderObject(
     __global const float3 *v3,
     __global const float3 *normal,
     __global const int *materialId,
+    const int triangleCount,
 
     // Output
     __global float *depthOut, // used for depth testing
