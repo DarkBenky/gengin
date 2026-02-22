@@ -16,20 +16,24 @@
 #define ACCUMULATE_STATS 256
 
 int main() {
-	TestFunctions();
+	// TestFunctions();
 
 	const int objectCount = DemoScene_ObjectCount();
 	Camera camera;
 	initCamera(&camera, WIDTH, HEIGHT, 30.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){6.0f, 8.0f, -6.0f});
 
+	MaterialLib matLib;
+	MaterialLib_Init(&matLib, 256);
+
 	Object *objects = malloc(sizeof(Object) * objectCount);
 	if (!objects) {
 		fprintf(stderr, "Failed to allocate objects\n");
 		destroyCamera(&camera);
+		MaterialLib_Destroy(&matLib);
 		return 1;
 	}
 
-	DemoScene_Build(objects);
+	DemoScene_Build(objects, &matLib);
 
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
@@ -73,7 +77,7 @@ int main() {
 
 		clock_t rasterStart = clock();
 		for (int i = 0; i < objectCount; i++)
-			RenderObject(&objects[i], &camera);
+			RenderObject(&objects[i], &camera, &matLib);
 		accumRenderTime += setupTime + (double)(clock() - rasterStart) / CLOCKS_PER_SEC;
 		accumSetupTime += setupTime;
 
@@ -116,6 +120,7 @@ int main() {
 		}
 	}
 	Scene_Destroy(objects, objectCount);
+	MaterialLib_Destroy(&matLib);
 	destroyCamera(&camera);
 	return 0;
 }
