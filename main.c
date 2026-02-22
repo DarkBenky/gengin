@@ -16,6 +16,8 @@
 #define ACCUMULATE_STATS 256
 
 int main() {
+	TestFunctions();
+
 	const int objectCount = DemoScene_ObjectCount();
 	Camera camera;
 	initCamera(&camera, WIDTH, HEIGHT, 30.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){6.0f, 8.0f, -6.0f});
@@ -47,6 +49,8 @@ int main() {
 	int frame = 0;
 	int shadowResolution = 4;
 	double accumRenderTime = 0.0;
+	double accumSetupTime = 0.0;
+	double accumShadowTime = 0.0;
 	double accumSyncTime = 0.0;
 	double accumPresentTime = 0.0;
 	int accumFrames = 0;
@@ -59,17 +63,25 @@ int main() {
 		frame++;
 		clearBuffers(&camera);
 		const float2 jitterPattern[4] = {
-			{1.5f, 1.5f}, {-1.5f, 1.5f}, {-1.5f, -1.5f}, {1.5f, -1.5f}};
+			{0.5f, 0.5f}, {-0.5f, 0.5f}, {-0.5f, -0.5f}, {0.5f, -0.5f}};
 		camera.jitter = jitterPattern[frame & 3];
 		clock_t start = clock();
 		// DemoScene_Update(objects, frame);
 
-		RenderObjects(objects, objectCount, &camera);
-		ShadowPostProcess(objects, objectCount, &camera, shadowResolution, 4);
+		RenderSetup(objects, objectCount, &camera);
+		double setupTime = (double)(clock() - start) / CLOCKS_PER_SEC;
 
+		clock_t rasterStart = clock();
+		for (int i = 0; i < objectCount; i++)
+			RenderObject(&objects[i], &camera);
+		accumRenderTime += setupTime + (double)(clock() - rasterStart) / CLOCKS_PER_SEC;
+		accumSetupTime += setupTime;
+
+		clock_t shadowStart = clock();
+		ShadowPostProcess(objects, objectCount, &camera, shadowResolution, 64);
+		accumShadowTime += (double)(clock() - shadowStart) / CLOCKS_PER_SEC;
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
-		accumRenderTime += (double)(clock() - start) / CLOCKS_PER_SEC;
 
 		clock_t presentStart = clock();
 		mfb_update(window, camera.framebuffer);
@@ -79,15 +91,18 @@ int main() {
 
 		if ((frame % ACCUMULATE_STATS) == 0) {
 			double avgRender = accumRenderTime / accumFrames * 1000.0;
+			double avgSetup = accumSetupTime / accumFrames * 1000.0;
+			double avgRasterize = avgRender - avgSetup;
+			double avgShadow = accumShadowTime / accumFrames * 1000.0;
 			double avgSync = accumSyncTime / accumFrames * 1000.0;
 			double avgPresent = accumPresentTime / accumFrames * 1000.0;
-			double avgTotal = avgRender + avgSync + avgPresent;
+			double avgTotal = avgRender + avgShadow + avgSync + avgPresent;
 			double avgFps = 1000.0 / avgTotal;
 			double targetFrameTime = 1.0 / 60.0;
-			int maxTriangles60 = (int)(Scene_CountTriangles(objects, objectCount) * ((targetFrameTime * 1000.0) / avgRender));
-			printf("Frame %d  render: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
-				   frame, avgRender, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
-			accumRenderTime = accumSyncTime = accumPresentTime = 0.0;
+			int maxTriangles60 = (int)(Scene_CountTriangles(objects, objectCount) * ((targetFrameTime * 1000.0) / avgRasterize));
+			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
+				   frame, avgSetup, avgRasterize, avgShadow, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
+			accumRenderTime = accumSetupTime = accumShadowTime = accumSyncTime = accumPresentTime = 0.0;
 			accumFrames = 0;
 		}
 

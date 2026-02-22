@@ -82,7 +82,7 @@ float3 UnpackColor(Color c) {
 	float r = ((c >> 16) & 0xFF) / 255.0f;
 	float g = ((c >> 8) & 0xFF) / 255.0f;
 	float b = (c & 0xFF) / 255.0f;
-	return (float3){r, g, b};
+	return (float3){r, g, b, 0.0f};
 }
 
 Color ApplyGamma(Color c, float gamma) {
