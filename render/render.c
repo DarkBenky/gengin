@@ -1,6 +1,8 @@
 #include "render.h"
 #include <math.h>
 #include <string.h>
+#include "color/color.h"
+
 #define M_PI 3.14159265f
 
 static inline float3 Float3_Sub(float3 a, float3 b) {
@@ -27,12 +29,10 @@ static inline float3 Float3_Cross(float3 a, float3 b) {
 }
 
 static inline float3 Float3_Normalize(float3 v) {
-	float len = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
-	if (len > 0.0f) {
-		float invLen = 1.0f / len;
-		return Float3_Scale(v, invLen);
-	}
-	return v;
+	float lenSq = v.x * v.x + v.y * v.y + v.z * v.z;
+	float invLen = 1.0f / sqrtf(lenSq);
+
+	return (float3){v.x * invLen, v.y * invLen, v.z * invLen};
 }
 
 static inline float3 Float3_Reflect(float3 i, float3 n) {
@@ -91,7 +91,7 @@ static float3 RotateXYZ(float3 v, float3 rotation) {
 	return v;
 }
 
-static float3 ReflectBasedOnMaterial(float3 viewDir, float3 normal, float roughness, float metallic, float3 baseColor, float seed) {
+static float3 ReflectBasedOnMaterial(float3 rayDir, float3 normal, float roughness, float seed) {
 	float u = fmodf(seed * 127.1f + 311.7f, 1.0f);
 	float v = fmodf(seed * 269.5f + 183.3f, 1.0f);
 
@@ -112,7 +112,7 @@ static float3 ReflectBasedOnMaterial(float3 viewDir, float3 normal, float roughn
 		H_tangent.x * tangent.z + H_tangent.y * bitangent.z + H_tangent.z * normal.z,
 	});
 
-	float3 reflectDir = Float3_Reflect(Float3_Scale(viewDir, -1.0f), H);
+	float3 reflectDir = Float3_Reflect(rayDir, H);
 
 	if (Float3_Dot(reflectDir, normal) < 0.0f)
 		reflectDir = Float3_Reflect(reflectDir, normal);
@@ -120,14 +120,22 @@ static float3 ReflectBasedOnMaterial(float3 viewDir, float3 normal, float roughn
 	return Float3_Normalize(reflectDir);
 }
 
+static inline float FastSeed(float cameraSeed) {
+	uint32 h = (uint32)(cameraSeed * 1013904223.0f);
+	h ^= h >> 16;
+	h *= 0x45d9f3bu;
+	h ^= h >> 16;
+	return (float)h * 2.3283064365e-10f;
+}
+
 void RenderObject(const Object *obj, const Camera *camera) {
 	if (!obj || !camera || !obj->v1) return;
 
-	float3 right = Float3_Normalize(Float3_Cross((float3){0, 1, 0}, camera->forward));
-	float3 up = Float3_Cross(camera->forward, right);
-
-	float aspect = (float)camera->screenWidth / (float)camera->screenHeight;
-	float fovScale = tanf(camera->fov * 0.5f * 3.14159265f / 180.0f);
+	float seed = camera->seed;
+	float3 right = camera->right;
+	float3 up = camera->up;
+	float aspect = camera->aspect;
+	float fovScale = camera->fovScale;
 
 	for (int i = 0; i < obj->triangleCount; i++) {
 		float3 v0 = RotateXYZ(obj->v1[i], obj->rotation);
@@ -183,13 +191,10 @@ void RenderObject(const Object *obj, const Camera *camera) {
 		float invZ1 = 1.0f / z1;
 		float invZ2 = 1.0f / z2;
 
-		float3 lightDir = Float3_Normalize((float3){0.5f, 0.7f, -0.5f});
-		float3 viewDir = Float3_Normalize(Float3_Scale(camera->forward, -1.0f));
 		float3 norm = normal;
 
-		float NdotL = MaxF(0.0f, Float3_Dot(norm, lightDir));
-		float3 halfVec = Float3_Normalize(Float3_Add(lightDir, viewDir));
-		float NdotH = MaxF(0.0f, Float3_Dot(norm, halfVec));
+		float NdotL = MaxF(0.0f, Float3_Dot(norm, camera->renderLightDir));
+		float NdotH = MaxF(0.0f, Float3_Dot(norm, camera->halfVec));
 		float roughness = obj->roughness[i];
 		float shininess = (1.0f - roughness) * 128.0f + 1.0f;
 		float spec = powf(NdotH, shininess);
@@ -207,10 +212,9 @@ void RenderObject(const Object *obj, const Camera *camera) {
 		finalColor.y = MinF(1.0f, finalColor.y);
 		finalColor.z = MinF(1.0f, finalColor.z);
 
-		uint8 packedR = (uint8)(finalColor.x * 255.0f);
-		uint8 packedG = (uint8)(finalColor.y * 255.0f);
-		uint8 packedB = (uint8)(finalColor.z * 255.0f);
-		uint32 packedColor = 0xFF000000 | (packedR << 16) | (packedG << 8) | packedB;
+		// packedColor = 0xFF000000 | (R<<16) | (G<<8) | B  — kept for lit mode, see framebuffer write below
+		uint32 packedColor = 0xFF000000 | ((uint8)(finalColor.x * 255.0f) << 16) | ((uint8)(finalColor.y * 255.0f) << 8) | (uint8)(finalColor.z * 255.0f);
+		(void)packedColor;
 		float invArea = 1.0f / area;
 		float w0dx = sy2 - sy1;
 		float w0dy = -(sx2 - sx1);
@@ -249,8 +253,10 @@ void RenderObject(const Object *obj, const Camera *camera) {
 								(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
 							camera->positionBuffer[idx] = worldPos;
 							float3 rayDir = Float3_Normalize(Float3_Sub(worldPos, camera->position));
+							// camera->reflectBuffer[idx] = ReflectBasedOnMaterial(rayDir, normal, roughness, seed + (float)i);
 							camera->reflectBuffer[idx] = Float3_Normalize(Float3_Reflect(rayDir, normal));
 						}
+
 						camera->framebuffer[idx] = packedColor;
 					}
 				}
@@ -267,6 +273,16 @@ void RenderObject(const Object *obj, const Camera *camera) {
 
 void RenderObjects(const Object *objects, int objectCount, Camera *camera) {
 	if (!objects || !camera || objectCount <= 0) return;
+	camera->seed += FastSeed(camera->seed) + 0.01f;
+
+	camera->right = Float3_Normalize(Float3_Cross((float3){0, 1, 0}, camera->forward));
+	camera->up = Float3_Cross(camera->forward, camera->right);
+	camera->aspect = (float)camera->screenWidth / (float)camera->screenHeight;
+	camera->fovScale = tanf(camera->fov * 0.5f * 3.14159265f / 180.0f);
+	camera->viewDir = Float3_Scale(camera->forward, -1.0f);
+	camera->renderLightDir = Float3_Normalize((float3){0.5f, 0.7f, -0.5f});
+	camera->halfVec = Float3_Normalize(Float3_Add(camera->renderLightDir, camera->viewDir));
+
 	for (int i = 0; i < objectCount; i++) {
 		RenderObject(&objects[i], camera);
 	}

@@ -1,11 +1,67 @@
 #include "color.h"
 #include "../../math/scalar.h"
+#include "../../object/format.h"
 
 Color PackColor(float r, float g, float b) {
 	uint8 r8 = (uint8)(r * 255.0f);
 	uint8 g8 = (uint8)(g * 255.0f);
 	uint8 b8 = (uint8)(b * 255.0f);
 	return (Color)((r8 << 16) | (g8 << 8) | b8);
+}
+
+Color PackColorSafe(float r, float g, float b) {
+	uint8 R = (uint8)(r > 1.0f ? 255 : r < 0.0f ? 0
+												: (int)(r * 255.0f));
+	uint8 G = (uint8)(g > 1.0f ? 255 : g < 0.0f ? 0
+												: (int)(g * 255.0f));
+	uint8 B = (uint8)(b > 1.0f ? 255 : b < 0.0f ? 0
+												: (int)(b * 255.0f));
+	return 0xFF000000 | (Color)(R << 16) | (Color)(G << 8) | B;
+}
+
+void VisualizeBuffer(const Camera *camera, int mode) {
+	if (mode == 0) return; // VIEW_COLOR
+	const int n = camera->screenWidth * camera->screenHeight;
+
+	if (mode == 1) { // VIEW_NORMALS
+		for (int i = 0; i < n; i++) {
+			float3 nm = camera->normalBuffer[i];
+			camera->framebuffer[i] = PackColorSafe(
+				nm.x * 0.5f + 0.5f,
+				nm.y * 0.5f + 0.5f,
+				nm.z * 0.5f + 0.5f);
+		}
+		return;
+	}
+
+	if (mode == 3) { // VIEW_REFLECT
+		for (int i = 0; i < n; i++) {
+			float3 r = camera->reflectBuffer[i];
+			camera->framebuffer[i] = PackColorSafe(
+				r.x * 0.5f + 0.5f,
+				r.y * 0.5f + 0.5f,
+				r.z * 0.5f + 0.5f);
+		}
+		return;
+	}
+
+	if (mode == 2) { // VIEW_DEPTH
+		float dMin = 1e38f, dMax = 0.0f;
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d > 0.0f && d < 1e38f) {
+				if (d < dMin) dMin = d;
+				if (d > dMax) dMax = d;
+			}
+		}
+		float range = dMax - dMin;
+		if (range < 1e-6f) range = 1.0f;
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			float t = (d <= 0.0f || d >= 1e38f) ? 0.0f : 1.0f - (d - dMin) / range;
+			camera->framebuffer[i] = PackColorSafe(t, t, t);
+		}
+	}
 }
 
 Color PackColorF(float3 Color) {
