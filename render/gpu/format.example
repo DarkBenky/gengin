@@ -1,0 +1,20 @@
+// setup
+CL_Context  ctx = CL_Context_Create();
+CL_Pipeline pip = CL_Pipeline_FromFile(&ctx, "kernels/raytracer.cl","trace", "-I ./kernels");
+CL_Image    img = CL_Image_Create(&ctx, 800, 600);
+CL_Buffer   buf = CL_Buffer_CreateFromData(&ctx, sizeof(data), data, CL_MEM_READ_ONLY);
+
+// run
+CL_SetArgImage (&pip, 0, &img);
+CL_SetArgBuffer(&pip, 1, &buf);
+CL_SetArgFloat (&pip, 2, 0.5f);
+CL_Dispatch2D  (&ctx, &pip, 800, 600, 16, 16);
+
+// read back
+CL_Image_Read(&ctx, &img, pixels);
+
+// cleanup
+CL_Image_Destroy(&img);
+CL_Buffer_Destroy(&buf);
+CL_Pipeline_Destroy(&pip);
+CL_Context_Destroy(&ctx);

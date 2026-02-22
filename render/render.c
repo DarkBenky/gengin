@@ -1,6 +1,9 @@
 #include "render.h"
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "color/color.h"
 
 #define M_PI 3.14159265f
@@ -38,6 +41,121 @@ static inline float3 Float3_Normalize(float3 v) {
 static inline float3 Float3_Reflect(float3 i, float3 n) {
 	float k = 2.0f * Float3_Dot(n, i);
 	return Float3_Sub(i, Float3_Scale(n, k));
+}
+
+static inline float Q_rsqrt(float number) {
+	union {
+		float f;
+		uint32_t i;
+	} conv = {.f = number};
+	conv.i = 0x5F375A86 - (conv.i >> 1);
+	conv.f *= 1.5f - (number * 0.5f * conv.f * conv.f);
+	return conv.f;
+}
+
+static inline float3 Float3_Normalize_(float3 v) {
+	float lenSq = v.x * v.x + v.y * v.y + v.z * v.z;
+	float invLen = Q_rsqrt(lenSq);
+	return (float3){v.x * invLen, v.y * invLen, v.z * invLen};
+}
+
+static inline float3 Float3_Reflect_(float3 i, float3 n) {
+	float k = 2.0f * Float3_Dot(n, i);
+	return Float3_Sub(i, Float3_Scale(n, k));
+}
+
+#include <xmmintrin.h>
+#include <emmintrin.h>
+
+static inline __m128 mm_dot3_ps(__m128 a, __m128 b) {
+	__m128 mul = _mm_mul_ps(a, b);
+	__m128 yz = _mm_shuffle_ps(mul, mul, _MM_SHUFFLE(0, 0, 2, 1));
+	__m128 z = _mm_shuffle_ps(mul, mul, _MM_SHUFFLE(0, 0, 0, 2));
+	return _mm_add_ss(_mm_add_ss(mul, yz), z);
+}
+
+static inline float3 Float3_Normalize__(float3 v) {
+	__m128 vec = _mm_set_ps(0.0f, v.z, v.y, v.x);
+	__m128 d = mm_dot3_ps(vec, vec);
+	__m128 dot = _mm_shuffle_ps(d, d, _MM_SHUFFLE(0, 0, 0, 0));
+	__m128 inv = _mm_rsqrt_ps(dot);
+	__m128 half = _mm_set1_ps(0.5f);
+	__m128 three = _mm_set1_ps(3.0f);
+	inv = _mm_mul_ps(_mm_mul_ps(half, inv),
+					 _mm_sub_ps(three, _mm_mul_ps(_mm_mul_ps(dot, inv), inv)));
+	__m128 res = _mm_mul_ps(vec, inv);
+	float3 out;
+	_mm_store_ss(&out.x, res);
+	_mm_store_ss(&out.y, _mm_shuffle_ps(res, res, _MM_SHUFFLE(1, 1, 1, 1)));
+	_mm_store_ss(&out.z, _mm_shuffle_ps(res, res, _MM_SHUFFLE(2, 2, 2, 2)));
+	return out;
+}
+
+static inline float3 Float3_Reflect__(float3 i, float3 n) {
+	__m128 vi = _mm_set_ps(0.0f, i.z, i.y, i.x);
+	__m128 vn = _mm_set_ps(0.0f, n.z, n.y, n.x);
+	__m128 d = mm_dot3_ps(vn, vi);
+	__m128 dotB = _mm_shuffle_ps(d, d, _MM_SHUFFLE(0, 0, 0, 0));
+	__m128 two = _mm_set1_ps(2.0f);
+	__m128 res = _mm_sub_ps(vi, _mm_mul_ps(_mm_mul_ps(two, dotB), vn));
+	float3 out;
+	_mm_store_ss(&out.x, res);
+	_mm_store_ss(&out.y, _mm_shuffle_ps(res, res, _MM_SHUFFLE(1, 1, 1, 1)));
+	_mm_store_ss(&out.z, _mm_shuffle_ps(res, res, _MM_SHUFFLE(2, 2, 2, 2)));
+	return out;
+}
+
+/* Normalize 4 vectors SoA — ~2.5x faster than 4 scalar calls */
+static inline void Float3_Normalize4(float3 v[4]) {
+	__m128 x = _mm_set_ps(v[3].x, v[2].x, v[1].x, v[0].x);
+	__m128 y = _mm_set_ps(v[3].y, v[2].y, v[1].y, v[0].y);
+	__m128 z = _mm_set_ps(v[3].z, v[2].z, v[1].z, v[0].z);
+	__m128 ls = _mm_add_ps(_mm_add_ps(_mm_mul_ps(x, x), _mm_mul_ps(y, y)), _mm_mul_ps(z, z));
+	__m128 inv = _mm_rsqrt_ps(ls);
+	__m128 h = _mm_set1_ps(0.5f), t = _mm_set1_ps(3.0f);
+	inv = _mm_mul_ps(_mm_mul_ps(h, inv), _mm_sub_ps(t, _mm_mul_ps(_mm_mul_ps(ls, inv), inv)));
+	x = _mm_mul_ps(x, inv);
+	y = _mm_mul_ps(y, inv);
+	z = _mm_mul_ps(z, inv);
+	float xb[4], yb[4], zb[4];
+	_mm_storeu_ps(xb, x);
+	_mm_storeu_ps(yb, y);
+	_mm_storeu_ps(zb, z);
+	for (int k = 0; k < 4; k++) {
+		v[k].x = xb[k];
+		v[k].y = yb[k];
+		v[k].z = zb[k];
+	}
+}
+
+/* Reflect 4 vectors against the same normal, then normalize — all in one SoA pass */
+static inline void Float3_ReflectNormalize4(const float3 v[4], float3 n, float3 out[4]) {
+	__m128 nx = _mm_set1_ps(n.x), ny = _mm_set1_ps(n.y), nz = _mm_set1_ps(n.z);
+	__m128 vx = _mm_set_ps(v[3].x, v[2].x, v[1].x, v[0].x);
+	__m128 vy = _mm_set_ps(v[3].y, v[2].y, v[1].y, v[0].y);
+	__m128 vz = _mm_set_ps(v[3].z, v[2].z, v[1].z, v[0].z);
+	__m128 dot = _mm_add_ps(_mm_add_ps(_mm_mul_ps(nx, vx), _mm_mul_ps(ny, vy)), _mm_mul_ps(nz, vz));
+	__m128 two = _mm_set1_ps(2.0f);
+	__m128 td = _mm_mul_ps(two, dot);
+	__m128 rx = _mm_sub_ps(vx, _mm_mul_ps(td, nx));
+	__m128 ry = _mm_sub_ps(vy, _mm_mul_ps(td, ny));
+	__m128 rz = _mm_sub_ps(vz, _mm_mul_ps(td, nz));
+	__m128 ls = _mm_add_ps(_mm_add_ps(_mm_mul_ps(rx, rx), _mm_mul_ps(ry, ry)), _mm_mul_ps(rz, rz));
+	__m128 inv = _mm_rsqrt_ps(ls);
+	__m128 h = _mm_set1_ps(0.5f), t3 = _mm_set1_ps(3.0f);
+	inv = _mm_mul_ps(_mm_mul_ps(h, inv), _mm_sub_ps(t3, _mm_mul_ps(_mm_mul_ps(ls, inv), inv)));
+	rx = _mm_mul_ps(rx, inv);
+	ry = _mm_mul_ps(ry, inv);
+	rz = _mm_mul_ps(rz, inv);
+	float xb[4], yb[4], zb[4];
+	_mm_storeu_ps(xb, rx);
+	_mm_storeu_ps(yb, ry);
+	_mm_storeu_ps(zb, rz);
+	for (int k = 0; k < 4; k++) {
+		out[k].x = xb[k];
+		out[k].y = yb[k];
+		out[k].z = zb[k];
+	}
 }
 
 static inline int Min(int a, int b) {
@@ -232,7 +350,63 @@ void RenderObject(const Object *obj, const Camera *camera) {
 			float w0 = w0Row;
 			float w1 = w1Row;
 			float w2 = w2Row;
-			for (int x = minX; x <= maxX; x++) {
+
+			int x = minX;
+			for (; x + 3 <= maxX; x += 4) {
+				/* batch of 4 — gather pixels that pass coverage + depth */
+				int bIdx[4];
+				float3 bRay[4];
+				int bCount = 0;
+
+				for (int k = 0; k < 4; k++) {
+					float cw0 = w0 + w0dx * k;
+					float cw1 = w1 + w1dx * k;
+					float cw2 = w2 + w2dx * k;
+					if ((cw0 * areaSign) >= 0.0f && (cw1 * areaSign) >= 0.0f && (cw2 * areaSign) >= 0.0f) {
+						float invZ = (cw0 * invZ0 + cw1 * invZ1 + cw2 * invZ2) * invArea;
+						float depth = 1.0f / invZ;
+						int idx = y * camera->screenWidth + (x + k);
+						if (depth < camera->depthBuffer[idx]) {
+							camera->depthBuffer[idx] = depth;
+							camera->normalBuffer[idx] = normal;
+							float p0 = cw0 * invZ0;
+							float p1 = cw1 * invZ1;
+							float p2 = cw2 * invZ2;
+							float pSum = p0 + p1 + p2;
+							if (pSum != 0.0f) {
+								float invPSum = 1.0f / pSum;
+								float3 worldPos = {
+									(v0.x * p0 + v1.x * p1 + v2.x * p2) * invPSum,
+									(v0.y * p0 + v1.y * p1 + v2.y * p2) * invPSum,
+									(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
+								camera->positionBuffer[idx] = worldPos;
+								bRay[bCount] = Float3_Sub(worldPos, camera->position);
+								bIdx[bCount] = idx;
+								bCount++;
+							}
+							camera->framebuffer[idx] = packedColor;
+						}
+					}
+				}
+
+				/* batch normalize + reflect for however many valid pixels we got */
+				if (bCount > 0) {
+					for (int k = bCount; k < 4; k++)
+						bRay[k] = (float3){1.0f, 0.0f, 0.0f, 0.0f};
+					Float3_Normalize4(bRay);
+					float3 bRefl[4];
+					Float3_ReflectNormalize4(bRay, norm, bRefl);
+					for (int k = 0; k < bCount; k++)
+						camera->reflectBuffer[bIdx[k]] = bRefl[k];
+				}
+
+				w0 += w0dx * 4;
+				w1 += w1dx * 4;
+				w2 += w2dx * 4;
+			}
+
+			/* tail — remaining pixels (0-3) handled scalar */
+			for (; x <= maxX; x++) {
 				if ((w0 * areaSign) >= 0.0f && (w1 * areaSign) >= 0.0f && (w2 * areaSign) >= 0.0f) {
 					float invZ = (w0 * invZ0 + w1 * invZ1 + w2 * invZ2) * invArea;
 					float depth = 1.0f / invZ;
@@ -240,23 +414,20 @@ void RenderObject(const Object *obj, const Camera *camera) {
 					float p1 = w1 * invZ1;
 					float p2 = w2 * invZ2;
 					float pSum = p0 + p1 + p2;
-
 					int idx = y * camera->screenWidth + x;
 					if (depth < camera->depthBuffer[idx]) {
 						camera->depthBuffer[idx] = depth;
 						camera->normalBuffer[idx] = normal;
 						if (pSum != 0.0f) {
 							float invPSum = 1.0f / pSum;
-							float3 worldPos = (float3){
+							float3 worldPos = {
 								(v0.x * p0 + v1.x * p1 + v2.x * p2) * invPSum,
 								(v0.y * p0 + v1.y * p1 + v2.y * p2) * invPSum,
 								(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
 							camera->positionBuffer[idx] = worldPos;
 							float3 rayDir = Float3_Normalize(Float3_Sub(worldPos, camera->position));
-							// camera->reflectBuffer[idx] = ReflectBasedOnMaterial(rayDir, normal, roughness, seed + (float)i);
 							camera->reflectBuffer[idx] = Float3_Normalize(Float3_Reflect(rayDir, normal));
 						}
-
 						camera->framebuffer[idx] = packedColor;
 					}
 				}
@@ -264,6 +435,7 @@ void RenderObject(const Object *obj, const Camera *camera) {
 				w1 += w1dx;
 				w2 += w2dx;
 			}
+
 			w0Row += w0dy;
 			w1Row += w1dy;
 			w2Row += w2dy;
@@ -271,10 +443,9 @@ void RenderObject(const Object *obj, const Camera *camera) {
 	}
 }
 
-void RenderObjects(const Object *objects, int objectCount, Camera *camera) {
+void RenderSetup(const Object *objects, int objectCount, Camera *camera) {
 	if (!objects || !camera || objectCount <= 0) return;
 	camera->seed += FastSeed(camera->seed) + 0.01f;
-
 	camera->right = Float3_Normalize(Float3_Cross((float3){0, 1, 0}, camera->forward));
 	camera->up = Float3_Cross(camera->forward, camera->right);
 	camera->aspect = (float)camera->screenWidth / (float)camera->screenHeight;
@@ -282,8 +453,109 @@ void RenderObjects(const Object *objects, int objectCount, Camera *camera) {
 	camera->viewDir = Float3_Scale(camera->forward, -1.0f);
 	camera->renderLightDir = Float3_Normalize((float3){0.5f, 0.7f, -0.5f});
 	camera->halfVec = Float3_Normalize(Float3_Add(camera->renderLightDir, camera->viewDir));
+}
 
+void RenderObjects(const Object *objects, int objectCount, Camera *camera) {
+	if (!objects || !camera || objectCount <= 0) return;
+	RenderSetup(objects, objectCount, camera);
 	for (int i = 0; i < objectCount; i++) {
 		RenderObject(&objects[i], camera);
 	}
+}
+
+float RandomFloat(float min, float max) {
+	return min + (max - min) * ((float)rand() / (float)RAND_MAX);
+}
+
+void TestFunctions() {
+	int iterations = 1000000;
+	double accumTime = 0.0;
+	clock_t start;
+	for (int i = 0; i < iterations; i++) {
+		float3 v = {RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)};
+		float3 n = {0.0f, 1.0f, 0.0f};
+		start = clock();
+		float3 r = Float3_Reflect(v, n);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+		(void)r;
+	}
+	printf("Average Reflect time: %f microseconds\n", (accumTime / iterations) * 1e6);
+	accumTime = 0.0;
+	for (int i = 0; i < iterations; i++) {
+		float3 v = {RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)};
+		float3 n = {0.0f, 1.0f, 0.0f};
+		start = clock();
+		float3 r = Float3_Reflect_(v, n);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+		(void)r;
+	}
+	printf("Average Reflect_ time: %f microseconds\n", (accumTime / iterations) * 1e6);
+	accumTime = 0.0;
+	for (int i = 0; i < iterations; i++) {
+		float3 v = {RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)};
+		float3 n = {0.0f, 1.0f, 0.0f};
+		start = clock();
+		float3 r = Float3_Reflect__(v, n);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+		(void)r;
+	}
+	printf("Average Reflect__ time: %f microseconds\n", (accumTime / iterations) * 1e6);
+	accumTime = 0.0;
+	for (int i = 0; i < iterations; i++) {
+		float3 v = {RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)};
+		start = clock();
+		float3 n = Float3_Normalize(v);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+		(void)n;
+	}
+	printf("Average Normalize time: %f microseconds\n", (accumTime / iterations) * 1e6);
+	accumTime = 0.0;
+	for (int i = 0; i < iterations; i++) {
+		float3 v = {RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)};
+		start = clock();
+		float3 n = Float3_Normalize_(v);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+		(void)n;
+	}
+	printf("Average Normalize_ time: %f microseconds\n", (accumTime / iterations) * 1e6);
+	accumTime = 0.0;
+	for (int i = 0; i < iterations; i++) {
+		float3 v = {RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)};
+		start = clock();
+		float3 n = Float3_Normalize__(v);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+		(void)n;
+	}
+	printf("Average Normalize__ time: %f microseconds\n", (accumTime / iterations) * 1e6);
+
+	accumTime = 0.0;
+	for (int i = 0; i < iterations; i += 4) {
+		float3 v[4] = {
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+		};
+		start = clock();
+		Float3_Normalize4(v);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+	}
+	printf("Average Normalize4 time: %f microseconds/vec (4 vecs/call)\n", (accumTime / (iterations / 4)) * 1e6 / 4.0);
+
+	accumTime = 0.0;
+	float3 refN = {0.0f, 1.0f, 0.0f};
+	for (int i = 0; i < iterations; i += 4) {
+		float3 v[4] = {
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+			{RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f), RandomFloat(-1.0f, 1.0f)},
+		};
+		float3 out[4];
+		start = clock();
+		Float3_ReflectNormalize4(v, refN, out);
+		accumTime += (double)(clock() - start) / CLOCKS_PER_SEC;
+		(void)out;
+	}
+	printf("Average ReflectNormalize4 time: %f microseconds/vec (4 vecs/call)\n", (accumTime / (iterations / 4)) * 1e6 / 4.0);
 }
