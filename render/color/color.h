@@ -4,8 +4,6 @@
 #include "../../object/format.h"
 #include <math.h>
 
-typedef uint32 Color;
-
 Color PackColor(float r, float g, float b);
 Color PackColorF(float3 color);
 Color BlendColors(Color c1, Color c2, float t);
@@ -28,5 +26,7 @@ Color HueShiftColor(Color c, float shift);
 Color AdjustSaturation(Color c, float saturation);
 Color QuantizeColor(Color c, int levels);
 Color DarkenColor(Color c, float amount);
+Color PackColorSafe(float r, float g, float b);
+void VisualizeBuffer(const Camera *camera, int mode);
 
 #endif // COLOR_H

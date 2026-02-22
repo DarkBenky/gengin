@@ -17,10 +17,13 @@ typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
 
+typedef uint32_t Color;
+
 typedef struct float3 {
 	float x;
 	float y;
 	float z;
+	float w; // padding for alignment
 } float3;
 
 typedef struct float2 {
@@ -35,6 +38,13 @@ typedef struct float4 {
 	float w;
 } float4;
 
+typedef struct int4 {
+	int x;
+	int y;
+	int z;
+	int w;
+} int4;
+
 typedef struct Camera {
 	float3 position;
 	float3 forward;
@@ -43,13 +53,28 @@ typedef struct Camera {
 	int screenWidth;
 	int screenHeight;
 	float3 lightDir;
+	/* precomputed per-frame, set by RenderObjects */
+	float3 right;
+	float3 up;
+	float3 viewDir;
+	float3 halfVec;
+	float3 renderLightDir;
+	float aspect;
+	float fovScale;
 	uint32 *framebuffer;
 	float3 *normalBuffer;
 	float3 *positionBuffer;
 	float3 *reflectBuffer;
 	float *tempBuffer_1;
 	float *tempBuffer_2;
+	float *tempBuffer_3;
 	float *depthBuffer;
+	Color *tempFramebuffer;
+	Color *tempFramebuffer2;
+	float seed;
+	float *shadowCache;
+	Color *reflectCache;
+	int frameCounter;
 } Camera;
 
 void clearBuffers(Camera *camera);

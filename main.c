@@ -11,9 +11,9 @@
 #include "render/cpu/font.h"
 #include "render/cpu/ray.h"
 #include "render/color/color.h"
-#define WIDTH 1000
-#define HEIGHT 800
-#define ACCUMULATE_STATS 128
+#define WIDTH 800
+#define HEIGHT 600
+#define ACCUMULATE_STATS 256
 
 int main() {
 	const int objectCount = DemoScene_ObjectCount();
@@ -42,10 +42,10 @@ int main() {
 
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, objectCount));
 	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
-	mfb_set_target_fps(-1);
+	mfb_set_target_fps(0);
 
 	int frame = 0;
-	int shadowResolution = 3;
+	int shadowResolution = 4;
 	double accumRenderTime = 0.0;
 	double accumSyncTime = 0.0;
 	double accumPresentTime = 0.0;
@@ -59,14 +59,14 @@ int main() {
 		frame++;
 		clearBuffers(&camera);
 		const float2 jitterPattern[4] = {
-			{0.25f, 0.25f}, {-0.25f, 0.25f}, {-0.25f, -0.25f}, {0.25f, -0.25f}};
+			{1.5f, 1.5f}, {-1.5f, 1.5f}, {-1.5f, -1.5f}, {1.5f, -1.5f}};
 		camera.jitter = jitterPattern[frame & 3];
 		clock_t start = clock();
-		DemoScene_Update(objects, frame);
+		// DemoScene_Update(objects, frame);
 
 		RenderObjects(objects, objectCount, &camera);
+		ShadowPostProcess(objects, objectCount, &camera, shadowResolution, 4);
 
-		ShadowPostProcess(objects, objectCount, &camera, shadowResolution);
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
 		accumRenderTime += (double)(clock() - start) / CLOCKS_PER_SEC;

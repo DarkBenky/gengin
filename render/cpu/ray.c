@@ -1,12 +1,25 @@
 #include "ray.h"
 
 #include <math.h>
+#include <omp.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "../../math/scalar.h"
 #include "../../math/transform.h"
 #include "../../math/vector3.h"
 #include "../color/color.h"
+
+static inline Color PackColorFast01(float3 color) {
+	uint8 r = (uint8)(color.x * 255.0f);
+	uint8 g = (uint8)(color.y * 255.0f);
+	uint8 b = (uint8)(color.z * 255.0f);
+	return (Color)((r << 16) | (g << 8) | b);
+}
+
+static inline Color BlendColors50(Color a, Color b) {
+	return ((a & 0x00FEFEFEu) + (b & 0x00FEFEFEu)) >> 1;
+}
 
 void BlurBuffer(float *src, float *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
@@ -88,48 +101,71 @@ void BlurBuffer(float *src, float *temp, int width, int height, int radius) {
 	}
 }
 
-void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, int resolution) {
+void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, const int resolution, const int frameInterval) {
 	if (!objects || objectCount <= 0 || !camera) return;
 	int width = camera->screenWidth;
 	int height = camera->screenHeight;
-	float3 lightDir = camera->lightDir;
-	float bias = 0.01f;
-	int step = MaxF32(1, resolution);
+	int size = width * height;
 
-	for (int i = 0; i < width * height; i++) {
-		camera->tempBuffer_1[i] = 1.0f;
-	}
+	int recompute = (camera->frameCounter % frameInterval) == 0;
+	camera->frameCounter++;
 
-	for (int y = 0; y < height; y += step) {
-		for (int x = 0; x < width; x += step) {
-			int idx = y * width + x;
-			if (camera->depthBuffer[idx] >= FLT_MAX || camera->depthBuffer[idx] <= 0.0f) continue;
+	if (recompute) {
+		float3 lightDir = camera->lightDir;
+		float bias = 0.01f;
+		int step = MaxF32(1, resolution);
+		const Color skyColor = 0x007FB2FFu;
 
-			float3 worldPos = camera->positionBuffer[idx];
-			float3 normal = camera->normalBuffer[idx];
+		for (int i = 0; i < size; i++)
+			camera->tempBuffer_1[i] = 1.0f;
+		memset(camera->reflectCache, 0, size * sizeof(Color));
 
-			if (normal.y < 0.5f) continue;
+		for (int y = 0; y < height; y += step) {
+			for (int x = 0; x < width; x += step) {
+				int idx = y * width + x;
+				if (camera->depthBuffer[idx] >= FLT_MAX || camera->depthBuffer[idx] <= 0.0f) continue;
 
-			float3 biasedPos = Float3_Add(worldPos, Float3_Scale(normal, bias));
+				float3 worldPos = camera->positionBuffer[idx];
+				float3 normal = camera->normalBuffer[idx];
 
-			if (IntersectAnyBBox(objects, objectCount, biasedPos, lightDir)) {
-				for (int dy = 0; dy < step && y + dy < height; dy++) {
-					for (int dx = 0; dx < step && x + dx < width; dx++) {
-						int fillIdx = (y + dy) * width + (x + dx);
-						if (camera->depthBuffer[fillIdx] < FLT_MAX && camera->depthBuffer[fillIdx] > 0.0f) {
-							float3 fillNormal = camera->normalBuffer[fillIdx];
-							if (fillNormal.y >= 0.5f) {
-								camera->tempBuffer_1[fillIdx] = 0.0f;
+				// if (normal.y < 0.5f) continue;
+
+				float3 biasedPos = Float3_Add(worldPos, Float3_Scale(normal, bias));
+
+				if (IntersectAnyBBox(objects, objectCount, biasedPos, lightDir)) {
+					for (int dy = 0; dy < step && y + dy < height; dy++) {
+						for (int dx = 0; dx < step && x + dx < width; dx++) {
+							int fillIdx = (y + dy) * width + (x + dx);
+							if (camera->depthBuffer[fillIdx] < FLT_MAX && camera->depthBuffer[fillIdx] > 0.0f) {
+								float3 fillNormal = camera->normalBuffer[fillIdx];
+								if (fillNormal.y >= 0.5f)
+									camera->tempBuffer_1[fillIdx] = 0.0f;
 							}
 						}
 					}
 				}
+
+				float3 reflDir = camera->reflectBuffer[idx];
+				Color reflectionColor = PackColorFast01(IntersectBBoxColor(objects, objectCount, biasedPos, reflDir));
+				Color blendColor = reflectionColor != 0 ? reflectionColor : skyColor;
+
+				for (int dy = 0; dy < step && y + dy < height; dy++) {
+					for (int dx = 0; dx < step && x + dx < width; dx++) {
+						int fillIdx = (y + dy) * width + (x + dx);
+						camera->reflectCache[fillIdx] = blendColor;
+					}
+				}
 			}
 		}
+
+		BlurBuffer(camera->tempBuffer_1, camera->tempBuffer_2, width, height, 9);
+		memcpy(camera->shadowCache, camera->tempBuffer_1, size * sizeof(float));
 	}
-	BlurBuffer(camera->tempBuffer_1, camera->tempBuffer_2, width, height, 5);
-	for (int i = 0; i < width * height; i++) {
-		float shadowAmount = 1.0f - camera->tempBuffer_1[i];
+
+	for (int i = 0; i < size; i++) {
+		if (camera->reflectCache[i] != 0)
+			camera->framebuffer[i] = BlendColors50(camera->framebuffer[i], camera->reflectCache[i]);
+		float shadowAmount = 1.0f - camera->shadowCache[i];
 		camera->framebuffer[i] = DarkenColor(camera->framebuffer[i], shadowAmount * 0.5f);
 	}
 }
