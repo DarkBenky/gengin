@@ -1,10 +1,11 @@
 #include "loadObj.h"
 #include "../object/object.h"
+#include "../object/material/material.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include "../util/bbox.h"
 
-void LoadObj(const char *filename, Object *obj) {
+void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	if (filename == NULL || obj == NULL) {
 		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
 		return;
@@ -30,13 +31,9 @@ void LoadObj(const char *filename, Object *obj) {
 	obj->v2 = (float3 *)malloc(triangleCount * sizeof(float3));
 	obj->v3 = (float3 *)malloc(triangleCount * sizeof(float3));
 	obj->normals = (float3 *)malloc(triangleCount * sizeof(float3));
-	obj->colors = (float3 *)malloc(triangleCount * sizeof(float3));
-	obj->roughness = (float *)malloc(triangleCount * sizeof(float));
-	obj->metallic = (float *)malloc(triangleCount * sizeof(float));
-	obj->emission = (float *)malloc(triangleCount * sizeof(float));
+	obj->materialIds = (int *)malloc(triangleCount * sizeof(int));
 
-	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->colors ||
-		!obj->roughness || !obj->metallic || !obj->emission) {
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
 		fprintf(stderr, "Error: Could not allocate memory for triangles.\n");
 		Object_Destroy(obj);
 		fclose(file);
@@ -70,10 +67,7 @@ void LoadObj(const char *filename, Object *obj) {
 		obj->v2[i] = v2;
 		obj->v3[i] = v3;
 		obj->normals[i] = normal;
-		obj->roughness[i] = Roughness;
-		obj->metallic[i] = Metallic;
-		obj->emission[i] = Emission;
-		obj->colors[i] = color;
+		obj->materialIds[i] = MaterialLib_Add(lib, Material_Make(color, Roughness, Metallic, Emission));
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;

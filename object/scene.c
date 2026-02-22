@@ -16,10 +16,10 @@ int DemoScene_ObjectCount(void) {
 	return kObjectCount;
 }
 
-void DemoScene_Build(Object *objects) {
+void DemoScene_Build(Object *objects, MaterialLib *lib) {
 	if (!objects) return;
 
-	CreateCube(&objects[kGroundIndex], (float3){0.0f, kGroundY, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){40.0f, 0.2f, 40.0f}, (float3){0.32f, 0.34f, 0.38f});
+	CreateCube(&objects[kGroundIndex], (float3){0.0f, kGroundY, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){40.0f, 0.2f, 40.0f}, (float3){0.32f, 0.34f, 0.38f}, lib);
 	Object_UpdateWorldBounds(&objects[kGroundIndex]);
 
 	const int cols = 10;
@@ -43,7 +43,7 @@ void DemoScene_Build(Object *objects) {
 		float rotateZ = (float)(i % 3) * 0.524f;
 		float3 rotation = (float3){rotateX, rotateY, rotateZ};
 
-		CreateCube(&objects[kCubesStart + i], (float3){x, 0.2f, z}, rotation, (float3){0.65f, 0.65f, 0.65f}, cubeColor);
+		CreateCube(&objects[kCubesStart + i], (float3){x, 0.2f, z}, rotation, (float3){0.65f, 0.65f, 0.65f}, cubeColor, lib);
 		Object_UpdateWorldBounds(&objects[kCubesStart + i]);
 	}
 }

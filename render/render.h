@@ -3,9 +3,10 @@
 
 #include "../object/format.h"
 #include "../object/object.h"
+#include "../object/material/material.h"
 
-void RenderObject(const Object *obj, const Camera *camera);
+void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *lib);
 void RenderSetup(const Object *objects, int objectCount, Camera *camera);
-void RenderObjects(const Object *objects, int objectCount, Camera *camera);
+void RenderObjects(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib);
 void TestFunctions();
 #endif // RENDER_H

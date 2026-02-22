@@ -246,7 +246,7 @@ static inline float FastSeed(float cameraSeed) {
 	return (float)h * 2.3283064365e-10f;
 }
 
-void RenderObject(const Object *obj, const Camera *camera) {
+void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *lib) {
 	if (!obj || !camera || !obj->v1) return;
 
 	float seed = camera->seed;
@@ -313,12 +313,13 @@ void RenderObject(const Object *obj, const Camera *camera) {
 
 		float NdotL = MaxF(0.0f, Float3_Dot(norm, camera->renderLightDir));
 		float NdotH = MaxF(0.0f, Float3_Dot(norm, camera->halfVec));
-		float roughness = obj->roughness[i];
+		const Material *mat = &lib->entries[obj->materialIds[i]];
+		float roughness = mat->roughness;
 		float shininess = (1.0f - roughness) * 128.0f + 1.0f;
 		float spec = powf(NdotH, shininess);
 
-		float metallic = obj->metallic[i];
-		float3 baseColor = obj->colors[i];
+		float metallic = mat->metallic;
+		float3 baseColor = mat->color;
 		float3 diffuse = Float3_Scale(baseColor, (1.0f - metallic) * NdotL);
 		float3 specColor = Float3_Scale(baseColor, metallic);
 		specColor = Float3_Add(specColor, Float3_Scale((float3){1, 1, 1}, 1.0f - metallic));
@@ -455,11 +456,11 @@ void RenderSetup(const Object *objects, int objectCount, Camera *camera) {
 	camera->halfVec = Float3_Normalize(Float3_Add(camera->renderLightDir, camera->viewDir));
 }
 
-void RenderObjects(const Object *objects, int objectCount, Camera *camera) {
+void RenderObjects(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib) {
 	if (!objects || !camera || objectCount <= 0) return;
 	RenderSetup(objects, objectCount, camera);
 	for (int i = 0; i < objectCount; i++) {
-		RenderObject(&objects[i], camera);
+		RenderObject(&objects[i], camera, lib);
 	}
 }
 

@@ -1,4 +1,5 @@
 #include "object.h"
+#include "material/material.h"
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -11,14 +12,14 @@ static inline float3 TransformPoint(const Object *obj, float3 local) {
 	return TransformPointTRS(local, obj->position, obj->rotation, obj->scale);
 }
 
-void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename) {
-	LoadObj(filename, obj);
+void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib) {
+	LoadObj(filename, obj, lib);
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
 }
 
-void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color) {
+void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib) {
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
@@ -30,13 +31,9 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
 	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
 	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
-	obj->colors = (float3 *)malloc(triCount * sizeof(float3));
-	obj->roughness = (float *)malloc(triCount * sizeof(float));
-	obj->metallic = (float *)malloc(triCount * sizeof(float));
-	obj->emission = (float *)malloc(triCount * sizeof(float));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
 
-	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->colors ||
-		!obj->roughness || !obj->metallic || !obj->emission) {
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
 		fprintf(stderr, "Error: Could not allocate memory for cube triangles.\n");
 		Object_Destroy(obj);
 		return;
@@ -62,15 +59,13 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		{verts[0], verts[1], verts[5], {0, -1, 0}},
 		{verts[0], verts[5], verts[4], {0, -1, 0}}};
 
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, 0.5f, 0.0f, 0.0f));
 	for (int i = 0; i < triCount; i++) {
 		obj->v1[i] = faces[i].a;
 		obj->v2[i] = faces[i].b;
 		obj->v3[i] = faces[i].c;
 		obj->normals[i] = faces[i].n;
-		obj->colors[i] = color;
-		obj->roughness[i] = 0.5f;
-		obj->metallic[i] = 0.0f;
-		obj->emission[i] = 0.0f;
+		obj->materialIds[i] = matIdx;
 	}
 	obj->triangleCount = triCount;
 	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
@@ -87,14 +82,8 @@ void Object_Destroy(Object *obj) {
 	obj->v3 = NULL;
 	free(obj->normals);
 	obj->normals = NULL;
-	free(obj->colors);
-	obj->colors = NULL;
-	free(obj->roughness);
-	obj->roughness = NULL;
-	free(obj->metallic);
-	obj->metallic = NULL;
-	free(obj->emission);
-	obj->emission = NULL;
+	free(obj->materialIds);
+	obj->materialIds = NULL;
 	obj->triangleCount = 0;
 }
 
