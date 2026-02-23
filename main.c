@@ -11,6 +11,9 @@
 #include "render/cpu/font.h"
 #include "render/cpu/ray.h"
 #include "render/color/color.h"
+#ifdef USE_GPU_RASTER
+#include "render/gpu/raster.h"
+#endif
 #define WIDTH 800
 #define HEIGHT 600
 #define ACCUMULATE_STATS 256
@@ -46,6 +49,16 @@ int main() {
 	struct Alphabet alphabet;
 	LoadAlphabet(&alphabet, "assets/chars");
 
+#ifdef USE_GPU_RASTER
+	GpuRaster gpuRaster;
+	GpuRaster_Init(&gpuRaster, WIDTH, HEIGHT, "render/gpu/kernels");
+	int useGpu = gpuRaster.gpuOk;
+	if (!useGpu)
+		printf("[main] GPU rasterizer unavailable, falling back to CPU\n");
+#else
+	int useGpu = 0;
+#endif
+
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, objectCount));
 	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
 	mfb_set_target_fps(0);
@@ -76,13 +89,26 @@ int main() {
 		double setupTime = (double)(clock() - start) / CLOCKS_PER_SEC;
 
 		clock_t rasterStart = clock();
-		for (int i = 0; i < objectCount; i++)
-			RenderObject(&objects[i], &camera, &matLib);
+
+		if (useGpu) {
+#ifdef USE_GPU_RASTER
+			GpuRaster_Clear(&gpuRaster);
+			for (int i = 0; i < objectCount; i++)
+				GpuRaster_RenderObject(&gpuRaster, &objects[i], &camera, i);
+			GpuRaster_Resolve(&gpuRaster, &matLib);
+			GpuRaster_ReadAlbedo(&gpuRaster, camera.framebuffer);
+#endif
+		} else {
+			for (int i = 0; i < objectCount; i++)
+				RenderObject(&objects[i], &camera, &matLib);
+		}
+
 		accumRenderTime += setupTime + (double)(clock() - rasterStart) / CLOCKS_PER_SEC;
 		accumSetupTime += setupTime;
 
 		clock_t shadowStart = clock();
-		ShadowPostProcess(objects, objectCount, &camera, shadowResolution, 64);
+		if (!useGpu)
+			ShadowPostProcess(objects, objectCount, &camera, shadowResolution, 64);
 		accumShadowTime += (double)(clock() - shadowStart) / CLOCKS_PER_SEC;
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
@@ -119,6 +145,9 @@ int main() {
 			free((void *)alphabet.letters[i].tile.pixels);
 		}
 	}
+#ifdef USE_GPU_RASTER
+	if (useGpu) GpuRaster_Destroy(&gpuRaster);
+#endif
 	Scene_Destroy(objects, objectCount);
 	MaterialLib_Destroy(&matLib);
 	destroyCamera(&camera);

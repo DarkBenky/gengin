@@ -144,6 +144,12 @@ void CL_SetArgFloat(CL_Pipeline *pip, int index, float val) {
 	clSetKernelArg(pip->kernel, index, sizeof(float), &val);
 }
 
+void CL_SetArgVec3(CL_Pipeline *pip, int index, float x, float y, float z) {
+	// OpenCL float3 kernel args are 16 bytes (same as float4)
+	float v[4] = {x, y, z, 0.0f};
+	clSetKernelArg(pip->kernel, index, sizeof(v), v);
+}
+
 void CL_Dispatch1D(CL_Context *ctx, CL_Pipeline *pip, size_t global, size_t local) {
 	cl_event ev;
 	cl_int err = clEnqueueNDRangeKernel(ctx->queue, pip->kernel, 1, NULL, &global, &local, 0, NULL, &ev);

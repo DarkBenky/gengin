@@ -7,6 +7,14 @@ LIBS = -lminifb -lX11 -lGL -lpthread -lm
 TARGET = main
 SRC = main.c load/loadObj.c util/bbox.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/tile.c render/cpu/font.c render/color/color.c
 
+# GPU / OpenCL support — enabled automatically when OpenCL headers are present
+OPENCL_HEADER := $(shell echo "\#include <CL/cl.h>" | $(CC) -E -x c - 2>/dev/null && echo yes || echo no)
+ifeq ($(OPENCL_HEADER),yes)
+    CFLAGS += -DUSE_GPU_RASTER
+    SRC    += render/gpu/format.c render/gpu/raster.c
+    LIBS   += -lOpenCL
+endif
+
 FLAMEGRAPH_DIR = .flamegraph
 
 .PHONY: all clean run flame
