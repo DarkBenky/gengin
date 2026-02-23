@@ -11,6 +11,7 @@
 
 void Object_UpdateTransform(Object *obj) {
 	if (!obj) return;
+	obj->rotationMatrix = Matrix_RotationXYZ(obj->rotation);
 	obj->transform = Matrix_TRS(obj->position, obj->rotation, obj->scale);
 	obj->invTransform = Matrix_Invert(obj->transform);
 }

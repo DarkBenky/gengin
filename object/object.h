@@ -17,6 +17,7 @@ typedef struct Object {
 	int triangleCount;
 	float4x4 transform;
 	float4x4 invTransform;
+	float4x4 rotationMatrix;
 } Object;
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename);

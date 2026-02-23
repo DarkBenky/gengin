@@ -54,8 +54,8 @@ static inline float4x4 Matrix_RotationX(float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	result.m[5] = c;
-	result.m[6] = -s;
-	result.m[9] = s;
+	result.m[6] = s;
+	result.m[9] = -s;
 	result.m[10] = c;
 	return result;
 }
@@ -65,8 +65,8 @@ static inline float4x4 Matrix_RotationY(float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	result.m[0] = c;
-	result.m[2] = s;
-	result.m[8] = -s;
+	result.m[2] = -s;
+	result.m[8] = s;
 	result.m[10] = c;
 	return result;
 }
@@ -76,8 +76,8 @@ static inline float4x4 Matrix_RotationZ(float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	result.m[0] = c;
-	result.m[1] = -s;
-	result.m[4] = s;
+	result.m[1] = s;
+	result.m[4] = -s;
 	result.m[5] = c;
 	return result;
 }
@@ -108,6 +108,10 @@ static inline float3 Matrix_TransformVector(float4x4 matrix, float3 vector) {
 	float y = matrix.m[1] * vector.x + matrix.m[5] * vector.y + matrix.m[9] * vector.z;
 	float z = matrix.m[2] * vector.x + matrix.m[6] * vector.y + matrix.m[10] * vector.z;
 	return (float3){x, y, z};
+}
+
+static inline float3 Matrix_TransformNormal(float4x4 rotationMatrix, float3 normal) {
+	return Matrix_TransformVector(rotationMatrix, normal);
 }
 
 static inline float4x4 Matrix_Invert(float4x4 m) {

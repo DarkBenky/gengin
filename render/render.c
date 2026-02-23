@@ -72,7 +72,7 @@ void RenderObject(const Object *obj, const Camera *camera) {
 		float3 v0 = Matrix_TransformPoint(obj->transform, tri.v1);
 		float3 v1 = Matrix_TransformPoint(obj->transform, tri.v2);
 		float3 v2 = Matrix_TransformPoint(obj->transform, tri.v3);
-		float3 normal = Float3_Normalize(Matrix_TransformVector(obj->transform, tri.normal));
+		float3 normal = Float3_Normalize(Matrix_TransformNormal(obj->rotationMatrix, tri.normal));
 
 		float3 toCamera = Float3_Sub(camera->position, v0);
 		if (Float3_Dot(normal, toCamera) <= 0.0f) continue;
