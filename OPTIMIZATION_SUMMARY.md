@@ -129,13 +129,25 @@ Matrix multiplication is also highly cache-friendly and can be vectorized by the
 
 ### Matrix Layout
 
-Matrices are stored in **row-major** order:
+Matrices are stored in a **row-major layout** in memory (m[row*4+col]), but are accessed in a **column-major** fashion by the transform functions for compatibility with standard graphics conventions.
+
+Storage layout:
 ```
-m[0]  m[4]  m[8]   m[12]     [X axis] [Translation X]
-m[1]  m[5]  m[9]   m[13]  =  [Y axis] [Translation Y]
-m[2]  m[6]  m[10]  m[14]     [Z axis] [Translation Z]
-m[3]  m[7]  m[11]  m[15]     [  0  ]  [     1      ]
+m[0]  m[1]  m[2]  m[3]      [row 0]
+m[4]  m[5]  m[6]  m[7]   =  [row 1]
+m[8]  m[9]  m[10] m[11]     [row 2]
+m[12] m[13] m[14] m[15]     [row 3]
 ```
+
+When transformed, column-major access gives:
+```
+X-axis: m[0], m[1], m[2]
+Y-axis: m[4], m[5], m[6]
+Z-axis: m[8], m[9], m[10]
+Translation: m[12], m[13], m[14]
+```
+
+This allows the rotation matrices to match the expected behavior of the original RotateX/Y/Z functions.
 
 ### Transform Order
 
