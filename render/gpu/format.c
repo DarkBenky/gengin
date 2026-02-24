@@ -164,7 +164,10 @@ void CL_Dispatch1D(CL_Context *ctx, CL_Pipeline *pip, size_t global, size_t loca
 }
 
 void CL_Dispatch2D(CL_Context *ctx, CL_Pipeline *pip, size_t width, size_t height, size_t local_x, size_t local_y) {
-	size_t global[2] = {width, height};
+	size_t global[2] = {
+		((width + local_x - 1) / local_x) * local_x,
+		((height + local_y - 1) / local_y) * local_y,
+	};
 	size_t local[2] = {local_x, local_y};
 	cl_event ev;
 	cl_int err = clEnqueueNDRangeKernel(ctx->queue, pip->kernel, 2, NULL, global, local, 0, NULL, &ev);

@@ -17,14 +17,28 @@ endif
 
 FLAMEGRAPH_DIR = .flamegraph
 
-.PHONY: all clean run flame
+# GPU target — always force OpenCL rasterizer on, deduplicate flags/sources already added by auto-detect
+GPU_CFLAGS = $(filter-out -DUSE_GPU_RASTER,$(CFLAGS)) -DUSE_GPU_RASTER
+GPU_SRC    = $(filter-out render/gpu/format.c render/gpu/raster.c,$(SRC)) render/gpu/format.c render/gpu/raster.c
+GPU_LIBS   = $(filter-out -lOpenCL,$(LIBS)) -lOpenCL
+
+CPU_CFLAGS = $(filter-out -DUSE_GPU_RASTER,$(CFLAGS))
+CPU_SRC    = $(filter-out render/gpu/format.c render/gpu/raster.c,$(SRC))
+CPU_LIBS   = $(filter-out -lOpenCL,$(LIBS))
+
+.PHONY: all clean run flame gpu
 
 all: $(TARGET)
 
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
 
-run: $(TARGET)
+gpu: $(GPU_SRC)
+	$(CC) $(GPU_CFLAGS) -o $(TARGET) $^ $(LDFLAGS) $(GPU_LIBS)
+	./$(TARGET)
+
+run: $(CPU_SRC)
+	$(CC) $(CPU_CFLAGS) -o $(TARGET) $^ $(LDFLAGS) $(CPU_LIBS)
 	./$(TARGET)
 
 flame:
