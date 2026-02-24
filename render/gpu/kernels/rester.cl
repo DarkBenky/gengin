@@ -64,3 +64,37 @@ __kernel void renderObject(
     __global float3 *normalOut, // need to be rendered here because is part of Object data
     __global int2 *materialIdObjectIdOut,
 )
+
+__kernel void renderObjects(
+    // Inputs
+    const int *objectIds,
+    const int *objectIdOffsets, // prefix sum of triangle counts for each object
+    const int objectCount,
+
+    // Camera
+    const float3 cameraRight,
+    const float3 cameraUp,
+    const float3 cameraForward,
+    const float3 cameraPosition,
+    const float fov,
+    const int screenWidth,
+    const int screenHeight,
+
+    // Object data
+    const float3 *objectPosition,
+    const float3 *objectRotation,
+    const float3 *objectScale,
+
+    // Object Geometry
+    __global const float3 *v1,
+    __global const float3 *v2,
+    __global const float3 *v3,
+    __global const float3 *normal,
+    __global const int *materialId,
+    const int triangleCount,
+
+    // Output
+    __global float *depthOut, // used for depth testing
+    __global float3 *normalOut, // need to be rendered here because is part of Object data
+    __global int2 *materialIdObjectIdOut,
+)
