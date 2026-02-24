@@ -11,6 +11,9 @@
 #include "render/cpu/font.h"
 #include "render/cpu/ray.h"
 #include "render/color/color.h"
+#ifdef USE_GPU_RASTER
+#include "render/gpu/raster.h"
+#endif
 #define WIDTH 800
 #define HEIGHT 600
 #define ACCUMULATE_STATS 256
@@ -46,9 +49,23 @@ int main() {
 	struct Alphabet alphabet;
 	LoadAlphabet(&alphabet, "assets/chars");
 
+#ifdef USE_GPU_RASTER
+	GpuRaster gpuRaster;
+	GpuRaster_Init(&gpuRaster, WIDTH, HEIGHT, "render/gpu/kernels");
+	int useGpu = gpuRaster.gpuOk;
+	if (useGpu)
+		GpuRaster_UploadScene(&gpuRaster, objects, objectCount, &matLib);
+	else
+		printf("[main] GPU rasterizer unavailable, falling back to CPU\n");
+
+	mfb_set_target_fps(useGpu ? 60 : 0);
+#else
+	int useGpu = 0;
+	mfb_set_target_fps(0);
+#endif
+
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, objectCount));
 	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
-	mfb_set_target_fps(0);
 
 	int frame = 0;
 	int shadowResolution = 4;
@@ -57,6 +74,11 @@ int main() {
 	double accumShadowTime = 0.0;
 	double accumSyncTime = 0.0;
 	double accumPresentTime = 0.0;
+	double accumGpuRasterMs = 0.0;
+	double accumGpuResolveMs = 0.0;
+	double accumGpuReadbackMs = 0.0;
+	double accumGpuReadBufMs = 0.0;
+	double accumGpuShadowMs = 0.0;
 	int accumFrames = 0;
 
 	clock_t syncStart = clock();
@@ -76,14 +98,37 @@ int main() {
 		double setupTime = (double)(clock() - start) / CLOCKS_PER_SEC;
 
 		clock_t rasterStart = clock();
-		for (int i = 0; i < objectCount; i++)
-			RenderObject(&objects[i], &camera, &matLib);
+
+		if (useGpu) {
+#ifdef USE_GPU_RASTER
+			GpuRaster_Clear(&gpuRaster);
+			GpuRaster_RenderAll(&gpuRaster, &camera, objects, objectCount);
+			GpuRaster_Resolve(&gpuRaster);
+			clock_t rbStart = clock();
+			GpuRaster_ReadAlbedo(&gpuRaster, camera.framebuffer);
+			accumGpuReadbackMs += (double)(clock() - rbStart) / CLOCKS_PER_SEC * 1000.0;
+			accumGpuRasterMs += gpuRaster.lastRasterMs;
+			accumGpuResolveMs += gpuRaster.lastResolveMs;
+
+			clock_t rbufStart = clock();
+			GpuRaster_ReadBuffers(&gpuRaster, &camera);
+			accumGpuReadBufMs += (double)(clock() - rbufStart) / CLOCKS_PER_SEC * 1000.0;
+#endif
+		} else {
+			for (int i = 0; i < objectCount; i++)
+				RenderObject(&objects[i], &camera, &matLib);
+		}
+
 		accumRenderTime += setupTime + (double)(clock() - rasterStart) / CLOCKS_PER_SEC;
 		accumSetupTime += setupTime;
 
 		clock_t shadowStart = clock();
 		ShadowPostProcess(objects, objectCount, &camera, shadowResolution, 64);
-		accumShadowTime += (double)(clock() - shadowStart) / CLOCKS_PER_SEC;
+		double shadowSec = (double)(clock() - shadowStart) / CLOCKS_PER_SEC;
+		accumShadowTime += shadowSec;
+#ifdef USE_GPU_RASTER
+		if (useGpu) accumGpuShadowMs += shadowSec * 1000.0;
+#endif
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
 
@@ -96,17 +141,29 @@ int main() {
 		if ((frame % ACCUMULATE_STATS) == 0) {
 			double avgRender = accumRenderTime / accumFrames * 1000.0;
 			double avgSetup = accumSetupTime / accumFrames * 1000.0;
-			double avgRasterize = avgRender - avgSetup;
-			double avgShadow = accumShadowTime / accumFrames * 1000.0;
 			double avgSync = accumSyncTime / accumFrames * 1000.0;
 			double avgPresent = accumPresentTime / accumFrames * 1000.0;
-			double avgTotal = avgRender + avgShadow + avgSync + avgPresent;
-			double avgFps = 1000.0 / avgTotal;
-			double targetFrameTime = 1.0 / 60.0;
-			int maxTriangles60 = (int)(Scene_CountTriangles(objects, objectCount) * ((targetFrameTime * 1000.0) / avgRasterize));
-			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
-				   frame, avgSetup, avgRasterize, avgShadow, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
+			if (useGpu) {
+				double avgKernelRaster = accumGpuRasterMs / accumFrames;
+				double avgKernelResolve = accumGpuResolveMs / accumFrames;
+				double avgReadback = accumGpuReadbackMs / accumFrames;
+				double avgRasterize = avgRender - avgSetup;
+				double avgTotal = avgRender + avgSync + avgPresent;
+				double avgFps = 1000.0 / avgTotal;
+				int maxTris60 = (int)(Scene_CountTriangles(objects, objectCount) * ((1000.0 / 60.0) / avgRasterize));
+				printf("Frame %d  setup: %.2f ms  raster: %.2f ms  kernel-raster: %.2f ms  kernel-resolve: %.2f ms  readback: %.2f ms  readbuf: %.2f ms  shadow: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d\n",
+					   frame, avgSetup, avgRasterize, avgKernelRaster, avgKernelResolve, avgReadback, accumGpuReadBufMs / accumFrames, accumGpuShadowMs / accumFrames, avgSync, avgPresent, avgTotal, avgFps, maxTris60);
+			} else {
+				double avgRasterize = avgRender - avgSetup;
+				double avgShadow = accumShadowTime / accumFrames * 1000.0;
+				double avgTotal = avgRender + avgShadow + avgSync + avgPresent;
+				double avgFps = 1000.0 / avgTotal;
+				int maxTris60 = (int)(Scene_CountTriangles(objects, objectCount) * ((1000.0 / 60.0) / avgRasterize));
+				printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
+					   frame, avgSetup, avgRasterize, avgShadow, avgSync, avgPresent, avgTotal, avgFps, maxTris60, shadowResolution);
+			}
 			accumRenderTime = accumSetupTime = accumShadowTime = accumSyncTime = accumPresentTime = 0.0;
+			accumGpuRasterMs = accumGpuResolveMs = accumGpuReadbackMs = accumGpuReadBufMs = accumGpuShadowMs = 0.0;
 			accumFrames = 0;
 		}
 
@@ -119,6 +176,9 @@ int main() {
 			free((void *)alphabet.letters[i].tile.pixels);
 		}
 	}
+#ifdef USE_GPU_RASTER
+	if (useGpu) GpuRaster_Destroy(&gpuRaster);
+#endif
 	Scene_Destroy(objects, objectCount);
 	MaterialLib_Destroy(&matLib);
 	destroyCamera(&camera);

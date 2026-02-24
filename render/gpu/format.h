@@ -64,6 +64,7 @@ void CL_SetArgBuffer(CL_Pipeline* pip, int index, CL_Buffer* buf);
 void CL_SetArgImage (CL_Pipeline* pip, int index, CL_Image*  img);
 void CL_SetArgInt   (CL_Pipeline* pip, int index, int        val);
 void CL_SetArgFloat (CL_Pipeline* pip, int index, float      val);
+void CL_SetArgVec3  (CL_Pipeline* pip, int index, float x, float y, float z);
 
 // DISPATCH
 void CL_Dispatch1D(CL_Context* ctx, CL_Pipeline* pip, size_t global, size_t local);

@@ -7,16 +7,38 @@ LIBS = -lminifb -lX11 -lGL -lpthread -lm
 TARGET = main
 SRC = main.c load/loadObj.c util/bbox.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/tile.c render/cpu/font.c render/color/color.c
 
+# GPU / OpenCL support — enabled automatically when OpenCL headers are present
+OPENCL_HEADER := $(shell echo "\#include <CL/cl.h>" | $(CC) -E -x c - 2>/dev/null && echo yes || echo no)
+ifeq ($(OPENCL_HEADER),yes)
+    CFLAGS += -DUSE_GPU_RASTER
+    SRC    += render/gpu/format.c render/gpu/raster.c
+    LIBS   += -lOpenCL
+endif
+
 FLAMEGRAPH_DIR = .flamegraph
 
-.PHONY: all clean run flame
+# GPU target — always force OpenCL rasterizer on, deduplicate flags/sources already added by auto-detect
+GPU_CFLAGS = $(filter-out -DUSE_GPU_RASTER,$(CFLAGS)) -DUSE_GPU_RASTER
+GPU_SRC    = $(filter-out render/gpu/format.c render/gpu/raster.c,$(SRC)) render/gpu/format.c render/gpu/raster.c
+GPU_LIBS   = $(filter-out -lOpenCL,$(LIBS)) -lOpenCL
+
+CPU_CFLAGS = $(filter-out -DUSE_GPU_RASTER,$(CFLAGS))
+CPU_SRC    = $(filter-out render/gpu/format.c render/gpu/raster.c,$(SRC))
+CPU_LIBS   = $(filter-out -lOpenCL,$(LIBS))
+
+.PHONY: all clean run flame gpu
 
 all: $(TARGET)
 
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
 
-run: $(TARGET)
+gpu: $(GPU_SRC)
+	$(CC) $(GPU_CFLAGS) -o $(TARGET) $^ $(LDFLAGS) $(GPU_LIBS)
+	./$(TARGET)
+
+run: $(CPU_SRC)
+	$(CC) $(CPU_CFLAGS) -o $(TARGET) $^ $(LDFLAGS) $(CPU_LIBS)
 	./$(TARGET)
 
 flame:
