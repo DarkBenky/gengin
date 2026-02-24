@@ -33,6 +33,7 @@ inline bool isVisible(
     return true;
 }
 
+#define float4 float3 // c code uses float4 for alignment, but we only need xyz components
 
 __kernel void renderObjects(
     // Inputs
@@ -69,8 +70,8 @@ __kernel void renderObjects(
     // Output
     float4 *positionDepthBuffer, // [x][y] = (pos.x, pos.y, pos.z, depth)
     float4 *colorBuffer, // [x][y] = (r, g, b, _unused)
-    float3 *normalBuffer, // [x][y] = (nx, ny, nz)
-    float3 *reflectionBuffer, // [x][y] = (rx, ry, rz)
+    float4 *normalBuffer, // [x][y] = (nx, ny, nz, _unused)
+    float4 *reflectionBuffer, // [x][y] = (rx, ry, rz, _unused)
     int *materialIdBuffer, // [x][y] = materialId
     int *objectIdBuffer // [x][y] = objectId
 )
