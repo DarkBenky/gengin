@@ -1,8 +1,10 @@
-// Pipeline
-// Render 2D texture containing triangle IDs and object IDs for each pixel\
-// Render Albedo, Normal, Depth, etc. using the triangle and object IDs from the first pass
+typedef struct Material {
+	float3 color;
+	float roughness;
+	float metallic;
+	float emission;
+} Material;
 
-// check if a triangle is visible from the camera (back-face culling + frustum culling)
 inline bool isVisible(
     const float3 point,
     const float3 normal,
@@ -32,43 +34,11 @@ inline bool isVisible(
 }
 
 
-
-__kernel void renderObject(
-    // Inputs
-    const int objectId,
-
-    // Camera
-    const float3 cameraRight,
-    const float3 cameraUp,
-    const float3 cameraForward,
-    const float3 cameraPosition,
-    const float fov,
-    const int screenWidth,
-    const int screenHeight,
-
-    // Object data
-    const float3 objectPosition,
-    const float3 objectRotation,
-    const float3 objectScale,
-
-    // Object Geometry
-    __global const float3 *v1,
-    __global const float3 *v2,
-    __global const float3 *v3,
-    __global const float3 *normal,
-    __global const int *materialId,
-    const int triangleCount,
-
-    // Output
-    __global float *depthOut, // used for depth testing
-    __global float3 *normalOut, // need to be rendered here because is part of Object data
-    __global int2 *materialIdObjectIdOut,
-)
-
 __kernel void renderObjects(
     // Inputs
     const int *objectIds,
-    const int *objectIdOffsets, // prefix sum of triangle counts for each object
+    const int *objectIdOffsets, // [obj1 offset][obj2 offset][obj3 offset]...
+    const int2 *objectScreenBounds, // [obj1 bounds][obj2 bounds][obj3 bounds]...
     const int objectCount,
 
     // Camera
@@ -81,9 +51,9 @@ __kernel void renderObjects(
     const int screenHeight,
 
     // Object data
-    const float3 *objectPosition,
-    const float3 *objectRotation,
-    const float3 *objectScale,
+    const float3 *objectPositions, // [obj1 pos][obj2 pos][obj3 pos]...
+    const float3 *objectRotations, // [obj1 rot][obj2 rot][obj3 rot]...
+    const float3 *objectScales, // [obj1 scale][obj2 scale][obj3 scale]...
 
     // Object Geometry
     __global const float3 *v1,
@@ -93,8 +63,14 @@ __kernel void renderObjects(
     __global const int *materialId,
     const int triangleCount,
 
+    // Material data
+    const Material *materials, // [mat1][mat2][mat3]...
+
     // Output
-    __global float *depthOut, // used for depth testing
-    __global float3 *normalOut, // need to be rendered here because is part of Object data
-    __global int2 *materialIdObjectIdOut,
+    float4 *positionDepthBuffer, // [x][y] = (pos.x, pos.y, pos.z, depth)
+    float4 *colorBuffer, // [x][y] = (r, g, b, _unused)
+    float3 *normalBuffer, // [x][y] = (nx, ny, nz)
+    float3 *reflectionBuffer, // [x][y] = (rx, ry, rz)
+    int *materialIdBuffer, // [x][y] = materialId
+    int *objectIdBuffer // [x][y] = objectId
 )
