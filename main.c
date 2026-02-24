@@ -11,8 +11,8 @@
 #include "render/cpu/font.h"
 #include "render/cpu/ray.h"
 #include "render/color/color.h"
-#define WIDTH 800
-#define HEIGHT 600
+#define WIDTH 720
+#define HEIGHT 480
 #define ACCUMULATE_STATS 256
 
 int main() {
