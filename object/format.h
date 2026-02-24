@@ -6,6 +6,9 @@
 
 #define FLT_MAX 3.402823466e+38F
 #define FLT_MIN -3.402823466e+38F
+// Depth sentinel: memset(0x7F) gives 0x7F7F7F7F ~= 3.394e38 per pixel, which is
+// less than FLT_MAX. Use DEPTH_FAR for all depth empty-pixel checks.
+#define DEPTH_FAR 1e30f
 
 typedef uint8_t u8;
 typedef uint16_t u16;

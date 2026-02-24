@@ -123,7 +123,7 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, c
 		for (int y = 0; y < height; y += step) {
 			for (int x = 0; x < width; x += step) {
 				int idx = y * width + x;
-				if (camera->depthBuffer[idx] >= FLT_MAX || camera->depthBuffer[idx] <= 0.0f) continue;
+				if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) continue;
 
 				float3 worldPos = camera->positionBuffer[idx];
 				float3 normal = camera->normalBuffer[idx];
@@ -136,7 +136,7 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, c
 					for (int dy = 0; dy < step && y + dy < height; dy++) {
 						for (int dx = 0; dx < step && x + dx < width; dx++) {
 							int fillIdx = (y + dy) * width + (x + dx);
-							if (camera->depthBuffer[fillIdx] < FLT_MAX && camera->depthBuffer[fillIdx] > 0.0f) {
+							if (camera->depthBuffer[fillIdx] < DEPTH_FAR && camera->depthBuffer[fillIdx] > 0.0f) {
 								float3 fillNormal = camera->normalBuffer[fillIdx];
 								if (fillNormal.y >= 0.5f)
 									camera->tempBuffer_1[fillIdx] = 0.0f;
@@ -146,7 +146,7 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, c
 				}
 
 				float3 reflDir = camera->reflectBuffer[idx];
-				Color reflectionColor = PackColorFast01(IntersectBBoxColor(objects, objectCount, biasedPos, reflDir));
+				Color reflectionColor = IntersectBBoxColor(objects, objectCount, biasedPos, reflDir);
 				Color blendColor = reflectionColor != 0 ? reflectionColor : skyColor;
 
 				for (int dy = 0; dy < step && y + dy < height; dy++) {
@@ -165,7 +165,12 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, c
 	for (int i = 0; i < size; i++) {
 		if (camera->reflectCache[i] != 0)
 			camera->framebuffer[i] = BlendColors50(camera->framebuffer[i], camera->reflectCache[i]);
-		float shadowAmount = 1.0f - camera->shadowCache[i];
-		camera->framebuffer[i] = DarkenColor(camera->framebuffer[i], shadowAmount * 0.5f);
+		// Integer fixed-point darken: factor = 0.5 + 0.5*shadowCache in [128..256]/256
+		uint32 scale = 128 + (uint32)(camera->shadowCache[i] * 128.0f);
+		Color c = camera->framebuffer[i];
+		uint32 r = (((c >> 16) & 0xFF) * scale) >> 8;
+		uint32 g = (((c >> 8) & 0xFF) * scale) >> 8;
+		uint32 b = ((c & 0xFF) * scale) >> 8;
+		camera->framebuffer[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
 	}
 }

@@ -7,18 +7,15 @@
 void clearBuffers(Camera *camera) {
 	if (!camera) return;
 	int size = camera->screenWidth * camera->screenHeight;
+	// framebuffer: cleared to black background each frame.
 	memset(camera->framebuffer, 0, size * sizeof(uint32));
-	memset(camera->normalBuffer, 0, size * sizeof(float3));
-	memset(camera->positionBuffer, 0, size * sizeof(float3));
-	memset(camera->reflectBuffer, 0, size * sizeof(float3));
-	memset(camera->tempBuffer_1, 0, size * sizeof(float));
-	memset(camera->tempBuffer_2, 0, size * sizeof(float));
-	memset(camera->tempBuffer_3, 0, size * sizeof(float));
-	memset(camera->tempFramebuffer, 0, size * sizeof(Color));
-	memset(camera->tempFramebuffer2, 0, size * sizeof(Color));
-	for (int i = 0; i < size; i++) {
-		camera->depthBuffer[i] = FLT_MAX;
-	}
+	// depthBuffer: 0x7F7F7F7F ~= 3.4e38, indistinguishable from FLT_MAX for depth comparisons.
+	memset(camera->depthBuffer, 0x7F, size * sizeof(float));
+	// normalBuffer, positionBuffer, reflectBuffer: only read at pixels where
+	// depthBuffer < FLT_MAX (i.e. pixels written by RenderObject), so no clear needed.
+	// tempBuffer_1: fully overwritten with 1.0f in ShadowPostProcess before any read.
+	// tempBuffer_2: written by blur horizontal pass before vertical pass reads it.
+	// tempFramebuffer/2, tempBuffer_3: not read before being written each frame.
 }
 
 void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, float3 position, float3 forward, float3 lightDir) {
