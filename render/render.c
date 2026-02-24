@@ -128,6 +128,28 @@ static inline void Float3_Normalize4(float3 v[4]) {
 	}
 }
 
+/* Reflect 4 vectors against the same normal — no normalize, direction sign is sufficient for AABB tests. */
+static inline void Float3_Reflect4(const float3 v[4], float3 n, float3 out[4]) {
+	__m128 nx = _mm_set1_ps(n.x), ny = _mm_set1_ps(n.y), nz = _mm_set1_ps(n.z);
+	__m128 vx = _mm_set_ps(v[3].x, v[2].x, v[1].x, v[0].x);
+	__m128 vy = _mm_set_ps(v[3].y, v[2].y, v[1].y, v[0].y);
+	__m128 vz = _mm_set_ps(v[3].z, v[2].z, v[1].z, v[0].z);
+	__m128 dot = _mm_add_ps(_mm_add_ps(_mm_mul_ps(nx, vx), _mm_mul_ps(ny, vy)), _mm_mul_ps(nz, vz));
+	__m128 td = _mm_mul_ps(_mm_set1_ps(2.0f), dot);
+	__m128 rx = _mm_sub_ps(vx, _mm_mul_ps(td, nx));
+	__m128 ry = _mm_sub_ps(vy, _mm_mul_ps(td, ny));
+	__m128 rz = _mm_sub_ps(vz, _mm_mul_ps(td, nz));
+	float xb[4], yb[4], zb[4];
+	_mm_storeu_ps(xb, rx);
+	_mm_storeu_ps(yb, ry);
+	_mm_storeu_ps(zb, rz);
+	for (int k = 0; k < 4; k++) {
+		out[k].x = xb[k];
+		out[k].y = yb[k];
+		out[k].z = zb[k];
+	}
+}
+
 /* Reflect 4 vectors against the same normal, then normalize — all in one SoA pass */
 static inline void Float3_ReflectNormalize4(const float3 v[4], float3 n, float3 out[4]) {
 	__m128 nx = _mm_set1_ps(n.x), ny = _mm_set1_ps(n.y), nz = _mm_set1_ps(n.z);
@@ -209,6 +231,36 @@ static float3 RotateXYZ(float3 v, float3 rotation) {
 	return v;
 }
 
+typedef struct {
+	float m[3][3];
+} RotMat3;
+
+/* Build rotation matrix M = Rz*Ry*Rx from Euler angles — 6 trig calls total. */
+static inline RotMat3 BuildRotMat3(float3 r) {
+	float cx = cosf(r.x), sx = sinf(r.x);
+	float cy = cosf(r.y), sy = sinf(r.y);
+	float cz = cosf(r.z), sz = sinf(r.z);
+	RotMat3 m;
+	m.m[0][0] = cy * cz;
+	m.m[0][1] = sx * sy * cz - cx * sz;
+	m.m[0][2] = cx * sy * cz + sx * sz;
+	m.m[1][0] = cy * sz;
+	m.m[1][1] = sx * sy * sz + cx * cz;
+	m.m[1][2] = cx * sy * sz - sx * cz;
+	m.m[2][0] = -sy;
+	m.m[2][1] = sx * cy;
+	m.m[2][2] = cx * cy;
+	return m;
+}
+
+/* Apply rotation matrix — 9 muls + 6 adds, no trig. */
+static inline float3 ApplyRotMat3(float3 v, RotMat3 m) {
+	return (float3){
+		m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z,
+		m.m[1][0] * v.x + m.m[1][1] * v.y + m.m[1][2] * v.z,
+		m.m[2][0] * v.x + m.m[2][1] * v.y + m.m[2][2] * v.z};
+}
+
 static float3 ReflectBasedOnMaterial(float3 rayDir, float3 normal, float roughness, float seed) {
 	float u = fmodf(seed * 127.1f + 311.7f, 1.0f);
 	float v = fmodf(seed * 269.5f + 183.3f, 1.0f);
@@ -255,11 +307,15 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 	float aspect = camera->aspect;
 	float fovScale = camera->fovScale;
 
+	// Precompute once per object — replaces 24 cosf/sinf calls per triangle with 9 muls + 6 adds.
+	RotMat3 rotMat = BuildRotMat3(obj->rotation);
+
 	for (int i = 0; i < obj->triangleCount; i++) {
-		float3 v0 = RotateXYZ(obj->v1[i], obj->rotation);
-		float3 v1 = RotateXYZ(obj->v2[i], obj->rotation);
-		float3 v2 = RotateXYZ(obj->v3[i], obj->rotation);
-		float3 normal = Float3_Normalize(RotateXYZ(obj->normals[i], obj->rotation));
+		float3 v0 = ApplyRotMat3(obj->v1[i], rotMat);
+		float3 v1 = ApplyRotMat3(obj->v2[i], rotMat);
+		float3 v2 = ApplyRotMat3(obj->v3[i], rotMat);
+		// The rotation matrix is orthonormal so it preserves vector length — no Normalize needed.
+		float3 normal = ApplyRotMat3(obj->normals[i], rotMat);
 
 		v0 = (float3){v0.x * obj->scale.x, v0.y * obj->scale.y, v0.z * obj->scale.z};
 		v1 = (float3){v1.x * obj->scale.x, v1.y * obj->scale.y, v1.z * obj->scale.z};
@@ -309,10 +365,8 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 		float invZ1 = 1.0f / z1;
 		float invZ2 = 1.0f / z2;
 
-		float3 norm = normal;
-
-		float NdotL = MaxF(0.0f, Float3_Dot(norm, camera->renderLightDir));
-		float NdotH = MaxF(0.0f, Float3_Dot(norm, camera->halfVec));
+		float NdotL = MaxF(0.0f, Float3_Dot(normal, camera->renderLightDir));
+		float NdotH = MaxF(0.0f, Float3_Dot(normal, camera->halfVec));
 		const Material *mat = &lib->entries[obj->materialIds[i]];
 		float roughness = mat->roughness;
 		float shininess = (1.0f - roughness) * 128.0f + 1.0f;
@@ -373,30 +427,27 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 							float p0 = cw0 * invZ0;
 							float p1 = cw1 * invZ1;
 							float p2 = cw2 * invZ2;
-							float pSum = p0 + p1 + p2;
-							if (pSum != 0.0f) {
-								float invPSum = 1.0f / pSum;
-								float3 worldPos = {
-									(v0.x * p0 + v1.x * p1 + v2.x * p2) * invPSum,
-									(v0.y * p0 + v1.y * p1 + v2.y * p2) * invPSum,
-									(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
-								camera->positionBuffer[idx] = worldPos;
-								bRay[bCount] = Float3_Sub(worldPos, camera->position);
-								bIdx[bCount] = idx;
-								bCount++;
-							}
+							// invPSum == invArea*depth: pSum = (cw0*invZ0+…) = invZ/invArea, so 1/pSum = invArea/invZ = invArea*depth
+							float invPSum = invArea * depth;
+							float3 worldPos = {
+								(v0.x * p0 + v1.x * p1 + v2.x * p2) * invPSum,
+								(v0.y * p0 + v1.y * p1 + v2.y * p2) * invPSum,
+								(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
+							camera->positionBuffer[idx] = worldPos;
+							bRay[bCount] = Float3_Sub(worldPos, camera->position);
+							bIdx[bCount] = idx;
+							bCount++;
 							camera->framebuffer[idx] = packedColor;
 						}
 					}
 				}
 
-				/* batch normalize + reflect for however many valid pixels we got */
+				// reflectBuffer is used only for AABB t-comparisons, direction sign is sufficient — no normalize.
 				if (bCount > 0) {
 					for (int k = bCount; k < 4; k++)
 						bRay[k] = (float3){1.0f, 0.0f, 0.0f, 0.0f};
-					Float3_Normalize4(bRay);
 					float3 bRefl[4];
-					Float3_ReflectNormalize4(bRay, norm, bRefl);
+					Float3_Reflect4(bRay, normal, bRefl);
 					for (int k = 0; k < bCount; k++)
 						camera->reflectBuffer[bIdx[k]] = bRefl[k];
 				}
@@ -414,21 +465,17 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 					float p0 = w0 * invZ0;
 					float p1 = w1 * invZ1;
 					float p2 = w2 * invZ2;
-					float pSum = p0 + p1 + p2;
 					int idx = y * camera->screenWidth + x;
 					if (depth < camera->depthBuffer[idx]) {
 						camera->depthBuffer[idx] = depth;
 						camera->normalBuffer[idx] = normal;
-						if (pSum != 0.0f) {
-							float invPSum = 1.0f / pSum;
-							float3 worldPos = {
-								(v0.x * p0 + v1.x * p1 + v2.x * p2) * invPSum,
-								(v0.y * p0 + v1.y * p1 + v2.y * p2) * invPSum,
-								(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
-							camera->positionBuffer[idx] = worldPos;
-							float3 rayDir = Float3_Normalize(Float3_Sub(worldPos, camera->position));
-							camera->reflectBuffer[idx] = Float3_Normalize(Float3_Reflect(rayDir, normal));
-						}
+						float invPSum = invArea * depth;
+						float3 worldPos = {
+							(v0.x * p0 + v1.x * p1 + v2.x * p2) * invPSum,
+							(v0.y * p0 + v1.y * p1 + v2.y * p2) * invPSum,
+							(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
+						camera->positionBuffer[idx] = worldPos;
+						camera->reflectBuffer[idx] = Float3_Reflect(Float3_Sub(worldPos, camera->position), normal);
 						camera->framebuffer[idx] = packedColor;
 					}
 				}

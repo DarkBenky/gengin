@@ -23,7 +23,7 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
-	obj->_temp = color; // store color in temp for now, can be removed later
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
 
 	const int triCount = 12;
 
@@ -171,9 +171,9 @@ bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, 
 	return false;
 }
 
-float3 IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir) {
+Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir) {
 	float closestT = FLT_MAX;
-	float3 hitColor = {0, 0, 0};
+	Color hitColor = 0;
 
 	for (int i = 0; i < objectCount; i++) {
 		float tMin, tMax;

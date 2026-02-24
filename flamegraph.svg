@@ -1,6 +1,6 @@
 <?xml version="1.0" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg version="1.1" width="1200" height="2134" onload="init(evt)" viewBox="0 0 1200 2134" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg version="1.1" width="1200" height="534" onload="init(evt)" viewBox="0 0 1200 534" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
 <!-- NOTES:  -->
 <defs>
@@ -422,1129 +422,637 @@
 	}
 ]]>
 </script>
-<rect x="0.0" y="0" width="1200.0" height="2134.0" fill="url(#background)"  />
+<rect x="0.0" y="0" width="1200.0" height="534.0" fill="url(#background)"  />
 <text id="title" x="600.00" y="24" >Flame Graph</text>
-<text id="details" x="10.00" y="2117" > </text>
+<text id="details" x="10.00" y="517" > </text>
 <text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
 <text id="search" x="1090.00" y="24" >Search</text>
 <text id="ignorecase" x="1174.00" y="24" >ic</text>
-<text id="matched" x="1090.00" y="2117" > </text>
+<text id="matched" x="1090.00" y="517" > </text>
 <g id="frames">
 <g >
-<title>rmapiControlWithSecInfoTls (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1861" width="1.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
-<text  x="14.55" y="1871.5" ></text>
+<title>kdispApplyAggressiveVblankHandlingWar_IMPL (110,386,038 samples, 0.24%)</title><rect x="10.0" y="101" width="2.8" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="13.00" y="111.5" ></text>
 </g>
 <g >
-<title>dmaUpdateVASpace_GF100 (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1781" width="1.2" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
-<text  x="13.31" y="1791.5" ></text>
+<title>sched_tick (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="261" width="1.2" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="1173.26" y="271.5" ></text>
 </g>
 <g >
-<title>[unknown] (98,155,969 samples, 0.21%)</title><rect x="39.4" y="2053" width="2.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="42.37" y="2063.5" ></text>
+<title>_kgspRpcRecvPoll (44,157,604 samples, 0.10%)</title><rect x="17.1" y="165" width="1.1" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="20.09" y="175.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1141" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1151.5" ></text>
+<title>__libc_start_main@@GLIBC_2.34 (43,343,570,528 samples, 94.45%)</title><rect x="75.4" y="437" width="1114.6" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="78.44" y="447.5" >__libc_start_main@@GLIBC_2.34</text>
 </g>
 <g >
-<title>entry_SYSRETQ_unsafe_stack (49,263,959 samples, 0.10%)</title><rect x="40.6" y="37" width="1.2" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
-<text  x="43.59" y="47.5" ></text>
+<title>[unknown] (578,863,243 samples, 1.26%)</title><rect x="60.6" y="453" width="14.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="63.55" y="463.5" ></text>
 </g>
 <g >
-<title>_kgspRpcRecvPoll (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1733" width="1.9" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
-<text  x="14.55" y="1743.5" ></text>
+<title>x64_sys_call (319,873,302 samples, 0.70%)</title><rect x="10.0" y="389" width="8.2" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="13.00" y="399.5" ></text>
 </g>
 <g >
-<title>__hrtimer_run_queues (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1909" width="1.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
-<text  x="772.01" y="1919.5" ></text>
+<title>MinF32 (95,791,759 samples, 0.21%)</title><rect x="1129.3" y="341" width="2.4" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="1132.28" y="351.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="533" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="543.5" ></text>
+<title>resservResourceFactory (9,532,860 samples, 0.02%)</title><rect x="14.0" y="213" width="0.3" height="15.0" fill="rgb(208,16,4)" rx="2" ry="2" />
+<text  x="17.03" y="223.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1429" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1439.5" ></text>
+<title>RayBoxItersect (963,432,971 samples, 2.10%)</title><rect x="1107.0" y="357" width="24.7" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="1109.97" y="367.5" >R..</text>
 </g>
 <g >
-<title>__nvoc_objCreate_KernelChannelGroupApi (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1781" width="0.3" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
-<text  x="13.00" y="1791.5" ></text>
+<title>MinF32 (384,915,801 samples, 0.84%)</title><rect x="1159.1" y="341" width="9.9" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="1162.09" y="351.5" ></text>
 </g>
 <g >
-<title>rmapiControlWithSecInfoTls (83,825,050 samples, 0.18%)</title><rect x="13.4" y="1893" width="2.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
-<text  x="16.37" y="1903.5" ></text>
+<title>__memset_avx2_unaligned_erms (530,561,012 samples, 1.16%)</title><rect x="1172.7" y="389" width="13.6" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="1175.66" y="399.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="965" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="975.5" ></text>
+<title>__x64_sys_close (47,708,623 samples, 0.10%)</title><rect x="122.3" y="293" width="1.2" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="125.28" y="303.5" ></text>
 </g>
 <g >
-<title>binapiControl_IMPL (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1829" width="0.2" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
-<text  x="16.37" y="1839.5" ></text>
+<title>_kgspRpcRecvPoll (110,386,038 samples, 0.24%)</title><rect x="10.0" y="117" width="2.8" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="13.00" y="127.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="213" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="223.5" ></text>
+<title>rpcRmApiControl_GSP (50,138,867 samples, 0.11%)</title><rect x="14.3" y="101" width="1.3" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="17.28" y="111.5" ></text>
 </g>
 <g >
-<title>[libnvidia-glcore.so.580.126.09] (218,042,165 samples, 0.46%)</title><rect x="10.0" y="2053" width="5.5" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
-<text  x="13.00" y="2063.5" ></text>
+<title>clock (48,545,224 samples, 0.11%)</title><rect x="1188.7" y="389" width="1.3" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="1191.75" y="399.5" ></text>
 </g>
 <g >
-<title>x64_sys_call (217,999,538 samples, 0.46%)</title><rect x="10.0" y="1989" width="5.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
-<text  x="13.00" y="1999.5" ></text>
+<title>__x64_sys_ioctl (319,873,302 samples, 0.70%)</title><rect x="10.0" y="373" width="8.2" height="15.0" fill="rgb(249,204,49)" rx="2" ry="2" />
+<text  x="13.00" y="383.5" ></text>
 </g>
 <g >
-<title>_issueRpcAndWait (76,300,257 samples, 0.16%)</title><rect x="13.6" y="1781" width="1.9" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
-<text  x="16.56" y="1791.5" ></text>
+<title>hrtimer_interrupt (47,455,249 samples, 0.10%)</title><rect x="941.4" y="325" width="1.3" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="944.43" y="335.5" ></text>
 </g>
 <g >
-<title>perf_adjust_freq_unthr_context (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1813" width="1.2" height="15.0" fill="rgb(236,146,35)" rx="2" ry="2" />
-<text  x="851.89" y="1823.5" ></text>
+<title>kchangrpapiConstruct_IMPL (110,386,038 samples, 0.24%)</title><rect x="10.0" y="165" width="2.8" height="15.0" fill="rgb(245,188,44)" rx="2" ry="2" />
+<text  x="13.00" y="175.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1205" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1215.5" ></text>
+<title>kdispApplyAggressiveVblankHandlingWar_IMPL (5,684,149 samples, 0.01%)</title><rect x="15.6" y="133" width="0.1" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="18.57" y="143.5" ></text>
 </g>
 <g >
-<title>serverInterMap (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1861" width="1.2" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
-<text  x="13.31" y="1871.5" ></text>
+<title>x64_sys_call (47,708,623 samples, 0.10%)</title><rect x="122.3" y="309" width="1.2" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="125.28" y="319.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1557" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1567.5" ></text>
+<title>kceGetDeviceCaps_IMPL (50,138,867 samples, 0.11%)</title><rect x="14.3" y="213" width="1.3" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="17.28" y="223.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="677" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="687.5" ></text>
+<title>_start (43,343,570,528 samples, 94.45%)</title><rect x="75.4" y="453" width="1114.6" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="78.44" y="463.5" >_start</text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="869" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="879.5" ></text>
+<title>BuildRotMat3 (47,736,202 samples, 0.10%)</title><rect x="790.6" y="373" width="1.2" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="793.59" y="383.5" ></text>
 </g>
 <g >
-<title>_kgspRpcRecvPoll (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1781" width="0.2" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
-<text  x="16.37" y="1791.5" ></text>
+<title>[[vdso]] (48,545,224 samples, 0.11%)</title><rect x="1188.7" y="357" width="1.3" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1191.75" y="367.5" ></text>
 </g>
 <g >
-<title>__GI___ioctl (217,999,538 samples, 0.46%)</title><rect x="10.0" y="2037" width="5.5" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
-<text  x="13.00" y="2047.5" ></text>
+<title>_rmapiRmControl (153,594,285 samples, 0.33%)</title><rect x="14.3" y="261" width="3.9" height="15.0" fill="rgb(236,143,34)" rx="2" ry="2" />
+<text  x="17.28" y="271.5" ></text>
 </g>
 <g >
-<title>hrtimer_interrupt (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1909" width="1.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
-<text  x="851.89" y="1919.5" ></text>
+<title>__sysvec_apic_timer_interrupt (47,455,249 samples, 0.10%)</title><rect x="941.4" y="341" width="1.3" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="944.43" y="351.5" ></text>
 </g>
 <g >
-<title>__nvoc_objCreateDynamic (12,172,123 samples, 0.03%)</title><rect x="10.0" y="1797" width="0.3" height="15.0" fill="rgb(228,105,25)" rx="2" ry="2" />
-<text  x="13.00" y="1807.5" ></text>
+<title>kgspHealthCheck_TU102 (53,613,665 samples, 0.12%)</title><rect x="15.7" y="133" width="1.4" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="18.71" y="143.5" ></text>
 </g>
 <g >
-<title>kdispApplyAggressiveVblankHandlingWar_IMPL (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1717" width="1.9" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
-<text  x="14.55" y="1727.5" ></text>
+<title>__hrtimer_run_queues (47,455,249 samples, 0.10%)</title><rect x="941.4" y="309" width="1.3" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="944.43" y="319.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1653" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1663.5" ></text>
+<title>resservResourceFactory (110,386,038 samples, 0.24%)</title><rect x="10.0" y="213" width="2.8" height="15.0" fill="rgb(208,16,4)" rx="2" ry="2" />
+<text  x="13.00" y="223.5" ></text>
 </g>
 <g >
-<title>do_syscall_64 (217,999,538 samples, 0.46%)</title><rect x="10.0" y="2005" width="5.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
-<text  x="13.00" y="2015.5" ></text>
+<title>hrtimer_interrupt (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="325" width="1.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1173.26" y="335.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1413" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1423.5" ></text>
+<title>do_syscall_64 (319,873,302 samples, 0.70%)</title><rect x="10.0" y="405" width="8.2" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="13.00" y="415.5" ></text>
 </g>
 <g >
-<title>crashcatEngineGetNextCrashReport_IMPL (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1733" width="0.2" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
-<text  x="16.37" y="1743.5" ></text>
+<title>rmapiAllocWithSecInfoTls (156,719,893 samples, 0.34%)</title><rect x="10.0" y="293" width="4.0" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="13.00" y="303.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="997" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1007.5" ></text>
+<title>_nv04ControlWithSecInfo (153,594,285 samples, 0.33%)</title><rect x="14.3" y="309" width="3.9" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="17.28" y="319.5" ></text>
 </g>
 <g >
-<title>asm_sysvec_apic_timer_interrupt (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1973" width="1.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
-<text  x="772.01" y="1983.5" ></text>
+<title>intrIsVectorPending_TU102 (110,386,038 samples, 0.24%)</title><rect x="10.0" y="69" width="2.8" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="13.00" y="79.5" ></text>
 </g>
 <g >
-<title>subdeviceCtrlCmdFbGetInfoV2_IMPL (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1781" width="1.9" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
-<text  x="14.55" y="1791.5" ></text>
+<title>update_process_times (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="277" width="1.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1173.26" y="287.5" ></text>
 </g>
 <g >
-<title>__cosf_fma (146,126,349 samples, 0.31%)</title><rect x="762.9" y="1957" width="3.7" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
-<text  x="765.89" y="1967.5" ></text>
+<title>__memset_avx2_unaligned_erms (485,447,182 samples, 1.06%)</title><rect x="75.4" y="405" width="12.5" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="78.44" y="415.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="101" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="111.5" ></text>
+<title>kchannelCtrlCmdBind_IMPL (5,684,149 samples, 0.01%)</title><rect x="15.6" y="213" width="0.1" height="15.0" fill="rgb(212,33,7)" rx="2" ry="2" />
+<text  x="18.57" y="223.5" ></text>
 </g>
 <g >
-<title>__libc_start_call_main (45,700,800,891 samples, 97.30%)</title><rect x="41.8" y="2021" width="1148.2" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
-<text  x="44.83" y="2031.5" >__libc_start_call_main</text>
+<title>sched_balance_trigger (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="245" width="1.2" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="1173.26" y="255.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1941" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1951.5" ></text>
+<title>LoadAlphabet (47,708,623 samples, 0.10%)</title><rect x="122.3" y="389" width="1.2" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="125.28" y="399.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1045" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1055.5" ></text>
+<title>BlurBuffer (93,585,722 samples, 0.20%)</title><rect x="1100.8" y="373" width="2.5" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="1103.85" y="383.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="229" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="239.5" ></text>
+<title>_issueRpcAndWait (44,157,604 samples, 0.10%)</title><rect x="17.1" y="181" width="1.1" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="20.09" y="191.5" ></text>
 </g>
 <g >
-<title>main (45,700,800,891 samples, 97.30%)</title><rect x="41.8" y="2005" width="1148.2" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
-<text  x="44.83" y="2015.5" >main</text>
+<title>__sysvec_apic_timer_interrupt (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="341" width="1.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1173.26" y="351.5" ></text>
 </g>
 <g >
-<title>rmclientInterMap_IMPL (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1845" width="1.2" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
-<text  x="13.31" y="1855.5" ></text>
+<title>_issueRpcAndWait (5,684,149 samples, 0.01%)</title><rect x="15.6" y="165" width="0.1" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="18.57" y="175.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1573" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1583.5" ></text>
+<title>Float3_Dot (48,077,368 samples, 0.10%)</title><rect x="791.8" y="373" width="1.3" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
+<text  x="794.82" y="383.5" ></text>
 </g>
 <g >
-<title>mmuWalkProcessPdes (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1733" width="1.2" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
-<text  x="13.31" y="1743.5" ></text>
+<title>ShadowPostProcess (8,897,763,154 samples, 19.39%)</title><rect x="942.7" y="389" width="228.8" height="15.0" fill="rgb(223,83,19)" rx="2" ry="2" />
+<text  x="945.65" y="399.5" >ShadowPostProcess</text>
 </g>
 <g >
-<title>_kgspRpcDrainEvents (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1765" width="0.2" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
-<text  x="16.37" y="1775.5" ></text>
+<title>RmIoctl (319,873,302 samples, 0.70%)</title><rect x="10.0" y="325" width="8.2" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="13.00" y="335.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1813" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1823.5" ></text>
+<title>osDevReadReg032 (5,684,149 samples, 0.01%)</title><rect x="15.6" y="69" width="0.1" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="18.57" y="79.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1397" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1407.5" ></text>
+<title>osDevReadReg032 (53,613,665 samples, 0.12%)</title><rect x="15.7" y="69" width="1.4" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="18.71" y="79.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="725" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="735.5" ></text>
+<title>RayBoxItersect (1,448,217,992 samples, 3.16%)</title><rect x="1131.7" y="357" width="37.3" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="1134.74" y="367.5" >Ray..</text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1157" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1167.5" ></text>
+<title>kchannelBindToRunlist_IMPL (5,684,149 samples, 0.01%)</title><rect x="15.6" y="197" width="0.1" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="18.57" y="207.5" ></text>
 </g>
 <g >
-<title>intrGetPendingLowLatencyHwDisplayIntr_TU102 (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1701" width="1.9" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
-<text  x="14.55" y="1711.5" ></text>
+<title>fclose@@GLIBC_2.2.5 (47,708,623 samples, 0.10%)</title><rect x="122.3" y="373" width="1.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="125.28" y="383.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="901" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="911.5" ></text>
+<title>kperfBoostSet_IMPL (53,613,665 samples, 0.12%)</title><rect x="15.7" y="213" width="1.4" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="18.71" y="223.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="69" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="79.5" ></text>
+<title>__cosf_fma (47,612,458 samples, 0.10%)</title><rect x="939.0" y="373" width="1.2" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="941.98" y="383.5" ></text>
 </g>
 <g >
-<title>rmapiAllocWithSecInfo (12,172,555 samples, 0.03%)</title><rect x="10.0" y="1877" width="0.3" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
-<text  x="13.00" y="1887.5" ></text>
+<title>sysvec_apic_timer_interrupt (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="357" width="1.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1173.26" y="367.5" ></text>
 </g>
 <g >
-<title>RotateZ (97,566,274 samples, 0.21%)</title><rect x="766.6" y="1973" width="2.4" height="15.0" fill="rgb(207,12,2)" rx="2" ry="2" />
-<text  x="769.56" y="1983.5" ></text>
+<title>serverAllocResource (156,719,893 samples, 0.34%)</title><rect x="10.0" y="261" width="4.0" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="13.00" y="271.5" ></text>
 </g>
 <g >
-<title>RotateX (101,061,264 samples, 0.22%)</title><rect x="757.9" y="1957" width="2.6" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
-<text  x="760.91" y="1967.5" ></text>
+<title>_clientAllocResourceHelper (110,386,038 samples, 0.24%)</title><rect x="10.0" y="229" width="2.8" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="13.00" y="239.5" ></text>
 </g>
 <g >
-<title>Float3_Normalize (49,046,960 samples, 0.10%)</title><rect x="462.0" y="1973" width="1.2" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
-<text  x="464.95" y="1983.5" ></text>
+<title>_kgspRpcRecvPoll (50,138,867 samples, 0.11%)</title><rect x="14.3" y="69" width="1.3" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="17.28" y="79.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1589" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1599.5" ></text>
+<title>Float3_Reflect4 (96,479,424 samples, 0.21%)</title><rect x="117.3" y="389" width="2.5" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="120.34" y="399.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="437" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="447.5" ></text>
+<title>ApplyRotMat3 (49,608,543 samples, 0.11%)</title><rect x="789.3" y="373" width="1.3" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="792.32" y="383.5" ></text>
 </g>
 <g >
-<title>[unknown]  (950,787,136 samples, 2.02%)</title><rect x="15.5" y="2053" width="23.9" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
-<text  x="18.48" y="2063.5" >[..</text>
+<title>_kgspRpcRecvPoll (46,333,855 samples, 0.10%)</title><rect x="12.8" y="197" width="1.2" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="15.84" y="207.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="261" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="271.5" ></text>
+<title>[libnvidia-glcore.so.580.126.09] (578,863,243 samples, 1.26%)</title><rect x="60.6" y="437" width="14.8" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="63.55" y="447.5" ></text>
 </g>
 <g >
-<title>osDevReadReg032 (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1685" width="0.2" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
-<text  x="16.37" y="1695.5" ></text>
+<title>all (45,888,571,849 samples, 100%)</title><rect x="10.0" y="485" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="495.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="981" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="991.5" ></text>
+<title>RenderObject (31,855,399,139 samples, 69.42%)</title><rect x="123.5" y="389" width="819.2" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="126.51" y="399.5" >RenderObject</text>
 </g>
 <g >
-<title>serverControl (83,825,050 samples, 0.18%)</title><rect x="13.4" y="1845" width="2.1" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
-<text  x="16.37" y="1855.5" ></text>
+<title>nvlinkCtrlCmdBusGetNvlinkCaps (50,138,867 samples, 0.11%)</title><rect x="14.3" y="149" width="1.3" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="17.28" y="159.5" ></text>
 </g>
 <g >
-<title>_clientAllocResourceHelper (12,172,555 samples, 0.03%)</title><rect x="10.0" y="1829" width="0.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
-<text  x="13.00" y="1839.5" ></text>
+<title>_kgspRpcDrainEvents (53,613,665 samples, 0.12%)</title><rect x="15.7" y="149" width="1.4" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="18.71" y="159.5" ></text>
 </g>
 <g >
-<title>__x64_sys_ioctl (217,999,538 samples, 0.46%)</title><rect x="10.0" y="1973" width="5.5" height="15.0" fill="rgb(249,204,49)" rx="2" ry="2" />
-<text  x="13.00" y="1983.5" ></text>
+<title>_kgspRpcRecvPoll (53,613,665 samples, 0.12%)</title><rect x="15.7" y="165" width="1.4" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="18.71" y="175.5" ></text>
 </g>
 <g >
-<title>rmapiAllocWithSecInfoTls (12,172,555 samples, 0.03%)</title><rect x="10.0" y="1893" width="0.3" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
-<text  x="13.00" y="1903.5" ></text>
+<title>[libnvidia-glcore.so.580.126.09] (47,530,432 samples, 0.10%)</title><rect x="74.2" y="405" width="1.2" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="77.22" y="415.5" ></text>
 </g>
 <g >
-<title>PackColorF (441,678,326 samples, 0.94%)</title><rect x="1014.7" y="1973" width="11.1" height="15.0" fill="rgb(236,143,34)" rx="2" ry="2" />
-<text  x="1017.69" y="1983.5" ></text>
+<title>kmem_cache_free (47,708,623 samples, 0.10%)</title><rect x="122.3" y="245" width="1.2" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="125.28" y="255.5" ></text>
 </g>
 <g >
-<title>Float3_Sub (341,683,809 samples, 0.73%)</title><rect x="749.3" y="1973" width="8.6" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
-<text  x="752.33" y="1983.5" ></text>
+<title>RayBoxItersect (49,445,462 samples, 0.11%)</title><rect x="1169.0" y="373" width="1.3" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="1171.98" y="383.5" ></text>
 </g>
 <g >
-<title>_kgspRpcDrainEvents (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1701" width="0.3" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
-<text  x="13.00" y="1711.5" ></text>
+<title>tick_nohz_handler (47,455,249 samples, 0.10%)</title><rect x="941.4" y="293" width="1.3" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="944.43" y="303.5" ></text>
 </g>
 <g >
-<title>Nv04AllocWithAccessSecInfo (12,172,555 samples, 0.03%)</title><rect x="10.0" y="1909" width="0.3" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
-<text  x="13.00" y="1919.5" ></text>
+<title>Float3_Reflect4 (5,238,545,978 samples, 11.42%)</title><rect x="793.1" y="373" width="134.7" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="796.06" y="383.5" >Float3_Reflect4</text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="661" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="671.5" ></text>
+<title>_regRead (110,386,038 samples, 0.24%)</title><rect x="10.0" y="53" width="2.8" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="13.00" y="63.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="405" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="415.5" ></text>
+<title>entry_SYSCALL_64_after_hwframe (47,708,623 samples, 0.10%)</title><rect x="122.3" y="341" width="1.2" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="125.28" y="351.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="741" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="751.5" ></text>
+<title>MaxF32 (48,333,758 samples, 0.11%)</title><rect x="1105.7" y="357" width="1.3" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="1108.73" y="367.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1717" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1727.5" ></text>
+<title>rmapiControlWithSecInfo (153,594,285 samples, 0.33%)</title><rect x="14.3" y="277" width="3.9" height="15.0" fill="rgb(235,142,34)" rx="2" ry="2" />
+<text  x="17.28" y="287.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1893" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1903.5" ></text>
+<title>timeoutCheck (50,138,867 samples, 0.11%)</title><rect x="14.3" y="53" width="1.3" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="17.28" y="63.5" ></text>
 </g>
 <g >
-<title>kgspHealthCheck_TU102 (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1685" width="0.3" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
-<text  x="13.00" y="1695.5" ></text>
+<title>Nv04AllocWithAccessSecInfo (156,719,893 samples, 0.34%)</title><rect x="10.0" y="309" width="4.0" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="13.00" y="319.5" ></text>
 </g>
 <g >
-<title>BlurBuffer (146,432,063 samples, 0.31%)</title><rect x="799.7" y="1973" width="3.7" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
-<text  x="802.69" y="1983.5" ></text>
+<title>__memmove_avx_unaligned_erms (46,973,177 samples, 0.10%)</title><rect x="1171.5" y="389" width="1.2" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="1174.46" y="399.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="197" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="207.5" ></text>
+<title>rpcRmApiControl_GSP (53,613,665 samples, 0.12%)</title><rect x="15.7" y="197" width="1.4" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="18.71" y="207.5" ></text>
 </g>
 <g >
-<title>[libnvidia-glcore.so.580.126.09] (48,812,993 samples, 0.10%)</title><rect x="39.4" y="2037" width="1.2" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
-<text  x="42.37" y="2047.5" ></text>
+<title>rm_ioctl (319,873,302 samples, 0.70%)</title><rect x="10.0" y="341" width="8.2" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="13.00" y="351.5" ></text>
 </g>
 <g >
-<title>_ctrl_convert_v2_NV2080_CTRL_CMD_FB_GET_INFO (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1893" width="1.9" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
-<text  x="14.55" y="1903.5" ></text>
+<title>kceGetNvlinkCaps_IMPL (50,138,867 samples, 0.11%)</title><rect x="14.3" y="197" width="1.3" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="17.28" y="207.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1061" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1071.5" ></text>
+<title>IntersectBBoxColor (1,448,217,992 samples, 3.16%)</title><rect x="1131.7" y="373" width="37.3" height="15.0" fill="rgb(213,36,8)" rx="2" ry="2" />
+<text  x="1134.74" y="383.5" >Int..</text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="485" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="495.5" ></text>
+<title>Float3_Sub (95,853,419 samples, 0.21%)</title><rect x="119.8" y="389" width="2.5" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="122.82" y="399.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="181" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="191.5" ></text>
+<title>rpcRmApiAlloc_GSP (110,386,038 samples, 0.24%)</title><rect x="10.0" y="149" width="2.8" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="13.00" y="159.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1493" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1503.5" ></text>
+<title>rpcRmApiControl_GSP (5,684,149 samples, 0.01%)</title><rect x="15.6" y="181" width="0.1" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="18.57" y="191.5" ></text>
 </g>
 <g >
-<title>RayBoxItersect (48,632,621 samples, 0.10%)</title><rect x="1025.8" y="1973" width="1.2" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
-<text  x="1028.79" y="1983.5" ></text>
+<title>rpcRmApiControl_GSP (44,157,604 samples, 0.10%)</title><rect x="17.1" y="197" width="1.1" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="20.09" y="207.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="821" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="831.5" ></text>
+<title>_regRead (5,684,149 samples, 0.01%)</title><rect x="15.6" y="85" width="0.1" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="18.57" y="95.5" ></text>
 </g>
 <g >
-<title>_kgspRpcRecvPoll (76,300,257 samples, 0.16%)</title><rect x="13.6" y="1765" width="1.9" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
-<text  x="16.56" y="1775.5" ></text>
+<title>__hrtimer_run_queues (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="309" width="1.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="1173.26" y="319.5" ></text>
 </g>
 <g >
-<title>RayBoxItersect (683,014,953 samples, 1.45%)</title><rect x="875.9" y="1957" width="17.2" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
-<text  x="878.92" y="1967.5" ></text>
+<title>BlendColors50 (1,143,877,817 samples, 2.49%)</title><rect x="87.9" y="389" width="29.4" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="90.92" y="399.5" >Bl..</text>
 </g>
 <g >
-<title>[unknown] (49,342,112 samples, 0.11%)</title><rect x="40.6" y="2037" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="2047.5" ></text>
+<title>__nvoc_objCreateDynamic (110,386,038 samples, 0.24%)</title><rect x="10.0" y="197" width="2.8" height="15.0" fill="rgb(228,105,25)" rx="2" ry="2" />
+<text  x="13.00" y="207.5" ></text>
 </g>
 <g >
-<title>serverAllocResource (12,172,555 samples, 0.03%)</title><rect x="10.0" y="1861" width="0.3" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
-<text  x="13.00" y="1871.5" ></text>
+<title>entry_SYSCALL_64 (48,545,224 samples, 0.11%)</title><rect x="1188.7" y="341" width="1.3" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1191.75" y="351.5" ></text>
 </g>
 <g >
-<title>sched_use_asym_prio (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1813" width="1.2" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
-<text  x="772.01" y="1823.5" ></text>
+<title>_issueRpcAndWait (110,386,038 samples, 0.24%)</title><rect x="10.0" y="133" width="2.8" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="13.00" y="143.5" ></text>
 </g>
 <g >
-<title>crashcatEngineLoadWayfinder_IMPL (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1717" width="0.2" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
-<text  x="16.37" y="1727.5" ></text>
+<title>knvlinkExecGspRmRpc_IMPL (50,138,867 samples, 0.11%)</title><rect x="14.3" y="117" width="1.3" height="15.0" fill="rgb(216,54,12)" rx="2" ry="2" />
+<text  x="17.28" y="127.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1909" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1919.5" ></text>
+<title>serverControl (153,594,285 samples, 0.33%)</title><rect x="14.3" y="245" width="3.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="17.28" y="255.5" ></text>
 </g>
 <g >
-<title>_nv04ControlWithSecInfo (156,487,694 samples, 0.33%)</title><rect x="11.5" y="1909" width="4.0" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
-<text  x="14.55" y="1919.5" ></text>
+<title>IntersectAnyBBox (1,108,024,881 samples, 2.41%)</title><rect x="1103.3" y="373" width="28.4" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1106.25" y="383.5" >In..</text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1285" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1295.5" ></text>
+<title>tick_do_update_jiffies64 (47,455,249 samples, 0.10%)</title><rect x="941.4" y="277" width="1.3" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="944.43" y="287.5" ></text>
 </g>
 <g >
-<title>perf_ibs_stop (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1781" width="1.2" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
-<text  x="851.89" y="1791.5" ></text>
+<title>_issueRpcAndWait (53,613,665 samples, 0.12%)</title><rect x="15.7" y="181" width="1.4" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="18.71" y="191.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="885" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="895.5" ></text>
+<title>MinF (48,117,688 samples, 0.10%)</title><rect x="937.7" y="373" width="1.3" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="940.74" y="383.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="597" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="607.5" ></text>
+<title>crashcatEngineLoadWayfinder_IMPL (53,613,665 samples, 0.12%)</title><rect x="15.7" y="101" width="1.4" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="18.71" y="111.5" ></text>
 </g>
 <g >
-<title>MaxF32 (97,440,141 samples, 0.21%)</title><rect x="873.5" y="1957" width="2.4" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
-<text  x="876.47" y="1967.5" ></text>
+<title>_checkTimeout (50,138,867 samples, 0.11%)</title><rect x="14.3" y="37" width="1.3" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="17.28" y="47.5" ></text>
 </g>
 <g >
-<title>srso_alias_safe_ret (10,106,742 samples, 0.02%)</title><rect x="1189.7" y="1957" width="0.3" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
-<text  x="1192.74" y="1967.5" ></text>
+<title>__int128 int::* (47,920,648 samples, 0.10%)</title><rect x="940.2" y="373" width="1.2" height="15.0" fill="rgb(231,119,28)" rx="2" ry="2" />
+<text  x="943.20" y="383.5" ></text>
 </g>
 <g >
-<title>_start (45,700,800,891 samples, 97.30%)</title><rect x="41.8" y="2053" width="1148.2" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
-<text  x="44.83" y="2063.5" >_start</text>
+<title>__close_nocancel (47,708,623 samples, 0.10%)</title><rect x="122.3" y="357" width="1.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="125.28" y="367.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1189" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1199.5" ></text>
+<title>clientCopyResource_IMPL (9,532,860 samples, 0.02%)</title><rect x="14.0" y="245" width="0.3" height="15.0" fill="rgb(213,41,9)" rx="2" ry="2" />
+<text  x="17.03" y="255.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="805" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="815.5" ></text>
+<title>Float3_Sub (388,010,045 samples, 0.85%)</title><rect x="927.8" y="373" width="9.9" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="930.76" y="383.5" ></text>
 </g>
 <g >
-<title>UnpackColor (339,885,664 samples, 0.72%)</title><rect x="1027.0" y="1973" width="8.5" height="15.0" fill="rgb(222,78,18)" rx="2" ry="2" />
-<text  x="1030.01" y="1983.5" ></text>
+<title>do_syscall_64 (47,708,623 samples, 0.10%)</title><rect x="122.3" y="325" width="1.2" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="125.28" y="335.5" ></text>
 </g>
 <g >
-<title>Float3_Dot (49,165,445 samples, 0.10%)</title><rect x="460.7" y="1973" width="1.3" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
-<text  x="463.72" y="1983.5" ></text>
+<title>main (45,888,503,146 samples, 100.00%)</title><rect x="10.0" y="469" width="1180.0" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="13.00" y="479.5" >main</text>
 </g>
 <g >
-<title>_issueRpcAndWait (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1733" width="0.3" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
-<text  x="13.00" y="1743.5" ></text>
+<title>_issueRpcAndWait (46,333,855 samples, 0.10%)</title><rect x="12.8" y="213" width="1.2" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="15.84" y="223.5" ></text>
 </g>
 <g >
-<title>sysvec_apic_timer_interrupt (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1957" width="1.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
-<text  x="772.01" y="1967.5" ></text>
+<title>sysvec_apic_timer_interrupt (47,455,249 samples, 0.10%)</title><rect x="941.4" y="357" width="1.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="944.43" y="367.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1749" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1759.5" ></text>
+<title>__GI___ioctl (319,873,302 samples, 0.70%)</title><rect x="10.0" y="437" width="8.2" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="13.00" y="447.5" ></text>
 </g>
 <g >
-<title>RenderObject (28,065,726,842 samples, 59.76%)</title><rect x="65.1" y="1989" width="705.1" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
-<text  x="68.14" y="1999.5" >RenderObject</text>
+<title>Nv04DupObjectWithSecInfo (9,532,860 samples, 0.02%)</title><rect x="14.0" y="309" width="0.3" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="17.03" y="319.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="709" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="719.5" ></text>
+<title>_clientAllocResourceHelper (9,532,860 samples, 0.02%)</title><rect x="14.0" y="229" width="0.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="17.03" y="239.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="837" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="847.5" ></text>
+<title>__powf_fma (94,962,357 samples, 0.21%)</title><rect x="1186.3" y="389" width="2.4" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="1189.31" y="399.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1125" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1135.5" ></text>
+<title>clock_gettime@@GLIBC_2.17 (48,545,224 samples, 0.11%)</title><rect x="1188.7" y="373" width="1.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1191.75" y="383.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,302,778 samples, 0.10%)</title><rect x="40.6" y="2021" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="2031.5" ></text>
+<title>asm_sysvec_apic_timer_interrupt (47,455,249 samples, 0.10%)</title><rect x="941.4" y="373" width="1.3" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="944.43" y="383.5" ></text>
 </g>
 <g >
-<title>kgspHealthCheck_TU102 (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1749" width="0.2" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
-<text  x="16.37" y="1759.5" ></text>
+<title>intrGetPendingLowLatencyHwDisplayIntr_TU102 (110,386,038 samples, 0.24%)</title><rect x="10.0" y="85" width="2.8" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="13.00" y="95.5" ></text>
 </g>
 <g >
-<title>PackColor (4,840,478,057 samples, 10.31%)</title><rect x="893.1" y="1973" width="121.6" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
-<text  x="896.08" y="1983.5" >PackColor</text>
+<title>[unknown] (47,530,432 samples, 0.10%)</title><rect x="74.2" y="421" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="77.22" y="431.5" ></text>
 </g>
 <g >
-<title>dmaAllocMap_IMPL (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1813" width="1.2" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
-<text  x="13.31" y="1823.5" ></text>
+<title>serverAllocResourceUnderLock (156,719,893 samples, 0.34%)</title><rect x="10.0" y="245" width="4.0" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="13.00" y="255.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="613" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="623.5" ></text>
+<title>update_wall_time (47,455,249 samples, 0.10%)</title><rect x="941.4" y="261" width="1.3" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="944.43" y="271.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1029" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1039.5" ></text>
+<title>timeoutCheck (46,333,855 samples, 0.10%)</title><rect x="12.8" y="181" width="1.2" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="15.84" y="191.5" ></text>
 </g>
 <g >
-<title>mmuWalkMap (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1749" width="1.2" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
-<text  x="13.31" y="1759.5" ></text>
+<title>kceIsCeNvlinkP2P_GP100 (50,138,867 samples, 0.11%)</title><rect x="14.3" y="181" width="1.3" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="17.28" y="191.5" ></text>
 </g>
 <g >
-<title>BlendColors50 (98,047,309 samples, 0.21%)</title><rect x="797.2" y="1973" width="2.5" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
-<text  x="800.23" y="1983.5" ></text>
+<title>_regRead (53,613,665 samples, 0.12%)</title><rect x="15.7" y="85" width="1.4" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="18.71" y="95.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="293" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="303.5" ></text>
+<title>rmresControl_Prologue_IMPL (44,157,604 samples, 0.10%)</title><rect x="17.1" y="213" width="1.1" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="20.09" y="223.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1733" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1743.5" ></text>
+<title>asm_sysvec_apic_timer_interrupt (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="373" width="1.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1173.26" y="383.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1877" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1887.5" ></text>
+<title>[unknown]  (1,646,128,455 samples, 3.59%)</title><rect x="18.2" y="453" width="42.4" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="21.23" y="463.5" >[un..</text>
 </g>
 <g >
-<title>virtmemMapTo_IMPL (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1829" width="1.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
-<text  x="13.31" y="1839.5" ></text>
+<title>timeoutCheck (44,157,604 samples, 0.10%)</title><rect x="17.1" y="149" width="1.1" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="20.09" y="159.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="469" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="479.5" ></text>
+<title>rpcRmApiAlloc_GSP (46,333,855 samples, 0.10%)</title><rect x="12.8" y="229" width="1.2" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="15.84" y="239.5" ></text>
 </g>
 <g >
-<title>crashcatEngineLoadWayfinder_IMPL (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1653" width="0.3" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
-<text  x="13.00" y="1663.5" ></text>
+<title>__timekeeping_advance (47,455,249 samples, 0.10%)</title><rect x="941.4" y="245" width="1.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="944.43" y="255.5" ></text>
 </g>
 <g >
-<title>RotateY (97,034,039 samples, 0.21%)</title><rect x="760.5" y="1957" width="2.4" height="15.0" fill="rgb(214,41,10)" rx="2" ry="2" />
-<text  x="763.45" y="1967.5" ></text>
+<title>[libnvidia-glcore.so.580.126.09] (319,873,302 samples, 0.70%)</title><rect x="10.0" y="453" width="8.2" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="13.00" y="463.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1333" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1343.5" ></text>
+<title>rmapiDupObjectWithSecInfoTls (9,532,860 samples, 0.02%)</title><rect x="14.0" y="293" width="0.3" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="17.03" y="303.5" ></text>
 </g>
 <g >
-<title>native_read_msr (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1765" width="1.2" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
-<text  x="851.89" y="1775.5" ></text>
+<title>BlendColors50 (47,484,645 samples, 0.10%)</title><rect x="1099.6" y="373" width="1.2" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="1102.62" y="383.5" ></text>
 </g>
 <g >
-<title>nvidia_unlocked_ioctl (217,999,538 samples, 0.46%)</title><rect x="10.0" y="1957" width="5.5" height="15.0" fill="rgb(241,170,40)" rx="2" ry="2" />
-<text  x="13.00" y="1967.5" ></text>
+<title>crashcatEngineGetNextCrashReport_IMPL (53,613,665 samples, 0.12%)</title><rect x="15.7" y="117" width="1.4" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="18.71" y="127.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1221" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1231.5" ></text>
+<title>rmapiControlWithSecInfoTls (153,594,285 samples, 0.33%)</title><rect x="14.3" y="293" width="3.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="17.28" y="303.5" ></text>
 </g>
 <g >
-<title>_regRead (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1637" width="0.3" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
-<text  x="13.00" y="1647.5" ></text>
+<title>entry_SYSCALL_64_after_hwframe (319,873,302 samples, 0.70%)</title><rect x="10.0" y="421" width="8.2" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="13.00" y="431.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="629" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="639.5" ></text>
+<title>main (42,858,123,346 samples, 93.40%)</title><rect x="87.9" y="405" width="1102.1" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="90.92" y="415.5" >main</text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="133" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="143.5" ></text>
+<title>tick_nohz_handler (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="293" width="1.2" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="1173.26" y="303.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="949" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="959.5" ></text>
+<title>__libc_start_call_main (43,343,570,528 samples, 94.45%)</title><rect x="75.4" y="421" width="1114.6" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="78.44" y="431.5" >__libc_start_call_main</text>
 </g>
 <g >
-<title>rmapiMapWithSecInfoTls (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1893" width="1.2" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
-<text  x="13.31" y="1903.5" ></text>
+<title>_issueRpcAndWait (50,138,867 samples, 0.11%)</title><rect x="14.3" y="85" width="1.3" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="17.28" y="95.5" ></text>
 </g>
 <g >
-<title>_kgspRpcRecvPoll (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1717" width="0.3" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
-<text  x="13.00" y="1727.5" ></text>
+<title>nvidia_unlocked_ioctl (319,873,302 samples, 0.70%)</title><rect x="10.0" y="357" width="8.2" height="15.0" fill="rgb(241,170,40)" rx="2" ry="2" />
+<text  x="13.00" y="367.5" ></text>
 </g>
 <g >
-<title>Float3_Sub (294,112,338 samples, 0.63%)</title><rect x="55.3" y="1989" width="7.4" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
-<text  x="58.32" y="1999.5" ></text>
+<title>__fput (47,708,623 samples, 0.10%)</title><rect x="122.3" y="261" width="1.2" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="125.28" y="271.5" ></text>
 </g>
 <g >
-<title>sched_tick (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1861" width="1.2" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
-<text  x="772.01" y="1871.5" ></text>
+<title>_kgspRpcRecvPoll (5,684,149 samples, 0.01%)</title><rect x="15.6" y="149" width="0.1" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="18.57" y="159.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1541" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1551.5" ></text>
+<title>_checkTimeout (46,333,855 samples, 0.10%)</title><rect x="12.8" y="165" width="1.2" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="15.84" y="175.5" ></text>
 </g>
 <g >
-<title>tick_nohz_handler (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1893" width="1.2" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
-<text  x="772.01" y="1903.5" ></text>
+<title>__nvoc_objCreate_KernelChannelGroupApi (110,386,038 samples, 0.24%)</title><rect x="10.0" y="181" width="2.8" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="13.00" y="191.5" ></text>
 </g>
 <g >
-<title>serverAllocResourceUnderLock (12,172,555 samples, 0.03%)</title><rect x="10.0" y="1845" width="0.3" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
-<text  x="13.00" y="1855.5" ></text>
+<title>intrGetPendingLowLatencyHwDisplayIntr_TU102 (5,684,149 samples, 0.01%)</title><rect x="15.6" y="117" width="0.1" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="18.57" y="127.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1637" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1647.5" ></text>
+<title>serverCopyResource (9,532,860 samples, 0.02%)</title><rect x="14.0" y="261" width="0.3" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="17.03" y="271.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="373" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="383.5" ></text>
+<title>resControl_IMPL (153,594,285 samples, 0.33%)</title><rect x="14.3" y="229" width="3.9" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="17.28" y="239.5" ></text>
 </g>
 <g >
-<title>rm_ioctl (217,999,538 samples, 0.46%)</title><rect x="10.0" y="1941" width="5.5" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
-<text  x="13.00" y="1951.5" ></text>
+<title>intrIsVectorPending_TU102 (5,684,149 samples, 0.01%)</title><rect x="15.6" y="101" width="0.1" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="18.57" y="111.5" ></text>
 </g>
 <g >
-<title>RotateXYZ (344,221,652 samples, 0.73%)</title><rect x="757.9" y="1973" width="8.7" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
-<text  x="760.91" y="1983.5" ></text>
+<title>os_get_monotonic_time_ns (46,333,855 samples, 0.10%)</title><rect x="12.8" y="149" width="1.2" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="15.84" y="159.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1013" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1023.5" ></text>
+<title>_checkTimeout (44,157,604 samples, 0.10%)</title><rect x="17.1" y="133" width="1.1" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="20.09" y="143.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1845" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1855.5" ></text>
+<title>rmapiAllocWithSecInfo (156,719,893 samples, 0.34%)</title><rect x="10.0" y="277" width="4.0" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="13.00" y="287.5" ></text>
 </g>
 <g >
-<title>resControl_IMPL (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1797" width="1.9" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
-<text  x="14.55" y="1807.5" ></text>
+<title>srso_alias_safe_ret (46,636,553 samples, 0.10%)</title><rect x="1170.3" y="229" width="1.2" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="1173.26" y="239.5" ></text>
 </g>
 <g >
-<title>_rmControlForDeprecatedApi (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1877" width="1.9" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
-<text  x="14.55" y="1887.5" ></text>
+<title>srso_alias_safe_ret (9,532,860 samples, 0.02%)</title><rect x="14.0" y="197" width="0.3" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="17.03" y="207.5" ></text>
 </g>
 <g >
-<title>main (46,967,786,161 samples, 100.00%)</title><rect x="10.0" y="2069" width="1180.0" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
-<text  x="13.00" y="2079.5" >main</text>
+<title>osDevReadReg032 (110,386,038 samples, 0.24%)</title><rect x="10.0" y="37" width="2.8" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="13.00" y="47.5" ></text>
 </g>
 <g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="693" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="703.5" ></text>
+<title>knvlinkSyncLinkMasksAndVbiosInfo_IMPL (50,138,867 samples, 0.11%)</title><rect x="14.3" y="133" width="1.3" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="17.28" y="143.5" ></text>
 </g>
 <g >
-<title>sched_balance_trigger (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1845" width="1.2" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
-<text  x="772.01" y="1855.5" ></text>
+<title>fput_close_sync (47,708,623 samples, 0.10%)</title><rect x="122.3" y="277" width="1.2" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="125.28" y="287.5" ></text>
 </g>
 <g >
-<title>idle_cpu (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1797" width="1.2" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
-<text  x="772.01" y="1807.5" ></text>
+<title>rmapiDupObjectWithSecInfo (9,532,860 samples, 0.02%)</title><rect x="14.0" y="277" width="0.3" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="17.03" y="287.5" ></text>
 </g>
 <g >
-<title>initCamera (10,140,600 samples, 0.02%)</title><rect x="1189.7" y="1989" width="0.3" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
-<text  x="1192.74" y="1999.5" ></text>
-</g>
-<g >
-<title>MaxF32 (48,837,466 samples, 0.10%)</title><rect x="867.5" y="1941" width="1.3" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
-<text  x="870.54" y="1951.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="2005" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="2015.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="933" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="943.5" ></text>
-</g>
-<g >
-<title>_regRead (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1701" width="0.2" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
-<text  x="16.37" y="1711.5" ></text>
-</g>
-<g >
-<title>DarkenColor (1,860,729,272 samples, 3.96%)</title><rect x="803.4" y="1973" width="46.7" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
-<text  x="806.37" y="1983.5" >Dark..</text>
-</g>
-<g >
-<title>__memset_avx2_unaligned_erms (10,140,600 samples, 0.02%)</title><rect x="1189.7" y="1973" width="0.3" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
-<text  x="1192.74" y="1983.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1445" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1455.5" ></text>
-</g>
-<g >
-<title>MinF32 (187,341,700 samples, 0.40%)</title><rect x="868.8" y="1941" width="4.7" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
-<text  x="871.77" y="1951.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1781" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1791.5" ></text>
-</g>
-<g >
-<title>RmIoctl (217,999,538 samples, 0.46%)</title><rect x="10.0" y="1925" width="5.5" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
-<text  x="13.00" y="1935.5" ></text>
-</g>
-<g >
-<title>__sysvec_apic_timer_interrupt (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1941" width="1.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
-<text  x="772.01" y="1951.5" ></text>
-</g>
-<g >
-<title>PackColorF (96,670,877 samples, 0.21%)</title><rect x="62.7" y="1989" width="2.4" height="15.0" fill="rgb(236,143,34)" rx="2" ry="2" />
-<text  x="65.71" y="1999.5" ></text>
-</g>
-<g >
-<title>Float3_Normalize4 (3,182,089,414 samples, 6.78%)</title><rect x="463.2" y="1973" width="79.9" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
-<text  x="466.19" y="1983.5" >Float3_No..</text>
-</g>
-<g >
-<title>rpcRmApiControl_GSP (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1765" width="1.9" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
-<text  x="14.55" y="1775.5" ></text>
-</g>
-<g >
-<title>Float3_Normalize4 (98,046,966 samples, 0.21%)</title><rect x="52.9" y="1989" width="2.4" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
-<text  x="55.85" y="1999.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="517" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="527.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1349" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1359.5" ></text>
-</g>
-<g >
-<title>asm_sysvec_apic_timer_interrupt (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1957" width="1.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
-<text  x="851.89" y="1967.5" ></text>
-</g>
-<g >
-<title>__irqentry_text_end (49,078,958 samples, 0.10%)</title><rect x="1182.2" y="1973" width="1.2" height="15.0" fill="rgb(248,199,47)" rx="2" ry="2" />
-<text  x="1185.19" y="1983.5" ></text>
-</g>
-<g >
-<title>crashcatEngineGetNextCrashReport_IMPL (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1669" width="0.3" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
-<text  x="13.00" y="1679.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1605" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1615.5" ></text>
-</g>
-<g >
-<title>__memset_avx2_unaligned_erms (5,885,881,230 samples, 12.53%)</title><rect x="1035.5" y="1989" width="147.9" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
-<text  x="1038.55" y="1999.5" >__memset_avx2_unal..</text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="277" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="287.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="917" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="927.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1989" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1999.5" ></text>
-</g>
-<g >
-<title>rmresControl_Prologue_IMPL (76,300,257 samples, 0.16%)</title><rect x="13.6" y="1813" width="1.9" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
-<text  x="16.56" y="1823.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1509" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1519.5" ></text>
-</g>
-<g >
-<title>rmapiControlWithSecInfo (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1845" width="1.9" height="15.0" fill="rgb(235,142,34)" rx="2" ry="2" />
-<text  x="14.55" y="1855.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="565" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="575.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="421" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="431.5" ></text>
-</g>
-<g >
-<title>RayBoxItersect (882,471,469 samples, 1.88%)</title><rect x="851.3" y="1957" width="22.2" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
-<text  x="854.30" y="1967.5" >R..</text>
-</g>
-<g >
-<title>_gmmuWalkCBMapNextEntries_Direct.constprop.0 (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1685" width="1.2" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
-<text  x="13.31" y="1695.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1621" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1631.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1957" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1967.5" ></text>
-</g>
-<g >
-<title>nohz_balancer_kick (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1829" width="1.2" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
-<text  x="772.01" y="1839.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="245" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="255.5" ></text>
-</g>
-<g >
-<title>MaxF32 (47,041,679 samples, 0.10%)</title><rect x="850.1" y="1957" width="1.2" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
-<text  x="853.12" y="1967.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1797" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1807.5" ></text>
-</g>
-<g >
-<title>perf_event_task_tick (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1829" width="1.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
-<text  x="851.89" y="1839.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="389" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="399.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1173" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1183.5" ></text>
-</g>
-<g >
-<title>UnpackColor (882,049,039 samples, 1.88%)</title><rect x="826.7" y="1957" width="22.2" height="15.0" fill="rgb(222,78,18)" rx="2" ry="2" />
-<text  x="829.73" y="1967.5" >U..</text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="501" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="511.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="117" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="127.5" ></text>
-</g>
-<g >
-<title>osDevReadReg032 (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1621" width="0.3" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
-<text  x="13.00" y="1631.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1381" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1391.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1685" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1695.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="85" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="95.5" ></text>
-</g>
-<g >
-<title>__powf_fma (97,884,861 samples, 0.21%)</title><rect x="1183.4" y="1989" width="2.5" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
-<text  x="1186.42" y="1999.5" ></text>
-</g>
-<g >
-<title>IntersectBBoxColor (780,455,094 samples, 1.66%)</title><rect x="873.5" y="1973" width="19.6" height="15.0" fill="rgb(213,36,8)" rx="2" ry="2" />
-<text  x="876.47" y="1983.5" ></text>
-</g>
-<g >
-<title>Float3_ReflectNormalize4 (8,207,312,527 samples, 17.47%)</title><rect x="543.1" y="1973" width="206.2" height="15.0" fill="rgb(206,9,2)" rx="2" ry="2" />
-<text  x="546.13" y="1983.5" >Float3_ReflectNormalize4</text>
-</g>
-<g >
-<title>all (46,967,848,668 samples, 100%)</title><rect x="10.0" y="2085" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
-<text  x="13.00" y="2095.5" ></text>
-</g>
-<g >
-<title>serverControl (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1813" width="1.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
-<text  x="14.55" y="1823.5" ></text>
-</g>
-<g >
-<title>DarkenColor (438,773,671 samples, 0.93%)</title><rect x="41.8" y="1989" width="11.1" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
-<text  x="44.83" y="1999.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1829" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1839.5" ></text>
-</g>
-<g >
-<title>sched_tick (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1845" width="1.2" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
-<text  x="851.89" y="1855.5" ></text>
-</g>
-<g >
-<title>sysvec_apic_timer_interrupt (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1941" width="1.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
-<text  x="851.89" y="1951.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1925" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1935.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1301" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1311.5" ></text>
-</g>
-<g >
-<title>kchangrpapiConstruct_IMPL (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1765" width="0.3" height="15.0" fill="rgb(245,188,44)" rx="2" ry="2" />
-<text  x="13.00" y="1775.5" ></text>
-</g>
-<g >
-<title>intrIsVectorPending_TU102 (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1685" width="1.9" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
-<text  x="14.55" y="1695.5" ></text>
-</g>
-<g >
-<title>rpcRmApiAlloc_GSP (12,141,185 samples, 0.03%)</title><rect x="10.0" y="1749" width="0.3" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
-<text  x="13.00" y="1759.5" ></text>
-</g>
-<g >
-<title>gvaspaceMap_IMPL (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1765" width="1.2" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
-<text  x="13.31" y="1775.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1269" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1279.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="581" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="591.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="165" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="175.5" ></text>
-</g>
-<g >
-<title>__hrtimer_run_queues (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1893" width="1.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
-<text  x="851.89" y="1903.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="357" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="367.5" ></text>
-</g>
-<g >
-<title>syscall (49,263,959 samples, 0.10%)</title><rect x="40.6" y="53" width="1.2" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
-<text  x="43.59" y="63.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1365" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1375.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="757" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="767.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1701" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1711.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1477" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1487.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="341" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="351.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="325" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="335.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1253" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1263.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1077" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1087.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1973" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1983.5" ></text>
-</g>
-<g >
-<title>_mmuWalkMap (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1717" width="1.2" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
-<text  x="13.31" y="1727.5" ></text>
-</g>
-<g >
-<title>dmaAllocMapping_GM107 (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1797" width="1.2" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
-<text  x="13.31" y="1807.5" ></text>
-</g>
-<g >
-<title>hrtimer_interrupt (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1925" width="1.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
-<text  x="772.01" y="1935.5" ></text>
-</g>
-<g >
-<title>MinF32 (48,736,423 samples, 0.10%)</title><rect x="891.9" y="1941" width="1.2" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
-<text  x="894.86" y="1951.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="309" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="319.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="773" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="783.5" ></text>
-</g>
-<g >
-<title>_regRead (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1669" width="1.9" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
-<text  x="14.55" y="1679.5" ></text>
-</g>
-<g >
-<title>rpcRmApiControl_GSP (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1813" width="0.2" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
-<text  x="16.37" y="1823.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1861" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1871.5" ></text>
-</g>
-<g >
-<title>_issueRpcAndWait (7,524,793 samples, 0.02%)</title><rect x="13.4" y="1797" width="0.2" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
-<text  x="16.37" y="1807.5" ></text>
-</g>
-<g >
-<title>perf_adjust_freq_unthr_events (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1797" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="851.89" y="1807.5" ></text>
-</g>
-<g >
-<title>__sysvec_apic_timer_interrupt (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1925" width="1.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
-<text  x="851.89" y="1935.5" ></text>
-</g>
-<g >
-<title>__libc_start_main@@GLIBC_2.34 (45,700,800,891 samples, 97.30%)</title><rect x="41.8" y="2037" width="1148.2" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
-<text  x="44.83" y="2047.5" >__libc_start_main@@GLIBC_2.34</text>
-</g>
-<g >
-<title>update_process_times (49,113,866 samples, 0.10%)</title><rect x="769.0" y="1877" width="1.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
-<text  x="772.01" y="1887.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="645" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="655.5" ></text>
-</g>
-<g >
-<title>IntersectAnyBBox (929,513,148 samples, 1.98%)</title><rect x="850.1" y="1973" width="23.4" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
-<text  x="853.12" y="1983.5" >I..</text>
-</g>
-<g >
-<title>resControl_IMPL (76,300,257 samples, 0.16%)</title><rect x="13.6" y="1829" width="1.9" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
-<text  x="16.56" y="1839.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1093" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1103.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1237" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1247.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="549" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="559.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1317" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1327.5" ></text>
-</g>
-<g >
-<title>entry_SYSCALL_64_after_hwframe (217,999,538 samples, 0.46%)</title><rect x="10.0" y="2021" width="5.5" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
-<text  x="13.00" y="2031.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1525" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1535.5" ></text>
-</g>
-<g >
-<title>clearBuffers (153,673,344 samples, 0.33%)</title><rect x="1185.9" y="1989" width="3.8" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
-<text  x="1188.88" y="1999.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="789" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="799.5" ></text>
-</g>
-<g >
-<title>update_process_times (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1861" width="1.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
-<text  x="851.89" y="1871.5" ></text>
-</g>
-<g >
-<title>_rmapiRmControl (83,825,050 samples, 0.18%)</title><rect x="13.4" y="1861" width="2.1" height="15.0" fill="rgb(236,143,34)" rx="2" ry="2" />
-<text  x="16.37" y="1871.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1669" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1679.5" ></text>
-</g>
-<g >
-<title>_rmapiRmControl (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1829" width="1.9" height="15.0" fill="rgb(236,143,34)" rx="2" ry="2" />
-<text  x="14.55" y="1839.5" ></text>
-</g>
-<g >
-<title>rmapiMapWithSecInfo (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1877" width="1.2" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
-<text  x="13.31" y="1887.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1765" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1775.5" ></text>
-</g>
-<g >
-<title>resservResourceFactory (12,172,123 samples, 0.03%)</title><rect x="10.0" y="1813" width="0.3" height="15.0" fill="rgb(208,16,4)" rx="2" ry="2" />
-<text  x="13.00" y="1823.5" ></text>
-</g>
-<g >
-<title>ShadowPostProcess (10,559,890,162 samples, 22.48%)</title><rect x="770.2" y="1989" width="265.3" height="15.0" fill="rgb(223,83,19)" rx="2" ry="2" />
-<text  x="773.25" y="1999.5" >ShadowPostProcess</text>
-</g>
-<g >
-<title>Nv04MapMemoryDmaWithSecInfo (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1909" width="1.2" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
-<text  x="13.31" y="1919.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="149" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="159.5" ></text>
-</g>
-<g >
-<title>rmapiControlWithSecInfo (83,825,050 samples, 0.18%)</title><rect x="13.4" y="1877" width="2.1" height="15.0" fill="rgb(235,142,34)" rx="2" ry="2" />
-<text  x="16.37" y="1887.5" ></text>
-</g>
-<g >
-<title>tick_nohz_handler (49,034,667 samples, 0.10%)</title><rect x="848.9" y="1877" width="1.2" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
-<text  x="851.89" y="1887.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1109" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1119.5" ></text>
-</g>
-<g >
-<title>rpcRmApiControl_GSP (76,300,257 samples, 0.16%)</title><rect x="13.6" y="1797" width="1.9" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
-<text  x="16.56" y="1807.5" ></text>
-</g>
-<g >
-<title>_gmmuWalkCBMapNextEntries_RmAperture (49,339,289 samples, 0.11%)</title><rect x="10.3" y="1701" width="1.2" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
-<text  x="13.31" y="1711.5" ></text>
-</g>
-<g >
-<title>_issueRpcAndWait (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1749" width="1.9" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
-<text  x="14.55" y="1759.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="1461" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="1471.5" ></text>
-</g>
-<g >
-<title>osDevReadReg032 (72,662,644 samples, 0.15%)</title><rect x="11.5" y="1653" width="1.9" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
-<text  x="14.55" y="1663.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="853" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="863.5" ></text>
-</g>
-<g >
-<title>[unknown] (49,263,959 samples, 0.10%)</title><rect x="40.6" y="453" width="1.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
-<text  x="43.59" y="463.5" ></text>
+<title>kceGetCeFromNvlinkConfig_IMPL (50,138,867 samples, 0.11%)</title><rect x="14.3" y="165" width="1.3" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="17.28" y="175.5" ></text>
 </g>
 </g>
 </svg>
