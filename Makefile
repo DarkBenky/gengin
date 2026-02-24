@@ -1,7 +1,14 @@
 CC = clang
 CFLAGS = -O3 -march=native -mtune=native -flto -ffast-math -funroll-loops -finline-functions
+CFLAGS += -fomit-frame-pointer -fno-stack-protector
+CFLAGS += -fdata-sections -ffunction-sections
+CFLAGS += -falign-functions=64 -falign-loops=64
+CFLAGS += -fno-plt -fprefetch-loop-arrays
+CFLAGS += -fvectorize -fslp-vectorize
+CFLAGS += -mllvm -polly
 CFLAGS += -w -I/usr/local/include -Iobject
 LDFLAGS = -flto -L/usr/local/lib
+LDFLAGS += -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed
 LIBS = -lminifb -lX11 -lGL -lpthread -lm
 
 TARGET = main
@@ -9,7 +16,7 @@ SRC = main.c load/loadObj.c util/bbox.c object/object.c object/format.c object/s
 
 FLAMEGRAPH_DIR = .flamegraph
 
-.PHONY: all clean run flame
+.PHONY: all clean run flame pgo
 
 all: $(TARGET)
 
@@ -18,6 +25,13 @@ $(TARGET): $(SRC)
 
 run: $(TARGET)
 	./$(TARGET)
+
+pgo:
+	$(CC) $(CFLAGS) -fno-lto -fprofile-generate -DPGO_MAX_FRAMES=2000 -o $(TARGET)_pgo $(SRC) -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
+	./$(TARGET)_pgo
+	llvm-profdata-18 merge -output=default.profdata *.profraw
+	$(CC) $(CFLAGS) -fprofile-use=default.profdata -fprofile-correction -o $(TARGET) $(SRC) $(LDFLAGS) $(LIBS)
+	rm -f $(TARGET)_pgo *.profraw
 
 flame:
 	$(CC) -O3 -march=native -fno-omit-frame-pointer -fno-inline-functions -fno-lto \

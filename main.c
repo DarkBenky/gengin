@@ -48,8 +48,6 @@ int main() {
 
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, objectCount));
 	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
-	mfb_set_target_fps(0);
-
 	int frame = 0;
 	int shadowResolution = 4;
 	double accumRenderTime = 0.0;
@@ -60,14 +58,14 @@ int main() {
 	int accumFrames = 0;
 
 	clock_t syncStart = clock();
-	while (mfb_wait_sync(window)) {
+	while (1) {
 		double syncTime = (double)(clock() - syncStart) / CLOCKS_PER_SEC;
 		accumSyncTime += syncTime;
 
 		frame++;
 		clearBuffers(&camera);
 		const float2 jitterPattern[4] = {
-			{0.5f, 0.5f}, {-0.5f, 0.5f}, {-0.5f, -0.5f}, {0.5f, -0.5f}};
+			{0.125f, 0.125f}, {-0.125f, 0.125f}, {-0.125f, -0.125f}, {0.125f, -0.125f}};
 		camera.jitter = jitterPattern[frame & 3];
 		clock_t start = clock();
 		// DemoScene_Update(objects, frame);
@@ -88,7 +86,7 @@ int main() {
 		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
 
 		clock_t presentStart = clock();
-		mfb_update(window, camera.framebuffer);
+		if (mfb_update(window, camera.framebuffer) != STATE_OK) break;
 		accumPresentTime += (double)(clock() - presentStart) / CLOCKS_PER_SEC;
 
 		accumFrames++;
@@ -111,6 +109,9 @@ int main() {
 		}
 
 		syncStart = clock();
+#ifdef PGO_MAX_FRAMES
+		if (frame >= PGO_MAX_FRAMES) break;
+#endif
 	}
 
 	mfb_close(window);

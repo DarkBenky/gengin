@@ -21,6 +21,48 @@ static inline Color BlendColors50(Color a, Color b) {
 	return ((a & 0x00FEFEFEu) + (b & 0x00FEFEFEu)) >> 1;
 }
 
+static void BlurColorBuffer(Color *src, Color *temp, int width, int height, int radius) {
+	if (radius <= 0) return;
+
+	for (int y = 0; y < height; y++) {
+		const Color *row = src + y * width;
+		Color *out = temp + y * width;
+		for (int x = 0; x < width; x++) {
+			uint32 r = 0, g = 0, b = 0, n = 0;
+			int x0 = x - radius, x1 = x + radius;
+			if (x0 < 0) x0 = 0;
+			if (x1 >= width) x1 = width - 1;
+			for (int k = x0; k <= x1; k++) {
+				Color c = row[k];
+				if (!c) continue;
+				r += (c >> 16) & 0xFF;
+				g += (c >> 8) & 0xFF;
+				b += c & 0xFF;
+				n++;
+			}
+			out[x] = n ? (0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n)) : 0;
+		}
+	}
+
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			uint32 r = 0, g = 0, b = 0, n = 0;
+			int y0 = y - radius, y1 = y + radius;
+			if (y0 < 0) y0 = 0;
+			if (y1 >= height) y1 = height - 1;
+			for (int k = y0; k <= y1; k++) {
+				Color c = temp[k * width + x];
+				if (!c) continue;
+				r += (c >> 16) & 0xFF;
+				g += (c >> 8) & 0xFF;
+				b += c & 0xFF;
+				n++;
+			}
+			src[y * width + x] = n ? (0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n)) : 0;
+		}
+	}
+}
+
 void BlurBuffer(float *src, float *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
 
@@ -158,7 +200,8 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, c
 			}
 		}
 
-		BlurBuffer(camera->tempBuffer_1, camera->tempBuffer_2, width, height, 9);
+		BlurColorBuffer(camera->reflectCache, camera->tempFramebuffer, width, height, 3);
+		BlurBuffer(camera->tempBuffer_1, camera->tempBuffer_2, width, height, 5);
 		memcpy(camera->shadowCache, camera->tempBuffer_1, size * sizeof(float));
 	}
 

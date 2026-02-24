@@ -55,3 +55,5 @@ clEnqueueReadBuffer(..., buf, ...);  // ~2-3x slower
 cl_mem pinned = clCreateBuffer(ctx, CL_MEM_ALLOC_HOST_PTR, size, NULL, NULL);
 float* buf = clEnqueueMapBuffer(..., pinned, ...);  // near theoretical bandwidth
 ```
+
+main.c should contain the entry point and high-level application logic. Avoid putting low-level details or utility functions here. Instead, organize those into separate modules for better maintainability and readability.
