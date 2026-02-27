@@ -16,7 +16,18 @@ SRC = main.c load/loadObj.c util/bbox.c object/object.c object/format.c object/s
 
 FLAMEGRAPH_DIR = .flamegraph
 
-.PHONY: all clean run flame pgo
+TESTS_DIR     = tests
+TEST_SRCS     = $(wildcard $(TESTS_DIR)/*.c)
+TEST_BINS     = $(patsubst $(TESTS_DIR)/%.c, $(TESTS_DIR)/%, $(TEST_SRCS))
+TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c \
+                object/material/material.c render/render.c render/cpu/ray.c render/cpu/tile.c \
+                render/cpu/font.c render/color/color.c
+
+# Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
+_SPECIFIC     = $(filter-out test, $(MAKECMDGOALS))
+_RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
+
+.PHONY: all clean run flame pgo test $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
@@ -25,6 +36,25 @@ $(TARGET): $(SRC)
 
 run: $(TARGET)
 	./$(TARGET)
+
+# Build rule for any test binary
+$(TESTS_DIR)/%: $(TESTS_DIR)/%.c $(TEST_COMMON)
+	$(CC) $(CFLAGS) -I$(TESTS_DIR) -o $@ $^ $(LDFLAGS) $(LIBS)
+
+# make test          → build & run all tests
+# make test testRay  → build & run only testRay
+test: $(_RUN_TESTS)
+	@for t in $(_RUN_TESTS); do \
+		echo "========================================"; \
+		echo "Running: $$t"; \
+		echo "========================================"; \
+		$$t || exit 1; \
+	done
+
+ifneq ($(_SPECIFIC),)
+$(_SPECIFIC):
+	@:
+endif
 
 pgo:
 	$(CC) $(CFLAGS) -fno-lto -fprofile-generate -DPGO_MAX_FRAMES=2000 -o $(TARGET)_pgo $(SRC) -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
@@ -47,4 +77,4 @@ flame:
 	@echo "Flame graph saved to flamegraph.svg"
 
 clean:
-	rm -f $(TARGET) perf.data flamegraph.svg
+	rm -f $(TARGET) perf.data flamegraph.svg $(TEST_BINS)
