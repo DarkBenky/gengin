@@ -143,6 +143,18 @@ void BlurBuffer(float *src, float *temp, int width, int height, int radius) {
 	}
 }
 
+float3 ComputeRayDirection(const Camera *camera, int pixelX, int pixelY) {
+	float ndcX = (pixelX + 0.5f) / camera->screenWidth * 2.0f - 1.0f;
+	float ndcY = 1.0f - (pixelY + 0.5f) / camera->screenHeight * 2.0f;
+
+	float3 rayDir = Float3_Add(
+		Float3_Add(
+			Float3_Scale(camera->right, ndcX * camera->aspect * camera->fovScale),
+			Float3_Scale(camera->up, ndcY * camera->fovScale)),
+		camera->viewDir);
+	return Float3_Normalize(rayDir);
+}
+
 void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, const int resolution, const int frameInterval) {
 	if (!objects || objectCount <= 0 || !camera) return;
 	int width = camera->screenWidth;
