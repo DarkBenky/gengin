@@ -85,6 +85,13 @@ float3 UnpackColor(Color c) {
 	return (float3){r, g, b, 0.0f};
 }
 
+int4 UnpackColorInt(Color c) {
+	int r = (c >> 16) & 0xFF;
+	int g = (c >> 8) & 0xFF;
+	int b = c & 0xFF;
+	return (int4){r, g, b, 0};
+}
+
 Color ApplyGamma(Color c, float gamma) {
 	float3 col = UnpackColor(c);
 	col.x = powf(col.x, 1.0f / gamma);

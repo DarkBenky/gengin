@@ -15,15 +15,15 @@
 #include <string.h>
 #include <time.h>
 
-typedef struct {
-    float averageTime;
-    float medianTime;
-    float minTime;
-    float maxTime;
-    float variance;
-    float p99Time;
-} PerformanceMetrics;
+void RenderScene(const Object *objects, int objectCount, Camera *camera);
+void RenderSceneRow(const Object *objects, int objectCount, Camera *camera, int row);
+void RenderTaskFunction(void *arg);
 
-PerformanceMetrics ComputePerformanceMetrics(const float *timeTook, int samples);
+typedef struct {
+    const Object *objects;
+    int objectCount;
+    Camera *camera;
+    int row;
+} RenderTask;
 
 #endif
