@@ -12,7 +12,7 @@ static void FillTestImage(Camera *camera) {
 		camera->framebuffer[i] = 0xFF101010;
 
 	unsigned int seed = 0xDEADBEEF;
-	for (int i = 0; i < 128; i++) {
+	for (int i = 0; i < 1024; i++) {
 		seed = seed * 1664525u + 1013904223u;
 		int x = (seed >> 16) % (width - 80);
 		seed = seed * 1664525u + 1013904223u;
