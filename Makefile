@@ -44,11 +44,13 @@ $(TESTS_DIR)/%: $(TESTS_DIR)/%.c $(TEST_COMMON)
 # make test          → build & run all tests
 # make test testRay  → build & run only testRay
 test: $(_RUN_TESTS)
-	@for t in $(_RUN_TESTS); do \
-		echo "========================================"; \
-		echo "Running: $$t"; \
-		echo "========================================"; \
-		$$t || exit 1; \
+	@LOG=$(TESTS_DIR)/results.log; \
+	> $$LOG; \
+	for t in $(_RUN_TESTS); do \
+		echo "========================================" | tee -a $$LOG; \
+		echo "Running: $$t" | tee -a $$LOG; \
+		echo "========================================" | tee -a $$LOG; \
+		$$t 2>&1 | tee -a $$LOG || exit 1; \
 	done
 
 ifneq ($(_SPECIFIC),)

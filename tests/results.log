@@ -1,0 +1,48 @@
+========================================
+Running: tests/testBlur
+========================================
+========================================
+Single-threaded blur performance:
+Average Time: 0.004255 seconds
+Median Time: 0.004176 seconds
+Min Time: 0.004138 seconds
+Max Time: 0.006953 seconds
+Variance: 0.000000
+P99 Time: 0.005418 seconds
+========================================
+Multi-threaded blur performance:
+Average Time: 0.001828 seconds
+Median Time: 0.001810 seconds
+Min Time: 0.000626 seconds
+Max Time: 0.003664 seconds
+Variance: 0.000000
+P99 Time: 0.003206 seconds
+========================================
+Multi-threaded blur (pattern) performance:
+Average Time: 0.001859 seconds
+Median Time: 0.001812 seconds
+Min Time: 0.001686 seconds
+Max Time: 0.004121 seconds
+Variance: 0.000000
+P99 Time: 0.003105 seconds
+========================================
+Running: tests/testRay
+========================================
+========================================
+Single-threaded Ray Performance:
+Average Time: 0.096344 seconds
+Median Time: 0.095160 seconds
+Min Time: 0.093467 seconds
+Max Time: 0.111719 seconds
+Variance: 0.000011
+99th Percentile Time: 0.111719 seconds
+========================================
+========================================
+Multi-threaded Ray Performance:
+Average Time: 0.007787 seconds
+Median Time: 0.007772 seconds
+Min Time: 0.007392 seconds
+Max Time: 0.009197 seconds
+Variance: 0.000000
+99th Percentile Time: 0.009197 seconds
+========================================
