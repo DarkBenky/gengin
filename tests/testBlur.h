@@ -10,20 +10,21 @@
 #include "../object/object.h"
 #include "../render/render.h"
 #include "../render/cpu/ray.h"
+#include "../util/saveImage.h"
+#include "timings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 typedef struct {
-    float averageTime;
-    float medianTime;
-    float minTime;
-    float maxTime;
-    float variance;
-    float p99Time;
-} PerformanceMetrics;
+	Camera *camera;
+	int row;
+} BlurTask;
 
-PerformanceMetrics ComputePerformanceMetrics(const float *timeTook, int samples);
+void BlurScene(Camera *camera);
+
+void BlurRow(Camera *camera, int row);
+void BlurTaskFunction(void *arg);
 
 #endif

@@ -8,6 +8,7 @@ Color PackColor(float r, float g, float b);
 Color PackColorF(float3 color);
 Color BlendColors(Color c1, Color c2, float t);
 float3 UnpackColor(Color c);
+int4 UnpackColorInt(Color c);
 Color ApplyGamma(Color c, float gamma);
 Color ApplyExposure(Color c, float exposure);
 Color ApplyToneMapping(Color c);
