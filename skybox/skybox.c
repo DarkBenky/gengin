@@ -90,7 +90,7 @@ static inline Color sampleFace(const uint32 *face, int w, int h, float u, float 
 	return face[y * w + x];
 }
 
-Color SampleSkybox(const Skybox *skybox, float3 dir) {
+Color SampleSkybox(const Skybox *skybox, const float3 dir) {
 	if (!skybox) return 0xFF000000u;
 
 	int w = skybox->imageWidth;

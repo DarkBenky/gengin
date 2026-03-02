@@ -17,6 +17,6 @@ typedef struct Skybox {
 
 void LoadSkybox(Skybox *skybox, const char *directory);
 void DestroySkybox(Skybox *skybox);
-Color SampleSkybox(const Skybox *skybox, float3 rayDir);
+Color SampleSkybox(const Skybox *skybox, const float3 rayDir);
 
 #endif // SKYBOX_H
