@@ -1,18 +1,25 @@
 CC = clang
-CFLAGS = -O3 -march=native -mtune=native -flto -ffast-math -funroll-loops -finline-functions
-CFLAGS += -fomit-frame-pointer -fno-stack-protector
-CFLAGS += -fdata-sections -ffunction-sections
-CFLAGS += -falign-functions=64 -falign-loops=64
-CFLAGS += -fno-plt -fprefetch-loop-arrays
-CFLAGS += -fvectorize -fslp-vectorize
-CFLAGS += -mllvm -polly
-CFLAGS += -w -I/usr/local/include -Iobject
+CFLAGS_BASE = -O3 -march=native -mtune=native -flto -ffast-math -funroll-loops -finline-functions
+CFLAGS_BASE += -fomit-frame-pointer -fno-stack-protector
+CFLAGS_BASE += -fdata-sections -ffunction-sections
+CFLAGS_BASE += -falign-functions=64 -falign-loops=64
+CFLAGS_BASE += -fno-plt -fprefetch-loop-arrays
+CFLAGS_BASE += -fvectorize -fslp-vectorize
+CFLAGS_BASE += -mllvm -polly
+CFLAGS_BASE += -w -I/usr/local/include -Iobject
+CFLAGS = $(CFLAGS_BASE)
 LDFLAGS = -flto -L/usr/local/lib
 LDFLAGS += -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed
-LIBS = -lminifb -lX11 -lGL -lpthread -lm
+LIBS = -lminifb -lX11 -lGL -lpthread -lm -ljpeg
+
+# Auto-use PGO data if available from a previous 'make pgo' run
+PROFDATA = default.profdata
+ifneq ($(wildcard $(PROFDATA)),)
+CFLAGS += -fprofile-use=$(PROFDATA) -fprofile-correction
+endif
 
 TARGET = main
-SRC = main.c load/loadObj.c util/bbox.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/tile.c render/cpu/font.c render/color/color.c
+SRC = main.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c
 
 FLAMEGRAPH_DIR = .flamegraph
 
@@ -24,7 +31,7 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test, $(MAKECMDGOALS))
+_SPECIFIC     = $(filter-out test all clean run flame pgo, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 .PHONY: all clean run flame pgo test $(if $(_SPECIFIC), $(_SPECIFIC))
@@ -59,10 +66,10 @@ $(_SPECIFIC):
 endif
 
 pgo:
-	$(CC) $(CFLAGS) -fno-lto -fprofile-generate -DPGO_MAX_FRAMES=2000 -o $(TARGET)_pgo $(SRC) -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
+	$(CC) $(CFLAGS_BASE) -fno-lto -fprofile-generate -DPGO_MAX_FRAMES=500 -o $(TARGET)_pgo $(SRC) -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
 	./$(TARGET)_pgo
 	llvm-profdata-18 merge -output=default.profdata *.profraw
-	$(CC) $(CFLAGS) -fprofile-use=default.profdata -fprofile-correction -o $(TARGET) $(SRC) $(LDFLAGS) $(LIBS)
+	$(CC) $(CFLAGS_BASE) -fprofile-use=default.profdata -fprofile-correction -o $(TARGET) $(SRC) $(LDFLAGS) $(LIBS)
 	rm -f $(TARGET)_pgo *.profraw
 
 flame:

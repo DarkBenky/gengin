@@ -9,6 +9,7 @@ void clearBuffers(Camera *camera) {
 	int size = camera->screenWidth * camera->screenHeight;
 	// framebuffer: cleared to black background each frame.
 	memset(camera->framebuffer, 0, size * sizeof(uint32));
+	memset(camera->accumulationBuffer, 0, size * sizeof(int4));
 	// depthBuffer: 0x7F7F7F7F ~= 3.4e38, indistinguishable from FLT_MAX for depth comparisons.
 	memset(camera->depthBuffer, 0x7F, size * sizeof(float));
 	// normalBuffer, positionBuffer, reflectBuffer: only read at pixels where
@@ -33,6 +34,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->tempBuffer_1 = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
 	camera->tempBuffer_2 = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
 	camera->tempBuffer_3 = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
+	camera->accumulationBuffer = (int4 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int4)));
 	camera->depthBuffer = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
 	camera->tempFramebuffer = (Color *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(Color)));
 	camera->tempFramebuffer2 = (Color *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(Color)));

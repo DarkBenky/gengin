@@ -15,12 +15,9 @@ typedef struct BVHNode {
 
 typedef struct BVH {
 	BVHNode *nodes;
+	int *triIndices; // reordered triangle indices
 	int nodeCount;
 } BVH;
-
-// typedef struct ObjectManager {
-// TODO: BVH for objects in the scene for faster ray intersection
-// }
 
 typedef struct Object {
 	float3 position;
@@ -31,6 +28,11 @@ typedef struct Object {
 	float3 worldBBmin;
 	float3 worldBBmax;
 
+	// cached inverse transform — recomputed in Object_UpdateWorldBounds
+	float3 _invScale;  // {1/sx, 1/sy, 1/sz}
+	float3 _invRotSin; // sin(-rotation.xyz)
+	float3 _invRotCos; // cos(-rotation.xyz)
+
 	Color _temp; // pre-packed RGB color for BBOX hits
 
 	float3 *v1;
@@ -39,6 +41,8 @@ typedef struct Object {
 	float3 *normals;
 	int *materialIds;
 	int triangleCount;
+
+	BVH bvh;
 } Object;
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
@@ -49,8 +53,8 @@ void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *t
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 
-// void CreteObjectBVH(Object *obj); TODO: Implement BVH for faster ray intersection
-// void DestroyObjectBVH(Object *obj);
-// void IntersectBVH(const Object *obj, float3 rayOrigin, float3 rayDir, int *hitTriIdx);
+void CreateObjectBVH(Object *obj, BVH *bvh);
+void DestroyObjectBVH(BVH *bvh);
+void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld);
 
 #endif // OBJECT_H
