@@ -454,6 +454,7 @@ static void RayTraceRowFunc(void *arg) {
 
 		if (bestObj < 0) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
+			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
 			continue;
 		}
 
@@ -510,22 +511,118 @@ static void RayTraceRowFunc(void *arg) {
 		float fresnel = 0.04f + 0.96f * (inv2 * inv2 * invNdotV);
 		float reflectStrength = fresnel * (1.0f - roughness);
 
-		// perfect specular reflect dir for skybox sampling
+		// perfect specular reflect dir — roughness already baked into reflectStrength
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		camera->framebuffer[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | b;
+		// inline sky reflection blend: cheap lerp weighted by Fresnel * (1 - roughness)
+		Color skyRefl = SampleSkybox(task->skybox, reflDir);
+		uint32 st = (uint32)(reflectStrength * 255.0f);
+		if (st > 255u) st = 255u;
+		uint32 sit = 255u - st;
+		uint32 nr = ((uint32)r * sit + ((skyRefl >> 16) & 0xFF) * st) >> 8;
+		uint32 ng = ((uint32)g * sit + ((skyRefl >> 8) & 0xFF) * st) >> 8;
+		uint32 nb = ((uint32)b * sit + (skyRefl & 0xFF) * st) >> 8;
+
+		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
 		camera->depthBuffer[idx] = bestT;
 		camera->reflectBuffer[idx] = reflDir;
-		camera->tempBuffer_2[idx] = reflectStrength;
 	}
 }
 
-void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool) {
+void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox) {
 	if (!objects || objectCount <= 0 || !camera || !taskQueue || !threadPool) return;
 	for (int row = 0; row < camera->screenHeight; row++) {
-		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib};
+		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
+}
+
+void DitherPostProcess(Camera *camera, int frame) {
+	if (!camera) return;
+	int width = camera->screenWidth;
+	int height = camera->screenHeight;
+
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			int idx = y * width + x;
+			Color c = camera->framebuffer[idx];
+			int r = (c >> 16) & 0xFF;
+			int g = (c >> 8) & 0xFF;
+			int b = c & 0xFF;
+
+			// per-pixel per-frame hash — no spatial or temporal coherence
+			uint32 h = (uint32)(x * 1619 + y * 31337 + frame * 6791);
+			h ^= h >> 16;
+			h *= 0x45d9f3bu;
+			h ^= h >> 16;
+			int bias = (int)(h & 0xFF) - 128;
+			bias = bias * 24 / 128; // scale to [-24, +24]
+
+			r += bias;
+			if (r < 0)
+				r = 0;
+			else if (r > 255)
+				r = 255;
+			g += bias;
+			if (g < 0)
+				g = 0;
+			else if (g > 255)
+				g = 255;
+			b += bias;
+			if (b < 0)
+				b = 0;
+			else if (b > 255)
+				b = 255;
+
+			camera->framebuffer[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | (uint32)b;
+		}
+	}
+}
+
+void DitherOrderedPostProcess(Camera *camera, int frame) {
+	if (!camera) return;
+	int width = camera->screenWidth;
+	int height = camera->screenHeight;
+
+	// Bayer 4x4 matrix, normalized to [0,1]
+	static const float bayer[4][4] = {
+		{0.0f / 16.0f, 8.0f / 16.0f, 2.0f / 16.0f, 10.0f / 16.0f},
+		{12.0f / 16.0f, 4.0f / 16.0f, 14.0f / 16.0f, 6.0f / 16.0f},
+		{3.0f / 16.0f, 11.0f / 16.0f, 1.0f / 16.0f, 9.0f / 16.0f},
+		{15.0f / 16.0f, 7.0f / 16.0f, 13.0f / 16.0f, 5.0f / 16.0f},
+	};
+
+	// slide pattern upward 1 row per frame — wraps naturally via & 3
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			int idx = y * width + x;
+			Color c = camera->framebuffer[idx];
+			int r = (c >> 16) & 0xFF;
+			int g = (c >> 8) & 0xFF;
+			int b = c & 0xFF;
+
+			float t = bayer[(y + frame) & 3][x & 3];
+			int bias = (int)(t * 48.0f) - 24; // [-24, +24] range (~9%)
+
+			r += bias;
+			if (r < 0)
+				r = 0;
+			else if (r > 255)
+				r = 255;
+			g += bias;
+			if (g < 0)
+				g = 0;
+			else if (g > 255)
+				g = 255;
+			b += bias;
+			if (b < 0)
+				b = 0;
+			else if (b > 255)
+				b = 255;
+
+			camera->framebuffer[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | (uint32)b;
+		}
+	}
 }

@@ -24,13 +24,14 @@ typedef struct {
 	const Object *objects;
 	int objectCount;
 	const MaterialLib *lib;
+	const Skybox *skybox;
 } RayTraceTask;
 
 typedef struct {
 	RayTraceTask tasks[HEIGHT];
 } RayTraceTaskQueue;
 
-void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool);
+void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox);
 
 // Persistent raytrace workers — live for program lifetime, sync via barriers each frame
 typedef struct RayTracer RayTracer;
@@ -41,6 +42,8 @@ void RayTracerRender(RayTracer *rt, const Object *objects, int objectCount, Came
 void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, int resolution, int frameInterval);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 float3 ComputeRayDirection(const Camera *camera, int pixelX, int pixelY);
-void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, SkyBoxTaskQueue *taskQueue);
+
+void DitherPostProcess(Camera *camera, int frame);
+void DitherOrderedPostProcess(Camera *camera, int frame);
 
 #endif // RAY_H

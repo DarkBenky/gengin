@@ -17,7 +17,7 @@
 #include "util/threadPool.h"
 #define ACCUMULATE_STATS 256
 #define GRID_COLS 6
-#define GRID_ROWS 10
+#define GRID_ROWS 7
 #define PLANE_COUNT (GRID_COLS * GRID_ROWS)
 #define OBJECT_COUNT (PLANE_COUNT + 2)
 
@@ -63,8 +63,8 @@ int main() {
 	// floor
 	LoadObj("assets/models/map.bin", &objects[PLANE_COUNT], &matLib);
 	objects[PLANE_COUNT].rotation = (float3){0.0f, 0.0f, 0.0f};
-	objects[PLANE_COUNT].scale = (float3){25.0f, 12.5f, 25.0f};
-	objects[PLANE_COUNT].position = (float3){0.0f, -1.25f, 0.0f};
+	objects[PLANE_COUNT].scale = (float3){5.0f, 4.5f, 5.0f};
+	objects[PLANE_COUNT].position = (float3){0.0f, -75.0f, 0.0f};
 	CreateObjectBVH(&objects[PLANE_COUNT], &objects[PLANE_COUNT].bvh);
 	Object_UpdateWorldBounds(&objects[PLANE_COUNT]);
 
@@ -87,12 +87,12 @@ int main() {
 	LoadSkybox(&skybox, "skybox");
 
 	ThreadPool *threadPool = poolCreate(32, HEIGHT);
-	SkyBoxTaskQueue skyTaskQueue;
 	RayTraceTaskQueue rayTaskQueue;
 
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, OBJECT_COUNT));
 	int frame = 0;
 	int shadowResolution = 4;
+	double frameTimes[4] = {0};
 	double accumRenderTime = 0.0;
 	double accumSetupTime = 0.0;
 	double accumShadowTime = 0.0;
@@ -112,7 +112,7 @@ int main() {
 		frame++;
 		clearBuffers(&camera);
 		const float2 jitterPattern[4] = {
-			{0.5f, 0.5f}, {-0.5f, 0.5f}, {-0.5f, -0.5f}, {0.5f, -0.5f}};
+			{1.5f, 1.5f}, {-1.5f, 1.5f}, {-1.5f, -1.5f}, {1.5f, -1.5f}};
 		camera.jitter = jitterPattern[frame & 3];
 		camera.seed = frame * (int)35527.0f << 16 | (int)11369.0f;
 		// DemoScene_Update(objects, frame);
@@ -136,19 +136,24 @@ int main() {
 		// 	RenderObject(&objects[i], &camera, &matLib);
 
 		WNOW(wA);
-		RayTraceScene(objects, OBJECT_COUNT, &camera, &matLib, &rayTaskQueue, threadPool);
+		RayTraceScene(objects, OBJECT_COUNT, &camera, &matLib, &rayTaskQueue, threadPool, &skybox);
 		WNOW(wB);
-		accumRenderTime += setupTime + WDIFF(wA, wB);
+		double frameRenderTime = setupTime + WDIFF(wA, wB);
+		frameTimes[frame & 3] = frameRenderTime;
+		accumRenderTime += frameRenderTime;
 
 		WNOW(wA);
 		// ShadowPostProcess(objects, OBJECT_COUNT, &camera, shadowResolution, 64);
+		// DitherPostProcess(&camera, frame);
+		DitherOrderedPostProcess(&camera, frame);
 		WNOW(wB);
 		accumShadowTime += WDIFF(wA, wB);
 
-		applySkybox(&skybox, &camera, threadPool, &skyTaskQueue);
-
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
-		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
+		char text[64];
+		double avgFrameTime = (frameTimes[0] + frameTimes[1] + frameTimes[2] + frameTimes[3]) * 0.25;
+		snprintf(text, sizeof(text), "FPS: %.1f", avgFrameTime > 0.0 ? 1.0 / avgFrameTime : 0.0);
+		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.75f, c);
 
 		WNOW(wA);
 		if (mfb_update(window, camera.framebuffer) != STATE_OK) break;

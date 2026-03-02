@@ -12,21 +12,21 @@ HEIGHT = GRID_SIZE
 
 # terrain generation params
 BASE_SCALE   = 0.015   # base frequency — lower = larger continent features
-OCTAVES      = 8       # detail layers
+OCTAVES      = 12       # detail layers
 PERSISTENCE  = 0.5     # amplitude falloff per octave
 LACUNARITY   = 2.0     # frequency growth per octave
 HEIGHT_POWER = 2.2     # exponent > 1 flattens lowlands, sharpens peaks
-SEA_LEVEL    = 0.0     # values below this are flat water
+SEA_LEVEL    = -0.2     # values below this are flat water
 
 # hydraulic erosion params
-EROSION_DROPS      = 25_000  # number of water droplets
+EROSION_DROPS      = 15_000  # number of water droplets
 EROSION_RADIUS     = 3        # brush radius for deposit/erode
-EROSION_INERTIA    = 0.05     # how much droplet keeps its direction (0=always downhill)
+EROSION_INERTIA    = 0.025     # how much droplet keeps its direction (0=always downhill)
 SEDIMENT_CAPACITY  = 4.0      # max sediment a droplet carries relative to speed*slope
 ERODE_SPEED        = 0.3
 DEPOSIT_SPEED      = 0.3
 EVAPORATE_SPEED    = 0.01
-GRAVITY            = 12.0
+GRAVITY            = 8.0
 MAX_STEPS          = 64       # max steps per droplet before evaporation
 
 class Triangle(ctypes.Structure):
@@ -326,3 +326,4 @@ def save_map_to_bin(filename, Map):
 if __name__ == "__main__":
     Map = generate_map()
     save_map_to_bin("../assets/models/map.bin", Map)
+    print("map generation complete")
