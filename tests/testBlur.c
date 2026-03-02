@@ -32,6 +32,11 @@ void BlurTaskFunction(void *arg) {
 	BlurRow(task->camera, task->row);
 }
 
+void BlurRowUoutputTaskFunction(void *arg) {
+	BlurTask *task = (BlurTask *)arg;
+	BlurRowUoutput(task->camera, task->row, task->output);
+}
+
 void BlurRow(Camera *camera, int row) {
 	if (!camera || row < 0 || row >= camera->screenHeight) return;
 	for (int col = 0; col < camera->screenWidth; col++) {
@@ -52,6 +57,29 @@ void BlurRow(Camera *camera, int row) {
 			}
 		}
 		camera->framebuffer[row * camera->screenWidth + col] = PackColorSafe((float)red / count / 255.0f, (float)green / count / 255.0f, (float)blue / count / 255.0f);
+	}
+}
+
+void BlurRowUoutput(Camera *camera, int row, uint32 *output) {
+	if (!camera || row < 0 || row >= camera->screenHeight) return;
+	for (int col = 0; col < camera->screenWidth; col++) {
+		int red = 0, green = 0, blue = 0;
+		int count = 0;
+		for (int dy = -1; dy <= 1; dy++) {
+			for (int dx = -1; dx <= 1; dx++) {
+				int x = col + dx;
+				int y = row + dy;
+				if (x >= 0 && x < camera->screenWidth && y >= 0 && y < camera->screenHeight) {
+					Color c = camera->framebuffer[y * camera->screenWidth + x];
+					int4 rgb = UnpackColorInt(c);
+					red += rgb.x;
+					green += rgb.y;
+					blue += rgb.z;
+					count++;
+				}
+			}
+		}
+		output[col] = PackColorSafe((float)red / count / 255.0f, (float)green / count / 255.0f, (float)blue / count / 255.0f);
 	}
 }
 
@@ -134,13 +162,7 @@ int main() {
 		clock_gettime(CLOCK_MONOTONIC, &t1);
 		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
-	// apply one clean blur for the saved image
-	for (int row = 0; row < camera.screenHeight; row++) {
-		tasks[row].camera = &camera;
-		tasks[row].row = row;
-		poolAdd(pool, BlurTaskFunction, &tasks[row]);
-	}
-	poolWait(pool);
+
 	SaveImage("tests/img/blur_multi.bmp", &camera);
 
 	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
@@ -170,17 +192,7 @@ int main() {
 		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
-	// apply one clean blur for the saved image
-	for (int phase = 0; phase < 3; phase++) {
-		for (int row = phase; row < camera.screenHeight; row += 3) {
-			tasks[row].camera = &camera;
-			tasks[row].row = row;
-			poolAdd(pool, BlurTaskFunction, &tasks[row]);
-		}
-		poolWait(pool);
-	}
 	SaveImage("tests/img/blur_pattern.bmp", &camera);
-	poolDestroy(pool);
 
 	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
 	printf("========================================\n");
@@ -192,6 +204,37 @@ int main() {
 	printf("Variance: %.6f\n", metrics.variance);
 	printf("P99 Time: %.6f seconds\n", metrics.p99Time);
 
+	// Multi-threaded blur test with output buffer
+	uint32 *outputBuffer = malloc(pixels * sizeof(uint32));
+	memcpy(camera.framebuffer, backup, pixels * sizeof(Color));
+	for (int i = 0; i < SAMPLES; i++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		for (int row = 0; row < camera.screenHeight; row++) {
+			tasks[row].camera = &camera;
+			tasks[row].row = row;
+			tasks[row].output = outputBuffer + row * camera.screenWidth;
+			poolAdd(pool, BlurRowUoutputTaskFunction, &tasks[row]);
+		}
+		poolWait(pool);
+		memcpy(camera.framebuffer, outputBuffer, pixels * sizeof(uint32));
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+	SaveImage("tests/img/blur_output.bmp", &camera);
+
+	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
+	printf("========================================\n");
+	printf("Multi-threaded blur (output buffer) performance:\n");
+	printf("Average Time: %.6f seconds\n", metrics.averageTime);
+	printf("Median Time: %.6f seconds\n", metrics.medianTime);
+	printf("Min Time: %.6f seconds\n", metrics.minTime);
+	printf("Max Time: %.6f seconds\n", metrics.maxTime);
+	printf("Variance: %.6f\n", metrics.variance);
+	printf("P99 Time: %.6f seconds\n", metrics.p99Time);
+
+	poolDestroy(pool);
+	free(outputBuffer);
 	free(backup);
 	destroyCamera(&camera);
 	return 0;

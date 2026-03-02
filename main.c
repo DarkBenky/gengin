@@ -11,21 +11,21 @@
 #include "render/cpu/font.h"
 #include "render/cpu/ray.h"
 #include "render/color/color.h"
-#define WIDTH 720
-#define HEIGHT 480
+#include "load/loadObj.h"
+#include "math/vector3.h"
+#include "skybox/skybox.h"
+#include "util/threadPool.h"
 #define ACCUMULATE_STATS 256
+#define OBJECT_COUNT 3
 
 int main() {
-	// TestFunctions();
-
-	const int objectCount = DemoScene_ObjectCount();
 	Camera camera;
-	initCamera(&camera, WIDTH, HEIGHT, 30.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){6.0f, 8.0f, -6.0f});
+	initCamera(&camera, WIDTH, HEIGHT, 90.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){6.0f, 8.0f, -6.0f});
 
 	MaterialLib matLib;
 	MaterialLib_Init(&matLib, 256);
 
-	Object *objects = malloc(sizeof(Object) * objectCount);
+	Object *objects = malloc(sizeof(Object) * OBJECT_COUNT);
 	if (!objects) {
 		fprintf(stderr, "Failed to allocate objects\n");
 		destroyCamera(&camera);
@@ -33,21 +33,40 @@ int main() {
 		return 1;
 	}
 
-	DemoScene_Build(objects, &matLib);
+	LoadObj("assets/models/r27.bin", &objects[0], &matLib);
+	objects[0].rotation = (float3){0.0f, -0.5708f, 0.0f};
+	objects[0].scale = (float3){2.0f, 2.0f, 2.0f};
+	objects[0].position = (float3){0.0f, -0.09f, 10.0f - 1.33f};
+	CreateObjectBVH(&objects[0], &objects[0].bvh);
+	Object_UpdateWorldBounds(&objects[0]);
+
+	CreateCube(&objects[1], (float3){3.0f, 2.0f, 10.0f}, (float3){3.0f, 4.0f, 0.0f}, (float3){1.0f, 1.0f, 1.0f}, (float3){0.8f, 0.2f, 0.2f, 0.1f}, &matLib);
+	Object_UpdateWorldBounds(&objects[1]);
+
+	// floor
+	CreateCube(&objects[2], (float3){0.0f, -1.25f, 15.0f}, (float3){0.0f, -1.0f, 0.0f}, (float3){40.0f, 0.2f, 40.0f}, (float3){0.32f, 0.34f, 0.38f, 0.0f}, &matLib);
+	Object_UpdateWorldBounds(&objects[2]);
 
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
 		fprintf(stderr, "Failed to create window\n");
-		Scene_Destroy(objects, objectCount);
+		Scene_Destroy(objects, OBJECT_COUNT);
 		destroyCamera(&camera);
 		return 1;
 	}
+	mfb_set_target_fps(0);
 
 	struct Alphabet alphabet;
 	LoadAlphabet(&alphabet, "assets/chars");
 
-	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, objectCount));
-	printf("Press 1-5 to change shadow resolution (1=highest, 5=lowest)\n");
+	Skybox skybox;
+	LoadSkybox(&skybox, "skybox");
+
+	ThreadPool *threadPool = poolCreate(16, HEIGHT);
+	SkyBoxTaskQueue skyTaskQueue;
+	RayTraceTaskQueue rayTaskQueue;
+
+	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, OBJECT_COUNT));
 	int frame = 0;
 	int shadowResolution = 4;
 	double accumRenderTime = 0.0;
@@ -57,37 +76,60 @@ int main() {
 	double accumPresentTime = 0.0;
 	int accumFrames = 0;
 
-	clock_t syncStart = clock();
+#define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
+#define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
+
+	struct timespec wSyncStart, wA, wB;
+	WNOW(wSyncStart);
 	while (1) {
-		double syncTime = (double)(clock() - syncStart) / CLOCKS_PER_SEC;
-		accumSyncTime += syncTime;
+		WNOW(wA);
+		accumSyncTime += WDIFF(wSyncStart, wA);
 
 		frame++;
 		clearBuffers(&camera);
 		const float2 jitterPattern[4] = {
-			{0.125f, 0.125f}, {-0.125f, 0.125f}, {-0.125f, -0.125f}, {0.125f, -0.125f}};
+			{0.5f, 0.5f}, {-0.5f, 0.5f}, {-0.5f, -0.5f}, {0.5f, -0.5f}};
 		camera.jitter = jitterPattern[frame & 3];
-		clock_t start = clock();
+		camera.seed = frame * (int)35527.0f << 16 | (int)11369.0f;
 		// DemoScene_Update(objects, frame);
 
-		RenderSetup(objects, objectCount, &camera);
-		double setupTime = (double)(clock() - start) / CLOCKS_PER_SEC;
+		// Rotating the camera around the scene
+		float angle = frame * 0.001f;
+		camera.position.x = sinf(angle) * 7.0f;
+		camera.position.z = cosf(angle) * 7.0f + 10.0f;
+		camera.lightDir = (float3){-sinf(angle + 1.57f) * 0.5f, 1.0f, -cosf(angle + 1.57f) * 0.5f};
+		float3 toTarget = {-camera.position.x, -camera.position.y, 10.0f - camera.position.z};
+		camera.forward = Float3_Normalize(toTarget);
 
-		clock_t rasterStart = clock();
-		for (int i = 0; i < objectCount; i++)
-			RenderObject(&objects[i], &camera, &matLib);
-		accumRenderTime += setupTime + (double)(clock() - rasterStart) / CLOCKS_PER_SEC;
+		WNOW(wA);
+		RenderSetup(objects, OBJECT_COUNT, &camera);
+		WNOW(wB);
+		double setupTime = WDIFF(wA, wB);
 		accumSetupTime += setupTime;
 
-		clock_t shadowStart = clock();
-		ShadowPostProcess(objects, objectCount, &camera, shadowResolution, 64);
-		accumShadowTime += (double)(clock() - shadowStart) / CLOCKS_PER_SEC;
+		// RASTERIZE
+		// for (int i = 0; i < OBJECT_COUNT; i++)
+		// 	RenderObject(&objects[i], &camera, &matLib);
+
+		WNOW(wA);
+		RayTraceScene(objects, OBJECT_COUNT, &camera, &matLib, &rayTaskQueue, threadPool);
+		WNOW(wB);
+		accumRenderTime += setupTime + WDIFF(wA, wB);
+
+		WNOW(wA);
+		// ShadowPostProcess(objects, OBJECT_COUNT, &camera, shadowResolution, 64);
+		WNOW(wB);
+		accumShadowTime += WDIFF(wA, wB);
+
+		applySkybox(&skybox, &camera, threadPool, &skyTaskQueue);
+
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, "HELLO FROM FONT LOADER 012345", 20, 20, 1.5f, c);
 
-		clock_t presentStart = clock();
+		WNOW(wA);
 		if (mfb_update(window, camera.framebuffer) != STATE_OK) break;
-		accumPresentTime += (double)(clock() - presentStart) / CLOCKS_PER_SEC;
+		WNOW(wB);
+		accumPresentTime += WDIFF(wA, wB);
 
 		accumFrames++;
 
@@ -101,14 +143,14 @@ int main() {
 			double avgTotal = avgRender + avgShadow + avgSync + avgPresent;
 			double avgFps = 1000.0 / avgTotal;
 			double targetFrameTime = 1.0 / 60.0;
-			int maxTriangles60 = (int)(Scene_CountTriangles(objects, objectCount) * ((targetFrameTime * 1000.0) / avgRasterize));
+			int maxTriangles60 = (int)(Scene_CountTriangles(objects, OBJECT_COUNT) * ((targetFrameTime * 1000.0) / avgRasterize));
 			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
 				   frame, avgSetup, avgRasterize, avgShadow, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
 			accumRenderTime = accumSetupTime = accumShadowTime = accumSyncTime = accumPresentTime = 0.0;
 			accumFrames = 0;
 		}
 
-		syncStart = clock();
+		WNOW(wSyncStart);
 #ifdef PGO_MAX_FRAMES
 		if (frame >= PGO_MAX_FRAMES) break;
 #endif
@@ -120,7 +162,9 @@ int main() {
 			free((void *)alphabet.letters[i].tile.pixels);
 		}
 	}
-	Scene_Destroy(objects, objectCount);
+	Scene_Destroy(objects, OBJECT_COUNT);
+	DestroySkybox(&skybox);
+	poolDestroy(threadPool);
 	MaterialLib_Destroy(&matLib);
 	destroyCamera(&camera);
 	return 0;

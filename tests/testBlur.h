@@ -20,11 +20,14 @@
 typedef struct {
 	Camera *camera;
 	int row;
+	uint32 *output;
 } BlurTask;
 
 void BlurScene(Camera *camera);
 
 void BlurRow(Camera *camera, int row);
+void BlurRowUoutput(Camera *camera, int row, uint32 *output);
 void BlurTaskFunction(void *arg);
+void BlurRowUoutputTaskFunction(void *arg);
 
 #endif

@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define WIDTH 720
+#define HEIGHT 480
+#define DEPTH 8
+
 #define FLT_MAX 3.402823466e+38F
 #define FLT_MIN -3.402823466e+38F
 // Depth sentinel: memset(0x7F) gives 0x7F7F7F7F ~= 3.394e38 per pixel, which is
@@ -65,6 +69,7 @@ typedef struct Camera {
 	float aspect;
 	float fovScale;
 	uint32 *framebuffer;
+	int4 *accumulationBuffer;
 	float3 *normalBuffer;
 	float3 *positionBuffer;
 	float3 *reflectBuffer;
