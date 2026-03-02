@@ -16,7 +16,10 @@
 #include "skybox/skybox.h"
 #include "util/threadPool.h"
 #define ACCUMULATE_STATS 256
-#define OBJECT_COUNT 3
+#define GRID_COLS 6
+#define GRID_ROWS 10
+#define PLANE_COUNT (GRID_COLS * GRID_ROWS)
+#define OBJECT_COUNT (PLANE_COUNT + 2)
 
 int main() {
 	Camera camera;
@@ -33,19 +36,40 @@ int main() {
 		return 1;
 	}
 
-	LoadObj("assets/models/r27.bin", &objects[0], &matLib);
-	objects[0].rotation = (float3){0.0f, -0.5708f, 0.0f};
-	objects[0].scale = (float3){2.0f, 2.0f, 2.0f};
-	objects[0].position = (float3){0.0f, -0.09f, 10.0f - 1.33f};
-	CreateObjectBVH(&objects[0], &objects[0].bvh);
-	Object_UpdateWorldBounds(&objects[0]);
-
-	CreateCube(&objects[1], (float3){3.0f, 2.0f, 10.0f}, (float3){3.0f, 4.0f, 0.0f}, (float3){1.0f, 1.0f, 1.0f}, (float3){0.8f, 0.2f, 0.2f, 0.1f}, &matLib);
-	Object_UpdateWorldBounds(&objects[1]);
+	const float spacingX = 7.0f, spacingZ = 7.0f;
+	const float startX = -(GRID_COLS - 1) * spacingX * 0.5f;
+	const float startZ = 5.0f;
+	for (int row = 0; row < GRID_ROWS; row++) {
+		for (int col = 0; col < GRID_COLS; col++) {
+			int idx = row * GRID_COLS + col;
+			if (col % 2 == 0) {
+				LoadObj("assets/models/r27.bin", &objects[idx], &matLib);
+				objects[idx].rotation = (float3){0.0f, -0.5708f, 0.0f};
+				objects[idx].scale = (float3){2.0f, 2.0f, 2.0f};
+				objects[idx].position = (float3){startX + col * spacingX, -0.09f, startZ + row * spacingZ};
+				CreateObjectBVH(&objects[idx], &objects[idx].bvh);
+				Object_UpdateWorldBounds(&objects[idx]);
+			} else {
+				LoadObj("assets/models/f16.bin", &objects[idx], &matLib);
+				objects[idx].rotation = (float3){0.0f, -0.5708f, 0.0f};
+				objects[idx].scale = (float3){2.0f, 2.0f, 2.0f};
+				objects[idx].position = (float3){startX + col * spacingX, -0.09f, startZ + row * spacingZ};
+				CreateObjectBVH(&objects[idx], &objects[idx].bvh);
+				Object_UpdateWorldBounds(&objects[idx]);
+			}
+		}
+	}
 
 	// floor
-	CreateCube(&objects[2], (float3){0.0f, -1.25f, 15.0f}, (float3){0.0f, -1.0f, 0.0f}, (float3){40.0f, 0.2f, 40.0f}, (float3){0.32f, 0.34f, 0.38f, 0.0f}, &matLib);
-	Object_UpdateWorldBounds(&objects[2]);
+	LoadObj("assets/models/map.bin", &objects[PLANE_COUNT], &matLib);
+	objects[PLANE_COUNT].rotation = (float3){0.0f, 0.0f, 0.0f};
+	objects[PLANE_COUNT].scale = (float3){25.0f, 12.5f, 25.0f};
+	objects[PLANE_COUNT].position = (float3){0.0f, -1.25f, 0.0f};
+	CreateObjectBVH(&objects[PLANE_COUNT], &objects[PLANE_COUNT].bvh);
+	Object_UpdateWorldBounds(&objects[PLANE_COUNT]);
+
+	CreateCube(&objects[PLANE_COUNT + 1], (float3){3.0f, 2.0f, 10.0f}, (float3){3.0f, 4.0f, 0.0f}, (float3){1.0f, 1.0f, 1.0f}, (float3){0.8f, 0.2f, 0.2f, 0.1f}, &matLib);
+	Object_UpdateWorldBounds(&objects[PLANE_COUNT + 1]);
 
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
@@ -62,7 +86,7 @@ int main() {
 	Skybox skybox;
 	LoadSkybox(&skybox, "skybox");
 
-	ThreadPool *threadPool = poolCreate(16, HEIGHT);
+	ThreadPool *threadPool = poolCreate(32, HEIGHT);
 	SkyBoxTaskQueue skyTaskQueue;
 	RayTraceTaskQueue rayTaskQueue;
 
