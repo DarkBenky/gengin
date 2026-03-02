@@ -370,7 +370,9 @@ func parseObjFile(filename string) (*FileObject, error) {
 	defer file.Close()
 
 	var vertices []Vertex
+	var normals []Vertex
 	var faces [][]int
+	var faceNormals [][]int // per-vertex normal indices for each face
 	var currentMaterial string
 	var faceMaterials []string
 
@@ -401,6 +403,15 @@ func parseObjFile(filename string) (*FileObject, error) {
 					})
 				}
 			}
+		case "vn":
+			if len(parts) >= 4 {
+				x, err1 := strconv.ParseFloat(parts[1], 32)
+				y, err2 := strconv.ParseFloat(parts[2], 32)
+				z, err3 := strconv.ParseFloat(parts[3], 32)
+				if err1 == nil && err2 == nil && err3 == nil {
+					normals = append(normals, Normalize(Vertex{float32(x), float32(y), float32(z)}))
+				}
+			}
 		case "usemtl":
 			if len(parts) >= 2 {
 				currentMaterial = parts[1]
@@ -408,6 +419,7 @@ func parseObjFile(filename string) (*FileObject, error) {
 		case "f":
 			if len(parts) >= 4 {
 				var faceIndices []int
+				var faceNormalIndices []int
 				for i := 1; i < len(parts); i++ {
 					indexParts := strings.Split(parts[i], "/")
 					if len(indexParts) > 0 && indexParts[0] != "" {
@@ -421,9 +433,20 @@ func parseObjFile(filename string) (*FileObject, error) {
 							}
 						}
 					}
+					// Parse normal index (v/vt/vn format)
+					if len(indexParts) >= 3 && indexParts[2] != "" {
+						ni, err := strconv.Atoi(indexParts[2])
+						if err == nil {
+							if ni < 0 {
+								ni = len(normals) + ni + 1
+							}
+							faceNormalIndices = append(faceNormalIndices, ni-1)
+						}
+					}
 				}
 				if len(faceIndices) >= 3 {
 					faces = append(faces, faceIndices)
+					faceNormals = append(faceNormals, faceNormalIndices)
 					faceMaterials = append(faceMaterials, currentMaterial)
 				}
 			}
@@ -467,7 +490,22 @@ func parseObjFile(filename string) (*FileObject, error) {
 				face[2] >= 0 && face[2] < len(vertices) {
 
 				v1, v2, v3 := vertices[face[0]], vertices[face[1]], vertices[face[2]]
-				normal := CalculateTriangleNormal(v1, v2, v3)
+
+				// Use OBJ normals when present — they encode the artist-specified outward direction.
+				// Average the per-vertex normals to get a stable face normal.
+				var normal Vertex
+				fn := faceNormals[faceIdx]
+				if len(fn) == 3 && fn[0] >= 0 && fn[0] < len(normals) &&
+					fn[1] >= 0 && fn[1] < len(normals) &&
+					fn[2] >= 0 && fn[2] < len(normals) {
+					normal = Normalize(Vertex{
+						X: (normals[fn[0]].X + normals[fn[1]].X + normals[fn[2]].X) / 3,
+						Y: (normals[fn[0]].Y + normals[fn[1]].Y + normals[fn[2]].Y) / 3,
+						Z: (normals[fn[0]].Z + normals[fn[1]].Z + normals[fn[2]].Z) / 3,
+					})
+				} else {
+					normal = CalculateTriangleNormal(v1, v2, v3)
+				}
 
 				triangle := Triangle{
 					Vertex1:   v1,
@@ -515,11 +553,6 @@ func parseObjFile(filename string) (*FileObject, error) {
 		}
 	}
 
-	fixedCount := EnsureConsistentWinding(allTriangles)
-	if fixedCount > 0 {
-		fmt.Printf("Fixed winding order for %d triangles\n", fixedCount)
-	}
-
 	fileObj := &FileObject{
 		Triangles: allTriangles,
 	}
@@ -559,25 +592,32 @@ func writeFile(filename string, obj *FileObject, color *[3]float32) error {
 	defer file.Close()
 	w := bufio.NewWriter(file)
 
-	triangleStructSize := uint32(unsafe.Sizeof(Triangle{}))
+	// float3 in C is {x,y,z,w} — 16 bytes due to w padding.
+	// Layout: 5×float3(16) + roughness(4) + metallic(4) + emission(4) = 92 bytes
+	triangleStructSize := uint32(5*16 + 3*4)
 	fileSize := uint32(8) + uint32(len(obj.Triangles))*triangleStructSize
 
 	w.Write(uint32ToBytes(fileSize))
 	w.Write(uint32ToBytes(triangleStructSize))
 
+	zero := float32ToBytes(0)
 	for _, tri := range obj.Triangles {
 		w.Write(float32ToBytes(tri.Vertex1.X))
 		w.Write(float32ToBytes(tri.Vertex1.Y))
 		w.Write(float32ToBytes(tri.Vertex1.Z))
+		w.Write(zero) // w padding
 		w.Write(float32ToBytes(tri.Vertex2.X))
 		w.Write(float32ToBytes(tri.Vertex2.Y))
 		w.Write(float32ToBytes(tri.Vertex2.Z))
+		w.Write(zero) // w padding
 		w.Write(float32ToBytes(tri.Vertex3.X))
 		w.Write(float32ToBytes(tri.Vertex3.Y))
 		w.Write(float32ToBytes(tri.Vertex3.Z))
+		w.Write(zero) // w padding
 		w.Write(float32ToBytes(tri.Normal.X))
 		w.Write(float32ToBytes(tri.Normal.Y))
 		w.Write(float32ToBytes(tri.Normal.Z))
+		w.Write(zero) // w padding
 		w.Write(float32ToBytes(tri.Roughness))
 		w.Write(float32ToBytes(tri.Metallic))
 		w.Write(float32ToBytes(tri.Emission))
@@ -590,7 +630,7 @@ func writeFile(filename string, obj *FileObject, color *[3]float32) error {
 			w.Write(float32ToBytes(tri.Color[1]))
 			w.Write(float32ToBytes(tri.Color[2]))
 		}
-		w.Write(uint32ToBytes(uint32(tri.index)))
+		w.Write(zero) // w padding for color float3
 	}
 
 	return w.Flush()
