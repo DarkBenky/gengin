@@ -10,7 +10,7 @@
 - [ ] GPU rendering (keep it simple — port current CPU pipeline)
 - [ ] Add Screen space reflection
     - Example
-    ```c
+    ```cl
     float3 sampleScreenSpaceReflectionFiltered(
     	__global const float *ScreenColors,
     	__global const float *ScreenDistances,
@@ -123,8 +123,7 @@
     	}
     
     	return fallbackColor;
-    }
-    ```
+    }```
 - [ ] Test if using multiple row in ray trace is not fast for example 8 row one task
 
 - Current Render
