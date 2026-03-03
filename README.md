@@ -9,6 +9,6 @@
 - [ ] Server integration for multiplayer
 - [ ] GPU rendering (keep it simple — port current CPU pipeline)
 
-Currently [img][(./img.png)]
+Currently [img](./img.png)
 
 [image-copy]: ./img.png
