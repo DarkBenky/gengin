@@ -10,12 +10,13 @@
 #include "render/render.h"
 #include "render/cpu/font.h"
 #include "render/cpu/ray.h"
+#include "render/cpu/ssr.h"
 #include "render/color/color.h"
 #include "load/loadObj.h"
 #include "math/vector3.h"
 #include "skybox/skybox.h"
 #include "util/threadPool.h"
-#define ACCUMULATE_STATS 256
+#define ACCUMULATE_STATS 1024
 #define GRID_COLS 6
 #define GRID_ROWS 7
 #define PLANE_COUNT (GRID_COLS * GRID_ROWS)
@@ -63,8 +64,8 @@ int main() {
 	// floor
 	LoadObj("assets/models/map.bin", &objects[PLANE_COUNT], &matLib);
 	objects[PLANE_COUNT].rotation = (float3){0.0f, 0.0f, 0.0f};
-	objects[PLANE_COUNT].scale = (float3){5.0f, 9.5f, 5.0f};
-	objects[PLANE_COUNT].position = (float3){0.0f, -75.0f, 0.0f};
+	objects[PLANE_COUNT].scale = (float3){2.0f, 2.0f, 2.0f};
+	objects[PLANE_COUNT].position = (float3){0.0f, -7.0f, 0.0f};
 	CreateObjectBVH(&objects[PLANE_COUNT], &objects[PLANE_COUNT].bvh);
 	Object_UpdateWorldBounds(&objects[PLANE_COUNT]);
 
@@ -88,6 +89,7 @@ int main() {
 
 	ThreadPool *threadPool = poolCreate(32, HEIGHT);
 	RayTraceTaskQueue rayTaskQueue;
+	SSRTask *ssrTasks = malloc(sizeof(SSRTask) * ((HEIGHT + 3) / 4));
 
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, OBJECT_COUNT));
 	int frame = 0;
@@ -96,6 +98,7 @@ int main() {
 	double accumRenderTime = 0.0;
 	double accumSetupTime = 0.0;
 	double accumShadowTime = 0.0;
+	double accumSSRTime = 0.0;
 	double accumSyncTime = 0.0;
 	double accumPresentTime = 0.0;
 	int accumFrames = 0;
@@ -131,12 +134,13 @@ int main() {
 		double setupTime = WDIFF(wA, wB);
 		accumSetupTime += setupTime;
 
-		// RASTERIZE
-		// for (int i = 0; i < OBJECT_COUNT; i++)
-		// 	RenderObject(&objects[i], &camera, &matLib);
-
 		WNOW(wA);
 		RayTraceScene(objects, OBJECT_COUNT, &camera, &matLib, &rayTaskQueue, threadPool, &skybox);
+
+		// RASTERIZE
+		// for (int i = 0; i < OBJECT_COUNT; i++) {
+		// 	RenderObject(&objects[i], &camera, &matLib);
+		// }
 		WNOW(wB);
 		double frameRenderTime = setupTime + WDIFF(wA, wB);
 		frameTimes[frame & 3] = frameRenderTime;
@@ -148,6 +152,11 @@ int main() {
 		// DitherOrderedPostProcess(&camera, frame);
 		WNOW(wB);
 		accumShadowTime += WDIFF(wA, wB);
+
+		WNOW(wA);
+		SSRPostProcess(&camera, threadPool, ssrTasks, 4);
+		WNOW(wB);
+		accumSSRTime += WDIFF(wA, wB);
 
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		char text[64];
@@ -167,15 +176,16 @@ int main() {
 			double avgSetup = accumSetupTime / accumFrames * 1000.0;
 			double avgRasterize = avgRender - avgSetup;
 			double avgShadow = accumShadowTime / accumFrames * 1000.0;
+			double avgSSR = accumSSRTime / accumFrames * 1000.0;
 			double avgSync = accumSyncTime / accumFrames * 1000.0;
 			double avgPresent = accumPresentTime / accumFrames * 1000.0;
-			double avgTotal = avgRender + avgShadow + avgSync + avgPresent;
+			double avgTotal = avgRender + avgShadow + avgSSR + avgSync + avgPresent;
 			double avgFps = 1000.0 / avgTotal;
 			double targetFrameTime = 1.0 / 60.0;
 			int maxTriangles60 = (int)(Scene_CountTriangles(objects, OBJECT_COUNT) * ((targetFrameTime * 1000.0) / avgRasterize));
-			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
-				   frame, avgSetup, avgRasterize, avgShadow, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
-			accumRenderTime = accumSetupTime = accumShadowTime = accumSyncTime = accumPresentTime = 0.0;
+			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  ssr: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
+				   frame, avgSetup, avgRasterize, avgShadow, avgSSR, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
+			accumRenderTime = accumSetupTime = accumShadowTime = accumSSRTime = accumSyncTime = accumPresentTime = 0.0;
 			accumFrames = 0;
 		}
 
@@ -194,6 +204,7 @@ int main() {
 	Scene_Destroy(objects, OBJECT_COUNT);
 	DestroySkybox(&skybox);
 	poolDestroy(threadPool);
+	free(ssrTasks);
 	MaterialLib_Destroy(&matLib);
 	destroyCamera(&camera);
 	return 0;

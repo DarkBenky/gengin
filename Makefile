@@ -19,7 +19,7 @@ CFLAGS += -fprofile-use=$(PROFDATA) -fprofile-correction
 endif
 
 TARGET = main
-SRC = main.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c
+SRC = main.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c
 
 FLAMEGRAPH_DIR = .flamegraph
 
@@ -27,7 +27,7 @@ TESTS_DIR     = tests
 TEST_SRCS     = $(filter-out $(TESTS_DIR)/timings.c, $(wildcard $(TESTS_DIR)/*.c))
 TEST_BINS     = $(patsubst $(TESTS_DIR)/%.c, $(TESTS_DIR)/%, $(TEST_SRCS))
 TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c tests/timings.c object/object.c object/format.c object/scene.c \
-                object/material/material.c render/render.c render/cpu/ray.c render/cpu/tile.c \
+                object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c \
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay

@@ -1,7 +1,9 @@
 import ctypes
 from math import sqrt
+import os
 import struct
 import numpy as np
+from scipy.ndimage import gaussian_filter
 from noise import pnoise2
 import matplotlib.pyplot as plt
 
@@ -11,18 +13,18 @@ WIDTH = GRID_SIZE
 HEIGHT = GRID_SIZE
 
 SEED             = 42
-COLOR_BRIGHTNESS = 1.10  # multiply all biome colors by this (1.0 = unchanged)
+COLOR_BRIGHTNESS = 1.85  # multiply all biome colors by this (1.0 = unchanged)
 
 # terrain generation params
 BASE_SCALE   = 0.0175   # base frequency — lower = larger continent features
-OCTAVES      = 12       # detail layers
+OCTAVES      = 16       # detail layers
 PERSISTENCE  = 0.5     # amplitude falloff per octave
 LACUNARITY   = 2.0     # frequency growth per octave
 HEIGHT_POWER = 4.25     # exponent > 1 flattens lowlands, sharpens peaks
 SEA_LEVEL    = -0.75     # values below this are flat water
 
 # hydraulic erosion params
-EROSION_DROPS      = 15_000  # number of water droplets
+EROSION_DROPS      = 25_000  # number of water droplets
 EROSION_RADIUS     = 3        # brush radius for deposit/erode
 EROSION_INERTIA    = 0.025     # how much droplet keeps its direction (0=always downhill)
 SEDIMENT_CAPACITY  = 4.0      # max sediment a droplet carries relative to speed*slope
@@ -200,6 +202,12 @@ def generate_map():
     Map -= Map.min()
     Map /= Map.max()
 
+    # smooth water areas so the flat surface is perfectly even
+    water_mask = Map < WATER_H
+    smoothed = gaussian_filter(Map, sigma=4)
+    Map = np.where(water_mask, smoothed, Map)
+    Map = np.clip(Map, 0.0, 1.0)
+
     # build RGB preview using the same material colors as the mesh
     preview = np.zeros((HEIGHT, WIDTH, 3), dtype=np.float32)
     for y in range(HEIGHT):
@@ -248,12 +256,12 @@ def _smoothstep(edge0, edge1, x):
 def _height_to_material(h):
     """Smooth biome transitions using blended zones."""
     # biome anchor points: (height, color, roughness, metallic)
-    WATER = ((0.10, 0.18, 0.35), 0.95, 0.0)
-    SAND  = ((0.82, 0.72, 0.40), 0.90, 0.0)
-    GRASS = ((0.22, 0.58, 0.14), 0.87, 0.0)
-    DIRT  = ((0.48, 0.40, 0.28), 0.83, 0.02)
-    ROCK  = ((0.55, 0.52, 0.48), 0.80, 0.05)
-    SNOW  = ((0.90, 0.92, 0.95), 0.25, 0.0)
+    WATER = ((0.18, 0.52, 0.90), 0.05, 0.15)
+    SAND  = ((0.92, 0.82, 0.52), 0.90, 0.0)
+    GRASS = ((0.28, 0.72, 0.18), 0.87, 0.0)
+    DIRT  = ((0.62, 0.52, 0.36), 0.83, 0.02)
+    ROCK  = ((0.68, 0.65, 0.60), 0.80, 0.05)
+    SNOW  = ((0.95, 0.97, 1.00), 0.25, 0.0)
 
     # blend zones: (start, end, from_biome, to_biome)
     zones = [
@@ -331,5 +339,6 @@ def save_map_to_bin(filename, Map):
 
 if __name__ == "__main__":
     Map = generate_map()
-    save_map_to_bin("../assets/models/map.bin", Map)
+    out = os.path.join(os.path.dirname(__file__), "..", "assets", "models", "map.bin")
+    save_map_to_bin(out, Map)
     print("map generation complete")

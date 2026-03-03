@@ -483,6 +483,8 @@ static void RayTraceRowFunc(void *arg) {
 		}
 
 		float3 sOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
+		camera->normalBuffer[idx] = n;
+		camera->positionBuffer[idx] = bestHitPos;
 		int shadowHit = -1;
 		if (emission <= 0.0f)
 			rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
@@ -526,9 +528,11 @@ static void RayTraceRowFunc(void *arg) {
 		uint32 nb = ((uint32)b * sit + (skyRefl & 0xFF) * st) >> 8;
 
 		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
-		camera->depthBuffer[idx] = bestT;
+		// View-Z depth (dot with forward) keeps SSR depth comparisons consistent
+		camera->depthBuffer[idx] = (bestHitPos.x - orig.x) * fwd.x + (bestHitPos.y - orig.y) * fwd.y + (bestHitPos.z - orig.z) * fwd.z;
 		camera->objectIdBuffer[idx] = bestObj;
-		camera->reflectBuffer[idx] = reflDir;
+		// w = (1-roughness) for SSR reflectivity gating
+		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, (1.0f - roughness)};
 	}
 }
 
