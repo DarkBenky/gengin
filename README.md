@@ -8,7 +8,7 @@
 - [ ] Missile guidance and control
 - [ ] Server integration for multiplayer
 - [ ] GPU rendering (keep it simple — port current CPU pipeline)
+- [ ] Add Screen space reflection
+- [ ] Test if using multiple row in ray trace is not fast for example 8 row one task
 
-Currently [img](./img.png)
-
-[image-copy]: ./img.png
+Currently ![img](./img.png)
