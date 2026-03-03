@@ -5,18 +5,21 @@ import numpy as np
 from noise import pnoise2
 import matplotlib.pyplot as plt
 
-NUM_OF_TRIANGLES = 100_000
+NUM_OF_TRIANGLES = 75_000
 GRID_SIZE = int(sqrt(NUM_OF_TRIANGLES / 2)) + 1
 WIDTH = GRID_SIZE
 HEIGHT = GRID_SIZE
 
+SEED             = 42
+COLOR_BRIGHTNESS = 1.10  # multiply all biome colors by this (1.0 = unchanged)
+
 # terrain generation params
-BASE_SCALE   = 0.015   # base frequency — lower = larger continent features
+BASE_SCALE   = 0.0175   # base frequency — lower = larger continent features
 OCTAVES      = 12       # detail layers
 PERSISTENCE  = 0.5     # amplitude falloff per octave
 LACUNARITY   = 2.0     # frequency growth per octave
-HEIGHT_POWER = 2.2     # exponent > 1 flattens lowlands, sharpens peaks
-SEA_LEVEL    = -0.2     # values below this are flat water
+HEIGHT_POWER = 4.25     # exponent > 1 flattens lowlands, sharpens peaks
+SEA_LEVEL    = -0.75     # values below this are flat water
 
 # hydraulic erosion params
 EROSION_DROPS      = 15_000  # number of water droplets
@@ -94,7 +97,7 @@ def _build_brush(radius):
 
 
 def hydraulic_erosion(map):
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(SEED)
     H, W = map.shape
     brush_offsets, brush_weights = _build_brush(EROSION_RADIUS)
 
@@ -175,7 +178,8 @@ def generate_map():
             max_val = 0.0
             for _ in range(OCTAVES):
                 value    += pnoise2(x * BASE_SCALE * frequency,
-                                    y * BASE_SCALE * frequency) * amplitude
+                                    y * BASE_SCALE * frequency,
+                                    base=SEED) * amplitude
                 max_val  += amplitude
                 amplitude *= PERSISTENCE
                 frequency *= LACUNARITY
@@ -244,12 +248,12 @@ def _smoothstep(edge0, edge1, x):
 def _height_to_material(h):
     """Smooth biome transitions using blended zones."""
     # biome anchor points: (height, color, roughness, metallic)
-    WATER = ((0.08, 0.13, 0.22), 0.95, 0.0)
-    SAND  = ((0.52, 0.44, 0.28), 0.90, 0.0)
-    GRASS = ((0.13, 0.24, 0.08), 0.87, 0.0)
-    DIRT  = ((0.30, 0.25, 0.18), 0.83, 0.02)
-    ROCK  = ((0.38, 0.35, 0.32), 0.80, 0.05)
-    SNOW  = ((0.82, 0.84, 0.88), 0.25, 0.0)
+    WATER = ((0.10, 0.18, 0.35), 0.95, 0.0)
+    SAND  = ((0.82, 0.72, 0.40), 0.90, 0.0)
+    GRASS = ((0.22, 0.58, 0.14), 0.87, 0.0)
+    DIRT  = ((0.48, 0.40, 0.28), 0.83, 0.02)
+    ROCK  = ((0.55, 0.52, 0.48), 0.80, 0.05)
+    SNOW  = ((0.90, 0.92, 0.95), 0.25, 0.0)
 
     # blend zones: (start, end, from_biome, to_biome)
     zones = [
@@ -267,11 +271,13 @@ def _height_to_material(h):
         if h <= end:
             t = _smoothstep(start, end, h)
             color = _lerp3(a[0], b[0], t)
+            color = tuple(min(c * COLOR_BRIGHTNESS, 1.0) for c in color)
             roughness = _lerp(a[1], b[1], t)
             metallic  = _lerp(a[2], b[2], t)
             return color, roughness, metallic, 0.0
 
-    return SNOW[0], SNOW[1], SNOW[2], 0.0
+    snow = tuple(min(c * COLOR_BRIGHTNESS, 1.0) for c in SNOW[0])
+    return snow, SNOW[1], SNOW[2], 0.0
 
 
 def save_map_to_bin(filename, Map):

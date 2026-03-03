@@ -63,7 +63,7 @@ int main() {
 	// floor
 	LoadObj("assets/models/map.bin", &objects[PLANE_COUNT], &matLib);
 	objects[PLANE_COUNT].rotation = (float3){0.0f, 0.0f, 0.0f};
-	objects[PLANE_COUNT].scale = (float3){5.0f, 4.5f, 5.0f};
+	objects[PLANE_COUNT].scale = (float3){5.0f, 9.5f, 5.0f};
 	objects[PLANE_COUNT].position = (float3){0.0f, -75.0f, 0.0f};
 	CreateObjectBVH(&objects[PLANE_COUNT], &objects[PLANE_COUNT].bvh);
 	Object_UpdateWorldBounds(&objects[PLANE_COUNT]);
@@ -145,7 +145,7 @@ int main() {
 		WNOW(wA);
 		// ShadowPostProcess(objects, OBJECT_COUNT, &camera, shadowResolution, 64);
 		// DitherPostProcess(&camera, frame);
-		DitherOrderedPostProcess(&camera, frame);
+		// DitherOrderedPostProcess(&camera, frame);
 		WNOW(wB);
 		accumShadowTime += WDIFF(wA, wB);
 
