@@ -11,4 +11,5 @@
 - [ ] Add Screen space reflection
 - [ ] Test if using multiple row in ray trace is not fast for example 8 row one task
 
-Currently ![img](./img.png)
+- Current Render
+    - ![img](./img.png)
