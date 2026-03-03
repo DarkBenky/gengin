@@ -10,8 +10,8 @@
 - [ ] GPU rendering (keep it simple — port current CPU pipeline)
 - [ ] Add Screen space reflection
     - Example
-    ```cl
-        float3 sampleScreenSpaceReflectionFiltered(
+    ```c
+    float3 sampleScreenSpaceReflectionFiltered(
     	__global const float *ScreenColors,
     	__global const float *ScreenDistances,
     	const float3 rayOrigin,
