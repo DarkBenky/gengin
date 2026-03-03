@@ -454,6 +454,7 @@ static void RayTraceRowFunc(void *arg) {
 
 		if (bestObj < 0) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
+			camera->objectIdBuffer[idx] = -1;
 			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
 			continue;
 		}
@@ -526,6 +527,7 @@ static void RayTraceRowFunc(void *arg) {
 
 		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
 		camera->depthBuffer[idx] = bestT;
+		camera->objectIdBuffer[idx] = bestObj;
 		camera->reflectBuffer[idx] = reflDir;
 	}
 }
