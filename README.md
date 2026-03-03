@@ -11,4 +11,4 @@
 
 Currently [img][image-copy]
 
-[image-copy]: ./image%20copy.png
+[image-copy]: ./img.png
