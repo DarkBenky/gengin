@@ -4,9 +4,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define WIDTH 720
-#define HEIGHT 480
-#define DEPTH 8
+#define WIDTH 1080
+#define HEIGHT 720
 
 #define FLT_MAX 3.402823466e+38F
 #define FLT_MIN -3.402823466e+38F
