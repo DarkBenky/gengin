@@ -82,6 +82,7 @@ typedef struct Camera {
 	float seed;
 	float *shadowCache;
 	Color *reflectCache;
+	int *objectIdBuffer;
 	int frameCounter;
 } Camera;
 

@@ -8,14 +8,15 @@ void clearBuffers(Camera *camera) {
 	if (!camera) return;
 	int size = camera->screenWidth * camera->screenHeight;
 	// framebuffer: cleared to black background each frame.
-	memset(camera->framebuffer, 0, size * sizeof(uint32));
-	memset(camera->accumulationBuffer, 0, size * sizeof(int4));
+	// memset(camera->framebuffer, 0, size * sizeof(uint32));
+	// memset(camera->accumulationBuffer, 0, size * sizeof(int4));
 	// depthBuffer: 0x7F7F7F7F ~= 3.4e38, indistinguishable from FLT_MAX for depth comparisons.
-	memset(camera->depthBuffer, 0x7F, size * sizeof(float));
+	// memset(camera->depthBuffer, 0x7F, size * sizeof(float));
 	// normalBuffer, positionBuffer, reflectBuffer: only read at pixels where
 	// depthBuffer < FLT_MAX (i.e. pixels written by RenderObject), so no clear needed.
 	// tempBuffer_1: fully overwritten with 1.0f in ShadowPostProcess before any read.
 	// tempBuffer_2: written by blur horizontal pass before vertical pass reads it.
+	// objectIdBuffer: fully overwritten by ray tracer each frame.
 	// tempFramebuffer/2, tempBuffer_3: not read before being written each frame.
 }
 
@@ -40,6 +41,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->tempFramebuffer2 = (Color *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(Color)));
 	camera->shadowCache = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
 	camera->reflectCache = (Color *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(Color)));
+	camera->objectIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
 	camera->frameCounter = 0;
 	clearBuffers(camera);
 	int size = screenWidth * screenHeight;
@@ -62,6 +64,7 @@ void destroyCamera(Camera *camera) {
 	free(camera->tempFramebuffer2);
 	free(camera->shadowCache);
 	free(camera->reflectCache);
+	free(camera->objectIdBuffer);
 	camera->framebuffer = NULL;
 	camera->normalBuffer = NULL;
 	camera->positionBuffer = NULL;
@@ -74,4 +77,5 @@ void destroyCamera(Camera *camera) {
 	camera->tempFramebuffer2 = NULL;
 	camera->shadowCache = NULL;
 	camera->reflectCache = NULL;
+	camera->objectIdBuffer = NULL;
 }
