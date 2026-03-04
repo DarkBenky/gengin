@@ -1,10 +1,15 @@
 #pragma once
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <time.h>
 
 #ifndef BENCH_DURATION
 #define BENCH_DURATION 5.0
+#endif
+
+#ifndef BENCH_HASH_FRAMES
+#define BENCH_HASH_FRAMES 5
 #endif
 
 #define BENCH_MAX_FRAMES 100000
@@ -14,9 +19,22 @@ typedef struct {
 	int count;
 	struct timespec start;
 	struct timespec frameStart;
+	uint32_t frameHashes[BENCH_HASH_FRAMES];
+	int hashCount;
 } Bench;
 
 #ifdef BENCH_MODE
+
+static inline uint32_t benchFnv1a(const uint32_t *pixels, int count) {
+	uint32_t h = 2166136261u;
+	const uint8_t *p = (const uint8_t *)pixels;
+	int bytes = count * 4;
+	for (int i = 0; i < bytes; i++) {
+		h ^= p[i];
+		h *= 16777619u;
+	}
+	return h;
+}
 
 static inline int benchCmpDouble(const void *a, const void *b) {
 	double da = *(const double *)a, db = *(const double *)b;
@@ -30,7 +48,13 @@ static inline double benchDiff(struct timespec a, struct timespec b) {
 static inline void benchInit(Bench *b) {
 	b->times = malloc(sizeof(double) * BENCH_MAX_FRAMES);
 	b->count = 0;
+	b->hashCount = 0;
 	clock_gettime(CLOCK_MONOTONIC, &b->start);
+}
+
+static inline void benchCaptureFrame(Bench *b, const uint32_t *pixels, int pixelCount) {
+	if (b->hashCount < BENCH_HASH_FRAMES)
+		b->frameHashes[b->hashCount++] = benchFnv1a(pixels, pixelCount);
 }
 
 static inline void benchFrameStart(Bench *b) {
@@ -69,7 +93,13 @@ static inline void benchReport(Bench *b) {
 		fprintf(f, "  \"duration_s\": %.1f,\n", (double)BENCH_DURATION);
 		fprintf(f, "  \"avg_ms\": %.3f,\n", avg);
 		fprintf(f, "  \"median_ms\": %.3f,\n", median);
-		fprintf(f, "  \"p99_ms\": %.3f\n", p99);
+		fprintf(f, "  \"p99_ms\": %.3f,\n", p99);
+		fprintf(f, "  \"frame_hashes\": [");
+		for (int i = 0; i < b->hashCount; i++) {
+			if (i > 0) fprintf(f, ", ");
+			fprintf(f, "\"0x%08x\"", b->frameHashes[i]);
+		}
+		fprintf(f, "]\n");
 		fprintf(f, "}\n");
 		fclose(f);
 		printf("  saved  : bench_results.json\n");
@@ -85,6 +115,11 @@ static inline void benchFree(Bench *b) {
 
 static inline void benchInit(Bench *b) {
 	(void)b;
+}
+static inline void benchCaptureFrame(Bench *b, const uint32_t *pixels, int pixelCount) {
+	(void)b;
+	(void)pixels;
+	(void)pixelCount;
 }
 static inline void benchFrameStart(Bench *b) {
 	(void)b;
