@@ -165,11 +165,15 @@ int main() {
 		WNOW(wB);
 		accumSSRTime += WDIFF(wA, wB);
 
+		benchCaptureFrame(&bench, camera.framebuffer, WIDTH * HEIGHT);
+
+#ifndef BENCH_MODE
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		char text[64];
 		double avgFrameTime = (frameTimes[0] + frameTimes[1] + frameTimes[2] + frameTimes[3]) * 0.25;
 		snprintf(text, sizeof(text), "FPS: %.1f", avgFrameTime > 0.0 ? 1.0 / avgFrameTime : 0.0);
 		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.75f, c);
+#endif
 
 		WNOW(wA);
 		if (mfb_update(window, camera.framebuffer) != STATE_OK) break;
