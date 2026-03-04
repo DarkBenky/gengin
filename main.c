@@ -16,6 +16,11 @@
 #include "math/vector3.h"
 #include "skybox/skybox.h"
 #include "util/threadPool.h"
+#include "util/bench.h"
+
+#define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
+#define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
+
 #define ACCUMULATE_STATS 1024
 #define GRID_COLS 6
 #define GRID_ROWS 7
@@ -103,12 +108,14 @@ int main() {
 	double accumPresentTime = 0.0;
 	int accumFrames = 0;
 
-#define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
-#define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
-
 	struct timespec wSyncStart, wA, wB;
 	WNOW(wSyncStart);
+
+	Bench bench;
+	benchInit(&bench);
+
 	while (1) {
+		benchFrameStart(&bench);
 		WNOW(wA);
 		accumSyncTime += WDIFF(wSyncStart, wA);
 
@@ -190,12 +197,16 @@ int main() {
 		}
 
 		WNOW(wSyncStart);
+		if (benchFrameEnd(&bench)) break;
 #ifdef PGO_MAX_FRAMES
 		if (frame >= PGO_MAX_FRAMES) break;
 #endif
 	}
 
 	mfb_close(window);
+	benchReport(&bench);
+	benchFree(&bench);
+
 	for (int i = 0; i < 256; i++) {
 		if (alphabet.letters[i].tile.pixels) {
 			free((void *)alphabet.letters[i].tile.pixels);

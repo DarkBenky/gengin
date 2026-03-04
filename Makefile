@@ -31,10 +31,10 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test all clean run flame pgo, $(MAKECMDGOALS))
+_SPECIFIC     = $(filter-out test all clean run flame pgo bench, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
-.PHONY: all clean run flame pgo test $(if $(_SPECIFIC), $(_SPECIFIC))
+.PHONY: all clean run flame pgo test bench $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
@@ -43,6 +43,11 @@ $(TARGET): $(SRC)
 
 run: $(TARGET)
 	./$(TARGET)
+
+bench: $(SRC)
+	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=5.0 -o $(TARGET)_bench $^ $(LDFLAGS) $(LIBS)
+	./$(TARGET)_bench
+	rm -f $(TARGET)_bench
 
 # Build rule for any test binary
 $(TESTS_DIR)/%: $(TESTS_DIR)/%.c $(TEST_COMMON)
@@ -86,4 +91,4 @@ flame:
 	@echo "Flame graph saved to flamegraph.svg"
 
 clean:
-	rm -f $(TARGET) perf.data flamegraph.svg $(TEST_BINS)
+	rm -f $(TARGET) perf.data flamegraph.svg $(TEST_BINS) $(TARGET)_bench bench_results.json
