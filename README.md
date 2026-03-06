@@ -1745,3 +1745,25 @@ int main(void){
 }
 #endif // AERO_SIM_EXAMPLE
 ```
+- Example use case
+```c
+// Fill state from your integrator
+state.velocity        = solver.linearVelocity;
+state.angularVelocity = solver.angularVelocity;
+state.orientation     = solver.quaternion;
+state.atmosphere      = atmosphereISA(solver.altitude);
+
+// Set controls
+state.throttle      = pilotThrottle;
+state.elevatorInput = pilotPitch;
+state.aileronInput  = pilotRoll;
+state.rudderInput   = pilotYaw;
+
+// Get forces
+AeroForceResult r = calculateAircraftForces(&cfg, &state);
+
+// Feed to solver
+solver.applyForce (r.force);
+solver.applyTorque(r.moment);
+state.totalFuelKg -= r.fuelFlowKgS * dt;
+```
