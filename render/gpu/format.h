@@ -51,6 +51,7 @@ void      CL_Buffer_Destroy(CL_Buffer* buf);
 
 void CL_Buffer_Write(CL_Context* ctx, CL_Buffer* buf, void* data, size_t size);
 void CL_Buffer_Read (CL_Context* ctx, CL_Buffer* buf, void* out,  size_t size);
+void CL_Buffer_Fill (CL_Context* ctx, CL_Buffer* buf, const void* pattern, size_t patternSize, size_t size);
 
 // IMAGE  (2D texture on GPU)
 CL_Image CL_Image_Create(CL_Context* ctx, int width, int height);

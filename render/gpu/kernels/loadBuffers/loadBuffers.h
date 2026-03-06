@@ -36,7 +36,9 @@ CL_Buffer loadObjectTriangleCounts(Object *objects, int objectCount, CL_Context 
 CL_Buffer loadObjectScreenBounds(Object *objects, int objectCount, Camera camera, CL_Context *ctx, cl_mem_flags flag, Arena *arena);
 
 // Material data
+// matColors[i] = {r, g, b, roughness},  matProps[i] = {metallic, emission, 0, 0}
 CL_Buffer loadMaterials(MaterialLib *lib, CL_Context *ctx, cl_mem_flags flag);
+CL_Buffer loadMaterialProps(MaterialLib *lib, CL_Context *ctx, cl_mem_flags flag);
 
 // Output buffers for rasterization results
 CL_Buffer createPositionDepthBuffer(int width, int height, CL_Context *ctx, cl_mem_flags flag);

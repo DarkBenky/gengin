@@ -21,6 +21,8 @@ endif
 TARGET = main
 SRC = main.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c
 
+GPU_SRC = $(SRC) render/gpu/format.c render/gpu/raster.c render/gpu/kernels/loadBuffers/loadBuffers.c
+
 FLAMEGRAPH_DIR = .flamegraph
 
 TESTS_DIR     = tests
@@ -31,15 +33,19 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test all clean run flame pgo bench, $(MAKECMDGOALS))
+_SPECIFIC     = $(filter-out test all clean run flame pgo bench gpu, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
-.PHONY: all clean run flame pgo test bench $(if $(_SPECIFIC), $(_SPECIFIC))
+.PHONY: all clean run flame pgo test bench gpu $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
+
+# GPU build: compile with OpenCL support and USE_GPU flag
+gpu: $(GPU_SRC)
+	$(CC) $(CFLAGS) -DUSE_GPU -o $(TARGET) $^ $(LDFLAGS) $(LIBS) -lOpenCL
 
 run: $(TARGET)
 	./$(TARGET)

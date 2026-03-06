@@ -99,6 +99,12 @@ void CL_Buffer_Read(CL_Context *ctx, CL_Buffer *buf, void *out, size_t size) {
 	CL_CheckError(err, "clEnqueueReadBuffer");
 }
 
+void CL_Buffer_Fill(CL_Context *ctx, CL_Buffer *buf, const void *pattern, size_t patternSize, size_t size) {
+	cl_int err = clEnqueueFillBuffer(ctx->queue, buf->buf, pattern, patternSize, 0, size, 0, NULL, NULL);
+	CL_CheckError(err, "clEnqueueFillBuffer");
+	clFinish(ctx->queue);
+}
+
 CL_Image CL_Image_Create(CL_Context *ctx, int width, int height) {
 	CL_Image img = {.width = width, .height = height};
 	cl_int err;

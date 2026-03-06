@@ -18,6 +18,10 @@
 #include "util/threadPool.h"
 #include "util/bench.h"
 
+#ifdef USE_GPU
+#include "render/gpu/raster.h"
+#endif
+
 #define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
 #define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
 
@@ -96,6 +100,13 @@ int main() {
 	RayTraceTaskQueue rayTaskQueue;
 	SSRTask *ssrTasks = malloc(sizeof(SSRTask) * ((HEIGHT + 3) / 4));
 
+#ifdef USE_GPU
+	GPURaster *gpuRaster = GPURaster_Init(objects, OBJECT_COUNT, &matLib, WIDTH, HEIGHT);
+	if (!gpuRaster) {
+		fprintf(stderr, "Warning: GPU rasterizer unavailable, falling back to CPU ray tracer.\n");
+	}
+#endif
+
 	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, OBJECT_COUNT));
 	int frame = 0;
 	int shadowResolution = 4;
@@ -142,12 +153,20 @@ int main() {
 		accumSetupTime += setupTime;
 
 		WNOW(wA);
+#ifdef USE_GPU
+		if (gpuRaster) {
+			GPURaster_RenderObjects(gpuRaster, objects, OBJECT_COUNT, &camera);
+		} else {
+			RayTraceScene(objects, OBJECT_COUNT, &camera, &matLib, &rayTaskQueue, threadPool, &skybox);
+		}
+#else
 		RayTraceScene(objects, OBJECT_COUNT, &camera, &matLib, &rayTaskQueue, threadPool, &skybox);
 
 		// RASTERIZE
 		// for (int i = 0; i < OBJECT_COUNT; i++) {
 		// 	RenderObject(&objects[i], &camera, &matLib);
 		// }
+#endif
 		WNOW(wB);
 		double frameRenderTime = setupTime + WDIFF(wA, wB);
 		frameTimes[frame & 3] = frameRenderTime;
@@ -210,6 +229,10 @@ int main() {
 	mfb_close(window);
 	benchReport(&bench);
 	benchFree(&bench);
+
+#ifdef USE_GPU
+	GPURaster_Destroy(gpuRaster);
+#endif
 
 	for (int i = 0; i < 256; i++) {
 		if (alphabet.letters[i].tile.pixels) {
