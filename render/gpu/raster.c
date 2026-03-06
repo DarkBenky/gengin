@@ -108,10 +108,11 @@ static bool uploadGeometry(GPURaster *r, const Object *objects, int objectCount,
 		}
 	}
 
-	r->v1 = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float3), fv1, CL_MEM_READ_ONLY);
-	r->v2 = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float3), fv2, CL_MEM_READ_ONLY);
-	r->v3 = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float3), fv3, CL_MEM_READ_ONLY);
-	r->normals = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float3), fnorm, CL_MEM_READ_ONLY);
+	// This project's float3 is {x,y,z,w} = 16 bytes (same layout as float4); kernel declares float4.
+	r->v1 = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float4), fv1, CL_MEM_READ_ONLY);
+	r->v2 = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float4), fv2, CL_MEM_READ_ONLY);
+	r->v3 = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float4), fv3, CL_MEM_READ_ONLY);
+	r->normals = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(float4), fnorm, CL_MEM_READ_ONLY);
 	r->matIds = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(int), fmat, CL_MEM_READ_ONLY);
 	r->triObjectIds = CL_Buffer_CreateFromData(&r->ctx, total * sizeof(int), fobj, CL_MEM_READ_ONLY);
 	free(fv1);
@@ -172,9 +173,10 @@ static bool allocTransformBuffers(GPURaster *r, int objectCount) {
 		return false;
 	}
 
-	r->objPositions = CL_Buffer_Create(&r->ctx, objectCount * sizeof(float3), CL_MEM_READ_ONLY);
-	r->objRotations = CL_Buffer_Create(&r->ctx, objectCount * sizeof(float3), CL_MEM_READ_ONLY);
-	r->objScales = CL_Buffer_Create(&r->ctx, objectCount * sizeof(float3), CL_MEM_READ_ONLY);
+	// This project's float3 is {x,y,z,w} = 16 bytes; kernel declares float4 for transform arrays.
+	r->objPositions = CL_Buffer_Create(&r->ctx, objectCount * sizeof(float4), CL_MEM_READ_ONLY);
+	r->objRotations = CL_Buffer_Create(&r->ctx, objectCount * sizeof(float4), CL_MEM_READ_ONLY);
+	r->objScales = CL_Buffer_Create(&r->ctx, objectCount * sizeof(float4), CL_MEM_READ_ONLY);
 	r->objectCount = objectCount;
 	return true;
 }
@@ -252,9 +254,9 @@ void GPURaster_RenderObjects(GPURaster *raster,
 		raster->hostRot[i] = objects[i].rotation;
 		raster->hostSca[i] = objects[i].scale;
 	}
-	CL_Buffer_Write(&raster->ctx, &raster->objPositions, raster->hostPos, objectCount * sizeof(float3));
-	CL_Buffer_Write(&raster->ctx, &raster->objRotations, raster->hostRot, objectCount * sizeof(float3));
-	CL_Buffer_Write(&raster->ctx, &raster->objScales, raster->hostSca, objectCount * sizeof(float3));
+	CL_Buffer_Write(&raster->ctx, &raster->objPositions, raster->hostPos, objectCount * sizeof(float4));
+	CL_Buffer_Write(&raster->ctx, &raster->objRotations, raster->hostRot, objectCount * sizeof(float4));
+	CL_Buffer_Write(&raster->ctx, &raster->objScales, raster->hostSca, objectCount * sizeof(float4));
 
 	size_t pixelCount = (size_t)raster->screenWidth * raster->screenHeight;
 
@@ -270,15 +272,7 @@ void GPURaster_RenderObjects(GPURaster *raster,
 				   &skyColor, sizeof(uint32_t),
 				   pixelCount * sizeof(uint32_t));
 
-	// Pack camera vectors into float4 (C float3 = struct with w=0, matching OpenCL float4)
-	float4 camRight = {camera->right.x, camera->right.y, camera->right.z, 0.0f};
-	float4 camUp = {camera->up.x, camera->up.y, camera->up.z, 0.0f};
-	float4 camForward = {camera->forward.x, camera->forward.y, camera->forward.z, 0.0f};
-	float4 camPos = {camera->position.x, camera->position.y, camera->position.z, 0.0f};
-	float4 lightDir = {camera->renderLightDir.x, camera->renderLightDir.y, camera->renderLightDir.z, 0.0f};
-	float4 halfVec = {camera->halfVec.x, camera->halfVec.y, camera->halfVec.z, 0.0f};
-
-	// Set all kernel arguments
+	// This project's float3 is {x,y,z,w} = 16 bytes, matching OpenCL float4.  Pass address directly.
 	cl_kernel k = raster->pipeline.kernel;
 	int arg = 0;
 	clSetKernelArg(k, arg++, sizeof(cl_mem), &raster->v1.buf);
@@ -291,12 +285,12 @@ void GPURaster_RenderObjects(GPURaster *raster,
 	clSetKernelArg(k, arg++, sizeof(cl_mem), &raster->objPositions.buf);
 	clSetKernelArg(k, arg++, sizeof(cl_mem), &raster->objRotations.buf);
 	clSetKernelArg(k, arg++, sizeof(cl_mem), &raster->objScales.buf);
-	clSetKernelArg(k, arg++, sizeof(float4), &camRight);
-	clSetKernelArg(k, arg++, sizeof(float4), &camUp);
-	clSetKernelArg(k, arg++, sizeof(float4), &camForward);
-	clSetKernelArg(k, arg++, sizeof(float4), &camPos);
-	clSetKernelArg(k, arg++, sizeof(float4), &lightDir);
-	clSetKernelArg(k, arg++, sizeof(float4), &halfVec);
+	clSetKernelArg(k, arg++, sizeof(float4), &camera->right);
+	clSetKernelArg(k, arg++, sizeof(float4), &camera->up);
+	clSetKernelArg(k, arg++, sizeof(float4), &camera->forward);
+	clSetKernelArg(k, arg++, sizeof(float4), &camera->position);
+	clSetKernelArg(k, arg++, sizeof(float4), &camera->renderLightDir);
+	clSetKernelArg(k, arg++, sizeof(float4), &camera->halfVec);
 	clSetKernelArg(k, arg++, sizeof(float), &camera->fovScale);
 	clSetKernelArg(k, arg++, sizeof(float), &camera->aspect);
 	clSetKernelArg(k, arg++, sizeof(float), &camera->jitter.x);
@@ -328,17 +322,17 @@ void GPURaster_RenderObjects(GPURaster *raster,
 	memcpy(camera->depthBuffer, ptr, pixelCount * sizeof(float));
 	CL_Buffer_Unmap(&raster->ctx, &raster->depthBufferInt, ptr);
 
-	// C float3 = 16 bytes (struct with w=0), OpenCL float4 = 16 bytes — same layout
+	// This project's float3 is {x,y,z,w} = 16 bytes; GPU wrote float4 — sizes match.
 	ptr = CL_Buffer_Map(&raster->ctx, &raster->normalBufferGPU, CL_MAP_READ);
-	memcpy(camera->normalBuffer, ptr, pixelCount * sizeof(float3));
+	memcpy(camera->normalBuffer, ptr, pixelCount * sizeof(float4));
 	CL_Buffer_Unmap(&raster->ctx, &raster->normalBufferGPU, ptr);
 
 	ptr = CL_Buffer_Map(&raster->ctx, &raster->positionBufferGPU, CL_MAP_READ);
-	memcpy(camera->positionBuffer, ptr, pixelCount * sizeof(float3));
+	memcpy(camera->positionBuffer, ptr, pixelCount * sizeof(float4));
 	CL_Buffer_Unmap(&raster->ctx, &raster->positionBufferGPU, ptr);
 
 	ptr = CL_Buffer_Map(&raster->ctx, &raster->reflectBufferGPU, CL_MAP_READ);
-	memcpy(camera->reflectBuffer, ptr, pixelCount * sizeof(float3));
+	memcpy(camera->reflectBuffer, ptr, pixelCount * sizeof(float4));
 	CL_Buffer_Unmap(&raster->ctx, &raster->reflectBufferGPU, ptr);
 }
 
