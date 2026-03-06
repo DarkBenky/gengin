@@ -9,4 +9,8 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 void RenderSetup(const Object *objects, int objectCount, Camera *camera);
 void RenderObjects(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib);
 void TestFunctions();
+
+// GPU-accelerated rasterizer (OpenCL).
+// Include render/gpu/raster.h for GPURaster_Init / GPURaster_RenderObjects / GPURaster_Destroy.
+
 #endif // RENDER_H
