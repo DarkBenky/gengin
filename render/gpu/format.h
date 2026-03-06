@@ -49,9 +49,13 @@ CL_Buffer CL_Buffer_Create(CL_Context* ctx, size_t size, cl_mem_flags flags);
 CL_Buffer CL_Buffer_CreateFromData(CL_Context* ctx, size_t size, void* data, cl_mem_flags flags);
 void      CL_Buffer_Destroy(CL_Buffer* buf);
 
-void CL_Buffer_Write(CL_Context* ctx, CL_Buffer* buf, void* data, size_t size);
-void CL_Buffer_Read (CL_Context* ctx, CL_Buffer* buf, void* out,  size_t size);
-void CL_Buffer_Fill (CL_Context* ctx, CL_Buffer* buf, const void* pattern, size_t patternSize, size_t size);
+void  CL_Buffer_Write  (CL_Context* ctx, CL_Buffer* buf, void* data, size_t size);
+void  CL_Buffer_Read   (CL_Context* ctx, CL_Buffer* buf, void* out,  size_t size);
+void  CL_Buffer_Fill   (CL_Context* ctx, CL_Buffer* buf, const void* pattern, size_t patternSize, size_t size);
+// Map a pinned buffer for direct host access (use CL_MAP_READ or CL_MAP_WRITE).
+// The buffer must have been created with CL_MEM_ALLOC_HOST_PTR.
+void* CL_Buffer_Map    (CL_Context* ctx, CL_Buffer* buf, cl_map_flags mapFlags);
+void  CL_Buffer_Unmap  (CL_Context* ctx, CL_Buffer* buf, void* mappedPtr);
 
 // IMAGE  (2D texture on GPU)
 CL_Image CL_Image_Create(CL_Context* ctx, int width, int height);

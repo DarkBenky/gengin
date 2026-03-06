@@ -105,6 +105,19 @@ void CL_Buffer_Fill(CL_Context *ctx, CL_Buffer *buf, const void *pattern, size_t
 	clFinish(ctx->queue);
 }
 
+void *CL_Buffer_Map(CL_Context *ctx, CL_Buffer *buf, cl_map_flags mapFlags) {
+	cl_int err;
+	void *ptr = clEnqueueMapBuffer(ctx->queue, buf->buf, CL_TRUE, mapFlags, 0, buf->size, 0, NULL, NULL, &err);
+	CL_CheckError(err, "clEnqueueMapBuffer");
+	return ptr;
+}
+
+void CL_Buffer_Unmap(CL_Context *ctx, CL_Buffer *buf, void *mappedPtr) {
+	cl_int err = clEnqueueUnmapMemObject(ctx->queue, buf->buf, mappedPtr, 0, NULL, NULL);
+	CL_CheckError(err, "clEnqueueUnmapMemObject");
+	clFinish(ctx->queue);
+}
+
 CL_Image CL_Image_Create(CL_Context *ctx, int width, int height) {
 	CL_Image img = {.width = width, .height = height};
 	cl_int err;
