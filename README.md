@@ -1,5 +1,6 @@
 ## TODO
-
+- [ ] Replace screen space refection by raytraced onece
+    - [ ] use lower resolution and blur row apply it to frame buffer
 - [ ] GPU rendering (keep it simple — port current CPU pipeline)
     - [ ] use rasterization to avoid rebuilding bvh
 - [ ] Plane controls
