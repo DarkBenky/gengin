@@ -1,5 +1,7 @@
 ## TODO
 
+- [ ] GPU rendering (keep it simple — port current CPU pipeline)
+    - [ ] use rasterization to avoid rebuilding bvh
 - [ ] Plane controls
   - [ ] Use something like this but we will simplified it
     - [ ] Example
@@ -159,8 +161,6 @@
 - [ ] Missile guidance and control
 
 - [ ] Server integration for multiplayer
-
-- [ ] GPU rendering (keep it simple — port current CPU pipeline)
 
 - [X] Add screen space reflection
 
