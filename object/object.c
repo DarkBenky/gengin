@@ -188,6 +188,16 @@ void Object_UpdateWorldBounds(Object *obj) {
 		obj->worldBBmax.y = MaxF32(obj->worldBBmax.y, p.y);
 		obj->worldBBmax.z = MaxF32(obj->worldBBmax.z, p.z);
 	}
+
+	// Cache rows of M = Diag(invScale) * InvRot
+	// InvRot = Rx(-rx)*Ry(-ry)*Rz(-rz) = transpose of forward rotation Rz*Ry*Rx
+	float cx = cosf(obj->rotation.x), sx = sinf(obj->rotation.x);
+	float cy = cosf(obj->rotation.y), sy = sinf(obj->rotation.y);
+	float cz = cosf(obj->rotation.z), sz = sinf(obj->rotation.z);
+	float isx = 1.0f / obj->scale.x, isy = 1.0f / obj->scale.y, isz = 1.0f / obj->scale.z;
+	obj->_invScale  = (float3){ isx*(cy*cz),              isx*(cy*sz),              isx*(-sy)      };
+	obj->_invRotSin = (float3){ isy*(-cx*sz + sx*sy*cz),  isy*(cx*cz + sx*sy*sz),   isy*(sx*cy)    };
+	obj->_invRotCos = (float3){ isz*(sx*sz + cx*sy*cz),   isz*(-sx*cz + cx*sy*sz),  isz*(cx*cy)    };
 }
 
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax) {
@@ -432,13 +442,35 @@ static float rayAABB(float3 ro, float3 rd, float3 mn, float3 mx) {
 	return tmin;
 }
 
+// Branchless slab test using precomputed invDir — eliminates per-node divisions in BVH traversal
+static inline float rayAABB_inv(float3 ro, float3 invRd, float3 mn, float3 mx) {
+	float tx0 = (mn.x - ro.x) * invRd.x, tx1 = (mx.x - ro.x) * invRd.x;
+	float ty0 = (mn.y - ro.y) * invRd.y, ty1 = (mx.y - ro.y) * invRd.y;
+	float tz0 = (mn.z - ro.z) * invRd.z, tz1 = (mx.z - ro.z) * invRd.z;
+	float tmin = MaxF32(MaxF32(MinF32(tx0, tx1), MinF32(ty0, ty1)), MinF32(tz0, tz1));
+	float tmax = MinF32(MinF32(MaxF32(tx0, tx1), MaxF32(ty0, ty1)), MaxF32(tz0, tz1));
+	return tmax < tmin ? FLT_MAX : tmin;
+}
+
 void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld) {
 	if (!obj || !bvh || !hitTriIdx || bvh->nodeCount == 0) return;
 	*hitTriIdx = -1;
 
-	// bring ray into local object space so it tests correctly against local-space triangles
-	rayOrigin = InverseTransformPointTRS(rayOrigin, obj->position, obj->rotation, obj->scale);
-	rayDir = InverseTransformDirTRS(rayDir, obj->rotation, obj->scale);
+	// bring ray into local object space using the cached inverse TRS matrix
+	// (computed in Object_UpdateWorldBounds — eliminates 12 trig calls per call)
+	float3 t = { rayOrigin.x - obj->position.x, rayOrigin.y - obj->position.y, rayOrigin.z - obj->position.z };
+	float3 r0 = obj->_invScale, r1 = obj->_invRotSin, r2 = obj->_invRotCos;
+	rayOrigin = (float3){
+		r0.x*t.x + r0.y*t.y + r0.z*t.z,
+		r1.x*t.x + r1.y*t.y + r1.z*t.z,
+		r2.x*t.x + r2.y*t.y + r2.z*t.z };
+	rayDir = (float3){
+		r0.x*rayDir.x + r0.y*rayDir.y + r0.z*rayDir.z,
+		r1.x*rayDir.x + r1.y*rayDir.y + r1.z*rayDir.z,
+		r2.x*rayDir.x + r2.y*rayDir.y + r2.z*rayDir.z };
+
+	// precompute inverse direction once — replaces 3 divisions per BVH node with multiplications
+	float3 invDir = { 1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z };
 
 	float bestT = FLT_MAX;
 	int stack[64];
@@ -447,7 +479,7 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 
 	while (top > 0) {
 		const BVHNode *node = &bvh->nodes[stack[--top]];
-		if (rayAABB(rayOrigin, rayDir, node->BBmin, node->BBmax) >= bestT) continue;
+		if (rayAABB_inv(rayOrigin, invDir, node->BBmin, node->BBmax) >= bestT) continue;
 
 		if (node->triCount > 0) {
 			for (int i = 0; i < node->triCount; i++) {
