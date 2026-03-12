@@ -325,10 +325,26 @@ void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, S
 }
 
 static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, int *hitObjIdx, int *hitTriIdx, float3 *hitPos) {
-	float bestT = DEPTH_FAR;
 	*hitObjIdx = -1;
 	if (hitTriIdx) *hitTriIdx = -1;
 	if (hitPos) *hitPos = (float3){0.0f, 0.0f, 0.0f};
+
+	// Fast shadow path: return as soon as any object is hit
+	if (!hitTriIdx && !hitPos) {
+		for (int i = 0; i < objectCount; i++) {
+			if (i == excludeObj) continue;
+			float bboxMin, bboxMax;
+			RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
+			if (bboxMin >= bboxMax) continue;
+			if (IntersectBVH_Shadow(&objects[i], &objects[i].bvh, rayOrigin, rayDir)) {
+				*hitObjIdx = i;
+				return;
+			}
+		}
+		return;
+	}
+
+	float bestT = DEPTH_FAR;
 
 	for (int i = 0; i < objectCount; i++) {
 		if (ObjectBehindCamera(&objects[i], rayOrigin, rayDir)) continue;

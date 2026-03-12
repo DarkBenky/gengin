@@ -61,6 +61,7 @@ bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward);
 void CreateObjectBVH(Object *obj, BVH *bvh);
 void DestroyObjectBVH(BVH *bvh);
 void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld);
+bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir);
 
 // Perspective frustum — 5 planes (near, left, right, bottom, top), all inward-facing.
 // Test: dot(normal, P) + d >= 0 means P is on the inside of the plane.

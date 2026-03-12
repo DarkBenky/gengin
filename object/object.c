@@ -508,3 +508,37 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 		*hitPosWorld = TransformPointTRS(localHit, obj->position, obj->rotation, obj->scale);
 	}
 }
+
+bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir) {
+	if (!obj || !bvh || bvh->nodeCount == 0) return false;
+	float3 t = { rayOrigin.x - obj->position.x, rayOrigin.y - obj->position.y, rayOrigin.z - obj->position.z };
+	float3 r0 = obj->_invScale, r1 = obj->_invRotSin, r2 = obj->_invRotCos;
+	rayOrigin = (float3){
+		r0.x*t.x + r0.y*t.y + r0.z*t.z,
+		r1.x*t.x + r1.y*t.y + r1.z*t.z,
+		r2.x*t.x + r2.y*t.y + r2.z*t.z };
+	rayDir = (float3){
+		r0.x*rayDir.x + r0.y*rayDir.y + r0.z*rayDir.z,
+		r1.x*rayDir.x + r1.y*rayDir.y + r1.z*rayDir.z,
+		r2.x*rayDir.x + r2.y*rayDir.y + r2.z*rayDir.z };
+	float3 invDir = { 1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z };
+	int stack[64];
+	int top = 0;
+	stack[top++] = 0;
+	while (top > 0) {
+		const BVHNode *node = &bvh->nodes[stack[--top]];
+		if (rayAABB_inv(rayOrigin, invDir, node->BBmin, node->BBmax) >= FLT_MAX) continue;
+		if (node->triCount > 0) {
+			for (int i = 0; i < node->triCount; i++) {
+				int ti = bvh->triIndices[node->triStart + i];
+				float hit;
+				if (rayTriangle(rayOrigin, rayDir, obj->v1[ti], obj->v2[ti], obj->v3[ti], &hit))
+					return true;
+			}
+		} else {
+			stack[top++] = node->leftFirst;
+			stack[top++] = node->leftFirst + 1;
+		}
+	}
+	return false;
+}
