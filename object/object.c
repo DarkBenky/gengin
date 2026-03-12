@@ -195,13 +195,13 @@ void Object_UpdateWorldBounds(Object *obj) {
 	float cy = cosf(obj->rotation.y), sy = sinf(obj->rotation.y);
 	float cz = cosf(obj->rotation.z), sz = sinf(obj->rotation.z);
 	float isx = 1.0f / obj->scale.x, isy = 1.0f / obj->scale.y, isz = 1.0f / obj->scale.z;
-	obj->_invScale  = (float3){ isx*(cy*cz),              isx*(cy*sz),              isx*(-sy)      };
-	obj->_invRotSin = (float3){ isy*(-cx*sz + sx*sy*cz),  isy*(cx*cz + sx*sy*sz),   isy*(sx*cy)    };
-	obj->_invRotCos = (float3){ isz*(sx*sz + cx*sy*cz),   isz*(-sx*cz + cx*sy*sz),  isz*(cx*cy)    };
+	obj->_invScale = (float3){isx * (cy * cz), isx * (cy * sz), isx * (-sy)};
+	obj->_invRotSin = (float3){isy * (-cx * sz + sx * sy * cz), isy * (cx * cz + sx * sy * sz), isy * (sx * cy)};
+	obj->_invRotCos = (float3){isz * (sx * sz + cx * sy * cz), isz * (-sx * cz + cx * sy * sz), isz * (cx * cy)};
 	// Forward rotation rows — transpose of inverse rotation / no scale applied
-	obj->_fwdRot0 = (float3){ cy*cz,  sx*sy*cz - cx*sz,  cx*sy*cz + sx*sz };
-	obj->_fwdRot1 = (float3){ cy*sz,  sx*sy*sz + cx*cz,  cx*sy*sz - sx*cz };
-	obj->_fwdRot2 = (float3){ -sy,    sx*cy,             cx*cy            };
+	obj->_fwdRot0 = (float3){cy * cz, sx * sy * cz - cx * sz, cx * sy * cz + sx * sz};
+	obj->_fwdRot1 = (float3){cy * sz, sx * sy * sz + cx * cz, cx * sy * sz - sx * cz};
+	obj->_fwdRot2 = (float3){-sy, sx * cy, cx * cy};
 }
 
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax) {
@@ -348,8 +348,12 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 				mx.z = MaxF32(mx.z, verts[v].z);
 			}
 		}
-		node->BBmin[0] = mn.x; node->BBmin[1] = mn.y; node->BBmin[2] = mn.z;
-		node->BBmax[0] = mx.x; node->BBmax[1] = mx.y; node->BBmax[2] = mx.z;
+		node->BBmin[0] = mn.x;
+		node->BBmin[1] = mn.y;
+		node->BBmin[2] = mn.z;
+		node->BBmax[0] = mx.x;
+		node->BBmax[1] = mx.y;
+		node->BBmax[2] = mx.z;
 
 		if (w.count <= 4) {
 			node->triStart = w.start;
@@ -461,19 +465,19 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 
 	// bring ray into local object space using the cached inverse TRS matrix
 	// (computed in Object_UpdateWorldBounds — eliminates 12 trig calls per call)
-	float3 t = { rayOrigin.x - obj->position.x, rayOrigin.y - obj->position.y, rayOrigin.z - obj->position.z };
+	float3 t = {rayOrigin.x - obj->position.x, rayOrigin.y - obj->position.y, rayOrigin.z - obj->position.z};
 	float3 r0 = obj->_invScale, r1 = obj->_invRotSin, r2 = obj->_invRotCos;
 	rayOrigin = (float3){
-		r0.x*t.x + r0.y*t.y + r0.z*t.z,
-		r1.x*t.x + r1.y*t.y + r1.z*t.z,
-		r2.x*t.x + r2.y*t.y + r2.z*t.z };
+		r0.x * t.x + r0.y * t.y + r0.z * t.z,
+		r1.x * t.x + r1.y * t.y + r1.z * t.z,
+		r2.x * t.x + r2.y * t.y + r2.z * t.z};
 	rayDir = (float3){
-		r0.x*rayDir.x + r0.y*rayDir.y + r0.z*rayDir.z,
-		r1.x*rayDir.x + r1.y*rayDir.y + r1.z*rayDir.z,
-		r2.x*rayDir.x + r2.y*rayDir.y + r2.z*rayDir.z };
+		r0.x * rayDir.x + r0.y * rayDir.y + r0.z * rayDir.z,
+		r1.x * rayDir.x + r1.y * rayDir.y + r1.z * rayDir.z,
+		r2.x * rayDir.x + r2.y * rayDir.y + r2.z * rayDir.z};
 
 	// precompute inverse direction once — replaces 3 divisions per BVH node with multiplications
-	float3 invDir = { 1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z };
+	float3 invDir = {1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z};
 
 	float bestT = FLT_MAX;
 	int stack[64];
@@ -506,25 +510,25 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 			rayOrigin.z + bestT * rayDir.z};
 		// Use cached forward rotation matrix to avoid 6 trig calls in TransformPointTRS
 		*hitPosWorld = (float3){
-			obj->_fwdRot0.x*lh.x*obj->scale.x + obj->_fwdRot0.y*lh.y*obj->scale.y + obj->_fwdRot0.z*lh.z*obj->scale.z + obj->position.x,
-			obj->_fwdRot1.x*lh.x*obj->scale.x + obj->_fwdRot1.y*lh.y*obj->scale.y + obj->_fwdRot1.z*lh.z*obj->scale.z + obj->position.y,
-			obj->_fwdRot2.x*lh.x*obj->scale.x + obj->_fwdRot2.y*lh.y*obj->scale.y + obj->_fwdRot2.z*lh.z*obj->scale.z + obj->position.z };
+			obj->_fwdRot0.x * lh.x * obj->scale.x + obj->_fwdRot0.y * lh.y * obj->scale.y + obj->_fwdRot0.z * lh.z * obj->scale.z + obj->position.x,
+			obj->_fwdRot1.x * lh.x * obj->scale.x + obj->_fwdRot1.y * lh.y * obj->scale.y + obj->_fwdRot1.z * lh.z * obj->scale.z + obj->position.y,
+			obj->_fwdRot2.x * lh.x * obj->scale.x + obj->_fwdRot2.y * lh.y * obj->scale.y + obj->_fwdRot2.z * lh.z * obj->scale.z + obj->position.z};
 	}
 }
 
 bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir) {
 	if (!obj || !bvh || bvh->nodeCount == 0) return false;
-	float3 t = { rayOrigin.x - obj->position.x, rayOrigin.y - obj->position.y, rayOrigin.z - obj->position.z };
+	float3 t = {rayOrigin.x - obj->position.x, rayOrigin.y - obj->position.y, rayOrigin.z - obj->position.z};
 	float3 r0 = obj->_invScale, r1 = obj->_invRotSin, r2 = obj->_invRotCos;
 	rayOrigin = (float3){
-		r0.x*t.x + r0.y*t.y + r0.z*t.z,
-		r1.x*t.x + r1.y*t.y + r1.z*t.z,
-		r2.x*t.x + r2.y*t.y + r2.z*t.z };
+		r0.x * t.x + r0.y * t.y + r0.z * t.z,
+		r1.x * t.x + r1.y * t.y + r1.z * t.z,
+		r2.x * t.x + r2.y * t.y + r2.z * t.z};
 	rayDir = (float3){
-		r0.x*rayDir.x + r0.y*rayDir.y + r0.z*rayDir.z,
-		r1.x*rayDir.x + r1.y*rayDir.y + r1.z*rayDir.z,
-		r2.x*rayDir.x + r2.y*rayDir.y + r2.z*rayDir.z };
-	float3 invDir = { 1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z };
+		r0.x * rayDir.x + r0.y * rayDir.y + r0.z * rayDir.z,
+		r1.x * rayDir.x + r1.y * rayDir.y + r1.z * rayDir.z,
+		r2.x * rayDir.x + r2.y * rayDir.y + r2.z * rayDir.z};
+	float3 invDir = {1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z};
 	int stack[64];
 	int top = 0;
 	stack[top++] = 0;
