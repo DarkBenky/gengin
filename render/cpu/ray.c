@@ -364,7 +364,11 @@ bool RayCast(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, 
 
 	const Object *obj = &objects[objIdx];
 
-	float3 n = RotateXYZ(obj->normals[triIdx], obj->rotation);
+	float3 ln0 = obj->normals[triIdx];
+	float3 n = {
+		obj->_fwdRot0.x*ln0.x + obj->_fwdRot0.y*ln0.y + obj->_fwdRot0.z*ln0.z,
+		obj->_fwdRot1.x*ln0.x + obj->_fwdRot1.y*ln0.y + obj->_fwdRot1.z*ln0.z,
+		obj->_fwdRot2.x*ln0.x + obj->_fwdRot2.y*ln0.y + obj->_fwdRot2.z*ln0.z };
 	float nlen = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
 	if (nlen > 1e-6f) {
 		float ni = 1.0f / nlen;
@@ -499,7 +503,11 @@ static void RayTraceRowFunc(void *arg) {
 
 		const Object *obj = &objects[bestObj];
 
-		float3 n = RotateXYZ(obj->normals[bestTri], obj->rotation);
+		float3 ln = obj->normals[bestTri];
+		float3 n = {
+			obj->_fwdRot0.x*ln.x + obj->_fwdRot0.y*ln.y + obj->_fwdRot0.z*ln.z,
+			obj->_fwdRot1.x*ln.x + obj->_fwdRot1.y*ln.y + obj->_fwdRot1.z*ln.z,
+			obj->_fwdRot2.x*ln.x + obj->_fwdRot2.y*ln.y + obj->_fwdRot2.z*ln.z };
 		float nlen = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
 		if (nlen > 1e-6f) {
 			float ni = 1.0f / nlen;
