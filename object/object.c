@@ -198,6 +198,10 @@ void Object_UpdateWorldBounds(Object *obj) {
 	obj->_invScale  = (float3){ isx*(cy*cz),              isx*(cy*sz),              isx*(-sy)      };
 	obj->_invRotSin = (float3){ isy*(-cx*sz + sx*sy*cz),  isy*(cx*cz + sx*sy*sz),   isy*(sx*cy)    };
 	obj->_invRotCos = (float3){ isz*(sx*sz + cx*sy*cz),   isz*(-sx*cz + cx*sy*sz),  isz*(cx*cy)    };
+	// Forward rotation rows — transpose of inverse rotation / no scale applied
+	obj->_fwdRot0 = (float3){ cy*cz,  sx*sy*cz - cx*sz,  cx*sy*cz + sx*sz };
+	obj->_fwdRot1 = (float3){ cy*sz,  sx*sy*sz + cx*cz,  cx*sy*sz - sx*cz };
+	obj->_fwdRot2 = (float3){ -sy,    sx*cy,             cx*cy            };
 }
 
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax) {

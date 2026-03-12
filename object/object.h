@@ -29,9 +29,13 @@ typedef struct Object {
 	float3 worldBBmax;
 
 	// cached inverse transform — recomputed in Object_UpdateWorldBounds
-	float3 _invScale;  // {1/sx, 1/sy, 1/sz}
-	float3 _invRotSin; // sin(-rotation.xyz)
-	float3 _invRotCos; // cos(-rotation.xyz)
+	float3 _invScale;  // row 0 of M = Diag(invScale)*InvRot
+	float3 _invRotSin; // row 1 of M
+	float3 _invRotCos; // row 2 of M
+	// cached forward rotation matrix Rz*Ry*Rx — for rotating normals without trig each hit
+	float3 _fwdRot0;
+	float3 _fwdRot1;
+	float3 _fwdRot2;
 
 	Color _temp; // pre-packed RGB color for BBOX hits
 
