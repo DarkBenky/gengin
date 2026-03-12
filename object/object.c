@@ -348,13 +348,12 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 				mx.z = MaxF32(mx.z, verts[v].z);
 			}
 		}
-		node->BBmin = mn;
-		node->BBmax = mx;
+		node->BBmin[0] = mn.x; node->BBmin[1] = mn.y; node->BBmin[2] = mn.z;
+		node->BBmax[0] = mx.x; node->BBmax[1] = mx.y; node->BBmax[2] = mx.z;
 
 		if (w.count <= 4) {
 			node->triStart = w.start;
 			node->triCount = w.count;
-			node->leftFirst = -1;
 			continue;
 		}
 
@@ -447,10 +446,10 @@ static float rayAABB(float3 ro, float3 rd, float3 mn, float3 mx) {
 }
 
 // Branchless slab test using precomputed invDir — eliminates per-node divisions in BVH traversal
-static inline float rayAABB_inv(float3 ro, float3 invRd, float3 mn, float3 mx) {
-	float tx0 = (mn.x - ro.x) * invRd.x, tx1 = (mx.x - ro.x) * invRd.x;
-	float ty0 = (mn.y - ro.y) * invRd.y, ty1 = (mx.y - ro.y) * invRd.y;
-	float tz0 = (mn.z - ro.z) * invRd.z, tz1 = (mx.z - ro.z) * invRd.z;
+static inline float rayAABB_inv(float3 ro, float3 invRd, const float *mn, const float *mx) {
+	float tx0 = (mn[0] - ro.x) * invRd.x, tx1 = (mx[0] - ro.x) * invRd.x;
+	float ty0 = (mn[1] - ro.y) * invRd.y, ty1 = (mx[1] - ro.y) * invRd.y;
+	float tz0 = (mn[2] - ro.z) * invRd.z, tz1 = (mx[2] - ro.z) * invRd.z;
 	float tmin = MaxF32(MaxF32(MinF32(tx0, tx1), MinF32(ty0, ty1)), MinF32(tz0, tz1));
 	float tmax = MinF32(MinF32(MaxF32(tx0, tx1), MaxF32(ty0, ty1)), MaxF32(tz0, tz1));
 	return tmax < tmin ? FLT_MAX : tmin;
