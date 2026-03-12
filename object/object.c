@@ -500,11 +500,15 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 	}
 
 	if (*hitTriIdx >= 0 && hitPosWorld) {
-		float3 localHit = {
+		float3 lh = {
 			rayOrigin.x + bestT * rayDir.x,
 			rayOrigin.y + bestT * rayDir.y,
 			rayOrigin.z + bestT * rayDir.z};
-		*hitPosWorld = TransformPointTRS(localHit, obj->position, obj->rotation, obj->scale);
+		// Use cached forward rotation matrix to avoid 6 trig calls in TransformPointTRS
+		*hitPosWorld = (float3){
+			obj->_fwdRot0.x*lh.x*obj->scale.x + obj->_fwdRot0.y*lh.y*obj->scale.y + obj->_fwdRot0.z*lh.z*obj->scale.z + obj->position.x,
+			obj->_fwdRot1.x*lh.x*obj->scale.x + obj->_fwdRot1.y*lh.y*obj->scale.y + obj->_fwdRot1.z*lh.z*obj->scale.z + obj->position.y,
+			obj->_fwdRot2.x*lh.x*obj->scale.x + obj->_fwdRot2.y*lh.y*obj->scale.y + obj->_fwdRot2.z*lh.z*obj->scale.z + obj->position.z };
 	}
 }
 
