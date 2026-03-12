@@ -8,9 +8,72 @@
 #include "../math/scalar.h"
 #include "../math/transform.h"
 #include "../util/threadPool.h"
+#include "../math/vector3.h"
 
 static inline float3 TransformPoint(const Object *obj, float3 local) {
 	return TransformPointTRS(local, obj->position, obj->rotation, obj->scale);
+}
+
+bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward) {
+	// cull only if the entire world AABB is behind the camera plane
+	float3 mn = obj->worldBBmin;
+	float3 mx = obj->worldBBmax;
+	// test all 8 corners — if any projects >= 0 along forward, the object is visible
+	float3 corners[8] = {
+		{mn.x, mn.y, mn.z},
+		{mx.x, mn.y, mn.z},
+		{mn.x, mx.y, mn.z},
+		{mx.x, mx.y, mn.z},
+		{mn.x, mn.y, mx.z},
+		{mx.x, mn.y, mx.z},
+		{mn.x, mx.y, mx.z},
+		{mx.x, mx.y, mx.z},
+	};
+	for (int i = 0; i < 8; i++) {
+		float3 toCorner = Float3_Sub(corners[i], camPos);
+		if (Float3_Dot(toCorner, camForward) >= 0.0f)
+			return false;
+	}
+	return true;
+}
+
+Frustum Frustum_FromCamera(const Camera *cam) {
+	float3 fwd = Float3_Normalize(cam->forward);
+	float3 rgt = Float3_Normalize(cam->right);
+	float3 up = Float3_Normalize(cam->up);
+	float half_y = cam->fovScale;
+	float half_x = half_y * cam->aspect;
+	float3 pos = cam->position;
+
+	Frustum f;
+	// near plane
+	f.planes[0] = (FrustumPlane){fwd, -Float3_Dot(fwd, pos)};
+	// left plane:   n = normalize(rgt + half_x * fwd)
+	float3 nl = Float3_Normalize((float3){rgt.x + half_x * fwd.x, rgt.y + half_x * fwd.y, rgt.z + half_x * fwd.z});
+	f.planes[1] = (FrustumPlane){nl, -Float3_Dot(nl, pos)};
+	// right plane:  n = normalize(-rgt + half_x * fwd)
+	float3 nr = Float3_Normalize((float3){-rgt.x + half_x * fwd.x, -rgt.y + half_x * fwd.y, -rgt.z + half_x * fwd.z});
+	f.planes[2] = (FrustumPlane){nr, -Float3_Dot(nr, pos)};
+	// bottom plane: n = normalize(up + half_y * fwd)
+	float3 nb = Float3_Normalize((float3){up.x + half_y * fwd.x, up.y + half_y * fwd.y, up.z + half_y * fwd.z});
+	f.planes[3] = (FrustumPlane){nb, -Float3_Dot(nb, pos)};
+	// top plane:    n = normalize(-up + half_y * fwd)
+	float3 nt = Float3_Normalize((float3){-up.x + half_y * fwd.x, -up.y + half_y * fwd.y, -up.z + half_y * fwd.z});
+	f.planes[4] = (FrustumPlane){nt, -Float3_Dot(nt, pos)};
+	return f;
+}
+
+bool Frustum_TestAABB(const Frustum *f, float3 bbMin, float3 bbMax) {
+	for (int i = 0; i < 5; i++) {
+		float3 n = f->planes[i].normal;
+		// p-vertex: AABB corner furthest along n
+		float px = n.x >= 0.0f ? bbMax.x : bbMin.x;
+		float py = n.y >= 0.0f ? bbMax.y : bbMin.y;
+		float pz = n.z >= 0.0f ? bbMax.z : bbMin.z;
+		if (px * n.x + py * n.y + pz * n.z + f->planes[i].d < 0.0f)
+			return false;
+	}
+	return true;
 }
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib) {

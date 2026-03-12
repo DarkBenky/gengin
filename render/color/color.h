@@ -28,6 +28,12 @@ Color AdjustSaturation(Color c, float saturation);
 Color QuantizeColor(Color c, int levels);
 Color DarkenColor(Color c, float amount);
 Color PackColorSafe(float r, float g, float b);
+Color AdjustSaturation(Color c, float saturation);
+Color QuantizeColor(Color c, int levels);
+Color DarkenColor(Color c, float amount);
+Color HueShiftColor(Color c, float shift);
+Color ApplyColorCorrection(Color c, float gamma, float exposure, float contrast, float saturation, float hueShift, float3 modulate);
+Color ScaleChannel(Color c, float rScale, float gScale, float bScale);
 void VisualizeBuffer(const Camera *camera, int mode);
 
 #endif // COLOR_H

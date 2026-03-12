@@ -8,6 +8,9 @@
 #include "../../util/threadPool.h"
 #include "../render.h"
 
+#define REFLECTION_RESOLUTION 4 // 1 = full, 2 = half, 4 = quarter, etc.
+#define BLUR_RADIUS 5
+
 typedef struct {
 	int row;
 	Camera *camera;
@@ -25,6 +28,7 @@ typedef struct {
 	int objectCount;
 	const MaterialLib *lib;
 	const Skybox *skybox;
+	Frustum frustum;
 } RayTraceTask;
 
 typedef struct {
@@ -38,6 +42,18 @@ typedef struct RayTracer RayTracer;
 RayTracer *RayTracerCreate(int nthreads);
 void RayTracerDestroy(RayTracer *rt);
 void RayTracerRender(RayTracer *rt, const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib);
+
+typedef struct {
+	float3 pos;
+	float3 normal; // world-space, normalized
+	Material mat;
+	int objIdx;
+	int triIdx;
+} RayHit;
+
+// Wrapper around the internal rayCollision — resolves normal and material on hit.
+// Returns true if something was hit. excludeObj is the object index to skip (-1 for none).
+bool RayCast(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, const MaterialLib *lib, RayHit *hit);
 
 void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, int resolution, int frameInterval);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);

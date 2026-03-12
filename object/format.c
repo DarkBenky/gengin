@@ -1,6 +1,8 @@
 #include "format.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include "../math/vector3.h"
 
 #define ALIGN64(n) (((n) + 63) & ~(size_t)63)
 
@@ -78,4 +80,46 @@ void destroyCamera(Camera *camera) {
 	camera->shadowCache = NULL;
 	camera->reflectCache = NULL;
 	camera->objectIdBuffer = NULL;
+}
+
+void CameraMoveForward(Camera *camera, float amount) {
+	if (!camera) return;
+	camera->position.x += camera->forward.x * amount;
+	camera->position.y += camera->forward.y * amount;
+	camera->position.z += camera->forward.z * amount;
+}
+
+void CameraMoveRight(Camera *camera, float amount) {
+	if (!camera) return;
+	float3 right = Float3_Cross(camera->forward, (float3){0.0f, 1.0f, 0.0f});
+	camera->position.x += right.x * amount;
+	camera->position.y += right.y * amount;
+	camera->position.z += right.z * amount;
+}
+
+void CameraMoveUp(Camera *camera, float amount) {
+	if (!camera) return;
+	camera->position.y += amount;
+}
+
+void CameraRotate(Camera *camera, float pitch, float yaw) {
+	if (!camera) return;
+	// rotate forward vector by yaw (around world up), then pitch (around camera right)
+	float cosYaw = cosf(yaw);
+	float sinYaw = sinf(yaw);
+	float3 fwd = camera->forward;
+	// yaw
+	float3 fwd1 = {
+		fwd.x * cosYaw - fwd.z * sinYaw,
+		fwd.y,
+		fwd.x * sinYaw + fwd.z * cosYaw};
+	// pitch — rotate around camera's right axis
+	float3 right = Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, fwd1));
+	float3 camUp = Float3_Cross(right, fwd1); // points upward relative to forward
+	float cosPitch = cosf(pitch);
+	float sinPitch = sinf(pitch);
+	camera->forward = Float3_Normalize((float3){
+		fwd1.x * cosPitch + camUp.x * sinPitch,
+		fwd1.y * cosPitch + camUp.y * sinPitch,
+		fwd1.z * cosPitch + camUp.z * sinPitch});
 }

@@ -52,9 +52,25 @@ void Object_UpdateWorldBounds(Object *obj);
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
+bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward);
 
 void CreateObjectBVH(Object *obj, BVH *bvh);
 void DestroyObjectBVH(BVH *bvh);
 void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld);
+
+// Perspective frustum — 5 planes (near, left, right, bottom, top), all inward-facing.
+// Test: dot(normal, P) + d >= 0 means P is on the inside of the plane.
+typedef struct {
+	float3 normal;
+	float d;
+} FrustumPlane;
+
+typedef struct {
+	FrustumPlane planes[5];
+} Frustum;
+
+Frustum Frustum_FromCamera(const Camera *cam);
+// Returns true if the AABB may be visible (not fully outside any plane).
+bool Frustum_TestAABB(const Frustum *f, float3 bbMin, float3 bbMax);
 
 #endif // OBJECT_H

@@ -17,70 +17,51 @@
 #include "skybox/skybox.h"
 #include "util/threadPool.h"
 #include "util/bench.h"
+#include "keyboar/keyboar.h"
 
 #define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
 #define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
 
 #define ACCUMULATE_STATS 1024
-#define GRID_COLS 6
-#define GRID_ROWS 7
-#define PLANE_COUNT (GRID_COLS * GRID_ROWS)
-#define OBJECT_COUNT (PLANE_COUNT + 2)
+#define GRID_COLS 32
+#define GRID_ROWS 32
 
 int main() {
+	Input input;
 	Camera camera;
 	initCamera(&camera, WIDTH, HEIGHT, 90.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){6.0f, 8.0f, -6.0f});
 
 	MaterialLib matLib;
 	MaterialLib_Init(&matLib, 256);
 
-	Object *objects = malloc(sizeof(Object) * OBJECT_COUNT);
-	if (!objects) {
-		fprintf(stderr, "Failed to allocate objects\n");
-		destroyCamera(&camera);
-		MaterialLib_Destroy(&matLib);
-		return 1;
-	}
+	ObjectList scene;
+	ObjectList_Init(&scene, 1);
 
-	const float spacingX = 7.0f, spacingZ = 7.0f;
-	const float startX = -(GRID_COLS - 1) * spacingX * 0.5f;
-	const float startZ = 5.0f;
+	// build checkerboard grid into a temporary list, then merge into one object
+	ObjectList grid;
+	ObjectList_Init(&grid, GRID_COLS * GRID_ROWS);
 	for (int row = 0; row < GRID_ROWS; row++) {
 		for (int col = 0; col < GRID_COLS; col++) {
-			int idx = row * GRID_COLS + col;
-			if (col % 2 == 0) {
-				LoadObj("assets/models/r27.bin", &objects[idx], &matLib);
-				objects[idx].rotation = (float3){0.0f, -0.5708f, 0.0f};
-				objects[idx].scale = (float3){2.0f, 2.0f, 2.0f};
-				objects[idx].position = (float3){startX + col * spacingX, -0.09f, startZ + row * spacingZ};
-				CreateObjectBVH(&objects[idx], &objects[idx].bvh);
-				Object_UpdateWorldBounds(&objects[idx]);
-			} else {
-				LoadObj("assets/models/f16.bin", &objects[idx], &matLib);
-				objects[idx].rotation = (float3){0.0f, -0.5708f, 0.0f};
-				objects[idx].scale = (float3){2.0f, 2.0f, 2.0f};
-				objects[idx].position = (float3){startX + col * spacingX, -0.09f, startZ + row * spacingZ};
-				CreateObjectBVH(&objects[idx], &objects[idx].bvh);
-				Object_UpdateWorldBounds(&objects[idx]);
-			}
+			Object *obj = ObjectList_Add(&grid);
+			CreateCube(obj, (float3){(col - GRID_COLS / 2) * 7.0f, -0.09f, 5.0f + row * 7.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 0.1f, 7.0f}, (float3){(col % 2) * 0.4f + 0.1f, (row % 2) * 0.4f + 0.1f, ((col + row) % 2) * 0.4f + 0.1f}, &matLib);
+			Object_UpdateWorldBounds(obj);
 		}
 	}
+	ObjectList_Merge(&grid, &scene);
+	free(grid.objects);
 
-	// floor
-	LoadObj("assets/models/map.bin", &objects[PLANE_COUNT], &matLib);
-	objects[PLANE_COUNT].rotation = (float3){0.0f, 0.0f, 0.0f};
-	objects[PLANE_COUNT].scale = (float3){2.0f, 2.0f, 2.0f};
-	objects[PLANE_COUNT].position = (float3){0.0f, -7.0f, 0.0f};
-	CreateObjectBVH(&objects[PLANE_COUNT], &objects[PLANE_COUNT].bvh);
-	Object_UpdateWorldBounds(&objects[PLANE_COUNT]);
-
-	CreateCube(&objects[PLANE_COUNT + 1], (float3){3.0f, 2.0f, 10.0f}, (float3){3.0f, 4.0f, 0.0f}, (float3){1.0f, 1.0f, 1.0f}, (float3){0.8f, 0.2f, 0.2f, 0.1f}, &matLib);
-	Object_UpdateWorldBounds(&objects[PLANE_COUNT + 1]);
+	Object *plane = ObjectList_Add(&scene);
+	LoadObj("assets/models/f16.bin", plane, &matLib);
+	plane->position = (float3){0.0f, 10.0f, 20.0f};
+	plane->rotation = (float3){0.0f, 0.0f, 0.0f};
+	plane->scale = (float3){2.0f, 2.0f, 2.0f};
+	CreateObjectBVH(plane, &plane->bvh);
+	Object_UpdateWorldBounds(plane);
 
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
 		fprintf(stderr, "Failed to create window\n");
-		Scene_Destroy(objects, OBJECT_COUNT);
+		ObjectList_Destroy(&scene);
 		destroyCamera(&camera);
 		return 1;
 	}
@@ -96,7 +77,7 @@ int main() {
 	RayTraceTaskQueue rayTaskQueue;
 	SSRTask *ssrTasks = malloc(sizeof(SSRTask) * ((HEIGHT + 3) / 4));
 
-	printf("Demo scene loaded. Total Tris: %d\n", Scene_CountTriangles(objects, OBJECT_COUNT));
+	printf("Demo scene loaded. Total Tris: %d\n", ObjectList_CountTriangles(&scene));
 	int frame = 0;
 	int shadowResolution = 4;
 	double frameTimes[4] = {0};
@@ -125,24 +106,33 @@ int main() {
 			{1.5f, 1.5f}, {-1.5f, 1.5f}, {-1.5f, -1.5f}, {1.5f, -1.5f}};
 		camera.jitter = jitterPattern[frame & 3];
 		camera.seed = frame * (int)35527.0f << 16 | (int)11369.0f;
-		// DemoScene_Update(objects, frame);
 
-		// Rotating the camera around the scene
-		float angle = frame * 0.001f;
-		camera.position.x = sinf(angle) * 7.0f;
-		camera.position.z = cosf(angle) * 7.0f + 10.0f;
-		camera.lightDir = (float3){-sinf(angle + 1.57f) * 0.5f, 1.0f, -cosf(angle + 1.57f) * 0.5f};
-		float3 toTarget = {-camera.position.x, -camera.position.y, 10.0f - camera.position.z};
-		camera.forward = Float3_Normalize(toTarget);
+		Input_Poll(&input, window);
+		if (input.keysDown[KB_KEY_ESCAPE]) break;
+		if (input.keys[KB_KEY_W]) CameraMoveForward(&camera, 0.2f);
+		if (input.keys[KB_KEY_S]) CameraMoveForward(&camera, -0.2f);
+		if (input.keys[KB_KEY_A]) CameraMoveRight(&camera, -0.2f);
+		if (input.keys[KB_KEY_D]) CameraMoveRight(&camera, 0.2f);
+		if (input.keys[KB_KEY_Q]) CameraMoveUp(&camera, 0.2f);
+		if (input.keys[KB_KEY_E]) CameraMoveUp(&camera, -0.2f);
+		if (input.mouse[MOUSE_LEFT]) CameraRotate(&camera, input.mouseDY * 0.005f, -input.mouseDX * 0.005f);
+
+		// Keep plane in front of camera, facing the same direction, offset slightly below view center
+		float3 fwd = Float3_Normalize(camera.forward);
+		plane->position = Float3_Add(
+			Float3_Add(camera.position, Float3_Scale(fwd, 10.0f)),
+			Float3_Scale(Float3_Normalize(camera.up), -2.5f));
+		plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
+		Object_UpdateWorldBounds(plane);
 
 		WNOW(wA);
-		RenderSetup(objects, OBJECT_COUNT, &camera);
+		RenderSetup(scene.objects, scene.count, &camera);
 		WNOW(wB);
 		double setupTime = WDIFF(wA, wB);
 		accumSetupTime += setupTime;
 
 		WNOW(wA);
-		RayTraceScene(objects, OBJECT_COUNT, &camera, &matLib, &rayTaskQueue, threadPool, &skybox);
+		RayTraceScene(scene.objects, scene.count, &camera, &matLib, &rayTaskQueue, threadPool, &skybox);
 
 		// RASTERIZE
 		// for (int i = 0; i < OBJECT_COUNT; i++) {
@@ -161,7 +151,7 @@ int main() {
 		accumShadowTime += WDIFF(wA, wB);
 
 		WNOW(wA);
-		SSRPostProcess(&camera, threadPool, ssrTasks, 4);
+		// SSRPostProcess(&camera, threadPool, ssrTasks, 4);
 		WNOW(wB);
 		accumSSRTime += WDIFF(wA, wB);
 
@@ -193,7 +183,7 @@ int main() {
 			double avgTotal = avgRender + avgShadow + avgSSR + avgSync + avgPresent;
 			double avgFps = 1000.0 / avgTotal;
 			double targetFrameTime = 1.0 / 60.0;
-			int maxTriangles60 = (int)(Scene_CountTriangles(objects, OBJECT_COUNT) * ((targetFrameTime * 1000.0) / avgRasterize));
+			int maxTriangles60 = (int)(ObjectList_CountTriangles(&scene) * ((targetFrameTime * 1000.0) / avgRasterize));
 			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  ssr: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
 				   frame, avgSetup, avgRasterize, avgShadow, avgSSR, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
 			accumRenderTime = accumSetupTime = accumShadowTime = accumSSRTime = accumSyncTime = accumPresentTime = 0.0;
@@ -216,7 +206,7 @@ int main() {
 			free((void *)alphabet.letters[i].tile.pixels);
 		}
 	}
-	Scene_Destroy(objects, OBJECT_COUNT);
+	ObjectList_Destroy(&scene);
 	DestroySkybox(&skybox);
 	poolDestroy(threadPool);
 	free(ssrTasks);
