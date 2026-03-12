@@ -117,6 +117,33 @@ Color ApplyToneMapping(Color c) {
 	return PackColorF(col);
 }
 
+Color AdjustContrast(Color c, float contrast) {
+	float3 col = UnpackColor(c);
+	col.x = (col.x - 0.5f) * contrast + 0.5f;
+	col.y = (col.y - 0.5f) * contrast + 0.5f;
+	col.z = (col.z - 0.5f) * contrast + 0.5f;
+	return PackColorF(col);
+}
+
+Color ApplyColorCorrection(Color c, float gamma, float exposure, float contrast, float saturation, float hueShift, float3 modulate) {
+	Color result = ApplyGamma(c, gamma);
+	result = ApplyExposure(result, exposure);
+	result = ApplyToneMapping(result);
+	result = AdjustContrast(result, contrast);
+	result = AdjustSaturation(result, saturation);
+	result = HueShiftColor(result, hueShift);
+	result = ModulateColorF(result, modulate);
+	return result;
+}
+
+Color ScaleChannel(Color c, float rScale, float gScale, float bScale) {
+	float3 col = UnpackColor(c);
+	col.x *= rScale;
+	col.y *= gScale;
+	col.z *= bScale;
+	return PackColorF(col);
+}
+
 Color LerpColor(Color c1, Color c2, float t) {
 	float3 col1 = UnpackColor(c1);
 	float3 col2 = UnpackColor(c2);

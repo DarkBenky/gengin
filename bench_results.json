@@ -1,8 +1,8 @@
 {
-  "frames": 119,
+  "frames": 1010,
   "duration_s": 5.0,
-  "avg_ms": 42.082,
-  "median_ms": 41.695,
-  "p99_ms": 49.465,
-  "frame_hashes": ["0x33be15a9", "0xe89c088a", "0x26fa1a7d", "0x419a7caf", "0x21461cc3"]
+  "avg_ms": 4.953,
+  "median_ms": 4.845,
+  "p99_ms": 6.888,
+  "frame_hashes": ["0x36485121", "0xfd6550f7", "0xfd6550f7", "0xfd6550f7", "0xfd6550f7"]
 }

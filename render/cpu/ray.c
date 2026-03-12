@@ -331,6 +331,8 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 	if (hitPos) *hitPos = (float3){0.0f, 0.0f, 0.0f};
 
 	for (int i = 0; i < objectCount; i++) {
+		if (ObjectBehindCamera(&objects[i], rayOrigin, rayDir)) continue;
+
 		if (i == excludeObj) continue;
 		// reject with world AABB first — cheap
 		float bboxMin, bboxMax;
@@ -351,6 +353,35 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 			if (hitPos) *hitPos = hitPosLocal;
 		}
 	}
+}
+
+// if (RayCast(objects, objectCount, origin, dir, excludeObj, lib, &hit)) { /* hit.pos, hit.normal in world-space, hit.mat, hit.objIdx, hit.triIdx */ }
+bool RayCast(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, const MaterialLib *lib, RayHit *hit) {
+	int objIdx, triIdx;
+	float3 hitPos;
+	rayCollision(objects, objectCount, rayOrigin, rayDir, excludeObj, &objIdx, &triIdx, &hitPos);
+	if (objIdx < 0) return false;
+
+	const Object *obj = &objects[objIdx];
+
+	float3 n = RotateXYZ(obj->normals[triIdx], obj->rotation);
+	float nlen = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
+	if (nlen > 1e-6f) {
+		float ni = 1.0f / nlen;
+		n.x *= ni;
+		n.y *= ni;
+		n.z *= ni;
+	}
+
+	Material mat = {.color = {0.8f, 0.8f, 0.8f}, .roughness = 0.8f};
+	if (lib && obj->materialIds) {
+		int matId = obj->materialIds[triIdx];
+		if (matId >= 0 && matId < lib->count)
+			mat = lib->entries[matId];
+	}
+
+	*hit = (RayHit){.pos = hitPos, .normal = n, .mat = mat, .objIdx = objIdx, .triIdx = triIdx};
+	return true;
 }
 
 // Returns normalized direction from rayOrigin toward a random point on object's surface.
@@ -417,6 +448,10 @@ static void RayTraceRowFunc(void *arg) {
 	float sy = rgt.y * aspect * fovScale;
 	float sz = rgt.z * aspect * fovScale;
 
+	float3 catchReflections[width]; // accumulate reflection contributions for the entire row, then write to framebuffer in one pass
+	memset(catchReflections, 0, sizeof(float3) * width);
+	float3 catchReflection = {0.0f, 0.0f, 0.0f};
+
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
 
@@ -434,6 +469,9 @@ static void RayTraceRowFunc(void *arg) {
 		float3 bestHitPos = {0};
 
 		for (int i = 0; i < objectCount; i++) {
+			// frustum cull using precomputed camera planes
+			if (!Frustum_TestAABB(&task->frustum, objects[i].worldBBmin, objects[i].worldBBmax)) continue;
+
 			float bboxMin, bboxMax;
 			RayBoxItersect(&objects[i], orig, (float3){dx, dy, dz}, &bboxMin, &bboxMax);
 			if (bboxMin >= bboxMax || bboxMin >= bestT) continue;
@@ -533,13 +571,64 @@ static void RayTraceRowFunc(void *arg) {
 		camera->objectIdBuffer[idx] = bestObj;
 		// w = (1-roughness) for SSR reflectivity gating
 		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, (1.0f - roughness)};
+
+		// ray traced reflection — only cast every REFLECTION_RESOLUTION columns
+		if (x % REFLECTION_RESOLUTION == 0) {
+			float3 rOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
+			RayHit rHit;
+			if (RayCast((Object *)objects, objectCount, rOrig, reflDir, bestObj, lib, &rHit)) {
+				catchReflection.x = rHit.mat.color.x;
+				catchReflection.y = rHit.mat.color.y;
+				catchReflection.z = rHit.mat.color.z;
+				catchReflection.w = reflectStrength;
+			} else {
+				Color skyColor = SampleSkybox(task->skybox, reflDir);
+				catchReflection.x = ((skyColor >> 16) & 0xFF) / 255.0f;
+				catchReflection.y = ((skyColor >> 8) & 0xFF) / 255.0f;
+				catchReflection.z = (skyColor & 0xFF) / 255.0f;
+				catchReflection.w = reflectStrength;
+			}
+		}
+		catchReflections[x] = catchReflection;
+	}
+	// blur reflection contributions across the row
+	for (int x = 0; x < width; x++) {
+		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
+		float reflectionStrength = camera->reflectBuffer[row * width + x].w;
+		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
+		int samples = 0;
+		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
+			int kIdx = x + kernelSize - BLUR_RADIUS - 1;
+			if (kIdx >= 0 && kIdx < width) {
+				accumulatedColor.x += catchReflections[kIdx].x;
+				accumulatedColor.y += catchReflections[kIdx].y;
+				accumulatedColor.z += catchReflections[kIdx].z;
+				samples++;
+			}
+		}
+		if (samples > 0) {
+			float invW = 1.0f / samples;
+			accumulatedColor.x *= invW;
+			accumulatedColor.y *= invW;
+			accumulatedColor.z *= invW;
+		}
+		Color baseColor = camera->framebuffer[row * width + x];
+		Color accumColor = (Color){
+			(uint8)(fminf(accumulatedColor.x, 1.0f) * 255.0f),
+			(uint8)(fminf(accumulatedColor.y, 1.0f) * 255.0f),
+			(uint8)(fminf(accumulatedColor.z, 1.0f) * 255.0f),
+			0xFF};
+		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength * reflectionStrength);
+		camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 1.2f);
+		camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
 	}
 }
 
 void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox) {
 	if (!objects || objectCount <= 0 || !camera || !taskQueue || !threadPool) return;
+	Frustum frustum = Frustum_FromCamera(camera);
 	for (int row = 0; row < camera->screenHeight; row++) {
-		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox};
+		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);

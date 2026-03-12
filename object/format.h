@@ -88,5 +88,9 @@ typedef struct Camera {
 void clearBuffers(Camera *camera);
 void initCamera(Camera *camera, int width, int height, float fov, float3 position, float3 forward, float3 lightDir);
 void destroyCamera(Camera *camera);
+void CameraMoveForward(Camera *camera, float amount);
+void CameraMoveRight(Camera *camera, float amount);
+void CameraMoveUp(Camera *camera, float amount);
+void CameraRotate(Camera *camera, float pitch, float yaw);
 
 #endif // FORMAT_H

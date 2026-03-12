@@ -256,9 +256,9 @@ def _smoothstep(edge0, edge1, x):
 def _height_to_material(h):
     """Smooth biome transitions using blended zones."""
     # biome anchor points: (height, color, roughness, metallic)
-    WATER = ((0.18, 0.52, 0.90), 0.05, 0.15)
-    SAND  = ((0.92, 0.82, 0.52), 0.90, 0.0)
-    GRASS = ((0.28, 0.72, 0.18), 0.87, 0.0)
+    WATER = ((0.18, 0.52, 0.78), 0.10, 0.15)
+    SAND  = ((0.92, 0.82, 0.52), 0.95, 0.01)
+    GRASS = ((0.28, 0.72, 0.18), 0.87, 0.01)
     DIRT  = ((0.62, 0.52, 0.36), 0.83, 0.02)
     ROCK  = ((0.68, 0.65, 0.60), 0.80, 0.05)
     SNOW  = ((0.95, 0.97, 1.00), 0.25, 0.0)
