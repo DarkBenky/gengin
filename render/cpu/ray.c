@@ -22,6 +22,20 @@ static inline Color BlendColors50(Color a, Color b) {
 	return ((a & 0x00FEFEFEu) + (b & 0x00FEFEFEu)) >> 1;
 }
 
+// Lerp the 6 precomputed directional emissions using a local-space normal.
+// Each face contributes max(0, dot(n, faceDir)) * faceEmission — no trig needed.
+static inline float3 SampleObjectEmission(const Object *obj, float3 localNormal) {
+	float3 r = {0.0f, 0.0f, 0.0f};
+	// +X -X +Y -Y +Z -Z
+	if (localNormal.x > 0.0f) { r.x += localNormal.x * obj->faceEmissions[0].x; r.y += localNormal.x * obj->faceEmissions[0].y; r.z += localNormal.x * obj->faceEmissions[0].z; }
+	if (localNormal.x < 0.0f) { float w = -localNormal.x; r.x += w * obj->faceEmissions[1].x; r.y += w * obj->faceEmissions[1].y; r.z += w * obj->faceEmissions[1].z; }
+	if (localNormal.y > 0.0f) { r.x += localNormal.y * obj->faceEmissions[2].x; r.y += localNormal.y * obj->faceEmissions[2].y; r.z += localNormal.y * obj->faceEmissions[2].z; }
+	if (localNormal.y < 0.0f) { float w = -localNormal.y; r.x += w * obj->faceEmissions[3].x; r.y += w * obj->faceEmissions[3].y; r.z += w * obj->faceEmissions[3].z; }
+	if (localNormal.z > 0.0f) { r.x += localNormal.z * obj->faceEmissions[4].x; r.y += localNormal.z * obj->faceEmissions[4].y; r.z += localNormal.z * obj->faceEmissions[4].z; }
+	if (localNormal.z < 0.0f) { float w = -localNormal.z; r.x += w * obj->faceEmissions[5].x; r.y += w * obj->faceEmissions[5].y; r.z += w * obj->faceEmissions[5].z; }
+	return r;
+}
+
 static void BlurColorBuffer(Color *src, Color *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
 
@@ -661,8 +675,9 @@ static void RayTraceRowFunc(void *arg) {
 				float distSq = dv.x * dv.x + dv.y * dv.y + dv.z * dv.z;
 				float atten = NdotL / (1.0f + distSq * 0.05f);
 
-				// Use precomputed per-face emission color
-				float3 emi = objects[li].faceEmission[hitTri];
+				// Sample emission via 6-direction lerp using the hit triangle's local normal.
+				// Local normals are precomputed in Object_PrecomputeEmission — no world transform needed.
+				float3 emi = SampleObjectEmission(&objects[li], objects[li].normals[hitTri]);
 				catchIndirectSample.x += emi.x * atten;
 				catchIndirectSample.y += emi.y * atten;
 				catchIndirectSample.z += emi.z * atten;

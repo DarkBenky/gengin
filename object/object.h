@@ -41,10 +41,10 @@ typedef struct Object {
 
 	Color _temp; // pre-packed RGB color for BBOX hits
 
-	float3 worldCenter;      // precomputed world-space AABB center
-	float3 avgEmission;      // average face emission (color * strength) across emissive tris
-	float3 *faceEmission;    // per-triangle precomputed emission: color * emission_strength (NULL if !hasEmission)
-	int hasEmission;         // 1 if any face has emission > 0
+	float3 worldCenter;         // precomputed world-space AABB center
+	float3 avgEmission;         // average emission across the 6 face directions
+	float3 faceEmissions[6];    // emission in local-space axis directions: +X,-X,+Y,-Y,+Z,-Z
+	int hasEmission;            // 1 if any face has emission > 0
 
 	float3 *v1;
 	float3 *v2;
