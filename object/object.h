@@ -6,14 +6,14 @@
 #include "material/material.h"
 
 typedef struct BVHNode {
-	float BBmin[3];    // 12 bytes (no float3 padding waste)
-	float BBmax[3];    // 12 bytes
+	float BBmin[3]; // 12 bytes (no float3 padding waste)
+	float BBmax[3]; // 12 bytes
 	union {
 		int leftFirst; // internal node: index of left child (right = leftFirst+1)
 		int triStart;  // leaf node: start index into triIndices
 	};
-	int triCount;      // 0 = internal node, >0 = leaf
-} BVHNode;             // 32 bytes — 2 nodes per cache line
+	int triCount; // 0 = internal node, >0 = leaf
+} BVHNode;		  // 32 bytes — 2 nodes per cache line
 
 typedef struct BVH {
 	BVHNode *nodes;

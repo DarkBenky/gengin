@@ -1,0 +1,8 @@
+perf.data
+perf.data.old
+flamegraph.svg
+*.profraw
+*.profdata
+bench_results.json
+main
+main_bench

@@ -1,11 +1,10 @@
 ## TODO
 
-- [ ] Replace screen space refection by raytraced onece
-    - [ ] use lower resolution and blur row apply it to frame buffer
-        - [ ] apply direct reflection [red][green][blue][roughness]
-            - [ ] we blur based on 4th channel
-- [ ] GPU rendering (keep it simple — port current CPU pipeline)
-    - [ ] use rasterization to avoid rebuilding bvh
+- [X] Replace screen space refection by raytraced onece
+    - [X] use lower resolution and blur row apply it to frame buffer
+        - [X] apply direct reflection [red][green][blue][roughness]
+            - [X] we blur based on 4th channel
+- [ ] GPU rendering (keep it simple — port current CPU pipeline (**later**)
 - [ ] Plane controls
   - [ ] Use something like this but we will simplified it
     - [ ] Example

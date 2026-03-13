@@ -87,7 +87,7 @@ flame:
 	fi
 	sudo perf record -F 99 -g --call-graph fp -o perf.data -- timeout 10 ./$(TARGET) || true
 	sudo perf script -i perf.data | $(FLAMEGRAPH_DIR)/stackcollapse-perf.pl | $(FLAMEGRAPH_DIR)/flamegraph.pl > flamegraph.svg
-	sudo chown $(USER) perf.data
+	sudo chown $(USER) perf.data perf.data.old 2>/dev/null || true
 	@echo "Flame graph saved to flamegraph.svg"
 
 clean:
