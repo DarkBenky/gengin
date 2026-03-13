@@ -3,36 +3,36 @@ Running: tests/testBlur
 ========================================
 ========================================
 Single-threaded blur performance:
-Average Time: 0.006018 seconds
-Median Time: 0.005995 seconds
-Min Time: 0.005983 seconds
-Max Time: 0.006835 seconds
+Average Time: 0.007766 seconds
+Median Time: 0.007749 seconds
+Min Time: 0.007711 seconds
+Max Time: 0.009034 seconds
 Variance: 0.000000
-P99 Time: 0.006584 seconds
+P99 Time: 0.007874 seconds
 ========================================
 Multi-threaded blur performance:
-Average Time: 0.002127 seconds
-Median Time: 0.002169 seconds
-Min Time: 0.000790 seconds
-Max Time: 0.002292 seconds
-Variance: 0.000000
-P99 Time: 0.002263 seconds
+Average Time: 0.007227 seconds
+Median Time: 0.007374 seconds
+Min Time: 0.004663 seconds
+Max Time: 0.008528 seconds
+Variance: 0.000001
+P99 Time: 0.008444 seconds
 ========================================
 Multi-threaded blur (pattern) performance:
-Average Time: 0.002191 seconds
-Median Time: 0.002195 seconds
-Min Time: 0.001937 seconds
-Max Time: 0.002337 seconds
+Average Time: 0.005745 seconds
+Median Time: 0.005722 seconds
+Min Time: 0.004506 seconds
+Max Time: 0.007036 seconds
 Variance: 0.000000
-P99 Time: 0.002294 seconds
+P99 Time: 0.006986 seconds
 ========================================
 Multi-threaded blur (output buffer) performance:
-Average Time: 0.002353 seconds
-Median Time: 0.002360 seconds
-Min Time: 0.000954 seconds
-Max Time: 0.002810 seconds
+Average Time: 0.005379 seconds
+Median Time: 0.005252 seconds
+Min Time: 0.004247 seconds
+Max Time: 0.007109 seconds
 Variance: 0.000000
-P99 Time: 0.002651 seconds
+P99 Time: 0.006996 seconds
 ========================================
 Running: tests/testRay
 ========================================
@@ -168,70 +168,130 @@ Triangle count: 74498
 Scene loaded. Total triangles: 136292
 ========================================
 Single-threaded Ray Performance:
-Average Time: 0.036640 seconds
-Median Time:  0.036578 seconds
-Min Time:     0.036523 seconds
-Max Time:     0.037489 seconds
+Average Time: 0.034670 seconds
+Median Time:  0.034692 seconds
+Min Time:     0.034428 seconds
+Max Time:     0.034990 seconds
 Variance:     0.000000
-99th Pct:     0.037489 seconds
+99th Pct:     0.034990 seconds
 ========================================
 Multi-threaded (1 rows/task, 600 tasks):
-Average Time: 0.005146 seconds
-Median Time:  0.004936 seconds
-Min Time:     0.004861 seconds
-Max Time:     0.008770 seconds
-Variance:     0.000001
-99th Pct:     0.008770 seconds
+Average Time: 0.040888 seconds
+Median Time:  0.040806 seconds
+Min Time:     0.040484 seconds
+Max Time:     0.041783 seconds
+Variance:     0.000000
+99th Pct:     0.041783 seconds
 ========================================
 Multi-threaded (2 rows/task, 300 tasks):
-Average Time: 0.005081 seconds
-Median Time:  0.005066 seconds
-Min Time:     0.004892 seconds
-Max Time:     0.005501 seconds
-Variance:     0.000000
-99th Pct:     0.005501 seconds
+Average Time: 0.041199 seconds
+Median Time:  0.040896 seconds
+Min Time:     0.040395 seconds
+Max Time:     0.043403 seconds
+Variance:     0.000001
+99th Pct:     0.043403 seconds
 ========================================
 Multi-threaded (4 rows/task, 150 tasks):
-Average Time: 0.005173 seconds
-Median Time:  0.005121 seconds
-Min Time:     0.005101 seconds
-Max Time:     0.006082 seconds
+Average Time: 0.040966 seconds
+Median Time:  0.040979 seconds
+Min Time:     0.040475 seconds
+Max Time:     0.041823 seconds
 Variance:     0.000000
-99th Pct:     0.006082 seconds
+99th Pct:     0.041823 seconds
 ========================================
 Multi-threaded (16 rows/task, 38 tasks):
-Average Time: 0.006502 seconds
-Median Time:  0.006417 seconds
-Min Time:     0.006191 seconds
-Max Time:     0.007430 seconds
+Average Time: 0.040991 seconds
+Median Time:  0.041018 seconds
+Min Time:     0.040438 seconds
+Max Time:     0.041542 seconds
 Variance:     0.000000
-99th Pct:     0.007430 seconds
+99th Pct:     0.041542 seconds
 ========================================
 Multi-threaded (32 rows/task, 19 tasks):
-Average Time: 0.007878 seconds
-Median Time:  0.008087 seconds
-Min Time:     0.007018 seconds
-Max Time:     0.008825 seconds
+Average Time: 0.040927 seconds
+Median Time:  0.040787 seconds
+Min Time:     0.040540 seconds
+Max Time:     0.041773 seconds
 Variance:     0.000000
-99th Pct:     0.008825 seconds
+99th Pct:     0.041773 seconds
 ========================================
 Multi-threaded (64 rows/task, 10 tasks):
-Average Time: 0.011194 seconds
-Median Time:  0.010523 seconds
-Min Time:     0.009048 seconds
-Max Time:     0.016188 seconds
-Variance:     0.000004
-99th Pct:     0.016188 seconds
+Average Time: 0.041316 seconds
+Median Time:  0.041142 seconds
+Min Time:     0.040537 seconds
+Max Time:     0.042806 seconds
+Variance:     0.000000
+99th Pct:     0.042806 seconds
 ========================================
 ========================================
 Multi-threaded (1 rows/task, 600 tasks):
-Average Time: 0.004983 seconds
-Median Time:  0.004934 seconds
-Min Time:     0.004865 seconds
-Max Time:     0.005979 seconds
+Average Time: 0.044876 seconds
+Median Time:  0.044716 seconds
+Min Time:     0.044173 seconds
+Max Time:     0.045998 seconds
 Variance:     0.000000
-99th Pct:     0.005979 seconds
+99th Pct:     0.045998 seconds
 Correctness check passed.
 ========================================
 Running: tests/testSSR
 ========================================
+Scene loaded. Total triangles: 60
+========================================
+SSR Single-threaded Post-process:
+Average Time: 0.158352 seconds
+Median Time:  0.156765 seconds
+Min Time:     0.155650 seconds
+Max Time:     0.169741 seconds
+Variance:     0.000017
+99th Pct:     0.169741 seconds
+========================================
+SSR Multi-threaded (1 rows/task, 600 tasks):
+Average Time: 0.073462 seconds
+Median Time:  0.073406 seconds
+Min Time:     0.072337 seconds
+Max Time:     0.074781 seconds
+Variance:     0.000000
+99th Pct:     0.074781 seconds
+========================================
+SSR Multi-threaded (2 rows/task, 300 tasks):
+Average Time: 0.073691 seconds
+Median Time:  0.073677 seconds
+Min Time:     0.073009 seconds
+Max Time:     0.074148 seconds
+Variance:     0.000000
+99th Pct:     0.074148 seconds
+========================================
+SSR Multi-threaded (4 rows/task, 150 tasks):
+Average Time: 0.072932 seconds
+Median Time:  0.072951 seconds
+Min Time:     0.072442 seconds
+Max Time:     0.073566 seconds
+Variance:     0.000000
+99th Pct:     0.073566 seconds
+========================================
+SSR Multi-threaded (16 rows/task, 38 tasks):
+Average Time: 0.073391 seconds
+Median Time:  0.073406 seconds
+Min Time:     0.072509 seconds
+Max Time:     0.074054 seconds
+Variance:     0.000000
+99th Pct:     0.074054 seconds
+========================================
+SSR Multi-threaded (32 rows/task, 19 tasks):
+Average Time: 0.073547 seconds
+Median Time:  0.073584 seconds
+Min Time:     0.072376 seconds
+Max Time:     0.075318 seconds
+Variance:     0.000001
+99th Pct:     0.075318 seconds
+========================================
+SSR Multi-threaded (64 rows/task, 10 tasks):
+Average Time: 0.075314 seconds
+Median Time:  0.074610 seconds
+Min Time:     0.072759 seconds
+Max Time:     0.080303 seconds
+Variance:     0.000005
+99th Pct:     0.080303 seconds
+========================================
+Correctness check passed.
+Images saved: tests/img/ssr_base.bmp  tests/img/ssr_single.bmp  tests/img/ssr_multi.bmp

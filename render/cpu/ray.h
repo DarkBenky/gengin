@@ -10,6 +10,9 @@
 
 #define REFLECTION_RESOLUTION 4 // 1 = full, 2 = half, 4 = quarter, etc.
 #define BLUR_RADIUS 5
+#define SHADOW_RESOLUTION 4     // shadow ray every N pixels, blurred in post-pass
+#define INDIRECT_RESOLUTION 4   // GI ray every N pixels, blurred in post-pass
+#define INDIRECT_BLUR_RADIUS 8  // wider blur for softer indirect light
 
 typedef struct {
 	int row;
@@ -29,6 +32,8 @@ typedef struct {
 	const MaterialLib *lib;
 	const Skybox *skybox;
 	Frustum frustum;
+	const int *emissiveObjects; // precomputed indices of emissive objects
+	int emissiveCount;
 } RayTraceTask;
 
 typedef struct {

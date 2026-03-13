@@ -1,7 +1,6 @@
 #include "ray.h"
 
 #include <math.h>
-#include <omp.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -468,9 +467,14 @@ static void RayTraceRowFunc(void *arg) {
 	float sy = rgt.y * aspect * fovScale;
 	float sz = rgt.z * aspect * fovScale;
 
-	float3 catchReflections[width]; // accumulate reflection contributions for the entire row, then write to framebuffer in one pass
+	float3 catchReflections[width]; // row-local reflection samples, blurred in post-pass
+	float catchShadows[width];      // row-local shadow factors (1.0=lit, 0.0=shadow)
+	float3 catchIndirect[width];    // row-local indirect (emission) samples
 	memset(catchReflections, 0, sizeof(float3) * width);
+	memset(catchIndirect, 0, sizeof(float3) * width);
 	float3 catchReflection = {0.0f, 0.0f, 0.0f};
+	float catchShadow = 1.0f;
+	float3 catchIndirectSample = {0.0f, 0.0f, 0.0f};
 
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
@@ -514,6 +518,9 @@ static void RayTraceRowFunc(void *arg) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
 			camera->objectIdBuffer[idx] = -1;
 			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
+			camera->emissionBuffer[idx] = (float3){0};
+			catchShadows[x] = 1.0f;
+			catchIndirect[x] = (float3){0};
 			continue;
 		}
 
@@ -547,13 +554,21 @@ static void RayTraceRowFunc(void *arg) {
 		float3 sOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
 		camera->normalBuffer[idx] = n;
 		camera->positionBuffer[idx] = bestHitPos;
-		int shadowHit = -1;
-		if (emission <= 0.0f)
-			rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
-		int inShadow = shadowHit >= 0;
 
+		// Shadow ray — sample every SHADOW_RESOLUTION pixels, hold last result between samples.
+		// Emissive surfaces are self-lit: shadow never applies to them.
+		if (emission > 0.0f) {
+			catchShadow = 1.0f;
+		} else if (x % SHADOW_RESOLUTION == 0) {
+			int shadowHit = -1;
+			rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
+			catchShadow = (shadowHit < 0) ? 1.0f : 0.0f;
+		}
+		catchShadows[x] = catchShadow;
+
+		// Lighting — computed fully lit; shadow is applied in the post-pass blur.
 		float diffuse = n.x * lightDir.x + n.y * lightDir.y + n.z * lightDir.z;
-		if (diffuse < 0.0f || inShadow) diffuse = 0.0f;
+		if (diffuse < 0.0f) diffuse = 0.0f;
 
 		// Blinn-Phong specular — half vector between light and view (NdotH^8 approx)
 		float hx = lightDir.x - dx, hy = lightDir.y - dy, hz = lightDir.z - dz;
@@ -561,7 +576,7 @@ static void RayTraceRowFunc(void *arg) {
 		float NdotH = fmaxf(0.0f, (n.x * hx + n.y * hy + n.z * hz) * hlen);
 		float spec2 = NdotH * NdotH;
 		float spec4 = spec2 * spec2;
-		float specular = (!inShadow && diffuse > 0.0f) ? (spec4 * spec4 * (1.0f - roughness) * 0.4f) : 0.0f;
+		float specular = (diffuse > 0.0f) ? (spec4 * spec4 * (1.0f - roughness) * 0.4f) : 0.0f;
 
 		float lit = 0.12f + 0.88f * diffuse;
 
@@ -614,11 +629,101 @@ static void RayTraceRowFunc(void *arg) {
 			}
 		}
 		catchReflections[x] = catchReflection;
+
+		// Indirect lighting (GI) — sample every INDIRECT_RESOLUTION pixels.
+		// For each emissive object, cast one ray toward a random point on its surface.
+		// The emissive object list is precomputed once per frame in RayTraceScene.
+		if (task->emissiveCount > 0 && x % INDIRECT_RESOLUTION == 0) {
+			catchIndirectSample = (float3){0.0f, 0.0f, 0.0f};
+			for (int ei = 0; ei < task->emissiveCount; ei++) {
+				int li = task->emissiveObjects[ei];
+				if (li == bestObj) continue;
+
+				float3 emitHitPos;
+				float3 toEmitter = RandomObjectHitRay(&objects[li], sOrig,
+					camera->seed + (float)x * 0.37f + (float)ei, &emitHitPos);
+
+				// Cosine term — skip if emitter is behind the surface
+				float NdotL = n.x * toEmitter.x + n.y * toEmitter.y + n.z * toEmitter.z;
+				if (NdotL <= 0.0f) continue;
+
+				// Discard if another object is between surface and emitter.
+				// Full rayCollision finds the closest hit — if it's not the emitter, it's occluded.
+				int hitObj = -1, hitTri = -1;
+				float3 hitPos;
+				rayCollision((Object *)objects, objectCount, sOrig, toEmitter, bestObj, &hitObj, &hitTri, &hitPos);
+				if (hitObj != li || hitTri < 0) continue;
+
+				// Distance-based falloff using precomputed world center
+				float3 dv = {objects[li].worldCenter.x - sOrig.x,
+					objects[li].worldCenter.y - sOrig.y,
+					objects[li].worldCenter.z - sOrig.z};
+				float distSq = dv.x * dv.x + dv.y * dv.y + dv.z * dv.z;
+				float atten = NdotL / (1.0f + distSq * 0.05f);
+
+				// Use precomputed per-face emission color
+				float3 emi = objects[li].faceEmission[hitTri];
+				catchIndirectSample.x += emi.x * atten;
+				catchIndirectSample.y += emi.y * atten;
+				catchIndirectSample.z += emi.z * atten;
+			}
+		}
+		catchIndirect[x] = catchIndirectSample;
 	}
-	// blur reflection contributions across the row
+
+	// Post-pass: blur shadow + apply, blur indirect + add, blur reflections + blend, gamma.
 	for (int x = 0; x < width; x++) {
-		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
-		float reflectionStrength = camera->reflectBuffer[row * width + x].w;
+		int pidx = row * width + x;
+		if (camera->depthBuffer[pidx] >= DEPTH_FAR) continue;
+
+		// --- Shadow blur + apply ---
+		float shadowBlurred = 0.0f;
+		int sc = 0;
+		for (int k = x - BLUR_RADIUS; k <= x + BLUR_RADIUS; k++) {
+			if ((unsigned)k < (unsigned)width) { shadowBlurred += catchShadows[k]; sc++; }
+		}
+		if (sc > 0) shadowBlurred /= sc;
+		// Multiplicative shadow darkening: scale in [128,256]/256 → [0.5, 1.0] range
+		uint32 shadowScale = 128 + (uint32)(shadowBlurred * 128.0f);
+		Color fc = camera->framebuffer[pidx];
+		uint32 sr = (((fc >> 16) & 0xFF) * shadowScale) >> 8;
+		uint32 sg = (((fc >> 8) & 0xFF) * shadowScale) >> 8;
+		uint32 sb = ((fc & 0xFF) * shadowScale) >> 8;
+		camera->framebuffer[pidx] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
+
+		// --- Indirect light blur + add ---
+		float3 indBlurred = {0.0f, 0.0f, 0.0f};
+		int ic = 0;
+		for (int k = x - INDIRECT_BLUR_RADIUS; k <= x + INDIRECT_BLUR_RADIUS; k++) {
+			if ((unsigned)k < (unsigned)width) {
+				indBlurred.x += catchIndirect[k].x;
+				indBlurred.y += catchIndirect[k].y;
+				indBlurred.z += catchIndirect[k].z;
+				ic++;
+			}
+		}
+		if (ic > 0) {
+			float iinv = 1.0f / ic;
+			indBlurred.x *= iinv;
+			indBlurred.y *= iinv;
+			indBlurred.z *= iinv;
+		}
+		// Store raw indirect emission for later bloom pass
+		camera->emissionBuffer[pidx] = indBlurred;
+		// Additive blend into framebuffer
+		if (indBlurred.x > 0.0f || indBlurred.y > 0.0f || indBlurred.z > 0.0f) {
+			Color ifc = camera->framebuffer[pidx];
+			uint32 ir = ((ifc >> 16) & 0xFF) + (uint32)(indBlurred.x * 255.0f);
+			uint32 ig = ((ifc >> 8) & 0xFF) + (uint32)(indBlurred.y * 255.0f);
+			uint32 ib = (ifc & 0xFF) + (uint32)(indBlurred.z * 255.0f);
+			if (ir > 255) ir = 255;
+			if (ig > 255) ig = 255;
+			if (ib > 255) ib = 255;
+			camera->framebuffer[pidx] = 0xFF000000u | (ir << 16) | (ig << 8) | ib;
+		}
+
+		// --- Reflection blur + blend ---
+		float reflectionStrength = camera->reflectBuffer[pidx].w;
 		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
 		int samples = 0;
 		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
@@ -636,23 +741,31 @@ static void RayTraceRowFunc(void *arg) {
 			accumulatedColor.y *= invW;
 			accumulatedColor.z *= invW;
 		}
-		Color baseColor = camera->framebuffer[row * width + x];
-		Color accumColor = (Color){
-			(uint8)(fminf(accumulatedColor.x, 1.0f) * 255.0f),
-			(uint8)(fminf(accumulatedColor.y, 1.0f) * 255.0f),
-			(uint8)(fminf(accumulatedColor.z, 1.0f) * 255.0f),
-			0xFF};
-		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength * reflectionStrength);
-		camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 1.2f);
-		camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
+		uint32 rr = (uint32)(fminf(accumulatedColor.x, 1.0f) * 255.0f);
+		uint32 rg = (uint32)(fminf(accumulatedColor.y, 1.0f) * 255.0f);
+		uint32 rb = (uint32)(fminf(accumulatedColor.z, 1.0f) * 255.0f);
+		Color accumColor = 0xFF000000u | (rr << 16) | (rg << 8) | rb;
+		Color baseColor = camera->framebuffer[pidx];
+		camera->framebuffer[pidx] = LerpColor(baseColor, accumColor, reflectionStrength * reflectionStrength);
+		camera->framebuffer[pidx] = ApplyGamma(camera->framebuffer[pidx], 1.2f);
+		camera->framebuffer[pidx] = ScaleChannel(camera->framebuffer[pidx], 1.08f, 1.0f, 0.78f);
 	}
 }
 
 void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox) {
 	if (!objects || objectCount <= 0 || !camera || !taskQueue || !threadPool) return;
+
+	// Precompute emissive object list once per frame — avoids scanning all objects per pixel
+	int emissiveObjects[objectCount];
+	int emissiveCount = 0;
+	for (int i = 0; i < objectCount; i++) {
+		if (objects[i].hasEmission)
+			emissiveObjects[emissiveCount++] = i;
+	}
+
 	Frustum frustum = Frustum_FromCamera(camera);
 	for (int row = 0; row < camera->screenHeight; row++) {
-		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum};
+		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, emissiveObjects, emissiveCount};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);

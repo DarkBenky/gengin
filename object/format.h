@@ -82,6 +82,7 @@ typedef struct Camera {
 	float *shadowCache;
 	Color *reflectCache;
 	int *objectIdBuffer;
+	float3 *emissionBuffer; // per-pixel indirect emission accumulation (for bloom)
 	int frameCounter;
 } Camera;
 

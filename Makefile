@@ -11,6 +11,7 @@ CFLAGS = $(CFLAGS_BASE)
 LDFLAGS = -flto -L/usr/local/lib
 LDFLAGS += -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed
 LIBS = -lminifb -lX11 -lGL -lpthread -lm -ljpeg
+TEST_LIBS = -lpthread -lm
 
 # Auto-use PGO data if available from a previous 'make pgo' run
 PROFDATA = default.profdata
@@ -51,7 +52,7 @@ bench: $(SRC)
 
 # Build rule for any test binary
 $(TESTS_DIR)/%: $(TESTS_DIR)/%.c $(TEST_COMMON)
-	$(CC) $(CFLAGS) -I$(TESTS_DIR) -o $@ $^ $(LDFLAGS) $(LIBS)
+	$(CC) $(CFLAGS) -I$(TESTS_DIR) -o $@ $^ $(LDFLAGS) $(TEST_LIBS)
 
 # make test          → build & run all tests
 # make test testRay  → build & run only testRay

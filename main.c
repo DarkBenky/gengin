@@ -58,6 +58,10 @@ int main() {
 	CreateObjectBVH(plane, &plane->bvh);
 	Object_UpdateWorldBounds(plane);
 
+	// Precompute per-face emission for all scene objects
+	for (int i = 0; i < scene.count; i++)
+		Object_PrecomputeEmission(&scene.objects[i], &matLib);
+
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
 		fprintf(stderr, "Failed to create window\n");

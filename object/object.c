@@ -153,12 +153,63 @@ void Object_Destroy(Object *obj) {
 	obj->normals = NULL;
 	free(obj->materialIds);
 	obj->materialIds = NULL;
+	free(obj->faceEmission);
+	obj->faceEmission = NULL;
 	obj->triangleCount = 0;
 	free(obj->bvh.nodes);
 	obj->bvh.nodes = NULL;
 	free(obj->bvh.triIndices);
 	obj->bvh.triIndices = NULL;
 	obj->bvh.nodeCount = 0;
+}
+
+void Object_PrecomputeEmission(Object *obj, const MaterialLib *lib) {
+	if (!obj || !lib || obj->triangleCount <= 0) return;
+
+	free(obj->faceEmission);
+	obj->faceEmission = NULL;
+	obj->hasEmission = 0;
+	obj->avgEmission = (float3){0};
+
+	if (!obj->materialIds) return;
+
+	// First pass: check if any face is emissive
+	for (int i = 0; i < obj->triangleCount; i++) {
+		int matId = obj->materialIds[i];
+		if (matId >= 0 && matId < lib->count && lib->entries[matId].emission > 0.0f) {
+			obj->hasEmission = 1;
+			break;
+		}
+	}
+	if (!obj->hasEmission) return;
+
+	obj->faceEmission = malloc(obj->triangleCount * sizeof(float3));
+	if (!obj->faceEmission) { obj->hasEmission = 0; return; }
+
+	float3 emissionSum = {0};
+	int emissiveCount = 0;
+	for (int i = 0; i < obj->triangleCount; i++) {
+		int matId = obj->materialIds[i];
+		if (matId >= 0 && matId < lib->count) {
+			float e = lib->entries[matId].emission;
+			float3 c = lib->entries[matId].color;
+			obj->faceEmission[i] = (float3){c.x * e, c.y * e, c.z * e};
+			if (e > 0.0f) {
+				emissionSum.x += c.x * e;
+				emissionSum.y += c.y * e;
+				emissionSum.z += c.z * e;
+				emissiveCount++;
+			}
+		} else {
+			obj->faceEmission[i] = (float3){0};
+		}
+	}
+	if (emissiveCount > 0) {
+		float inv = 1.0f / emissiveCount;
+		obj->avgEmission.x = emissionSum.x * inv;
+		obj->avgEmission.y = emissionSum.y * inv;
+		obj->avgEmission.z = emissionSum.z * inv;
+	}
 }
 
 void Object_UpdateWorldBounds(Object *obj) {
@@ -188,6 +239,9 @@ void Object_UpdateWorldBounds(Object *obj) {
 		obj->worldBBmax.y = MaxF32(obj->worldBBmax.y, p.y);
 		obj->worldBBmax.z = MaxF32(obj->worldBBmax.z, p.z);
 	}
+	obj->worldCenter.x = (obj->worldBBmin.x + obj->worldBBmax.x) * 0.5f;
+	obj->worldCenter.y = (obj->worldBBmin.y + obj->worldBBmax.y) * 0.5f;
+	obj->worldCenter.z = (obj->worldBBmin.z + obj->worldBBmax.z) * 0.5f;
 
 	// Cache rows of M = Diag(invScale) * InvRot
 	// InvRot = Rx(-rx)*Ry(-ry)*Rz(-rz) = transpose of forward rotation Rz*Ry*Rx
