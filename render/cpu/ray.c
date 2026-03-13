@@ -472,6 +472,10 @@ static void RayTraceRowFunc(void *arg) {
 	memset(catchReflections, 0, sizeof(float3) * width);
 	float3 catchReflection = {0.0f, 0.0f, 0.0f};
 
+	float3 catchEmissions[width]; // accumulate emission contributions for the entire row, then write to framebuffer in one pass
+	memset(catchEmissions, 0, sizeof(float3) * width);
+	float3 catchEmission = {0.0f, 0.0f, 0.0f};
+
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
 
@@ -535,12 +539,14 @@ static void RayTraceRowFunc(void *arg) {
 		float3 color = {0.8f, 0.8f, 0.8f};
 		float emission = 0.0f;
 		float roughness = 0.8f;
+		float metallic = 0.0f;
 		if (lib && obj->materialIds) {
 			int matId = obj->materialIds[bestTri];
 			if (matId >= 0 && matId < lib->count) {
 				color = lib->entries[matId].color;
 				emission = lib->entries[matId].emission;
 				roughness = lib->entries[matId].roughness;
+				metallic = lib->entries[matId].metallic;
 			}
 		}
 
@@ -555,39 +561,55 @@ static void RayTraceRowFunc(void *arg) {
 		float diffuse = n.x * lightDir.x + n.y * lightDir.y + n.z * lightDir.z;
 		if (diffuse < 0.0f || inShadow) diffuse = 0.0f;
 
-		// Blinn-Phong specular — half vector between light and view (NdotH^8 approx)
+		// Blinn-Phong specular — metallic boosts gloss and tints specular by albedo
 		float hx = lightDir.x - dx, hy = lightDir.y - dy, hz = lightDir.z - dz;
 		float hlen = 1.0f / sqrtf(hx * hx + hy * hy + hz * hz);
 		float NdotH = fmaxf(0.0f, (n.x * hx + n.y * hy + n.z * hz) * hlen);
 		float spec2 = NdotH * NdotH;
 		float spec4 = spec2 * spec2;
-		float specular = (!inShadow && diffuse > 0.0f) ? (spec4 * spec4 * (1.0f - roughness) * 0.4f) : 0.0f;
+		float glossiness = (1.0f - roughness) + metallic * 0.6f; // metals stay glossy regardless of roughness
+		float specularBase = (!inShadow && diffuse > 0.0f) ? (spec4 * spec4 * glossiness * 0.6f) : 0.0f;
+		// dielectrics: white specular; metals: albedo-tinted specular
+		float specR = specularBase * (1.0f - metallic) + specularBase * metallic * color.x;
+		float specG = specularBase * (1.0f - metallic) + specularBase * metallic * color.y;
+		float specB = specularBase * (1.0f - metallic) + specularBase * metallic * color.z;
 
-		float lit = 0.12f + 0.88f * diffuse;
+		// metals absorb no diffuse — all energy is specular
+		float diffuseWeight = 1.0f - metallic;
+		float lit = (0.12f + 0.88f * diffuse) * diffuseWeight;
 
-		uint8 r = (uint8)(fminf(color.x * lit + specular + color.x * emission, 1.0f) * 255.0f);
-		uint8 g = (uint8)(fminf(color.y * lit + specular + color.y * emission, 1.0f) * 255.0f);
-		uint8 b = (uint8)(fminf(color.z * lit + specular + color.z * emission, 1.0f) * 255.0f);
+		uint8 r = (uint8)(fminf(color.x * lit + specR + color.x * emission, 1.0f) * 255.0f);
+		uint8 g = (uint8)(fminf(color.y * lit + specG + color.y * emission, 1.0f) * 255.0f);
+		uint8 b = (uint8)(fminf(color.z * lit + specB + color.z * emission, 1.0f) * 255.0f);
 
-		// Fresnel-Schlick for sky reflection weight
+		// Fresnel-Schlick: metals use albedo-coloured F0 (~0.7-1.0), dielectrics use 0.04
 		float NdotV = fmaxf(0.0f, -(n.x * dx + n.y * dy + n.z * dz));
 		float invNdotV = 1.0f - NdotV;
 		float inv2 = invNdotV * invNdotV;
-		float fresnel = 0.04f + 0.96f * (inv2 * inv2 * invNdotV);
-		float reflectStrength = fresnel * (1.0f - roughness);
+		float fresnelT = inv2 * inv2 * invNdotV; // (1-NdotV)^5
+		float f0 = 0.04f + 0.96f * metallic;	 // base reflectivity driven by metallic
+		float fresnel = f0 + (1.0f - f0) * fresnelT;
+		float reflectStrength = fresnel;
 
 		// perfect specular reflect dir — roughness already baked into reflectStrength
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		// inline sky reflection blend: cheap lerp weighted by Fresnel * (1 - roughness)
+		// sky reflection blend — metals tint it by albedo, dielectrics reflect white sky
 		Color skyRefl = SampleSkybox(task->skybox, reflDir);
 		uint32 st = (uint32)(reflectStrength * 255.0f);
 		if (st > 255u) st = 255u;
 		uint32 sit = 255u - st;
-		uint32 nr = ((uint32)r * sit + ((skyRefl >> 16) & 0xFF) * st) >> 8;
-		uint32 ng = ((uint32)g * sit + ((skyRefl >> 8) & 0xFF) * st) >> 8;
-		uint32 nb = ((uint32)b * sit + (skyRefl & 0xFF) * st) >> 8;
+		uint32 skyR = (skyRefl >> 16) & 0xFF;
+		uint32 skyG = (skyRefl >> 8) & 0xFF;
+		uint32 skyB = (skyRefl) & 0xFF;
+		// tint sky colour by albedo for metals
+		skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
+		skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
+		skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+		uint32 nr = ((uint32)r * sit + skyR * st) >> 8;
+		uint32 ng = ((uint32)g * sit + skyG * st) >> 8;
+		uint32 nb = ((uint32)b * sit + skyB * st) >> 8;
 
 		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
 		// View-Z depth (dot with forward) keeps SSR depth comparisons consistent
@@ -642,7 +664,7 @@ static void RayTraceRowFunc(void *arg) {
 			(uint8)(fminf(accumulatedColor.y, 1.0f) * 255.0f),
 			(uint8)(fminf(accumulatedColor.z, 1.0f) * 255.0f),
 			0xFF};
-		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength * reflectionStrength);
+		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength);
 		camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 1.2f);
 		camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
 	}

@@ -1,6 +1,8 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
+#define EMISSION_RESOLUTION 32
+
 #include "format.h"
 #include "../load/loadObj.h"
 #include "material/material.h"
@@ -20,6 +22,9 @@ typedef struct BVH {
 	int *triIndices; // reordered triangle indices
 	int nodeCount;
 } BVH;
+typedef struct EmissionMap {
+	float3 emissionMap[EMISSION_RESOLUTION][EMISSION_RESOLUTION]; // precomputed per-face emission for a 32x32 grid of world positions (for direct lighting)
+} EmissionMap;
 
 typedef struct Object {
 	float3 position;
@@ -48,12 +53,25 @@ typedef struct Object {
 	int *materialIds;
 	int triangleCount;
 
+	bool hasEmission; // quick check to skip emission sampling when no faces emit
+	EmissionMap frontFaceEmission;
+	EmissionMap backFaceEmission;
+	EmissionMap leftFaceEmission;
+	EmissionMap rightFaceEmission;
+	EmissionMap topFaceEmission;
+	EmissionMap bottomFaceEmission;
+
 	BVH bvh;
 } Object;
 
+// calculate per-face emission maps with orthographic projection 
+void CalculateFaceEmissions(Object *obj, MaterialLib *lib);
+// trace ray in direction of query object if we hit something before query object return 0 else return emission from query object
+float3 SampleEmission(const Object *objs , int objCount, float3 position, float3 direction, int queryObject, MaterialLib *lib);
+
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
 void Object_Destroy(Object *obj);
-void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib);
+void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
 void Object_UpdateWorldBounds(Object *obj);
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);

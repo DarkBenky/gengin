@@ -43,12 +43,35 @@ int main() {
 	for (int row = 0; row < GRID_ROWS; row++) {
 		for (int col = 0; col < GRID_COLS; col++) {
 			Object *obj = ObjectList_Add(&grid);
-			CreateCube(obj, (float3){(col - GRID_COLS / 2) * 7.0f, -0.09f, 5.0f + row * 7.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 0.1f, 7.0f}, (float3){(col % 2) * 0.4f + 0.1f, (row % 2) * 0.4f + 0.1f, ((col + row) % 2) * 0.4f + 0.1f}, &matLib);
+			static const struct {
+				float3 color;
+				float roughness;
+				float metallic;
+			} palette[] = {
+				{{0.90f, 0.78f, 0.08f}, 0.85f, 0.00f}, // yellow  - rough matte
+				{{0.55f, 0.08f, 0.85f}, 0.10f, 0.05f}, // purple  - smooth
+				{{0.85f, 0.60f, 0.05f}, 0.20f, 0.90f}, // gold    - metallic
+				{{0.80f, 0.12f, 0.12f}, 0.75f, 0.05f}, // red     - rough
+				{{0.08f, 0.75f, 0.85f}, 0.15f, 0.00f}, // cyan    - smooth
+				{{0.88f, 0.88f, 0.88f}, 0.05f, 0.90f}, // silver  - mirror
+				{{0.10f, 0.50f, 0.12f}, 0.90f, 0.00f}, // green   - rough matte
+				{{0.90f, 0.38f, 0.05f}, 0.50f, 0.20f}, // orange  - semi-rough
+			};
+			int pIdx = ((col * 7) ^ (row * 3) ^ (col + row * 5)) % 8;
+			float emission = (row == GRID_ROWS - 1) ? 0.5f : 0.0f;
+			float roughness = palette[pIdx].roughness;
+			float metallic = palette[pIdx].metallic;
+			float3 tileColor = palette[pIdx].color;
+			CreateCube(obj, (float3){(col - GRID_COLS / 2) * 7.0f, -0.09f, 5.0f + row * 7.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 0.1f, 7.0f}, tileColor, &matLib, emission, roughness, metallic);
 			Object_UpdateWorldBounds(obj);
 		}
 	}
 	ObjectList_Merge(&grid, &scene);
 	free(grid.objects);
+
+	Object *cube = ObjectList_Add(&scene);
+	CreateCube(cube, (float3){0.0f, 1.0f, 10.0f}, (float3){0.0f, 0.5f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.1f, 0.8f, 0.9f}, &matLib, 2.0f, 0.2f, 0.0f);
+	Object_UpdateWorldBounds(cube);
 
 	Object *plane = ObjectList_Add(&scene);
 	LoadObj("assets/models/f16.bin", plane, &matLib);

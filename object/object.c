@@ -83,10 +83,11 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 	obj->scale = scale;
 	CreateObjectBVH(obj, &obj->bvh);
 	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
 }
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
-void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib) {
+void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
@@ -126,7 +127,7 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		{verts[0], verts[1], verts[5], {0, -1, 0}},
 		{verts[0], verts[5], verts[4], {0, -1, 0}}};
 
-	int matIdx = MaterialLib_Add(lib, Material_Make(color, 0.5f, 0.0f, color.w));
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission));
 	for (int i = 0; i < triCount; i++) {
 		obj->v1[i] = faces[i].a;
 		obj->v2[i] = faces[i].b;
@@ -139,6 +140,7 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
 	CreateObjectBVH(obj, &obj->bvh);
 	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
 }
 
 void Object_Destroy(Object *obj) {
@@ -548,4 +550,183 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 		}
 	}
 	return false;
+}
+
+void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
+	if (!obj || !lib || obj->bvh.nodeCount == 0) return;
+
+	obj->hasEmission = false;
+	for (int t = 0; t < obj->triangleCount && !obj->hasEmission; t++) {
+		int matId = obj->materialIds ? obj->materialIds[t] : -1;
+		if (matId >= 0 && matId < lib->count && lib->entries[matId].emission > 0.0f)
+			obj->hasEmission = true;
+	}
+	if (!obj->hasEmission) return;
+
+	float3 bbMin = obj->BBmin, bbMax = obj->BBmax;
+	float bMin[3] = {bbMin.x, bbMin.y, bbMin.z};
+	float bMax[3] = {bbMax.x, bbMax.y, bbMax.z};
+
+	// 6 orthographic sweeps in local mesh space — BVH lives here too, no TRS needed
+	// uA/vA: face plane axes, wA: depth axis, wSide: 0=BBmin, 1=BBmax origin side
+	static const struct {
+		float dirX, dirY, dirZ;
+		int uA, vA, wA, wSide;
+	} faces[6] = {
+		{0, 0, 1, 0, 1, 2, 0},	// front:  +Z from BBmin.z
+		{0, 0, -1, 0, 1, 2, 1}, // back:   -Z from BBmax.z
+		{1, 0, 0, 2, 1, 0, 0},	// right:  +X from BBmin.x
+		{-1, 0, 0, 2, 1, 0, 1}, // left:   -X from BBmax.x
+		{0, -1, 0, 0, 2, 1, 1}, // top:    -Y from BBmax.y (looking from above)
+		{0, 1, 0, 0, 2, 1, 0},	// bottom: +Y from BBmin.y (looking from below)
+	};
+	EmissionMap *maps[6] = {
+		&obj->frontFaceEmission,
+		&obj->backFaceEmission,
+		&obj->rightFaceEmission,
+		&obj->leftFaceEmission,
+		&obj->topFaceEmission,
+		&obj->bottomFaceEmission,
+	};
+
+	for (int f = 0; f < 6; f++) {
+		int uA = faces[f].uA, vA = faces[f].vA, wA = faces[f].wA;
+		float uMin = bMin[uA], uSize = bMax[uA] - bMin[uA];
+		float vMin = bMin[vA], vSize = bMax[vA] - bMin[vA];
+		float wOrig = faces[f].wSide ? bMax[wA] + 0.001f : bMin[wA] - 0.001f;
+		float3 dir = {faces[f].dirX, faces[f].dirY, faces[f].dirZ};
+		float3 invDir = {
+			fabsf(dir.x) > 1e-8f ? 1.0f / dir.x : FLT_MAX,
+			fabsf(dir.y) > 1e-8f ? 1.0f / dir.y : FLT_MAX,
+			fabsf(dir.z) > 1e-8f ? 1.0f / dir.z : FLT_MAX,
+		};
+
+		for (int h = 0; h < EMISSION_RESOLUTION; h++) {
+			float vf = vMin + (h + 0.5f) / EMISSION_RESOLUTION * vSize;
+			for (int w = 0; w < EMISSION_RESOLUTION; w++) {
+				float uf = uMin + (w + 0.5f) / EMISSION_RESOLUTION * uSize;
+				float ro[3];
+				ro[uA] = uf;
+				ro[vA] = vf;
+				ro[wA] = wOrig;
+				float3 rayO = {ro[0], ro[1], ro[2]};
+
+				float bestT = FLT_MAX;
+				int hitTri = -1;
+				int stack[64], top = 0;
+				stack[top++] = 0;
+				while (top > 0) {
+					const BVHNode *node = &obj->bvh.nodes[stack[--top]];
+					if (rayAABB_inv(rayO, invDir, node->BBmin, node->BBmax) >= bestT) continue;
+					if (node->triCount > 0) {
+						for (int i = 0; i < node->triCount; i++) {
+							int t = obj->bvh.triIndices[node->triStart + i];
+							float hit;
+							if (rayTriangle(rayO, dir, obj->v1[t], obj->v2[t], obj->v3[t], &hit) && hit < bestT) {
+								bestT = hit;
+								hitTri = t;
+							}
+						}
+					} else {
+						stack[top++] = node->leftFirst;
+						stack[top++] = node->leftFirst + 1;
+					}
+				}
+
+				float3 em = {0.0f, 0.0f, 0.0f};
+				if (hitTri >= 0 && obj->materialIds) {
+					int matId = obj->materialIds[hitTri];
+					if (matId >= 0 && matId < lib->count && lib->entries[matId].emission > 0.0f) {
+						float e = lib->entries[matId].emission;
+						float3 c = lib->entries[matId].color;
+						em = (float3){c.x * e, c.y * e, c.z * e};
+					}
+				}
+				maps[f]->emissionMap[h][w] = em;
+			}
+		}
+	}
+}
+
+float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, MaterialLib *lib) {
+	(void)lib;
+	if (!objs || queryObject < 0 || queryObject >= objCount) return (float3){0};
+	const Object *emitter = &objs[queryObject];
+	if (!emitter->hasEmission) return (float3){0};
+
+	// fast reject: does ray even reach the emitter?
+	float emitTMin, emitTMax;
+	RayBoxItersect(emitter, position, direction, &emitTMin, &emitTMax);
+	if (emitTMin >= emitTMax || emitTMax < 0.0f) return (float3){0};
+
+	// occlusion: AABB pre-filter then precise BVH shadow check for potential blockers
+	for (int i = 0; i < objCount; i++) {
+		if (i == queryObject) continue;
+		float tMin, tMax;
+		RayBoxItersect(&objs[i], position, direction, &tMin, &tMax);
+		if (tMin < tMax && tMin > 0.0f && tMin < emitTMin)
+			if (IntersectBVH_Shadow(&objs[i], &objs[i].bvh, position, direction))
+				return (float3){0};
+	}
+
+	// transform position and direction into emitter local mesh space via cached inverse TRS
+	float3 r0 = emitter->_invScale, r1 = emitter->_invRotSin, r2 = emitter->_invRotCos;
+	float3 tp = {position.x - emitter->position.x, position.y - emitter->position.y, position.z - emitter->position.z};
+	float3 lp = {
+		r0.x * tp.x + r0.y * tp.y + r0.z * tp.z,
+		r1.x * tp.x + r1.y * tp.y + r1.z * tp.z,
+		r2.x * tp.x + r2.y * tp.y + r2.z * tp.z,
+	};
+	float3 ld = {
+		r0.x * direction.x + r0.y * direction.y + r0.z * direction.z,
+		r1.x * direction.x + r1.y * direction.y + r1.z * direction.z,
+		r2.x * direction.x + r2.y * direction.y + r2.z * direction.z,
+	};
+
+	// select face by dominant local-space axis, intersect ray with face plane to get UV
+	float3 bbMin = emitter->BBmin, bbMax = emitter->BBmax;
+	float ax = fabsf(ld.x), ay = fabsf(ld.y), az = fabsf(ld.z);
+	EmissionMap *map;
+	float uf, vf, uMin, uSize, vMin, vSize;
+
+	if (az >= ax && az >= ay) {
+		float plane = ld.z > 0.0f ? bbMin.z : bbMax.z;
+		float t = (plane - lp.z) / ld.z;
+		uf = lp.x + t * ld.x;
+		vf = lp.y + t * ld.y;
+		uMin = bbMin.x;
+		uSize = bbMax.x - bbMin.x;
+		vMin = bbMin.y;
+		vSize = bbMax.y - bbMin.y;
+		map = ld.z > 0.0f ? &emitter->frontFaceEmission : &emitter->backFaceEmission;
+	} else if (ax >= ay) {
+		float plane = ld.x > 0.0f ? bbMin.x : bbMax.x;
+		float t = (plane - lp.x) / ld.x;
+		uf = lp.z + t * ld.z;
+		vf = lp.y + t * ld.y;
+		uMin = bbMin.z;
+		uSize = bbMax.z - bbMin.z;
+		vMin = bbMin.y;
+		vSize = bbMax.y - bbMin.y;
+		map = ld.x > 0.0f ? &emitter->rightFaceEmission : &emitter->leftFaceEmission;
+	} else {
+		float plane = ld.y < 0.0f ? bbMax.y : bbMin.y;
+		float t = (plane - lp.y) / ld.y;
+		uf = lp.x + t * ld.x;
+		vf = lp.z + t * ld.z;
+		uMin = bbMin.x;
+		uSize = bbMax.x - bbMin.x;
+		vMin = bbMin.z;
+		vSize = bbMax.z - bbMin.z;
+		map = ld.y < 0.0f ? &emitter->topFaceEmission : &emitter->bottomFaceEmission;
+	}
+
+	if (uSize < 1e-6f || vSize < 1e-6f) return (float3){0};
+	int wi = (int)((uf - uMin) / uSize * EMISSION_RESOLUTION);
+	int hi = (int)((vf - vMin) / vSize * EMISSION_RESOLUTION);
+	wi = wi < 0 ? 0 : wi >= EMISSION_RESOLUTION ? EMISSION_RESOLUTION - 1
+												: wi;
+	hi = hi < 0 ? 0 : hi >= EMISSION_RESOLUTION ? EMISSION_RESOLUTION - 1
+												: hi;
+	return map->emissionMap[hi][wi];
 }
