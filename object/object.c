@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "../math/scalar.h"
 #include "../math/transform.h"
@@ -161,6 +162,78 @@ void Object_Destroy(Object *obj) {
 	obj->bvh.nodeCount = 0;
 }
 
+// Six axis-aligned face directions in local space: +X -X +Y -Y +Z -Z.
+// faceEmissions[f] stores the emission weighted by how much each triangle's
+// local normal faces direction f.  Sampled at render time by lerping with the
+// hit triangle's local normal — no world-space rotation needed.
+static const float kFaceDirX[6] = { 1,-1, 0, 0, 0, 0};
+static const float kFaceDirY[6] = { 0, 0, 1,-1, 0, 0};
+static const float kFaceDirZ[6] = { 0, 0, 0, 0, 1,-1};
+
+void Object_PrecomputeEmission(Object *obj, const MaterialLib *lib) {
+	if (!obj || !lib || obj->triangleCount <= 0) return;
+
+	obj->hasEmission = 0;
+	memset(obj->faceEmissions, 0, sizeof(obj->faceEmissions));
+	obj->avgEmission = (float3){0};
+
+	if (!obj->materialIds || !obj->normals) return;
+
+	// First pass: check whether any face is emissive so we can exit early.
+	for (int i = 0; i < obj->triangleCount; i++) {
+		int matId = obj->materialIds[i];
+		if (matId >= 0 && matId < lib->count && lib->entries[matId].emission > 0.0f) {
+			obj->hasEmission = 1;
+			break;
+		}
+	}
+	if (!obj->hasEmission) return;
+
+	// Accumulate emission into the 6 directional buckets using the LOCAL-SPACE
+	// triangle normal.  This is rotation-invariant: sampling uses the same local
+	// normal at render time so no world-space transform is needed here.
+	float weights[6] = {0};
+	for (int i = 0; i < obj->triangleCount; i++) {
+		int matId = obj->materialIds[i];
+		if (matId < 0 || matId >= lib->count) continue;
+		float e = lib->entries[matId].emission;
+		if (e <= 0.0f) continue;
+
+		float3 c = lib->entries[matId].color;
+		float ex = c.x * e, ey = c.y * e, ez = c.z * e;
+		float3 ln = obj->normals[i]; // local-space normal
+
+		for (int f = 0; f < 6; f++) {
+			float d = ln.x * kFaceDirX[f] + ln.y * kFaceDirY[f] + ln.z * kFaceDirZ[f];
+			if (d <= 0.0f) continue;
+			obj->faceEmissions[f].x += d * ex;
+			obj->faceEmissions[f].y += d * ey;
+			obj->faceEmissions[f].z += d * ez;
+			weights[f] += d;
+		}
+	}
+
+	// Normalize each bucket and compute average emission across active faces.
+	int activeCount = 0;
+	for (int f = 0; f < 6; f++) {
+		if (weights[f] <= 0.0f) continue;
+		float inv = 1.0f / weights[f];
+		obj->faceEmissions[f].x *= inv;
+		obj->faceEmissions[f].y *= inv;
+		obj->faceEmissions[f].z *= inv;
+		obj->avgEmission.x += obj->faceEmissions[f].x;
+		obj->avgEmission.y += obj->faceEmissions[f].y;
+		obj->avgEmission.z += obj->faceEmissions[f].z;
+		activeCount++;
+	}
+	if (activeCount > 0) {
+		float inv = 1.0f / activeCount;
+		obj->avgEmission.x *= inv;
+		obj->avgEmission.y *= inv;
+		obj->avgEmission.z *= inv;
+	}
+}
+
 void Object_UpdateWorldBounds(Object *obj) {
 	if (!obj) return;
 
@@ -188,6 +261,9 @@ void Object_UpdateWorldBounds(Object *obj) {
 		obj->worldBBmax.y = MaxF32(obj->worldBBmax.y, p.y);
 		obj->worldBBmax.z = MaxF32(obj->worldBBmax.z, p.z);
 	}
+	obj->worldCenter.x = (obj->worldBBmin.x + obj->worldBBmax.x) * 0.5f;
+	obj->worldCenter.y = (obj->worldBBmin.y + obj->worldBBmax.y) * 0.5f;
+	obj->worldCenter.z = (obj->worldBBmin.z + obj->worldBBmax.z) * 0.5f;
 
 	// Cache rows of M = Diag(invScale) * InvRot
 	// InvRot = Rx(-rx)*Ry(-ry)*Rz(-rz) = transpose of forward rotation Rz*Ry*Rx

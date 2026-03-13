@@ -41,6 +41,11 @@ typedef struct Object {
 
 	Color _temp; // pre-packed RGB color for BBOX hits
 
+	float3 worldCenter;         // precomputed world-space AABB center
+	float3 avgEmission;         // average emission across the 6 face directions
+	float3 faceEmissions[6];    // emission in local-space axis directions: +X,-X,+Y,-Y,+Z,-Z
+	int hasEmission;            // 1 if any face has emission > 0
+
 	float3 *v1;
 	float3 *v2;
 	float3 *v3;
@@ -55,6 +60,7 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 void Object_Destroy(Object *obj);
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib);
 void Object_UpdateWorldBounds(Object *obj);
+void Object_PrecomputeEmission(Object *obj, const MaterialLib *lib);
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
