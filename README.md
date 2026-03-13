@@ -1,6 +1,8 @@
 ## TODO
 
 - [ ] Emission
+    - [ ] crete emission map for each object
+- [ ] Shadows same as reflection
 - [ ] Clouds
 - [ ] Bloom
 - [X] Replace screen space refection by raytraced onece

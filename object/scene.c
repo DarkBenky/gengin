@@ -21,7 +21,7 @@ int DemoScene_ObjectCount(void) {
 void DemoScene_Build(Object *objects, MaterialLib *lib) {
 	if (!objects) return;
 
-	CreateCube(&objects[kGroundIndex], (float3){0.0f, kGroundY, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){40.0f, 0.2f, 40.0f}, (float3){0.32f, 0.34f, 0.38f}, lib);
+	CreateCube(&objects[kGroundIndex], (float3){0.0f, kGroundY, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){40.0f, 0.2f, 40.0f}, (float3){0.32f, 0.34f, 0.38f}, lib, 0.0f, 0.9f, 0.0f);
 	Object_UpdateWorldBounds(&objects[kGroundIndex]);
 
 	Object_Init(&objects[kRocketIndex], (float3){0.0f, 0.0f, 10.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){1.0f, 1.0f, 1.0f}, "assets/models/r27.bin", lib);
