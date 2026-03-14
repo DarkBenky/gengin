@@ -64,10 +64,10 @@ typedef struct Object {
 	BVH bvh;
 } Object;
 
-// calculate per-face emission maps with orthographic projection 
+// calculate per-face emission maps with orthographic projection
 void CalculateFaceEmissions(Object *obj, MaterialLib *lib);
 // trace ray in direction of query object if we hit something before query object return 0 else return emission from query object
-float3 SampleEmission(const Object *objs , int objCount, float3 position, float3 direction, int queryObject, MaterialLib *lib);
+float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, MaterialLib *lib);
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
 void Object_Destroy(Object *obj);
@@ -77,6 +77,13 @@ void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *t
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward);
+
+// Set material properties on every triangle of an object (updates the shared MaterialLib entries).
+void Object_SetMaterial(Object *obj, MaterialLib *lib, Material mat);
+void Object_SetColor(Object *obj, MaterialLib *lib, float3 color);
+void Object_SetEmission(Object *obj, MaterialLib *lib, float emission);
+void Object_SetRoughness(Object *obj, MaterialLib *lib, float roughness);
+void Object_SetMetallic(Object *obj, MaterialLib *lib, float metallic);
 
 void CreateObjectBVH(Object *obj, BVH *bvh);
 void DestroyObjectBVH(BVH *bvh);
