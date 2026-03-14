@@ -476,6 +476,19 @@ static void RayTraceRowFunc(void *arg) {
 	memset(catchEmissions, 0, sizeof(float3) * width);
 	float3 catchEmission = {0.0f, 0.0f, 0.0f};
 
+	int emissiveObjectIndices[32];
+	int emissiveObjectCount = 0;
+
+	for (int i = 0; i < objectCount; i++) {
+		if (objects[i].hasEmission) {
+			if (emissiveObjectCount < 32) {
+				emissiveObjectIndices[emissiveObjectCount++] = i;
+			} else {
+				break;
+			}
+		}
+	}
+
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
 
@@ -589,7 +602,8 @@ static void RayTraceRowFunc(void *arg) {
 		float fresnelT = inv2 * inv2 * invNdotV; // (1-NdotV)^5
 		float f0 = 0.04f + 0.96f * metallic;	 // base reflectivity driven by metallic
 		float fresnel = f0 + (1.0f - f0) * fresnelT;
-		float reflectStrength = fresnel;
+		// emissive surfaces suppress sky reflection — their glow dominates
+		float reflectStrength = fresnel * (1.0f - fminf(emission, 1.0f));
 
 		// perfect specular reflect dir — roughness already baked into reflectStrength
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
@@ -620,6 +634,45 @@ static void RayTraceRowFunc(void *arg) {
 
 		// ray traced reflection — only cast every REFLECTION_RESOLUTION columns
 		if (x % REFLECTION_RESOLUTION == 0) {
+			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
+			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
+			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
+			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
+			for (int e = 0; e < emissiveObjectCount; e++) {
+				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
+				float dist = Float3_Length(toEmissive);
+				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+					if (dist < topEmissiveDistances[t]) {
+						// insert into sorted list
+						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
+							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
+							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
+						}
+						topEmissiveDistances[t] = dist;
+						topEmissiveIndices[t] = emissiveObjectIndices[e];
+						break;
+					}
+				}
+			}
+
+			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
+			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+				if (topEmissiveIndices[t] < 0) break; // fewer emitters than TOP_EMISSIVE_OBJECTS
+				float3 targetPos = objects[topEmissiveIndices[t]].position;
+				float3 toEmissive = Float3_Sub(targetPos, bestHitPos);
+				// NdotL: only surfaces facing the emitter receive light
+				float3 toEmissiveN = Float3_Normalize(toEmissive);
+				float NdotL = n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z;
+				if (NdotL <= 0.0f) continue;
+				float3 em = SampleEmission(objects, objectCount, bestHitPos, toEmissive, topEmissiveIndices[t], lib);
+				float falloff = NdotL / (topEmissiveDistances[t] * topEmissiveDistances[t] + 1e-6f);
+				accumulatedEmission.x += em.x * falloff;
+				accumulatedEmission.y += em.y * falloff;
+				accumulatedEmission.z += em.z * falloff;
+			}
+
+			catchEmission = accumulatedEmission;
+
 			float3 rOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
 			RayHit rHit;
 			if (RayCast((Object *)objects, objectCount, rOrig, reflDir, bestObj, lib, &rHit)) {
@@ -636,12 +689,14 @@ static void RayTraceRowFunc(void *arg) {
 			}
 		}
 		catchReflections[x] = catchReflection;
+		catchEmissions[x] = catchEmission;
 	}
 	// blur reflection contributions across the row
 	for (int x = 0; x < width; x++) {
 		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
 		float reflectionStrength = camera->reflectBuffer[row * width + x].w;
 		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
+		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
 		int samples = 0;
 		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
 			int kIdx = x + kernelSize - BLUR_RADIUS - 1;
@@ -649,6 +704,9 @@ static void RayTraceRowFunc(void *arg) {
 				accumulatedColor.x += catchReflections[kIdx].x;
 				accumulatedColor.y += catchReflections[kIdx].y;
 				accumulatedColor.z += catchReflections[kIdx].z;
+				accumulatedEmission.x += catchEmissions[kIdx].x;
+				accumulatedEmission.y += catchEmissions[kIdx].y;
+				accumulatedEmission.z += catchEmissions[kIdx].z;
 				samples++;
 			}
 		}
@@ -657,16 +715,23 @@ static void RayTraceRowFunc(void *arg) {
 			accumulatedColor.x *= invW;
 			accumulatedColor.y *= invW;
 			accumulatedColor.z *= invW;
+			accumulatedEmission.x *= invW;
+			accumulatedEmission.y *= invW;
+			accumulatedEmission.z *= invW;
 		}
 		Color baseColor = camera->framebuffer[row * width + x];
-		Color accumColor = (Color){
-			(uint8)(fminf(accumulatedColor.x, 1.0f) * 255.0f),
-			(uint8)(fminf(accumulatedColor.y, 1.0f) * 255.0f),
-			(uint8)(fminf(accumulatedColor.z, 1.0f) * 255.0f),
-			0xFF};
+		Color accumColor = PackColor(
+			fminf(accumulatedColor.x, 1.0f),
+			fminf(accumulatedColor.y, 1.0f),
+			fminf(accumulatedColor.z, 1.0f));
+		baseColor = AddColors(baseColor, PackColor(
+											 fminf(accumulatedEmission.x, 1.0f),
+											 fminf(accumulatedEmission.y, 1.0f),
+											 fminf(accumulatedEmission.z, 1.0f)));
 		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength);
-		camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 1.2f);
-		camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
+		// camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 0.8f);
+		// camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
+		// camera->framebuffer[row * width + x] = accumEmissionColor;
 	}
 }
 

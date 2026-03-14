@@ -143,6 +143,31 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	CalculateFaceEmissions(obj, lib);
 }
 
+void Object_SetMaterial(Object *obj, MaterialLib *lib, Material mat) {
+	for (int i = 0; i < obj->triangleCount; i++)
+		lib->entries[obj->materialIds[i]] = mat;
+}
+
+void Object_SetColor(Object *obj, MaterialLib *lib, float3 color) {
+	for (int i = 0; i < obj->triangleCount; i++)
+		lib->entries[obj->materialIds[i]].color = color;
+}
+
+void Object_SetEmission(Object *obj, MaterialLib *lib, float emission) {
+	for (int i = 0; i < obj->triangleCount; i++)
+		lib->entries[obj->materialIds[i]].emission = emission;
+}
+
+void Object_SetRoughness(Object *obj, MaterialLib *lib, float roughness) {
+	for (int i = 0; i < obj->triangleCount; i++)
+		lib->entries[obj->materialIds[i]].roughness = roughness;
+}
+
+void Object_SetMetallic(Object *obj, MaterialLib *lib, float metallic) {
+	for (int i = 0; i < obj->triangleCount; i++)
+		lib->entries[obj->materialIds[i]].metallic = metallic;
+}
+
 void Object_Destroy(Object *obj) {
 	if (!obj) return;
 	free(obj->v1);

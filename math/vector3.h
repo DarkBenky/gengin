@@ -45,8 +45,28 @@ static inline float3 Float3_Mul(float3 a, float3 b) {
 	return (float3){a.x * b.x, a.y * b.y, a.z * b.z};
 }
 
+static inline float3 Float3_Div(float3 a, float3 b) {
+	return (float3){a.x / b.x, a.y / b.y, a.z / b.z};
+}
+
+static inline float3 Float3_Abs(float3 v) {
+	return (float3){fabsf(v.x), fabsf(v.y), fabsf(v.z)};
+}
+
+static inline float3 Float3_Max(float3 a, float3 b) {
+	return (float3){fmaxf(a.x, b.x), fmaxf(a.y, b.y), fmaxf(a.z, b.z)};
+}
+
+static inline float3 Float3_Min(float3 a, float3 b) {
+	return (float3){fminf(a.x, b.x), fminf(a.y, b.y), fminf(a.z, b.z)};
+}
+
+static inline float Float3_Length(float3 v) {
+	return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
 static inline float3 Float3_Normalize(float3 v) {
-	float len = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+	float len = Float3_Length(v);
 	if (len > 0.0f) {
 		float invLen = 1.0f / len;
 		return (float3){v.x * invLen, v.y * invLen, v.z * invLen};

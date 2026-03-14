@@ -70,8 +70,16 @@ int main() {
 	free(grid.objects);
 
 	Object *cube = ObjectList_Add(&scene);
-	CreateCube(cube, (float3){0.0f, 1.0f, 10.0f}, (float3){0.0f, 0.5f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.1f, 0.8f, 0.9f}, &matLib, 2.0f, 0.2f, 0.0f);
+	CreateCube(cube, (float3){0.0f, 1.0f, 10.0f}, (float3){0.0f, 0.5f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.9f, 0.0f, 0.0f}, &matLib, 100.0f, 0.99f, 0.0f);
 	Object_UpdateWorldBounds(cube);
+
+	Object *cube2 = ObjectList_Add(&scene);
+	CreateCube(cube2, (float3){-10.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.9f, 0.0f}, &matLib, 100.0f, 0.99f, 0.0f);
+	Object_UpdateWorldBounds(cube2);
+
+	Object *cube3 = ObjectList_Add(&scene);
+	CreateCube(cube3, (float3){10.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.0f, 0.9f}, &matLib, 100.0f, 0.99f, 0.0f);
+	Object_UpdateWorldBounds(cube3);
 
 	Object *plane = ObjectList_Add(&scene);
 	LoadObj("assets/models/f16.bin", plane, &matLib);

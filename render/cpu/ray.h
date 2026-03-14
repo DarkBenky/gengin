@@ -9,7 +9,8 @@
 #include "../render.h"
 
 #define REFLECTION_RESOLUTION 4 // 1 = full, 2 = half, 4 = quarter, etc.
-#define BLUR_RADIUS 5
+#define BLUR_RADIUS 3
+#define TOP_EMISSIVE_OBJECTS 3 // only consider the top N closest emissive objects for reflections to save ray casts
 
 typedef struct {
 	int row;
@@ -55,7 +56,7 @@ typedef struct {
 // Returns true if something was hit. excludeObj is the object index to skip (-1 for none).
 bool RayCast(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, const MaterialLib *lib, RayHit *hit);
 
-void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, int resolution, int frameInterval);
+// void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, int resolution, int frameInterval);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 float3 ComputeRayDirection(const Camera *camera, int pixelX, int pixelY);
 
