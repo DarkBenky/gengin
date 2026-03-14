@@ -9,6 +9,7 @@
 #include "../render.h"
 
 #define REFLECTION_RESOLUTION 4 // 1 = full, 2 = half, 4 = quarter, etc.
+#define SHADOW_RESOLUTION 4     // shadow ray sampled every N pixels, blurred to fill
 #define BLUR_RADIUS 3
 #define TOP_EMISSIVE_OBJECTS 3 // only consider the top N closest emissive objects for reflections to save ray casts
 

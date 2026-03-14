@@ -488,6 +488,10 @@ static void RayTraceRowFunc(void *arg) {
 	memset(catchEmissions, 0, sizeof(float3) * width);
 	float3 catchEmission = {0.0f, 0.0f, 0.0f};
 
+	float catchShadows[width]; // shadow factor (1=lit, 0=shadowed), sampled every SHADOW_RESOLUTION pixels; intermediate pixels carry the last value forward, then blurred
+	memset(catchShadows, 0, sizeof(float) * width);
+	float catchShadow = 1.0f;
+
 	int emissiveObjectIndices[32];
 	int emissiveObjectCount = 0;
 
@@ -575,16 +579,25 @@ static void RayTraceRowFunc(void *arg) {
 			}
 		}
 
-		float3 sOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
 		camera->normalBuffer[idx] = n;
 		camera->positionBuffer[idx] = bestHitPos;
-		int shadowHit = -1;
-		if (emission <= 0.0f)
-			rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
-		int inShadow = shadowHit >= 0;
+		if (x % SHADOW_RESOLUTION == 0) {
+			if (emission > 0.0f) {
+				catchShadow = 1.0f;
+			} else {
+				float3 sOrig = {bestHitPos.x + n.x * 0.01f,
+				                bestHitPos.y + n.y * 0.01f,
+				                bestHitPos.z + n.z * 0.01f};
+				int shadowHit = -1;
+				rayCollision((Object *)objects, objectCount, sOrig, lightDir,
+				             bestObj, &shadowHit, NULL, NULL);
+				catchShadow = (shadowHit >= 0) ? 0.0f : 1.0f;
+			}
+		}
+		catchShadows[x] = catchShadow;
 
 		float diffuse = n.x * lightDir.x + n.y * lightDir.y + n.z * lightDir.z;
-		if (diffuse < 0.0f || inShadow) diffuse = 0.0f;
+		if (diffuse < 0.0f) diffuse = 0.0f;
 
 		// Blinn-Phong specular — metallic boosts gloss and tints specular by albedo
 		float hx = lightDir.x - dx, hy = lightDir.y - dy, hz = lightDir.z - dz;
@@ -593,7 +606,7 @@ static void RayTraceRowFunc(void *arg) {
 		float spec2 = NdotH * NdotH;
 		float spec4 = spec2 * spec2;
 		float glossiness = (1.0f - roughness) + metallic * 0.6f; // metals stay glossy regardless of roughness
-		float specularBase = (!inShadow && diffuse > 0.0f) ? (spec4 * spec4 * glossiness * 0.6f) : 0.0f;
+		float specularBase = (diffuse > 0.0f) ? (spec4 * spec4 * glossiness * 0.6f) : 0.0f;
 		// dielectrics: white specular; metals: albedo-tinted specular
 		float specR = specularBase * (1.0f - metallic) + specularBase * metallic * color.x;
 		float specG = specularBase * (1.0f - metallic) + specularBase * metallic * color.y;
@@ -706,57 +719,79 @@ static void RayTraceRowFunc(void *arg) {
 		catchReflections[x] = catchReflection;
 		catchEmissions[x] = catchEmission;
 	}
-	// blur reflection contributions across the row
-	for (int x = 0; x < width; x++) {
-		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
-		float reflectionStrength = camera->reflectBuffer[row * width + x].w;
-		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
-		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
-		int samples = 0;
-		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
-			int kIdx = x + kernelSize - BLUR_RADIUS - 1;
-			if (kIdx >= 0 && kIdx < width) {
-				accumulatedColor.x += catchReflections[kIdx].x;
-				accumulatedColor.y += catchReflections[kIdx].y;
-				accumulatedColor.z += catchReflections[kIdx].z;
-				accumulatedEmission.x += catchEmissions[kIdx].x;
-				accumulatedEmission.y += catchEmissions[kIdx].y;
-				accumulatedEmission.z += catchEmissions[kIdx].z;
-				samples++;
+	// sliding-window blur over catchShadows, catchReflections, catchEmissions
+	{
+		float sumS = 0.0f;
+		float sumRx = 0.0f, sumRy = 0.0f, sumRz = 0.0f;
+		float sumEx = 0.0f, sumEy = 0.0f, sumEz = 0.0f;
+		int   cnt = 0;
+
+		// prime left half of window
+		for (int k = 0; k < BLUR_RADIUS && k < width; k++) {
+			sumS  += catchShadows[k];
+			sumRx += catchReflections[k].x; sumRy += catchReflections[k].y; sumRz += catchReflections[k].z;
+			sumEx += catchEmissions[k].x;   sumEy += catchEmissions[k].y;   sumEz += catchEmissions[k].z;
+			cnt++;
+		}
+
+		for (int x = 0; x < width; x++) {
+			int right = x + BLUR_RADIUS;
+			int left  = x - BLUR_RADIUS - 1;
+			if (right < width) {
+				sumS  += catchShadows[right];
+				sumRx += catchReflections[right].x; sumRy += catchReflections[right].y; sumRz += catchReflections[right].z;
+				sumEx += catchEmissions[right].x;   sumEy += catchEmissions[right].y;   sumEz += catchEmissions[right].z;
+				cnt++;
 			}
+			if (left >= 0) {
+				sumS  -= catchShadows[left];
+				sumRx -= catchReflections[left].x; sumRy -= catchReflections[left].y; sumRz -= catchReflections[left].z;
+				sumEx -= catchEmissions[left].x;   sumEy -= catchEmissions[left].y;   sumEz -= catchEmissions[left].z;
+				cnt--;
+			}
+			float invCnt = cnt > 0 ? 1.0f / cnt : 1.0f;
+			catchShadows[x]     = sumS  * invCnt;
+			catchReflections[x] = (float3){sumRx * invCnt, sumRy * invCnt, sumRz * invCnt};
+			catchEmissions[x]   = (float3){sumEx * invCnt, sumEy * invCnt, sumEz * invCnt};
 		}
-		if (samples > 0) {
-			float invW = 1.0f / samples;
-			accumulatedColor.x *= invW;
-			accumulatedColor.y *= invW;
-			accumulatedColor.z *= invW;
-			accumulatedEmission.x *= invW;
-			accumulatedEmission.y *= invW;
-			accumulatedEmission.z *= invW;
-		}
+	}
+
+	for (int x = 0; x < width; x++) {
+		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue;
+
+		float reflectionStrength = camera->reflectBuffer[row * width + x].w;
+		float3 accumulatedColor    = catchReflections[x];
+		float3 accumulatedEmission = catchEmissions[x];
+
 		Color baseColor = camera->framebuffer[row * width + x];
-		Color accumColor = PackColor(
-			fminf(accumulatedColor.x, 1.0f),
-			fminf(accumulatedColor.y, 1.0f),
-			fminf(accumulatedColor.z, 1.0f));
-		float3 base = UnpackColor(baseColor);
+		float3 base     = UnpackColor(baseColor);
 		float3 combined = hdrToLDR(base.x + accumulatedEmission.x,
-								   base.y + accumulatedEmission.y,
-								   base.z + accumulatedEmission.z);
+		                            base.y + accumulatedEmission.y,
+		                            base.z + accumulatedEmission.z);
 
 		if (base.x + accumulatedEmission.x > 1.0f || base.y + accumulatedEmission.y > 1.0f || base.z + accumulatedEmission.z > 1.0f) {
 			camera->bloomBuffer[row * width + x] = (float3){base.x + accumulatedEmission.x,
-															base.y + accumulatedEmission.y,
-															base.z + accumulatedEmission.z};
+			                                                 base.y + accumulatedEmission.y,
+			                                                 base.z + accumulatedEmission.z};
 		} else {
 			camera->bloomBuffer[row * width + x] = (float3){0.0f, 0.0f, 0.0f};
 		}
 
+		Color accumColor = PackColor(
+			fminf(accumulatedColor.x, 1.0f),
+			fminf(accumulatedColor.y, 1.0f),
+			fminf(accumulatedColor.z, 1.0f));
 		baseColor = PackColor(combined.x, combined.y, combined.z);
-		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength);
-		// camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 0.8f);
-		// camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
-		// camera->framebuffer[row * width + x] = accumEmissionColor;
+		Color blended = LerpColor(baseColor, accumColor, reflectionStrength);
+
+		// shadow modulation — same fixed-point trick as ShadowPostProcess
+		float shadowFactor = catchShadows[x];
+		uint32 scale = 128 + (uint32)(shadowFactor * 128.0f);
+		Color c = blended;
+		uint32 sr = (((c >> 16) & 0xFF) * scale) >> 8;
+		uint32 sg = (((c >>  8) & 0xFF) * scale) >> 8;
+		uint32 sb = (((c      ) & 0xFF) * scale) >> 8;
+		camera->framebuffer[row * width + x] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
 	}
 }
 
