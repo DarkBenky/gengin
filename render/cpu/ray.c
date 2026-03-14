@@ -23,6 +23,18 @@ static inline Color BlendColors50(Color a, Color b) {
 	return ((a & 0x00FEFEFEu) + (b & 0x00FEFEFEu)) >> 1;
 }
 
+// Spread overflow from the max channel into the others before clamping.
+// A pure red at very high intensity becomes white instead of staying red.
+static inline float3 hdrToLDR(float fr, float fg, float fb) {
+	float e = fmaxf(fr, fmaxf(fg, fb)) - 1.0f;
+	if (e > 0.0f) {
+		fr = fminf(fr + e, 1.0f);
+		fg = fminf(fg + e, 1.0f);
+		fb = fminf(fb + e, 1.0f);
+	}
+	return (float3){fr, fg, fb};
+}
+
 static void BlurColorBuffer(Color *src, Color *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
 
@@ -591,9 +603,12 @@ static void RayTraceRowFunc(void *arg) {
 		float diffuseWeight = 1.0f - metallic;
 		float lit = (0.12f + 0.88f * diffuse) * diffuseWeight;
 
-		uint8 r = (uint8)(fminf(color.x * lit + specR + color.x * emission, 1.0f) * 255.0f);
-		uint8 g = (uint8)(fminf(color.y * lit + specG + color.y * emission, 1.0f) * 255.0f);
-		uint8 b = (uint8)(fminf(color.z * lit + specB + color.z * emission, 1.0f) * 255.0f);
+		float3 ldr = hdrToLDR(color.x * lit + specR + color.x * emission,
+							  color.y * lit + specG + color.y * emission,
+							  color.z * lit + specB + color.z * emission);
+		uint8 r = (uint8)(ldr.x * 255.0f);
+		uint8 g = (uint8)(ldr.y * 255.0f);
+		uint8 b = (uint8)(ldr.z * 255.0f);
 
 		// Fresnel-Schlick: metals use albedo-coloured F0 (~0.7-1.0), dielectrics use 0.04
 		float NdotV = fmaxf(0.0f, -(n.x * dx + n.y * dy + n.z * dz));
@@ -724,10 +739,16 @@ static void RayTraceRowFunc(void *arg) {
 			fminf(accumulatedColor.x, 1.0f),
 			fminf(accumulatedColor.y, 1.0f),
 			fminf(accumulatedColor.z, 1.0f));
-		baseColor = AddColors(baseColor, PackColor(
-											 fminf(accumulatedEmission.x, 1.0f),
-											 fminf(accumulatedEmission.y, 1.0f),
-											 fminf(accumulatedEmission.z, 1.0f)));
+		float3 base = UnpackColor(baseColor);
+		float3 combined = hdrToLDR(base.x + accumulatedEmission.x,
+								   base.y + accumulatedEmission.y,
+								   base.z + accumulatedEmission.z);
+
+		camera->bloomBuffer[row * width + x] = (float3){base.x + accumulatedEmission.x,
+														base.y + accumulatedEmission.y,
+														base.z + accumulatedEmission.z};
+														
+		baseColor = PackColor(combined.x, combined.y, combined.z);
 		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength);
 		// camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 0.8f);
 		// camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
