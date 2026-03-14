@@ -744,10 +744,14 @@ static void RayTraceRowFunc(void *arg) {
 								   base.y + accumulatedEmission.y,
 								   base.z + accumulatedEmission.z);
 
-		camera->bloomBuffer[row * width + x] = (float3){base.x + accumulatedEmission.x,
-														base.y + accumulatedEmission.y,
-														base.z + accumulatedEmission.z};
-														
+		if (base.x + accumulatedEmission.x > 1.0f || base.y + accumulatedEmission.y > 1.0f || base.z + accumulatedEmission.z > 1.0f) {
+			camera->bloomBuffer[row * width + x] = (float3){base.x + accumulatedEmission.x,
+															base.y + accumulatedEmission.y,
+															base.z + accumulatedEmission.z};
+		} else {
+			camera->bloomBuffer[row * width + x] = (float3){0.0f, 0.0f, 0.0f};
+		}
+
 		baseColor = PackColor(combined.x, combined.y, combined.z);
 		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength);
 		// camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 0.8f);
