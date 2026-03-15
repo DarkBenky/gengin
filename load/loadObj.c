@@ -23,9 +23,9 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 
 	uint32 triangleCount = (fileSize - 8) / triangleStructSize;
 
-	printf("File size: %u bytes\n", fileSize);
-	printf("Triangle struct size: %u bytes\n", triangleStructSize);
-	printf("Triangle count: %u\n", triangleCount);
+	// printf("File size: %u bytes\n", fileSize);
+	// printf("Triangle struct size: %u bytes\n", triangleStructSize);
+	// printf("Triangle count: %u\n", triangleCount);
 
 	obj->v1 = (float3 *)malloc(triangleCount * sizeof(float3));
 	obj->v2 = (float3 *)malloc(triangleCount * sizeof(float3));

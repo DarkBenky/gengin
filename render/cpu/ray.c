@@ -11,6 +11,7 @@
 #include "../color/color.h"
 #include "../../skybox/skybox.h"
 #include "../../util/threadPool.h"
+#include "../../image/imgMethods.h"
 
 static inline Color PackColorFast01(float3 color) {
 	uint8 r = (uint8)(color.x * 255.0f);
@@ -488,6 +489,10 @@ static void RayTraceRowFunc(void *arg) {
 	memset(catchEmissions, 0, sizeof(float3) * width);
 	float3 catchEmission = {0.0f, 0.0f, 0.0f};
 
+	float3 catchShadow[width]; // accumulate shadow contributions for the entire row, then write to framebuffer in one pass
+	memset(catchShadow, 0, sizeof(float3) * width);
+	float3 catchShadowValue = {0.0f, 0.0f, 0.0f};
+
 	int emissiveObjectIndices[32];
 	int emissiveObjectCount = 0;
 
@@ -578,13 +583,9 @@ static void RayTraceRowFunc(void *arg) {
 		float3 sOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
 		camera->normalBuffer[idx] = n;
 		camera->positionBuffer[idx] = bestHitPos;
-		int shadowHit = -1;
-		if (emission <= 0.0f)
-			rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
-		int inShadow = shadowHit >= 0;
 
 		float diffuse = n.x * lightDir.x + n.y * lightDir.y + n.z * lightDir.z;
-		if (diffuse < 0.0f || inShadow) diffuse = 0.0f;
+		if (diffuse < 0.0f) diffuse = 0.0f;
 
 		// Blinn-Phong specular — metallic boosts gloss and tints specular by albedo
 		float hx = lightDir.x - dx, hy = lightDir.y - dy, hz = lightDir.z - dz;
@@ -593,7 +594,7 @@ static void RayTraceRowFunc(void *arg) {
 		float spec2 = NdotH * NdotH;
 		float spec4 = spec2 * spec2;
 		float glossiness = (1.0f - roughness) + metallic * 0.6f; // metals stay glossy regardless of roughness
-		float specularBase = (!inShadow && diffuse > 0.0f) ? (spec4 * spec4 * glossiness * 0.6f) : 0.0f;
+		float specularBase = (diffuse > 0.0f) ? (spec4 * spec4 * glossiness * 0.6f) : 0.0f;
 		// dielectrics: white specular; metals: albedo-tinted specular
 		float specR = specularBase * (1.0f - metallic) + specularBase * metallic * color.x;
 		float specG = specularBase * (1.0f - metallic) + specularBase * metallic * color.y;
@@ -649,6 +650,13 @@ static void RayTraceRowFunc(void *arg) {
 
 		// ray traced reflection — only cast every REFLECTION_RESOLUTION columns
 		if (x % REFLECTION_RESOLUTION == 0) {
+			int shadowHit = -1;
+			if (emission <= 0.0f) {
+				rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
+			}
+			int inShadow = shadowHit >= 0;
+			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
+
 			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
 			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
 			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
@@ -705,13 +713,15 @@ static void RayTraceRowFunc(void *arg) {
 		}
 		catchReflections[x] = catchReflection;
 		catchEmissions[x] = catchEmission;
+		catchShadow[x] = catchShadowValue;
 	}
-	// blur reflection contributions across the row
+	// blur reflection emission and shadows contributions across the row
 	for (int x = 0; x < width; x++) {
 		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
 		float reflectionStrength = camera->reflectBuffer[row * width + x].w;
 		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
+		float3 accumulatedShadow = {0.0f, 0.0f, 0.0f};
 		int samples = 0;
 		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
 			int kIdx = x + kernelSize - BLUR_RADIUS - 1;
@@ -722,6 +732,9 @@ static void RayTraceRowFunc(void *arg) {
 				accumulatedEmission.x += catchEmissions[kIdx].x;
 				accumulatedEmission.y += catchEmissions[kIdx].y;
 				accumulatedEmission.z += catchEmissions[kIdx].z;
+				accumulatedShadow.x += catchShadow[kIdx].x;
+				accumulatedShadow.y += catchShadow[kIdx].y;
+				accumulatedShadow.z += catchShadow[kIdx].z;
 				samples++;
 			}
 		}
@@ -733,6 +746,9 @@ static void RayTraceRowFunc(void *arg) {
 			accumulatedEmission.x *= invW;
 			accumulatedEmission.y *= invW;
 			accumulatedEmission.z *= invW;
+			accumulatedShadow.x *= invW;
+			accumulatedShadow.y *= invW;
+			accumulatedShadow.z *= invW;
 		}
 		Color baseColor = camera->framebuffer[row * width + x];
 		Color accumColor = PackColor(
@@ -740,23 +756,21 @@ static void RayTraceRowFunc(void *arg) {
 			fminf(accumulatedColor.y, 1.0f),
 			fminf(accumulatedColor.z, 1.0f));
 		float3 base = UnpackColor(baseColor);
-		float3 combined = hdrToLDR(base.x + accumulatedEmission.x,
-								   base.y + accumulatedEmission.y,
-								   base.z + accumulatedEmission.z);
+		float shadowMod = 0.12f + 0.88f * fminf(accumulatedShadow.x, 1.0f);
+		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x,
+								   base.y * shadowMod + accumulatedEmission.y,
+								   base.z * shadowMod + accumulatedEmission.z);
 
-		if (base.x + accumulatedEmission.x > 1.0f || base.y + accumulatedEmission.y > 1.0f || base.z + accumulatedEmission.z > 1.0f) {
-			camera->bloomBuffer[row * width + x] = (float3){base.x + accumulatedEmission.x,
-															base.y + accumulatedEmission.y,
-															base.z + accumulatedEmission.z};
+		if (base.x * shadowMod + accumulatedEmission.x > 1.0f || base.y * shadowMod + accumulatedEmission.y > 1.0f || base.z * shadowMod + accumulatedEmission.z > 1.0f) {
+			camera->bloomBuffer[row * width + x] = (float3){base.x * shadowMod + accumulatedEmission.x,
+															base.y * shadowMod + accumulatedEmission.y,
+															base.z * shadowMod + accumulatedEmission.z};
 		} else {
 			camera->bloomBuffer[row * width + x] = (float3){0.0f, 0.0f, 0.0f};
 		}
 
 		baseColor = PackColor(combined.x, combined.y, combined.z);
 		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength);
-		// camera->framebuffer[row * width + x] = ApplyGamma(camera->framebuffer[row * width + x], 0.8f);
-		// camera->framebuffer[row * width + x] = ScaleChannel(camera->framebuffer[row * width + x], 1.08f, 1.0f, 0.78f);
-		// camera->framebuffer[row * width + x] = accumEmissionColor;
 	}
 }
 
@@ -768,6 +782,7 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
+
 }
 
 void DitherPostProcess(Camera *camera, int frame) {

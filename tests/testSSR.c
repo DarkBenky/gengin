@@ -184,14 +184,14 @@ int main() {
 	MaterialLib_Init(&matLib, 16);
 
 	// Wide flat floor — mirror-like (roughness set to 0.05 after creation)
-	CreateCube(&objects[0], (float3){0.0f, 0.0f, 12.0f, 0.0f}, (float3){0.0f}, (float3){40.0f, 0.15f, 40.0f, 0.0f}, (float3){0.30f, 0.32f, 0.36f, 0.0f}, &matLib);
+	CreateCube(&objects[0], (float3){0.0f, 0.0f, 12.0f, 0.0f}, (float3){0.0f}, (float3){40.0f, 0.15f, 40.0f, 0.0f}, (float3){0.30f, 0.32f, 0.36f, 0.0f}, &matLib, 0.0f, 1.0f, 0.0f);
 	matLib.entries[matLib.count - 1].roughness = 0.05f;
 
 	// Colored cubes above — these will appear in the floor reflection
-	CreateCube(&objects[1], (float3){-4.0f, 1.5f, 8.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 3.0f, 1.5f, 0.0f}, (float3){0.85f, 0.15f, 0.10f, 0.2f}, &matLib);
-	CreateCube(&objects[2], (float3){0.0f, 1.8f, 10.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 3.5f, 1.5f, 0.0f}, (float3){0.15f, 0.75f, 0.20f, 0.2f}, &matLib);
-	CreateCube(&objects[3], (float3){4.0f, 1.5f, 8.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 3.0f, 1.5f, 0.0f}, (float3){0.15f, 0.30f, 0.85f, 0.2f}, &matLib);
-	CreateCube(&objects[4], (float3){0.0f, 1.2f, 14.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 2.5f, 1.5f, 0.0f}, (float3){0.85f, 0.70f, 0.10f, 0.2f}, &matLib);
+	CreateCube(&objects[1], (float3){-4.0f, 1.5f, 8.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 3.0f, 1.5f, 0.0f}, (float3){0.85f, 0.15f, 0.10f, 0.2f}, &matLib, 0.0f, 1.0f, 0.0f);
+	CreateCube(&objects[2], (float3){0.0f, 1.8f, 10.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 3.5f, 1.5f, 0.0f}, (float3){0.15f, 0.75f, 0.20f, 0.2f}, &matLib, 0.0f, 1.0f, 0.0f);
+	CreateCube(&objects[3], (float3){4.0f, 1.5f, 8.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 3.0f, 1.5f, 0.0f}, (float3){0.15f, 0.30f, 0.85f, 0.2f}, &matLib, 0.0f, 1.0f, 0.0f);
+	CreateCube(&objects[4], (float3){0.0f, 1.2f, 14.0f, 0.0f}, (float3){0.0f}, (float3){1.5f, 2.5f, 1.5f, 0.0f}, (float3){0.85f, 0.70f, 0.10f, 0.2f}, &matLib, 0.0f, 1.0f, 0.0f);
 
 	printf("Scene loaded. Total triangles: %d\n", Scene_CountTriangles(objects, objectCount));
 

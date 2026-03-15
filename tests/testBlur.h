@@ -7,6 +7,7 @@
 #include "../math/vector3.h"
 #include "../render/color/color.h"
 #include "../object/format.h"
+#include "../image/imgMethods.h"
 #include "../object/object.h"
 #include "../render/render.h"
 #include "../render/cpu/ray.h"

@@ -233,6 +233,115 @@ int main() {
 	printf("Variance: %.6f\n", metrics.variance);
 	printf("P99 Time: %.6f seconds\n", metrics.p99Time);
 
+	// --- imgMethods.h filter tests ---
+	int width = camera.screenWidth;
+	int height = camera.screenHeight;
+	float3 *f3src = malloc(pixels * sizeof(float3));
+	float3 *f3tmp = malloc(pixels * sizeof(float3));
+	float3 *f3dst = malloc(pixels * sizeof(float3));
+	float3 *f3backup = malloc(pixels * sizeof(float3));
+
+	for (int i = 0; i < pixels; i++) {
+		Color c = backup[i];
+		f3src[i] = (float3){
+			(float)((c >> 16) & 0xFF) / 255.0f,
+			(float)((c >> 8) & 0xFF) / 255.0f,
+			(float)(c & 0xFF) / 255.0f,
+			0.0f};
+	}
+	memcpy(f3backup, f3src, pixels * sizeof(float3));
+
+	// BoxBlur3x3 benchmark
+	memcpy(f3src, f3backup, pixels * sizeof(float3));
+	float3 *boxSrc = f3src, *boxDst = f3dst;
+	for (int i = 0; i < SAMPLES; i++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		BoxBlur3x3(boxSrc, f3tmp, boxDst, width, height);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		float3 *swap = boxSrc;
+		boxSrc = boxDst;
+		boxDst = swap;
+	}
+	for (int i = 0; i < pixels; i++)
+		camera.framebuffer[i] = PackColorSafe(boxSrc[i].x, boxSrc[i].y, boxSrc[i].z);
+	SaveImage("tests/img/blur_box3x3.bmp", &camera);
+
+	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
+	printf("========================================\n");
+	printf("BoxBlur3x3 performance:\n");
+	printf("Average Time: %.6f seconds\n", metrics.averageTime);
+	printf("Median Time: %.6f seconds\n", metrics.medianTime);
+	printf("Min Time: %.6f seconds\n", metrics.minTime);
+	printf("Max Time: %.6f seconds\n", metrics.maxTime);
+	printf("Variance: %.6f\n", metrics.variance);
+	printf("P99 Time: %.6f seconds\n", metrics.p99Time);
+
+	// DecimateBuffer benchmark (factor=2)
+	const int factor = 2;
+	int decW = width / factor;
+	int decH = height / factor;
+	float3 *f3dec = malloc(decW * decH * sizeof(float3));
+
+	memcpy(f3src, f3backup, pixels * sizeof(float3));
+	for (int i = 0; i < SAMPLES; i++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		DecimateBuffer(f3src, f3dec, width, height, factor);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+	Camera decCamera;
+	initCamera(&decCamera, decW, decH, 90.0f, (float3){0.0f, 0.0f, 0.0f}, (float3){0.0f, 0.0f, 1.0f}, (float3){1.0f, 1.0f, 1.0f});
+	for (int i = 0; i < decW * decH; i++)
+		decCamera.framebuffer[i] = PackColorSafe(f3dec[i].x, f3dec[i].y, f3dec[i].z);
+	SaveImage("tests/img/decimate.bmp", &decCamera);
+	destroyCamera(&decCamera);
+
+	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
+	printf("========================================\n");
+	printf("DecimateBuffer (factor=%d, %dx%d -> %dx%d) performance:\n", factor, width, height, decW, decH);
+	printf("Average Time: %.6f seconds\n", metrics.averageTime);
+	printf("Median Time: %.6f seconds\n", metrics.medianTime);
+	printf("Min Time: %.6f seconds\n", metrics.minTime);
+	printf("Max Time: %.6f seconds\n", metrics.maxTime);
+	printf("Variance: %.6f\n", metrics.variance);
+	printf("P99 Time: %.6f seconds\n", metrics.p99Time);
+
+	// UpsampleBilinear benchmark (decW x decH -> width x height)
+	float3 *f3up_tmp = malloc(decH * width * sizeof(float3));
+	float3 *f3up_dst = malloc(pixels * sizeof(float3));
+
+	for (int i = 0; i < SAMPLES; i++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		UpsampleBilinear(f3dec, f3up_tmp, f3up_dst, decW, decH, width, height);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+	for (int i = 0; i < pixels; i++)
+		camera.framebuffer[i] = PackColorSafe(f3up_dst[i].x, f3up_dst[i].y, f3up_dst[i].z);
+	SaveImage("tests/img/upsample.bmp", &camera);
+
+	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
+	printf("========================================\n");
+	printf("UpsampleBilinear (%dx%d -> %dx%d) performance:\n", decW, decH, width, height);
+	printf("Average Time: %.6f seconds\n", metrics.averageTime);
+	printf("Median Time: %.6f seconds\n", metrics.medianTime);
+	printf("Min Time: %.6f seconds\n", metrics.minTime);
+	printf("Max Time: %.6f seconds\n", metrics.maxTime);
+	printf("Variance: %.6f\n", metrics.variance);
+	printf("P99 Time: %.6f seconds\n", metrics.p99Time);
+
+	free(f3src);
+	free(f3tmp);
+	free(f3dst);
+	free(f3backup);
+	free(f3dec);
+	free(f3up_tmp);
+	free(f3up_dst);
+
 	poolDestroy(pool);
 	free(outputBuffer);
 	free(backup);

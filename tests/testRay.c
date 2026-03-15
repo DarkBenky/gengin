@@ -110,7 +110,7 @@ int main() {
 	CreateObjectBVH(&objects[PLANE_COUNT], &objects[PLANE_COUNT].bvh);
 	Object_UpdateWorldBounds(&objects[PLANE_COUNT]);
 
-	CreateCube(&objects[PLANE_COUNT + 1], (float3){3.0f, 2.0f, 10.0f}, (float3){3.0f, 4.0f, 0.0f}, (float3){1.0f, 1.0f, 1.0f}, (float3){0.8f, 0.2f, 0.2f, 0.1f}, &matLib);
+	CreateCube(&objects[PLANE_COUNT + 1], (float3){3.0f, 2.0f, 10.0f}, (float3){3.0f, 4.0f, 0.0f}, (float3){1.0f, 1.0f, 1.0f}, (float3){0.8f, 0.2f, 0.2f, 0.1f}, &matLib, 0.0f, 1.0f, 0.0f);
 	Object_UpdateWorldBounds(&objects[PLANE_COUNT + 1]);
 
 	printf("Scene loaded. Total triangles: %d\n", Scene_CountTriangles(objects, objectCount));

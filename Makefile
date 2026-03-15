@@ -34,7 +34,7 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
 _SPECIFIC     = $(filter-out test all clean run flame pgo bench, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
-.PHONY: all clean run flame pgo test bench $(if $(_SPECIFIC), $(_SPECIFIC))
+.PHONY: all clean run flame pgo test bench callgraph perf-report $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
@@ -45,7 +45,7 @@ run: $(TARGET)
 	./$(TARGET)
 
 bench: $(SRC)
-	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=5.0 -o $(TARGET)_bench $^ $(LDFLAGS) $(LIBS)
+	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=10.0 -o $(TARGET)_bench $^ $(LDFLAGS) $(LIBS)
 	./$(TARGET)_bench
 	rm -f $(TARGET)_bench
 
@@ -71,7 +71,7 @@ $(_SPECIFIC):
 endif
 
 pgo:
-	$(CC) $(CFLAGS_BASE) -fno-lto -fprofile-generate -DPGO_MAX_FRAMES=32 -o $(TARGET)_pgo $(SRC) -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
+	$(CC) $(CFLAGS_BASE) -fno-lto -fprofile-generate -DPGO_MAX_FRAMES=128 -o $(TARGET)_pgo $(SRC) -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
 	./$(TARGET)_pgo
 	llvm-profdata-18 merge -output=default.profdata *.profraw
 	$(CC) $(CFLAGS_BASE) -fprofile-use=default.profdata -fprofile-correction -o $(TARGET) $(SRC) $(LDFLAGS) $(LIBS)
@@ -87,8 +87,21 @@ flame:
 	fi
 	sudo perf record -F 99 -g --call-graph fp -o perf.data -- timeout 10 ./$(TARGET) || true
 	sudo perf script -i perf.data | $(FLAMEGRAPH_DIR)/stackcollapse-perf.pl | $(FLAMEGRAPH_DIR)/flamegraph.pl > flamegraph.svg
-	sudo chown $(USER) perf.data perf.data.old 2>/dev/null || true
+	sudo perf script -i perf.data | gprof2dot -f perf | dot -Tsvg -o callgraph.svg
+	sudo chown $(USER) perf.data perf.data.old callgraph.svg 2>/dev/null || true
 	@echo "Flame graph saved to flamegraph.svg"
+	@echo "Call graph saved to callgraph.svg"
+
+# Requires: pip install gprof2dot   apt install graphviz
+callgraph:
+	@if [ ! -f perf.data ]; then echo "No perf.data found, run 'make flame' first"; exit 1; fi
+	sudo perf script -i perf.data | gprof2dot -f perf | dot -Tsvg -o callgraph.svg
+	sudo chown $(USER) callgraph.svg 2>/dev/null || true
+	@echo "Call graph saved to callgraph.svg"
+
+perf-report:
+	@if [ ! -f perf.data ]; then echo "No perf.data found, run 'make flame' first"; exit 1; fi
+	sudo perf report -i perf.data --no-children
 
 clean:
-	rm -f $(TARGET) perf.data flamegraph.svg $(TEST_BINS) $(TARGET)_bench bench_results.json
+	rm -f $(TARGET) perf.data flamegraph.svg callgraph.svg $(TEST_BINS) $(TARGET)_bench bench_results.json
