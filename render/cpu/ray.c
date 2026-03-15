@@ -651,6 +651,7 @@ static void RayTraceRowFunc(void *arg) {
 		camera->objectIdBuffer[idx] = bestObj;
 		// w = (1-roughness) for SSR reflectivity gating
 		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, (1.0f - roughness)};
+		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
 
 		// ray traced reflection — only cast every REFLECTION_RESOLUTION columns
 		if (x % REFLECTION_RESOLUTION == 0) {
@@ -722,7 +723,6 @@ static void RayTraceRowFunc(void *arg) {
 	// blur reflection emission and shadows contributions across the row
 	for (int x = 0; x < width; x++) {
 		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
-		float reflectionStrength = camera->reflectBuffer[row * width + x].w;
 		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedShadow = {0.0f, 0.0f, 0.0f};
@@ -755,26 +755,21 @@ static void RayTraceRowFunc(void *arg) {
 			accumulatedShadow.z *= invW;
 		}
 		Color baseColor = camera->framebuffer[row * width + x];
-		Color accumColor = PackColor(
-			fminf(accumulatedColor.x, 1.0f),
-			fminf(accumulatedColor.y, 1.0f),
-			fminf(accumulatedColor.z, 1.0f));
 		float3 base = UnpackColor(baseColor);
 		float shadowMod = 0.12f + 0.88f * fminf(accumulatedShadow.x, 1.0f);
 		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x,
 								   base.y * shadowMod + accumulatedEmission.y,
 								   base.z * shadowMod + accumulatedEmission.z);
 
-		if (base.x * shadowMod + accumulatedEmission.x > 1.0f || base.y * shadowMod + accumulatedEmission.y > 1.0f || base.z * shadowMod + accumulatedEmission.z > 1.0f) {
-			camera->bloomBuffer[row * width + x] = (float3){base.x * shadowMod + accumulatedEmission.x,
-															base.y * shadowMod + accumulatedEmission.y,
-															base.z * shadowMod + accumulatedEmission.z};
-		} else {
-			camera->bloomBuffer[row * width + x] = (float3){0.0f, 0.0f, 0.0f};
-		}
+		float3 ownEmission = camera->bloomBuffer[row * width + x];
+		camera->bloomBuffer[row * width + x] = (float3){
+			ownEmission.x + accumulatedEmission.x,
+			ownEmission.y + accumulatedEmission.y,
+			ownEmission.z + accumulatedEmission.z,
+		};
 
-		baseColor = PackColor(combined.x, combined.y, combined.z);
-		camera->framebuffer[row * width + x] = LerpColor(baseColor, accumColor, reflectionStrength);
+		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z));
 	}
 }
 

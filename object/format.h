@@ -73,9 +73,8 @@ typedef struct Camera {
 	float3 *positionBuffer;
 	float3 *reflectBuffer;
 	float3 *bloomBuffer;
-	// float3 *bloomBufferTemp1;
-	// float3 *bloomBufferTemp2;
-	// float3 *bloomBufferTemp3;
+	float3 *bloomTemp;
+	float3 *bloomDst;
 	float *depthBuffer;
 	float seed;
 	Color *reflectCache;
