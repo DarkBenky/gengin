@@ -1,6 +1,8 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
+#include <math.h>
+
 #define EMISSION_RESOLUTION 32
 
 #include "format.h"
@@ -104,5 +106,16 @@ typedef struct {
 Frustum Frustum_FromCamera(const Camera *cam);
 // Returns true if the AABB may be visible (not fully outside any plane).
 bool Frustum_TestAABB(const Frustum *f, float3 bbMin, float3 bbMax);
+
+// Branchless slab test with precomputed bias = ro * invRd.
+// Returns tmin on hit, FLT_MAX on miss. Shared between object.c and ray.c.
+static inline float rayAABB_inv(float3 bias, float3 invRd, const float *mn, const float *mx) {
+	float tx0 = mn[0] * invRd.x - bias.x, tx1 = mx[0] * invRd.x - bias.x;
+	float ty0 = mn[1] * invRd.y - bias.y, ty1 = mx[1] * invRd.y - bias.y;
+	float tz0 = mn[2] * invRd.z - bias.z, tz1 = mx[2] * invRd.z - bias.z;
+	float tmin = fmaxf(fmaxf(fminf(tx0, tx1), fminf(ty0, ty1)), fminf(tz0, tz1));
+	float tmax = fminf(fminf(fmaxf(tx0, tx1), fmaxf(ty0, ty1)), fmaxf(tz0, tz1));
+	return tmax < tmin ? FLT_MAX : tmin;
+}
 
 #endif // OBJECT_H

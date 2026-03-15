@@ -522,13 +522,17 @@ static void RayTraceRowFunc(void *arg) {
 		int bestObj = -1, bestTri = -1;
 		float3 bestHitPos = {0};
 
-		for (int i = 0; i < objectCount; i++) {
-			// frustum cull using precomputed camera planes
-			if (!Frustum_TestAABB(&task->frustum, objects[i].worldBBmin, objects[i].worldBBmax)) continue;
+		// precompute per-pixel invDir + bias — avoids recomputing 3 divisions per object in world AABB test
+		const float invDx = 1.0f / dx, invDy = 1.0f / dy, invDz = 1.0f / dz;
+		const float3 pixInvDir = {invDx, invDy, invDz};
+		const float3 pixBias = {orig.x * invDx, orig.y * invDy, orig.z * invDz};
 
-			float bboxMin, bboxMax;
-			RayBoxItersect(&objects[i], orig, (float3){dx, dy, dz}, &bboxMin, &bboxMax);
-			if (bboxMin >= bboxMax || bboxMin >= bestT) continue;
+		const int *passIdx = task->frustumPassIndices;
+		const int passCount = task->frustumPassCount;
+		for (int ci = 0; ci < passCount; ci++) {
+			int i = passIdx[ci];
+			float tAABB = rayAABB_inv(pixBias, pixInvDir, &objects[i].worldBBmin.x, &objects[i].worldBBmax.x);
+			if (tAABB >= bestT) continue;
 
 			int triIdx = -1;
 			float3 hitPos;
@@ -777,12 +781,20 @@ static void RayTraceRowFunc(void *arg) {
 void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox) {
 	if (!objects || objectCount <= 0 || !camera || !taskQueue || !threadPool) return;
 	Frustum frustum = Frustum_FromCamera(camera);
+
+	// cull once per frame — frustum is constant across all pixels
+	int frustumPassIndices[objectCount];
+	int frustumPassCount = 0;
+	for (int i = 0; i < objectCount; i++) {
+		if (Frustum_TestAABB(&frustum, objects[i].worldBBmin, objects[i].worldBBmax))
+			frustumPassIndices[frustumPassCount++] = i;
+	}
+
 	for (int row = 0; row < camera->screenHeight; row++) {
-		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum};
+		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
-
 }
 
 void DitherPostProcess(Camera *camera, int frame) {

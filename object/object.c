@@ -476,16 +476,6 @@ static float rayAABB(float3 ro, float3 rd, float3 mn, float3 mx) {
 	return tmin;
 }
 
-// Branchless slab test using precomputed invDir — eliminates per-node divisions in BVH traversal
-static inline float rayAABB_inv(float3 ro, float3 invRd, const float *mn, const float *mx) {
-	float tx0 = (mn[0] - ro.x) * invRd.x, tx1 = (mx[0] - ro.x) * invRd.x;
-	float ty0 = (mn[1] - ro.y) * invRd.y, ty1 = (mx[1] - ro.y) * invRd.y;
-	float tz0 = (mn[2] - ro.z) * invRd.z, tz1 = (mx[2] - ro.z) * invRd.z;
-	float tmin = MaxF32(MaxF32(MinF32(tx0, tx1), MinF32(ty0, ty1)), MinF32(tz0, tz1));
-	float tmax = MinF32(MinF32(MaxF32(tx0, tx1), MaxF32(ty0, ty1)), MaxF32(tz0, tz1));
-	return tmax < tmin ? FLT_MAX : tmin;
-}
-
 void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld) {
 	if (!obj || !bvh || !hitTriIdx || bvh->nodeCount == 0) return;
 	*hitTriIdx = -1;
@@ -505,6 +495,8 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 
 	// precompute inverse direction once — replaces 3 divisions per BVH node with multiplications
 	float3 invDir = {1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z};
+	// bias = ro * invDir: precomputed once per ray, avoids recomputing it 6x per BVH node
+	float3 bias = {rayOrigin.x * invDir.x, rayOrigin.y * invDir.y, rayOrigin.z * invDir.z};
 
 	float bestT = FLT_MAX;
 	int stack[64];
@@ -513,7 +505,6 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 
 	while (top > 0) {
 		const BVHNode *node = &bvh->nodes[stack[--top]];
-		if (rayAABB_inv(rayOrigin, invDir, node->BBmin, node->BBmax) >= bestT) continue;
 
 		if (node->triCount > 0) {
 			for (int i = 0; i < node->triCount; i++) {
@@ -525,8 +516,20 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 				}
 			}
 		} else {
-			stack[top++] = node->leftFirst;
-			stack[top++] = node->leftFirst + 1;
+			// test both children immediately — they're adjacent in the array (same cache line).
+			// push farther child first so LIFO pops nearer child first → bestT converges faster.
+			int li = node->leftFirst, ri = li + 1;
+			float tl = rayAABB_inv(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax);
+			float tr = rayAABB_inv(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax);
+			if (tl >= bestT) tl = FLT_MAX;
+			if (tr >= bestT) tr = FLT_MAX;
+			if (tl <= tr) {
+				if (tr < FLT_MAX) stack[top++] = ri;
+				if (tl < FLT_MAX) stack[top++] = li;
+			} else {
+				if (tl < FLT_MAX) stack[top++] = li;
+				if (tr < FLT_MAX) stack[top++] = ri;
+			}
 		}
 	}
 
@@ -556,12 +559,12 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 		r1.x * rayDir.x + r1.y * rayDir.y + r1.z * rayDir.z,
 		r2.x * rayDir.x + r2.y * rayDir.y + r2.z * rayDir.z};
 	float3 invDir = {1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z};
+	float3 bias = {rayOrigin.x * invDir.x, rayOrigin.y * invDir.y, rayOrigin.z * invDir.z};
 	int stack[64];
 	int top = 0;
 	stack[top++] = 0;
 	while (top > 0) {
 		const BVHNode *node = &bvh->nodes[stack[--top]];
-		if (rayAABB_inv(rayOrigin, invDir, node->BBmin, node->BBmax) >= FLT_MAX) continue;
 		if (node->triCount > 0) {
 			for (int i = 0; i < node->triCount; i++) {
 				int ti = bvh->triIndices[node->triStart + i];
@@ -570,8 +573,9 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 					return true;
 			}
 		} else {
-			stack[top++] = node->leftFirst;
-			stack[top++] = node->leftFirst + 1;
+			int li = node->leftFirst, ri = li + 1;
+			if (rayAABB_inv(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax) < FLT_MAX) stack[top++] = li;
+			if (rayAABB_inv(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax) < FLT_MAX) stack[top++] = ri;
 		}
 	}
 	return false;
@@ -635,6 +639,7 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
 				ro[vA] = vf;
 				ro[wA] = wOrig;
 				float3 rayO = {ro[0], ro[1], ro[2]};
+				float3 bias = {rayO.x * invDir.x, rayO.y * invDir.y, rayO.z * invDir.z};
 
 				float bestT = FLT_MAX;
 				int hitTri = -1;
@@ -642,7 +647,7 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
 				stack[top++] = 0;
 				while (top > 0) {
 					const BVHNode *node = &obj->bvh.nodes[stack[--top]];
-					if (rayAABB_inv(rayO, invDir, node->BBmin, node->BBmax) >= bestT) continue;
+					if (rayAABB_inv(bias, invDir, node->BBmin, node->BBmax) >= bestT) continue;
 					if (node->triCount > 0) {
 						for (int i = 0; i < node->triCount; i++) {
 							int t = obj->bvh.triIndices[node->triStart + i];

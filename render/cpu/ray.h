@@ -30,6 +30,8 @@ typedef struct {
 	const MaterialLib *lib;
 	const Skybox *skybox;
 	Frustum frustum;
+	const int *frustumPassIndices;
+	int frustumPassCount;
 } RayTraceTask;
 
 typedef struct {
