@@ -801,7 +801,7 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		camera->bloomBuffer = temp;
 	}
 	// src, temp, dst
-	const int bloomMultiplier = 0.5f;
+	const int bloomMultiplier = 1.5f;
 	UpsampleBilinear(camera->bloomDst, camera->bloomTemp, camera->bloomBuffer, camera->screenWidth / factor, camera->screenHeight / factor, camera->screenWidth, camera->screenHeight);
 	for (int i = 0; i < camera->screenWidth * camera->screenHeight; i++) {
 		float3 bloomColor = hdrToLDR(camera->bloomBuffer[i].x, camera->bloomBuffer[i].y, camera->bloomBuffer[i].z);
