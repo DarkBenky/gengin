@@ -578,7 +578,8 @@ static void RayTraceRowFunc(void *arg) {
 			int matId = obj->materialIds[bestTri];
 			if (matId >= 0 && matId < lib->count) {
 				color = lib->entries[matId].color;
-				emission = lib->entries[matId].emission;
+				// emission = lib->entries[matId].emission;
+				emission = lib->entries[matId].emission * 0.01f; // scale down emission to prevent it from dominating the lighting — it's meant to be a subtle glow, not a full light source
 				roughness = lib->entries[matId].roughness;
 				metallic = lib->entries[matId].metallic;
 			}
@@ -785,36 +786,11 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 			frustumPassIndices[frustumPassCount++] = i;
 	}
 
-	// memset(camera->bloomBuffer, 0, camera->screenWidth * camera->screenHeight * sizeof(float3));
 	for (int row = 0; row < camera->screenHeight; row++) {
 		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
-	// const int factor = 4; // downsample by 4x for bloom pre-pass
-	// DecimateBuffer(camera->bloomBuffer, camera->bloomDst, camera->screenWidth, camera->screenHeight, factor);
-	// // use local pointers so the swap never leaks back onto the camera struct
-	// float3 *blurSrc = camera->bloomDst;
-	// float3 *blurDst = camera->bloomBuffer;
-	// for (int iter = 0; iter < BLOOM_ITERATIONS; iter++) {
-	// 	// src , temp, dst
-	// 	BoxBlur3x3(blurSrc, camera->bloomTemp, blurDst, camera->screenWidth / factor, camera->screenHeight / factor);
-	// 	float3 *tmp = blurSrc;
-	// 	blurSrc = blurDst;
-	// 	blurDst = tmp;
-	// }
-	// // src, temp, dst
-	// const float bloomMultiplier = 1.0f;
-	// UpsampleBilinear(blurSrc, camera->bloomTemp, camera->bloomBuffer, camera->screenWidth / factor, camera->screenHeight / factor, camera->screenWidth, camera->screenHeight);
-	// for (int i = 0; i < camera->screenWidth * camera->screenHeight; i++) {
-	// 	float3 bloomColor = hdrToLDR(camera->bloomBuffer[i].x, camera->bloomBuffer[i].y, camera->bloomBuffer[i].z);
-	// 	float3 baseColor = UnpackColor(camera->framebuffer[i]);
-	// 	baseColor.x = baseColor.x + bloomColor.x * bloomMultiplier;
-	// 	baseColor.y = baseColor.y + bloomColor.y * bloomMultiplier;
-	// 	baseColor.z = baseColor.z + bloomColor.z * bloomMultiplier;
-	// 	Color col = PackColorF(hdrToLDR(baseColor.x, baseColor.y, baseColor.z));
-	// 	camera->framebuffer[i] = col;
-	// }
 }
 
 void DitherPostProcess(Camera *camera, int frame) {
