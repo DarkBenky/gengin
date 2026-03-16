@@ -790,6 +790,28 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
+	const int factor = 4; // downsample by 4x for bloom pre-pass
+	DecimateBuffer(camera->bloomBuffer, camera->bloomDst, camera->screenWidth, camera->screenHeight, factor);
+	for (int iter = 0; iter < BLOOM_ITERATIONS; iter++) {
+		// src , temp, dst
+		BoxBlur3x3(camera->bloomDst, camera->bloomTemp, camera->bloomBuffer, camera->screenWidth / factor, camera->screenHeight / factor);
+		// swap bloom buffers for next iteration
+		float3 *temp = camera->bloomDst;
+		camera->bloomDst = camera->bloomBuffer;
+		camera->bloomBuffer = temp;
+	}
+	// src, temp, dst
+	const int bloomMultiplier = 0.5f;
+	UpsampleBilinear(camera->bloomDst, camera->bloomTemp, camera->bloomBuffer, camera->screenWidth / factor, camera->screenHeight / factor, camera->screenWidth, camera->screenHeight);
+	for (int i = 0; i < camera->screenWidth * camera->screenHeight; i++) {
+		float3 bloomColor = hdrToLDR(camera->bloomBuffer[i].x, camera->bloomBuffer[i].y, camera->bloomBuffer[i].z);
+		float3 baseColor = UnpackColor(camera->framebuffer[i]);
+		baseColor.x = baseColor.x + bloomColor.x * bloomMultiplier;
+		baseColor.y = baseColor.y + bloomColor.y * bloomMultiplier;
+		baseColor.z = baseColor.z + bloomColor.z * bloomMultiplier;
+		Color col = PackColorF(hdrToLDR(baseColor.x, baseColor.y, baseColor.z));
+		camera->framebuffer[i] = col;
+	}
 }
 
 void DitherPostProcess(Camera *camera, int frame) {
