@@ -4,6 +4,7 @@
     - [X] crete emission map for each object
 - [X] Shadows same as reflection
 - [ ] Clouds
+    - [ ] Crete a 6 face depth textures for cload and additively render them
 - [ ] Bloom
     - [ ] Too slow
 - [X] Replace screen space refection by raytraced onece
