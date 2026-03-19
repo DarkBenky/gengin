@@ -77,11 +77,11 @@ def loadObject(filename):
     return cloud
 
 if __name__ == "__main__":
-    x = 128
-    y = 16
-    z = 128
-    scale = 0.1
+    x = 1024
+    y = 1024
+    z = 1024
+    scale = 0.08
     iterations = 4
     cloud = generate3DCloud(x, y, z, scale, iterations, contrast=1.85)
-    saveObject(cloud, "../assets/models/cloud.bin", threshold=0.45)
-    visualizeCloud(cloud, threshold=0.45)
+    saveObject(cloud, "../assets/models/cloud.bin", threshold=0.25)
+    # visualizeCloud(cloud, threshold=0.45)

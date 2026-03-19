@@ -8,6 +8,42 @@
 #include "format.h"
 #include "../load/loadObj.h"
 #include "material/material.h"
+#include "../render/gpu/format.h"
+
+typedef enum VolumeType {
+	VOLUME_NONE,
+	VOLUME_CLOUD, // for rendering of cloads
+} VolumeType;
+
+typedef struct Volume {
+	float3 position;
+	float3 rotation;
+	float3 scale;
+	float3 BBmin;
+	float3 BBmax;
+	float3 worldBBmin;
+	float3 worldBBmax;
+
+	// cached inverse transform — recomputed in Object_UpdateWorldBounds
+	float3 _invScale;  // row 0 of M = Diag(invScale)*InvRot
+	float3 _invRotSin; // row 1 of M
+	float3 _invRotCos; // row 2 of M
+	// cached forward rotation matrix Rz*Ry*Rx — for rotating normals without trig each hit
+	float3 _fwdRot0;
+	float3 _fwdRot1;
+	float3 _fwdRot2;
+
+	VolumeType type; // determines how to sample the volume on gpu
+
+	float xResolution;
+	float yResolution;
+	float zResolution;
+
+	float *density; // for clouds: density[x + y*xRes + z*xRes*yRes]
+
+	// GPU
+	CL_Buffer gpuDensity; // for clouds: density[x + y*xRes + z*xRes*yRes]
+} Volume;
 
 typedef struct BVHNode {
 	float BBmin[3]; // 12 bytes (no float3 padding waste)
@@ -65,6 +101,9 @@ typedef struct Object {
 
 	BVH bvh;
 } Object;
+
+void LoadVolume(Volume *vol, const char *filename, float3 position, float3 rotation, float3 scale, VolumeType type);
+void UploadVolumeToGpu(Volume *vol, CL_Context *ctx);
 
 // calculate per-face emission maps with orthographic projection
 void CalculateFaceEmissions(Object *obj, MaterialLib *lib);

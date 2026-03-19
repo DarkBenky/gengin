@@ -758,9 +758,9 @@ static void RayTraceRowFunc(void *arg) {
 		Color baseColor = camera->framebuffer[row * width + x];
 		float3 base = UnpackColor(baseColor);
 		float shadowMod = 0.12f + 0.88f * fminf(accumulatedShadow.x, 1.0f);
-		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x,
-								   base.y * shadowMod + accumulatedEmission.y,
-								   base.z * shadowMod + accumulatedEmission.z);
+		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
+								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
+								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w);
 
 		float3 ownEmission = camera->bloomBuffer[row * width + x];
 		camera->bloomBuffer[row * width + x] = (float3){

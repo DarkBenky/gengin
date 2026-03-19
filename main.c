@@ -18,6 +18,7 @@
 #include "util/threadPool.h"
 #include "util/bench.h"
 #include "keyboar/keyboar.h"
+#include "render/gpu/kernels/cloadrendering/cload.h"
 
 #define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
 #define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
@@ -109,6 +110,18 @@ int main() {
 	SSRTask *ssrTasks = malloc(sizeof(SSRTask) * ((HEIGHT + 3) / 4));
 
 	printf("Demo scene loaded. Total Tris: %d\n", ObjectList_CountTriangles(&scene));
+
+	Volume cloudVol;
+	LoadVolume(&cloudVol, "assets/models/cloud.bin",
+			   (float3){0.0f, 70.0f, 13.0f, 0.0f},
+			   (float3){0.0f, 0.0f, 0.0f, 0.0f},
+			   (float3){180.0f, 18.0f, 180.0f, 0.0f},
+			   VOLUME_CLOUD);
+
+	CloudRenderer cloudRenderer;
+	CloudRenderer_Init(&cloudRenderer, WIDTH, HEIGHT,
+					   "render/gpu/kernels/cloadrendering/render.cl");
+	UploadVolumeToGpu(&cloudVol, &cloudRenderer.ctx);
 	int frame = 0;
 	int shadowResolution = 4;
 	double frameTimes[4] = {0};
@@ -183,10 +196,21 @@ int main() {
 
 		WNOW(wA);
 		// SSRPostProcess(&camera, threadPool, ssrTasks, 4);
+		CloudRenderer_Render(&cloudRenderer, &cloudVol, &camera, (CloudParams){
+																	 .baseColor = {0.9f, 0.95f, 1.0f, 0.0f},
+																	 .extinctionScale = 1.0f,
+																	 .shadowExtinction = 0.1f,
+																	 .scatterG = 0.3f,
+																	 .shadowDist = 1.0f,
+																	 .ambientLight = 0.25f,
+																 });
 		WNOW(wB);
 		accumSSRTime += WDIFF(wA, wB);
 
 		benchCaptureFrame(&bench, camera.framebuffer, WIDTH * HEIGHT);
+
+		
+		CloudRenderer_Composite(&cloudRenderer, &camera);
 
 #ifndef BENCH_MODE
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
@@ -238,6 +262,8 @@ int main() {
 		}
 	}
 	ObjectList_Destroy(&scene);
+	CloudRenderer_Destroy(&cloudRenderer);
+	free(cloudVol.density);
 	DestroySkybox(&skybox);
 	poolDestroy(threadPool);
 	free(ssrTasks);

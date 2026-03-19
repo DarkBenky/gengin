@@ -10,7 +10,7 @@ CFLAGS_BASE += -w -I/usr/local/include -Iobject
 CFLAGS = $(CFLAGS_BASE)
 LDFLAGS = -flto -L/usr/local/lib
 LDFLAGS += -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed
-LIBS = -lminifb -lX11 -lGL -lpthread -lm -ljpeg
+LIBS = -lminifb -lX11 -lGL -lpthread -lm -ljpeg -lOpenCL
 
 # Auto-use PGO data if available from a previous 'make pgo' run
 PROFDATA = default.profdata
@@ -19,7 +19,7 @@ CFLAGS += -fprofile-use=$(PROFDATA) -fprofile-correction
 endif
 
 TARGET = main
-SRC = main.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboar/keyboar.c
+SRC = main.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboar/keyboar.c render/gpu/format.c render/gpu/kernels/cloadrendering/cload.c
 
 FLAMEGRAPH_DIR = .flamegraph
 

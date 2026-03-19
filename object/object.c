@@ -760,3 +760,65 @@ float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 
 												: hi;
 	return map->emissionMap[hi][wi];
 }
+
+void LoadVolume(Volume *vol, const char *filename, float3 position, float3 rotation, float3 scale, VolumeType type) {
+	if (filename == NULL || vol == NULL) {
+		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
+		return;
+	}
+	FILE *file = fopen(filename, "rb");
+	if (file == NULL) {
+		fprintf(stderr, "Error: Could not open file %s\n", filename);
+		return;
+	}
+
+	int widthResolution, heightResolution, depthResolution;
+	fread(&widthResolution, sizeof(int), 1, file);
+	fread(&heightResolution, sizeof(int), 1, file);
+	fread(&depthResolution, sizeof(int), 1, file);
+	int voxelCount = widthResolution * heightResolution * depthResolution;
+
+	vol->density = malloc(voxelCount * sizeof(float));
+	if (vol->density == NULL) {
+		fprintf(stderr, "Error: Could not allocate memory for volume density.\n");
+		fclose(file);
+		return;
+	}
+	fread(vol->density, sizeof(float), voxelCount, file);
+	fclose(file);
+
+	vol->xResolution = widthResolution;
+	vol->yResolution = heightResolution;
+	vol->zResolution = depthResolution;
+	vol->BBmin = (float3){-0.5f, -0.5f, -0.5f, 0.0f};
+	vol->BBmax = (float3){0.5f, 0.5f, 0.5f, 0.0f};
+	vol->position = position;
+	vol->rotation = rotation;
+	vol->scale = scale;
+	vol->type = type;
+}
+
+void UploadVolumeToGpu(Volume *vol, CL_Context *ctx) {
+	if (vol == NULL || ctx == NULL || vol->density == NULL) {
+		fprintf(stderr, "Error: Invalid volume or OpenCL context.\n");
+		return;
+	}
+
+	float *temp = malloc(sizeof(float) * (size_t)(vol->xResolution * vol->yResolution * vol->zResolution + 3));
+	if (temp == NULL) {
+		fprintf(stderr, "Error: Could not allocate temporary buffer for volume upload.\n");
+		return;
+	}
+	temp[0] = (float)vol->xResolution;
+	temp[1] = (float)vol->yResolution;
+	temp[2] = (float)vol->zResolution;
+	memcpy(temp + 3, vol->density, sizeof(float) * (size_t)(vol->xResolution * vol->yResolution * vol->zResolution));
+
+	CL_Buffer buf = CL_Buffer_CreateFromData(
+		ctx,
+		sizeof(float) * (size_t)(vol->xResolution * vol->yResolution * vol->zResolution + 3), // +3 for storing dimensions in the buffer
+		temp,
+		CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+	vol->gpuDensity = buf;
+	free(temp);
+}
