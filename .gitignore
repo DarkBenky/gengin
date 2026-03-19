@@ -6,3 +6,12 @@ flamegraph.svg
 bench_results.json
 main
 main_bench
+
+# large binary assets
+assets/models/cloud.bin
+assets/models/map.bin
+assets/models/map.obj
+
+# generated images
+tools/*.png
+tests/img/
