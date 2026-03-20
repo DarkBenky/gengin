@@ -3,6 +3,7 @@
 - [ ] God Rays
 - [X] Emission
     - [X] crete emission map for each object
+    ![img](./render.png)
 - [X] Shadows same as reflection
 - [X] Clouds
 - [ ] Bloom

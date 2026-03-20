@@ -30,7 +30,7 @@
 int main() {
 	Input input;
 	Camera camera;
-	initCamera(&camera, WIDTH, HEIGHT, 90.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){6.0f, 8.0f, -6.0f});
+	initCamera(&camera, WIDTH, HEIGHT, 90.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){0.0f, 80.0f, -60.0f});
 
 	MaterialLib matLib;
 	MaterialLib_Init(&matLib, 256);
@@ -202,7 +202,7 @@ int main() {
 																	 .shadowExtinction = 0.03f, // low = less internal darkening
 																	 .scatterG = 0.1f,
 																	 .shadowDist = 1.0f,
-																	 .ambientLight = 0.5f, // high = shadowed parts stay bright white
+																	 .ambientLight = 0.8f, // high = shadowed parts stay bright white
 																	 .godRays = 1,
 																	 .godRayColor = {1.0f, 0.95f, 0.8f, 0.0f},
 																	 .godRayIntensity = 0.6f,
