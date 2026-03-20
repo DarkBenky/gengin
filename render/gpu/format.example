@@ -1,17 +1,22 @@
 // setup
 CL_Context  ctx = CL_Context_Create();
-CL_Pipeline pip = CL_Pipeline_FromFile(&ctx, "kernels/raytracer.cl","trace", "-I ./kernels");
+CL_Context_PrintInfo(&ctx);
+CL_Pipeline pip = CL_Pipeline_FromFile(&ctx, "kernels/raytracer.cl", "trace", "-I ./kernels");
 CL_Image    img = CL_Image_Create(&ctx, 800, 600);
-CL_Buffer   buf = CL_Buffer_CreateFromData(&ctx, sizeof(data), data, CL_MEM_READ_ONLY);
+CL_Buffer   buf = CL_BUFFER_NEW_DATA(&ctx, MyStruct, data, 1024, CL_MEM_READ_ONLY);
 
-// run
-CL_SetArgImage (&pip, 0, &img);
-CL_SetArgBuffer(&pip, 1, &buf);
-CL_SetArgFloat (&pip, 2, 0.5f);
-CL_Dispatch2D  (&ctx, &pip, 800, 600, 16, 16);
+// set args and run
+CL_ARGS_BEGIN(&pip)
+    CL_ARG_IMAGE(&img)
+    CL_ARG_BUFFER(&buf)
+    CL_ARG_FLOAT(0.5f)
+CL_ARGS_END
+CL_Dispatch2D_Auto(&ctx, &pip, 800, 600);
 
-// read back
-CL_Image_Read(&ctx, &img, pixels);
+// zero-copy readback via mapped buffer
+float *pixels = (float *)CL_Buffer_Map(&ctx, &buf, CL_MAP_READ);
+// ... use pixels ...
+CL_Buffer_Unmap(&ctx, &buf, pixels);
 
 // cleanup
 CL_Image_Destroy(&img);

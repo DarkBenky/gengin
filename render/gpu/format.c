@@ -99,20 +99,22 @@ void CL_Buffer_Read(CL_Context *ctx, CL_Buffer *buf, void *out, size_t size) {
 	CL_CheckError(err, "clEnqueueReadBuffer");
 }
 
-CL_Image CL_Image_Create(CL_Context *ctx, int width, int height) {
-	CL_Image img = {.width = width, .height = height};
+CL_Image CL_Image_CreateFormat(CL_Context *ctx, int width, int height,
+                                cl_channel_order order, cl_channel_type type) {
+	CL_Image img = {.width = width, .height = height, .fmt = {order, type}};
 	cl_int err;
-
-	cl_image_format fmt = {CL_RGBA, CL_FLOAT};
 	cl_image_desc desc = {
-		.image_type = CL_MEM_OBJECT_IMAGE2D,
-		.image_width = width,
+		.image_type   = CL_MEM_OBJECT_IMAGE2D,
+		.image_width  = width,
 		.image_height = height,
 	};
-
-	img.image = clCreateImage(ctx->context, CL_MEM_READ_WRITE, &fmt, &desc, NULL, &err);
+	img.image = clCreateImage(ctx->context, CL_MEM_READ_WRITE, &img.fmt, &desc, NULL, &err);
 	CL_CheckError(err, "clCreateImage");
 	return img;
+}
+
+CL_Image CL_Image_Create(CL_Context *ctx, int width, int height) {
+	return CL_Image_CreateFormat(ctx, width, height, CL_RGBA, CL_FLOAT);
 }
 
 void CL_Image_Destroy(CL_Image *img) {
@@ -143,6 +145,24 @@ void CL_SetArgInt(CL_Pipeline *pip, int index, int val) {
 void CL_SetArgFloat(CL_Pipeline *pip, int index, float val) {
 	clSetKernelArg(pip->kernel, index, sizeof(float), &val);
 }
+void CL_SetArgUInt(CL_Pipeline *pip, int index, unsigned int val) {
+	clSetKernelArg(pip->kernel, index, sizeof(unsigned int), &val);
+}
+void CL_SetArgFloat2(CL_Pipeline *pip, int index, float x, float y) {
+	cl_float2 v = {{x, y}};
+	clSetKernelArg(pip->kernel, index, sizeof(cl_float2), &v);
+}
+void CL_SetArgFloat3(CL_Pipeline *pip, int index, float x, float y, float z) {
+	cl_float3 v = {{x, y, z, 0}};
+	clSetKernelArg(pip->kernel, index, sizeof(cl_float3), &v);
+}
+void CL_SetArgFloat4(CL_Pipeline *pip, int index, float x, float y, float z, float w) {
+	cl_float4 v = {{x, y, z, w}};
+	clSetKernelArg(pip->kernel, index, sizeof(cl_float4), &v);
+}
+void CL_SetArgRaw(CL_Pipeline *pip, int index, size_t size, const void *val) {
+	clSetKernelArg(pip->kernel, index, size, val);
+}
 
 void CL_Dispatch1D(CL_Context *ctx, CL_Pipeline *pip, size_t global, size_t local) {
 	cl_event ev;
@@ -170,6 +190,54 @@ void CL_Dispatch2D(CL_Context *ctx, CL_Pipeline *pip, size_t width, size_t heigh
 	clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_END, sizeof(t_end), &t_end, NULL);
 	pip->timeTook = (float)(t_end - t_start) * 1e-6f; // ms
 	clReleaseEvent(ev);
+}
+
+static size_t cl_round_up_(size_t n, size_t m) { return ((n + m - 1) / m) * m; }
+
+void CL_Dispatch1D_Auto(CL_Context *ctx, CL_Pipeline *pip, size_t count) {
+	size_t local = 64;
+	clGetKernelWorkGroupInfo(pip->kernel, ctx->device,
+		CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(local), &local, NULL);
+	CL_Dispatch1D(ctx, pip, cl_round_up_(count, local), local);
+}
+
+void CL_Dispatch2D_Auto(CL_Context *ctx, CL_Pipeline *pip, size_t width, size_t height) {
+	size_t local_x = 8, local_y = 8;
+	CL_Dispatch2D(ctx, pip,
+		cl_round_up_(width, local_x), cl_round_up_(height, local_y),
+		local_x, local_y);
+}
+
+void CL_Buffer_Copy(CL_Context *ctx, CL_Buffer *src, CL_Buffer *dst, size_t size) {
+	cl_int err = clEnqueueCopyBuffer(ctx->queue, src->buf, dst->buf, 0, 0, size, 0, NULL, NULL);
+	CL_CheckError(err, "clEnqueueCopyBuffer");
+	clFinish(ctx->queue);
+}
+
+void *CL_Buffer_Map(CL_Context *ctx, CL_Buffer *buf, cl_map_flags flags) {
+	cl_int err;
+	void *ptr = clEnqueueMapBuffer(ctx->queue, buf->buf, CL_TRUE,
+		flags, 0, buf->size, 0, NULL, NULL, &err);
+	CL_CheckError(err, "clEnqueueMapBuffer");
+	return ptr;
+}
+
+void CL_Buffer_Unmap(CL_Context *ctx, CL_Buffer *buf, void *mapped_ptr) {
+	cl_int err = clEnqueueUnmapMemObject(ctx->queue, buf->buf, mapped_ptr, 0, NULL, NULL);
+	CL_CheckError(err, "clEnqueueUnmapMemObject");
+	clFinish(ctx->queue);
+}
+
+void CL_Context_PrintInfo(CL_Context *ctx) {
+	char name[256];
+	size_t max_wg;
+	cl_ulong local_mem;
+	clGetDeviceInfo(ctx->device, CL_DEVICE_NAME, sizeof(name), name, NULL);
+	clGetDeviceInfo(ctx->device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(max_wg), &max_wg, NULL);
+	clGetDeviceInfo(ctx->device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(local_mem), &local_mem, NULL);
+	printf("[CL] device      : %s\n", name);
+	printf("[CL] max WG size : %zu\n", max_wg);
+	printf("[CL] local mem   : %llu KB\n", (unsigned long long)local_mem / 1024);
 }
 
 char *CL_LoadFile(const char *path) {
