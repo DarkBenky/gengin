@@ -8,12 +8,12 @@
 typedef struct {
 	CL_Context ctx;
 	CL_Pipeline pipeline;
-	CL_Buffer outputBuf;
-	CL_Buffer depthBuf; // scene depth buffer uploaded each frame
+	CL_Buffer outputBuf;  // CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR
+	CL_Buffer depthBuf;   // scene depth buffer uploaded each frame
 	CL_Pipeline godRayPipeline;
-	CL_Buffer godRayBuf;
-	float4 *godRayCpu;
-	float3 *outputCpu;
+	CL_Buffer godRayBuf;  // CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR
+	float4 *godRayCpu;    // persistent map of godRayBuf
+	float3 *outputCpu;    // persistent map of outputBuf
 	int width;
 	int height;
 } CloudRenderer;

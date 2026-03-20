@@ -24,13 +24,14 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
 	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
 
-	size_t outBytes = (size_t)width * height * sizeof(float3);
-	cr->outputBuf = CL_Buffer_Create(&cr->ctx, outBytes, CL_MEM_READ_WRITE);
-	cr->outputCpu = malloc(outBytes);
-	cr->depthBuf = CL_Buffer_Create(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
+	cr->outputBuf = CL_BUFFER_NEW(&cr->ctx, float3, (size_t)width * height,
+		CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR);
+	cr->depthBuf = CL_BUFFER_NEW(&cr->ctx, float, (size_t)width * height, CL_MEM_READ_ONLY);
+	cr->godRayBuf = CL_BUFFER_NEW(&cr->ctx, float4, (size_t)width * height,
+		CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR);
 
-	cr->godRayBuf = CL_Buffer_Create(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_WRITE_ONLY);
-	cr->godRayCpu = calloc((size_t)width * height, sizeof(float4));
+	cr->outputCpu = (float3 *)CL_Buffer_Map(&cr->ctx, &cr->outputBuf, CL_MAP_READ);
+	cr->godRayCpu = (float4 *)CL_Buffer_Map(&cr->ctx, &cr->godRayBuf, CL_MAP_READ | CL_MAP_WRITE);
 }
 
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params) {
@@ -39,38 +40,37 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 	// upload scene depth so the kernel can occlude cloud samples behind geometry
 	CL_Buffer_Write(&cr->ctx, &cr->depthBuf, cam->depthBuffer, (size_t)cr->width * cr->height * sizeof(float));
 
-	cl_kernel k = cr->pipeline.kernel;
-	int a = 0;
-	clSetKernelArg(k, a++, sizeof(float3), &vol->position);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->rotation);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->scale);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->_invScale);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->_invRotSin);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->_invRotCos);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->_fwdRot0);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->_fwdRot1);
-	clSetKernelArg(k, a++, sizeof(float3), &vol->_fwdRot2);
-	clSetKernelArg(k, a++, sizeof(cl_mem), &vol->gpuDensity.buf);
-	clSetKernelArg(k, a++, sizeof(float3), &cam->position);
-	clSetKernelArg(k, a++, sizeof(float3), &cam->forward);
-	clSetKernelArg(k, a++, sizeof(float3), &cam->up);
-	clSetKernelArg(k, a++, sizeof(float3), &cam->right);
-	clSetKernelArg(k, a++, sizeof(float), &cam->fovScale);
-	clSetKernelArg(k, a++, sizeof(int), &cam->screenWidth);
-	clSetKernelArg(k, a++, sizeof(int), &cam->screenHeight);
-	clSetKernelArg(k, a++, sizeof(float3), &cam->lightDir);
-	clSetKernelArg(k, a++, sizeof(float3), &params.baseColor);
-	clSetKernelArg(k, a++, sizeof(float), &params.extinctionScale);
-	clSetKernelArg(k, a++, sizeof(float), &params.shadowExtinction);
-	clSetKernelArg(k, a++, sizeof(float), &params.scatterG);
-	clSetKernelArg(k, a++, sizeof(float), &params.shadowDist);
-	clSetKernelArg(k, a++, sizeof(float), &params.ambientLight);
 	int samplesPerPixel = 1;
-	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->outputBuf.buf);
-	clSetKernelArg(k, a++, sizeof(int), &samplesPerPixel);
-	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->depthBuf.buf);
-	CL_Dispatch2D(&cr->ctx, &cr->pipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
-	CL_Buffer_Read(&cr->ctx, &cr->outputBuf, cr->outputCpu, (size_t)cr->width * cr->height * sizeof(float3));
+	CL_ARGS_BEGIN(&cr->pipeline)
+		CL_ARG_RAW(sizeof(float3), &vol->position)
+		CL_ARG_RAW(sizeof(float3), &vol->rotation)
+		CL_ARG_RAW(sizeof(float3), &vol->scale)
+		CL_ARG_RAW(sizeof(float3), &vol->_invScale)
+		CL_ARG_RAW(sizeof(float3), &vol->_invRotSin)
+		CL_ARG_RAW(sizeof(float3), &vol->_invRotCos)
+		CL_ARG_RAW(sizeof(float3), &vol->_fwdRot0)
+		CL_ARG_RAW(sizeof(float3), &vol->_fwdRot1)
+		CL_ARG_RAW(sizeof(float3), &vol->_fwdRot2)
+		CL_ARG_BUFFER(&vol->gpuDensity)
+		CL_ARG_RAW(sizeof(float3), &cam->position)
+		CL_ARG_RAW(sizeof(float3), &cam->forward)
+		CL_ARG_RAW(sizeof(float3), &cam->up)
+		CL_ARG_RAW(sizeof(float3), &cam->right)
+		CL_ARG_FLOAT(cam->fovScale)
+		CL_ARG_INT(cam->screenWidth)
+		CL_ARG_INT(cam->screenHeight)
+		CL_ARG_RAW(sizeof(float3), &cam->lightDir)
+		CL_ARG_RAW(sizeof(float3), &params.baseColor)
+		CL_ARG_FLOAT(params.extinctionScale)
+		CL_ARG_FLOAT(params.shadowExtinction)
+		CL_ARG_FLOAT(params.scatterG)
+		CL_ARG_FLOAT(params.shadowDist)
+		CL_ARG_FLOAT(params.ambientLight)
+		CL_ARG_BUFFER(&cr->outputBuf)
+		CL_ARG_INT(samplesPerPixel)
+		CL_ARG_BUFFER(&cr->depthBuf)
+	CL_ARGS_END
+	CL_Dispatch2D_Auto(&cr->ctx, &cr->pipeline, (size_t)cr->width, (size_t)cr->height);
 
 	if (params.godRays) {
 		// project lightDir to screen space to find the sun position
@@ -81,19 +81,18 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 		float sdy = (ls.x * cam->up.x + ls.y * cam->up.y + ls.z * cam->up.z) / cam->fovScale;
 		float2 sunPos = {(sdx + 1.0f) * 0.5f, (1.0f - sdy) * 0.5f};
 
-		cl_kernel gk = cr->godRayPipeline.kernel;
-		int ga = 0;
-		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->outputBuf.buf);
-		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->depthBuf.buf);
-		clSetKernelArg(gk, ga++, sizeof(int), &cr->width);
-		clSetKernelArg(gk, ga++, sizeof(int), &cr->height);
-		clSetKernelArg(gk, ga++, sizeof(float2), &sunPos);
-		clSetKernelArg(gk, ga++, sizeof(float3), &params.godRayColor);
-		clSetKernelArg(gk, ga++, sizeof(float), &params.godRayIntensity);
-		clSetKernelArg(gk, ga++, sizeof(float), &params.godRayDecay);
-		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->godRayBuf.buf);
-		CL_Dispatch2D(&cr->ctx, &cr->godRayPipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
-		CL_Buffer_Read(&cr->ctx, &cr->godRayBuf, cr->godRayCpu, (size_t)cr->width * cr->height * sizeof(float4));
+		CL_ARGS_BEGIN(&cr->godRayPipeline)
+			CL_ARG_BUFFER(&cr->outputBuf)
+			CL_ARG_BUFFER(&cr->depthBuf)
+			CL_ARG_INT(cr->width)
+			CL_ARG_INT(cr->height)
+			CL_ARG_RAW(sizeof(float2), &sunPos)
+			CL_ARG_RAW(sizeof(float3), &params.godRayColor)
+			CL_ARG_FLOAT(params.godRayIntensity)
+			CL_ARG_FLOAT(params.godRayDecay)
+			CL_ARG_BUFFER(&cr->godRayBuf)
+		CL_ARGS_END
+		CL_Dispatch2D_Auto(&cr->ctx, &cr->godRayPipeline, (size_t)cr->width, (size_t)cr->height);
 	} else {
 		memset(cr->godRayCpu, 0, (size_t)cr->width * cr->height * sizeof(float4));
 	}
@@ -136,14 +135,14 @@ void CloudRenderer_Composite(const CloudRenderer *cr, Camera *cam) {
 }
 
 void CloudRenderer_Destroy(CloudRenderer *cr) {
+	CL_Buffer_Unmap(&cr->ctx, &cr->outputBuf, cr->outputCpu);
+	CL_Buffer_Unmap(&cr->ctx, &cr->godRayBuf, cr->godRayCpu);
+	cr->outputCpu = NULL;
+	cr->godRayCpu = NULL;
 	CL_Buffer_Destroy(&cr->outputBuf);
 	CL_Buffer_Destroy(&cr->depthBuf);
 	CL_Buffer_Destroy(&cr->godRayBuf);
 	CL_Pipeline_Destroy(&cr->pipeline);
 	CL_Pipeline_Destroy(&cr->godRayPipeline);
 	CL_Context_Destroy(&cr->ctx);
-	free(cr->outputCpu);
-	free(cr->godRayCpu);
-	cr->outputCpu = NULL;
-	cr->godRayCpu = NULL;
 }
