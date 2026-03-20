@@ -1,6 +1,6 @@
 ## TODO
 
-- [ ] God Rays
+- [X] God Rays
 - [X] Emission
     - [X] crete emission map for each object
     ![img](./render.png)

@@ -1,20 +1,73 @@
-// setup
+// ─── context & pipeline ────────────────────────────────────────────────────
 CL_Context  ctx = CL_Context_Create();
-CL_Pipeline pip = CL_Pipeline_FromFile(&ctx, "kernels/raytracer.cl","trace", "-I ./kernels");
-CL_Image    img = CL_Image_Create(&ctx, 800, 600);
-CL_Buffer   buf = CL_Buffer_CreateFromData(&ctx, sizeof(data), data, CL_MEM_READ_ONLY);
+CL_Pipeline pip = CL_Pipeline_FromFile(&ctx, "kernels/raytracer.cl", "trace", "-I ./kernels");
 
-// run
-CL_SetArgImage (&pip, 0, &img);
-CL_SetArgBuffer(&pip, 1, &buf);
-CL_SetArgFloat (&pip, 2, 0.5f);
-CL_Dispatch2D  (&ctx, &pip, 800, 600, 16, 16);
 
-// read back
-CL_Image_Read(&ctx, &img, pixels);
+// ─── buffers ───────────────────────────────────────────────────────────────
 
-// cleanup
+// pageable — extra driver-side staging copy, avoid for hot paths
+CL_Buffer slow = CL_Buffer_CreateFromData(&ctx, sizeof(data), data, CL_MEM_READ_ONLY);
+
+// pinned (page-locked) — DMA direct, no extra memcpy, ~2-3x faster than pageable
+CL_Buffer upload = CL_Buffer_CreatePinned(&ctx, sizeof(data), CL_MEM_READ_ONLY);
+void *ptr = CL_Buffer_Map(&ctx, &upload, CL_MAP_WRITE_INVALIDATE_REGION);
+memcpy(ptr, data, sizeof(data));
+CL_Buffer_Unmap(&ctx, &upload, ptr);
+
+// pinned readback — map after dispatch, no CL_Buffer_Read needed
+CL_Buffer result = CL_Buffer_CreatePinned(&ctx, outBytes, CL_MEM_READ_WRITE);
+
+
+// ─── image ─────────────────────────────────────────────────────────────────
+CL_Image img = CL_Image_Create(&ctx, 800, 600);
+
+
+// ─── kernel args ───────────────────────────────────────────────────────────
+CL_SetArgBuffer(&pip, 0, &upload);
+CL_SetArgBuffer(&pip, 1, &result);
+CL_SetArgImage (&pip, 2, &img);
+CL_SetArgInt   (&pip, 3, 800);
+CL_SetArgFloat (&pip, 4, 0.5f);
+CL_SetArgVec2  (&pip, 5, (float2){0.5f, 0.5f});
+CL_SetArgVec3  (&pip, 6, (float3){1.0f, 0.0f, 0.0f});
+CL_SetArgVec4  (&pip, 7, (float4){1.0f, 1.0f, 1.0f, 1.0f});
+
+
+// ─── dispatch ──────────────────────────────────────────────────────────────
+// query max work-group size so local dims never exceed hardware limit
+size_t maxWG = CL_GetMaxWorkGroupSize(&ctx);
+
+CL_Dispatch1D(&ctx, &pip, 1024,    64);          // 1D e.g. particle update
+CL_Dispatch2D(&ctx, &pip, 800, 600, 16, 16);     // 2D e.g. screen-space pass
+CL_Dispatch3D(&ctx, &pip,  64,  64, 64, 4, 4, 4); // 3D e.g. voxel grid
+
+// timeTook is filled by every Dispatch call (GPU profiling event)
+printf("kernel took %.3f ms\n", pip.timeTook);
+
+
+// ─── pinned readback ───────────────────────────────────────────────────────
+// CL_Dispatch2D already called clFinish — safe to map immediately
+float *out = CL_Buffer_Map(&ctx, &result, CL_MAP_READ);
+// ... use out[] ...
+CL_Buffer_Unmap(&ctx, &result, out);
+
+
+// ─── buffer utilities ──────────────────────────────────────────────────────
+// GPU-side copy — no CPU round-trip
+CL_Buffer_Copy(&ctx, &upload, &result, sizeof(data));
+
+// fill / zero a buffer entirely on the device
+float zero = 0.0f;
+CL_Buffer_Fill(&ctx, &result, &zero, sizeof(float));
+
+// explicit queue flush without going through a Dispatch call
+CL_Finish(&ctx);
+
+
+// ─── cleanup ───────────────────────────────────────────────────────────────
 CL_Image_Destroy(&img);
-CL_Buffer_Destroy(&buf);
+CL_Buffer_Destroy(&upload);
+CL_Buffer_Destroy(&result);
+CL_Buffer_Destroy(&slow);
 CL_Pipeline_Destroy(&pip);
 CL_Context_Destroy(&ctx);

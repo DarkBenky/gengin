@@ -24,20 +24,33 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
 	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
 
-	size_t outBytes = (size_t)width * height * sizeof(float3);
-	cr->outputBuf = CL_Buffer_Create(&cr->ctx, outBytes, CL_MEM_READ_WRITE);
-	cr->outputCpu = malloc(outBytes);
-	cr->depthBuf = CL_Buffer_Create(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
+	// Pinned (page-locked) buffers — DMA-direct, no extra staging copy on readback
+	cr->outputBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float3), CL_MEM_READ_WRITE);
+	cr->depthBuf  = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float),  CL_MEM_READ_ONLY);
+	cr->godRayBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_WRITE_ONLY);
 
-	cr->godRayBuf = CL_Buffer_Create(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_WRITE_ONLY);
-	cr->godRayCpu = calloc((size_t)width * height, sizeof(float4));
+	// CPU pointers are mapped lazily each frame — no malloc needed
+	cr->outputCpu = NULL;
+	cr->godRayCpu = NULL;
 }
 
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params) {
+	// Unmap readback pointers acquired in the previous frame before reusing buffers
+	if (cr->outputCpu) {
+		CL_Buffer_Unmap(&cr->ctx, &cr->outputBuf, cr->outputCpu);
+		cr->outputCpu = NULL;
+	}
+	if (cr->godRayCpu) {
+		CL_Buffer_Unmap(&cr->ctx, &cr->godRayBuf, cr->godRayCpu);
+		cr->godRayCpu = NULL;
+	}
+
 	updateVolumeCache(vol);
 
-	// upload scene depth so the kernel can occlude cloud samples behind geometry
-	CL_Buffer_Write(&cr->ctx, &cr->depthBuf, cam->depthBuffer, (size_t)cr->width * cr->height * sizeof(float));
+	// Upload scene depth via pinned map — avoids a pageable memcpy inside the driver
+	void *depthPtr = CL_Buffer_Map(&cr->ctx, &cr->depthBuf, CL_MAP_WRITE_INVALIDATE_REGION);
+	memcpy(depthPtr, cam->depthBuffer, (size_t)cr->width * cr->height * sizeof(float));
+	CL_Buffer_Unmap(&cr->ctx, &cr->depthBuf, depthPtr);
 
 	cl_kernel k = cr->pipeline.kernel;
 	int a = 0;
@@ -70,7 +83,8 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 	clSetKernelArg(k, a++, sizeof(int), &samplesPerPixel);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->depthBuf.buf);
 	CL_Dispatch2D(&cr->ctx, &cr->pipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
-	CL_Buffer_Read(&cr->ctx, &cr->outputBuf, cr->outputCpu, (size_t)cr->width * cr->height * sizeof(float3));
+	// CL_Dispatch2D already called clFinish — map directly, no extra copy
+	cr->outputCpu = CL_Buffer_Map(&cr->ctx, &cr->outputBuf, CL_MAP_READ);
 
 	if (params.godRays) {
 		// project lightDir to screen space to find the sun position
@@ -93,9 +107,12 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 		clSetKernelArg(gk, ga++, sizeof(float), &params.godRayDecay);
 		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->godRayBuf.buf);
 		CL_Dispatch2D(&cr->ctx, &cr->godRayPipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
-		CL_Buffer_Read(&cr->ctx, &cr->godRayBuf, cr->godRayCpu, (size_t)cr->width * cr->height * sizeof(float4));
+		cr->godRayCpu = CL_Buffer_Map(&cr->ctx, &cr->godRayBuf, CL_MAP_READ);
 	} else {
-		memset(cr->godRayCpu, 0, (size_t)cr->width * cr->height * sizeof(float4));
+		float4 zero = {0};
+		CL_Buffer_Fill(&cr->ctx, &cr->godRayBuf, &zero, sizeof(float4));
+		CL_Finish(&cr->ctx);
+		cr->godRayCpu = CL_Buffer_Map(&cr->ctx, &cr->godRayBuf, CL_MAP_READ);
 	}
 }
 
@@ -136,14 +153,13 @@ void CloudRenderer_Composite(const CloudRenderer *cr, Camera *cam) {
 }
 
 void CloudRenderer_Destroy(CloudRenderer *cr) {
+	// Unmap before releasing — outputCpu/godRayCpu are mapped pointers, not malloc'd
+	if (cr->outputCpu) CL_Buffer_Unmap(&cr->ctx, &cr->outputBuf, cr->outputCpu);
+	if (cr->godRayCpu) CL_Buffer_Unmap(&cr->ctx, &cr->godRayBuf, cr->godRayCpu);
 	CL_Buffer_Destroy(&cr->outputBuf);
 	CL_Buffer_Destroy(&cr->depthBuf);
 	CL_Buffer_Destroy(&cr->godRayBuf);
 	CL_Pipeline_Destroy(&cr->pipeline);
 	CL_Pipeline_Destroy(&cr->godRayPipeline);
 	CL_Context_Destroy(&cr->ctx);
-	free(cr->outputCpu);
-	free(cr->godRayCpu);
-	cr->outputCpu = NULL;
-	cr->godRayCpu = NULL;
 }

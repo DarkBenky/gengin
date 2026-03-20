@@ -79,3 +79,27 @@ CL_Buffer loadObjectPositions(Object *objects, int objectCount, CL_Context *ctx,
         addToArena(arena, &objects[i].position);
     }
 }
+
+void updateObjectPosition(CL_Buffer *buf, Object *objects, int index, CL_Context *ctx) {
+    size_t offset = index * sizeof(float3);
+    cl_int err = clEnqueueWriteBuffer(ctx->queue, buf->buf, CL_FALSE, offset,
+                                      sizeof(float3), &objects[index].position,
+                                      0, NULL, NULL);
+    CL_CheckError(err, "updateObjectPosition");
+}
+
+void updateObjectRotation(CL_Buffer *buf, Object *objects, int index, CL_Context *ctx) {
+    size_t offset = index * sizeof(float3);
+    cl_int err = clEnqueueWriteBuffer(ctx->queue, buf->buf, CL_FALSE, offset,
+                                      sizeof(float3), &objects[index].rotation,
+                                      0, NULL, NULL);
+    CL_CheckError(err, "updateObjectRotation");
+}
+
+void updateObjectScale(CL_Buffer *buf, Object *objects, int index, CL_Context *ctx) {
+    size_t offset = index * sizeof(float3);
+    cl_int err = clEnqueueWriteBuffer(ctx->queue, buf->buf, CL_FALSE, offset,
+                                      sizeof(float3), &objects[index].scale,
+                                      0, NULL, NULL);
+    CL_CheckError(err, "updateObjectScale");
+}

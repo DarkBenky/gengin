@@ -143,6 +143,15 @@ void CL_SetArgInt(CL_Pipeline *pip, int index, int val) {
 void CL_SetArgFloat(CL_Pipeline *pip, int index, float val) {
 	clSetKernelArg(pip->kernel, index, sizeof(float), &val);
 }
+void CL_SetArgVec2(CL_Pipeline *pip, int index, float2 val) {
+	clSetKernelArg(pip->kernel, index, sizeof(float2), &val);
+}
+void CL_SetArgVec3(CL_Pipeline *pip, int index, float3 val) {
+	clSetKernelArg(pip->kernel, index, sizeof(float3), &val);
+}
+void CL_SetArgVec4(CL_Pipeline *pip, int index, float4 val) {
+	clSetKernelArg(pip->kernel, index, sizeof(float4), &val);
+}
 
 void CL_Dispatch1D(CL_Context *ctx, CL_Pipeline *pip, size_t global, size_t local) {
 	cl_event ev;
@@ -172,6 +181,21 @@ void CL_Dispatch2D(CL_Context *ctx, CL_Pipeline *pip, size_t width, size_t heigh
 	clReleaseEvent(ev);
 }
 
+void CL_Dispatch3D(CL_Context *ctx, CL_Pipeline *pip, size_t x, size_t y, size_t z, size_t lx, size_t ly, size_t lz) {
+	size_t global[3] = {x, y, z};
+	size_t local[3]  = {lx, ly, lz};
+	cl_event ev;
+	cl_int err = clEnqueueNDRangeKernel(ctx->queue, pip->kernel, 3, NULL, global, local, 0, NULL, &ev);
+	CL_CheckError(err, pip->name);
+	clFinish(ctx->queue);
+
+	cl_ulong t_start, t_end;
+	clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_START, sizeof(t_start), &t_start, NULL);
+	clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_END, sizeof(t_end), &t_end, NULL);
+	pip->timeTook = (float)(t_end - t_start) * 1e-6f;
+	clReleaseEvent(ev);
+}
+
 char *CL_LoadFile(const char *path) {
 	FILE *f = fopen(path, "rb");
 	if (!f) return NULL;
@@ -188,4 +212,44 @@ char *CL_LoadFile(const char *path) {
 void CL_CheckError(cl_int err, const char *label) {
 	if (err == CL_SUCCESS) return;
 	printf("[CL] error %d at '%s'\n", err, label);
+}
+
+CL_Buffer CL_Buffer_CreatePinned(CL_Context *ctx, size_t size, cl_mem_flags flags) {
+	cl_int err;
+	CL_Buffer buf = {.size = size, .flags = flags};
+	buf.buf = clCreateBuffer(ctx->context, flags | CL_MEM_ALLOC_HOST_PTR, size, NULL, &err);
+	CL_CheckError(err, "CL_Buffer_CreatePinned");
+	return buf;
+}
+
+void CL_Buffer_Copy(CL_Context *ctx, CL_Buffer *src, CL_Buffer *dst, size_t size) {
+	cl_int err = clEnqueueCopyBuffer(ctx->queue, src->buf, dst->buf, 0, 0, size, 0, NULL, NULL);
+	CL_CheckError(err, "CL_Buffer_Copy");
+}
+
+void CL_Buffer_Fill(CL_Context *ctx, CL_Buffer *buf, const void *pattern, size_t pattern_size) {
+	cl_int err = clEnqueueFillBuffer(ctx->queue, buf->buf, pattern, pattern_size, 0, buf->size, 0, NULL, NULL);
+	CL_CheckError(err, "CL_Buffer_Fill");
+}
+
+void *CL_Buffer_Map(CL_Context *ctx, CL_Buffer *buf, cl_map_flags map_flags) {
+	cl_int err;
+	void *ptr = clEnqueueMapBuffer(ctx->queue, buf->buf, CL_TRUE, map_flags, 0, buf->size, 0, NULL, NULL, &err);
+	CL_CheckError(err, "CL_Buffer_Map");
+	return ptr;
+}
+
+void CL_Buffer_Unmap(CL_Context *ctx, CL_Buffer *buf, void *ptr) {
+	cl_int err = clEnqueueUnmapMemObject(ctx->queue, buf->buf, ptr, 0, NULL, NULL);
+	CL_CheckError(err, "CL_Buffer_Unmap");
+}
+
+size_t CL_GetMaxWorkGroupSize(CL_Context *ctx) {
+	size_t size = 0;
+	clGetDeviceInfo(ctx->device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size), &size, NULL);
+	return size;
+}
+
+void CL_Finish(CL_Context *ctx) {
+	clFinish(ctx->queue);
 }
