@@ -1,5 +1,6 @@
-#define CLOUD_STEPS  32
-#define SHADOW_STEPS 8
+#define CLOUD_STEPS    32
+#define SHADOW_STEPS   8
+#define GOD_RAY_STEPS  64
 
 static float sampleDensity(
     __global const float *buf,
@@ -148,7 +149,7 @@ __kernel void renderClouds(
     float stepSize   = (tExit - tEntry) / (float)CLOUD_STEPS;
     // cosTheta between view direction and toward-light: positive = forward scatter (viewer on same side as light)
     float cosTheta   = -dot(rayDir, toLight);
-    float phase      = henyeyGreenstein(cosTheta, scatterG);
+    float phase      = min(henyeyGreenstein(cosTheta, scatterG), 4.0f);
     float transmittance = 1.0f;
     float3 scattered = (float3)(0.0f, 0.0f, 0.0f);
 
@@ -174,4 +175,49 @@ __kernel void renderClouds(
 
     // store transmittance in .w so composite can do: background * transmittance + scattered
     output[idx] = (float4)(scattered.x, scattered.y, scattered.z, transmittance);
+}
+
+// Screen-space radial march from each pixel toward the sun.
+// Reads transmittance from the cloud buffer as an occlusion mask; output is additive RGB.
+__kernel void godRays(
+    __global const float4 *cloudBuffer,
+    __global const float  *sceneDepth,   // pixels with geometry (depth < 1e29) are not sky
+    int    screenWidth,
+    int    screenHeight,
+    float2 sunScreenPos,
+    float3 godRayColor,
+    float  intensity,
+    float  decay,
+    __global float4 *output
+) {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    if (x >= screenWidth || y >= screenHeight) return;
+
+    float2 uv    = (float2)((x + 0.5f) / screenWidth, (y + 0.5f) / screenHeight);
+    float2 delta = (sunScreenPos - uv) * (1.0f / GOD_RAY_STEPS);
+
+    float accumDecay   = 1.0f;
+    float illumination = 0.0f;
+    float2 sampleUV    = uv;
+
+    for (int i = 0; i < GOD_RAY_STEPS; i++) {
+        sampleUV += delta;
+        if (sampleUV.x < 0.0f || sampleUV.x >= 1.0f ||
+            sampleUV.y < 0.0f || sampleUV.y >= 1.0f) break;
+        int sx = (int)(sampleUV.x * screenWidth);
+        int sy = (int)(sampleUV.y * screenHeight);
+        int si = sy * screenWidth + sx;
+        // only sky pixels (no geometry) act as the light source
+        // terrain/objects occlude the shafts just like clouds do
+        float isSky = (sceneDepth[si] >= 1e29f) ? 1.0f : 0.0f;
+        // weight decreases with each step: samples closer to the sun contribute more
+        float w = 1.0f - (float)i * (1.0f / GOD_RAY_STEPS);
+        illumination += cloudBuffer[si].w * isSky * accumDecay * w;
+        accumDecay   *= decay;
+    }
+
+    float v   = illumination * (intensity / GOD_RAY_STEPS);
+    int   idx = y * screenWidth + x;
+    output[idx] = (float4)(godRayColor.x * v, godRayColor.y * v, godRayColor.z * v, 0.0f);
 }

@@ -10,6 +10,9 @@ typedef struct {
 	CL_Pipeline pipeline;
 	CL_Buffer outputBuf;
 	CL_Buffer depthBuf; // scene depth buffer uploaded each frame
+	CL_Pipeline godRayPipeline;
+	CL_Buffer godRayBuf;
+	float4 *godRayCpu;
 	float3 *outputCpu;
 	int width;
 	int height;
@@ -25,6 +28,11 @@ typedef struct {
 	float scatterG;			// Henyey-Greenstein asymmetry (-1..1, 0=isotropic)
 	float shadowDist;		// shadow march distance in local space
 	float ambientLight;		// minimum light level on shadow side (0=hard, 0.3=soft)
+	// god rays — set godRays=1 to enable, sunScreenPos computed automatically from cam->lightDir
+	int godRays;
+	float3 godRayColor;	   // additive tint, e.g. (1, 0.95, 0.8)
+	float godRayIntensity; // brightness multiplier, try 1.0-2.0
+	float godRayDecay;	   // per-step attenuation, try 0.97
 } CloudParams;
 
 // Render clouds for one frame. vol->gpuDensity must already be uploaded via UploadVolumeToGpu.

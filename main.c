@@ -197,19 +197,22 @@ int main() {
 		WNOW(wA);
 		// SSRPostProcess(&camera, threadPool, ssrTasks, 4);
 		CloudRenderer_Render(&cloudRenderer, &cloudVol, &camera, (CloudParams){
-																	 .baseColor = {0.9f, 0.95f, 1.0f, 0.0f},
-																	 .extinctionScale = 1.0f,
-																	 .shadowExtinction = 0.1f,
-																	 .scatterG = 0.3f,
+																	 .baseColor = {1.0f, 1.0f, 1.0f, 0.0f},
+																	 .extinctionScale = 11.0f,	// high = thick opaque cloud
+																	 .shadowExtinction = 0.03f, // low = less internal darkening
+																	 .scatterG = 0.1f,
 																	 .shadowDist = 1.0f,
-																	 .ambientLight = 0.25f,
+																	 .ambientLight = 0.5f, // high = shadowed parts stay bright white
+																	 .godRays = 1,
+																	 .godRayColor = {1.0f, 0.95f, 0.8f, 0.0f},
+																	 .godRayIntensity = 0.6f,
+																	 .godRayDecay = 0.95f,
 																 });
 		WNOW(wB);
 		accumSSRTime += WDIFF(wA, wB);
 
 		benchCaptureFrame(&bench, camera.framebuffer, WIDTH * HEIGHT);
 
-		
 		CloudRenderer_Composite(&cloudRenderer, &camera);
 
 #ifndef BENCH_MODE

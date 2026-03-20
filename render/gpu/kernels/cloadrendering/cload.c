@@ -1,6 +1,7 @@
 #include "cload.h"
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Recomputes cached inverse TRS matrix rows on the Volume (mirrors Object_UpdateWorldBounds).
 static void updateVolumeCache(Volume *vol) {
@@ -21,11 +22,15 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->height = height;
 	cr->ctx = CL_Context_Create();
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
+	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
 
 	size_t outBytes = (size_t)width * height * sizeof(float3);
 	cr->outputBuf = CL_Buffer_Create(&cr->ctx, outBytes, CL_MEM_READ_WRITE);
 	cr->outputCpu = malloc(outBytes);
 	cr->depthBuf = CL_Buffer_Create(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
+
+	cr->godRayBuf = CL_Buffer_Create(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_WRITE_ONLY);
+	cr->godRayCpu = calloc((size_t)width * height, sizeof(float4));
 }
 
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params) {
@@ -66,6 +71,32 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->depthBuf.buf);
 	CL_Dispatch2D(&cr->ctx, &cr->pipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
 	CL_Buffer_Read(&cr->ctx, &cr->outputBuf, cr->outputCpu, (size_t)cr->width * cr->height * sizeof(float3));
+
+	if (params.godRays) {
+		// project lightDir to screen space to find the sun position
+		float3 ld = cam->lightDir;
+		float ll = sqrtf(ld.x * ld.x + ld.y * ld.y + ld.z * ld.z);
+		float3 ls = {ld.x / ll, ld.y / ll, ld.z / ll, 0.0f};
+		float sdx = (ls.x * cam->right.x + ls.y * cam->right.y + ls.z * cam->right.z) / (cam->aspect * cam->fovScale);
+		float sdy = (ls.x * cam->up.x + ls.y * cam->up.y + ls.z * cam->up.z) / cam->fovScale;
+		float2 sunPos = {(sdx + 1.0f) * 0.5f, (1.0f - sdy) * 0.5f};
+
+		cl_kernel gk = cr->godRayPipeline.kernel;
+		int ga = 0;
+		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->outputBuf.buf);
+		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->depthBuf.buf);
+		clSetKernelArg(gk, ga++, sizeof(int), &cr->width);
+		clSetKernelArg(gk, ga++, sizeof(int), &cr->height);
+		clSetKernelArg(gk, ga++, sizeof(float2), &sunPos);
+		clSetKernelArg(gk, ga++, sizeof(float3), &params.godRayColor);
+		clSetKernelArg(gk, ga++, sizeof(float), &params.godRayIntensity);
+		clSetKernelArg(gk, ga++, sizeof(float), &params.godRayDecay);
+		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->godRayBuf.buf);
+		CL_Dispatch2D(&cr->ctx, &cr->godRayPipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
+		CL_Buffer_Read(&cr->ctx, &cr->godRayBuf, cr->godRayCpu, (size_t)cr->width * cr->height * sizeof(float4));
+	} else {
+		memset(cr->godRayCpu, 0, (size_t)cr->width * cr->height * sizeof(float4));
+	}
 }
 
 void CloudRenderer_Composite(const CloudRenderer *cr, Camera *cam) {
@@ -73,21 +104,31 @@ void CloudRenderer_Composite(const CloudRenderer *cr, Camera *cam) {
 	for (int i = 0; i < n; i++) {
 		float3 cloud = cr->outputCpu[i];
 		float transmittance = cloud.w;
-		if (transmittance > 0.998f) continue; // fully transparent, skip
+		float4 gr = cr->godRayCpu[i];
 
-		float oa = transmittance;
+		// skip pixel if fully transparent and no god ray contribution
+		if (transmittance > 0.998f && gr.x < 0.001f && gr.y < 0.001f && gr.z < 0.001f) continue;
 
 		Color bg = cam->framebuffer[i];
 		float br = ((bg >> 16) & 0xFF) * (1.0f / 255.0f);
 		float bgi = ((bg >> 8) & 0xFF) * (1.0f / 255.0f);
 		float bb = (bg & 0xFF) * (1.0f / 255.0f);
 
-		// standard volume render equation: final = background * transmittance + scattered
-		float fr = br * oa + cloud.x;
+		float fr = br, fg = bgi, fb = bb;
+
+		if (transmittance < 0.998f) {
+			fr = br * transmittance + cloud.x;
+			fg = bgi * transmittance + cloud.y;
+			fb = bb * transmittance + cloud.z;
+		}
+
+		// god rays are additive on all pixels so shafts appear in clear air too
+		fr += gr.x;
+		fg += gr.y;
+		fb += gr.z;
+
 		if (fr > 1.0f) fr = 1.0f;
-		float fg = bgi * oa + cloud.y;
 		if (fg > 1.0f) fg = 1.0f;
-		float fb = bb * oa + cloud.z;
 		if (fb > 1.0f) fb = 1.0f;
 
 		cam->framebuffer[i] = 0xFF000000u | ((uint8)(fr * 255.0f) << 16) | ((uint8)(fg * 255.0f) << 8) | (uint8)(fb * 255.0f);
@@ -97,8 +138,12 @@ void CloudRenderer_Composite(const CloudRenderer *cr, Camera *cam) {
 void CloudRenderer_Destroy(CloudRenderer *cr) {
 	CL_Buffer_Destroy(&cr->outputBuf);
 	CL_Buffer_Destroy(&cr->depthBuf);
+	CL_Buffer_Destroy(&cr->godRayBuf);
 	CL_Pipeline_Destroy(&cr->pipeline);
+	CL_Pipeline_Destroy(&cr->godRayPipeline);
 	CL_Context_Destroy(&cr->ctx);
 	free(cr->outputCpu);
+	free(cr->godRayCpu);
 	cr->outputCpu = NULL;
+	cr->godRayCpu = NULL;
 }
