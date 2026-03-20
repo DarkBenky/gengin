@@ -26,7 +26,7 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 
 	// Pinned (page-locked) buffers — DMA-direct, no extra staging copy on readback
 	cr->outputBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float3), CL_MEM_READ_WRITE);
-	cr->depthBuf  = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float),  CL_MEM_READ_ONLY);
+	cr->depthBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
 	cr->godRayBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_WRITE_ONLY);
 
 	// CPU pointers are mapped lazily each frame — no malloc needed

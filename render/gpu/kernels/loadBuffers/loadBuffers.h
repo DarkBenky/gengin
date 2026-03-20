@@ -14,11 +14,11 @@ typedef struct Arena {
 
 // we use arena to avoid alocations each frame for each buffer
 Arena createArena(size_t objectSize, int capacity);
-void  addToArena(Arena *arena, void *object);
-void  clearArena(Arena *arena);
-void  resetArena(Arena *arena, size_t objectSize);
-void  setObjectSize(Arena *arena, size_t newSize);
-void  destroyArena(Arena *arena);
+void addToArena(Arena *arena, void *object);
+void clearArena(Arena *arena);
+void resetArena(Arena *arena, size_t objectSize);
+void setObjectSize(Arena *arena, size_t newSize);
+void destroyArena(Arena *arena);
 
 // Object metadata
 CL_Buffer loadObjectIds(Object *objects, int objectCount, CL_Context *ctx, cl_mem_flags flag, Arena *arena);
