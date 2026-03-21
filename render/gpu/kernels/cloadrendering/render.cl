@@ -221,3 +221,47 @@ __kernel void godRays(
     int   idx = y * screenWidth + x;
     output[idx] = (float4)(godRayColor.x * v, godRayColor.y * v, godRayColor.z * v, 0.0f);
 }
+
+// Composites cloud + god-ray results onto the uint ARGB framebuffer.
+// Equivalent to the CPU CloudRenderer_Composite loop, but runs parallel on GPU.
+// framebuffer format: 0xFF000000 | R<<16 | G<<8 | B (same as cpu-side Color)
+__kernel void compositeFrame(
+    __global const float4 *cloudBuf,
+    __global const float4 *godRayBuf,
+    __global uint         *framebuffer,
+    int screenWidth,
+    int screenHeight
+) {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    if (x >= screenWidth || y >= screenHeight) return;
+
+    int idx = y * screenWidth + x;
+
+    float4 cloud = cloudBuf[idx];
+    float  transmittance = cloud.w;
+    float4 gr = godRayBuf[idx];
+
+    if (transmittance > 0.998f && gr.x < 0.001f && gr.y < 0.001f && gr.z < 0.001f) return;
+
+    uint   bg  = framebuffer[idx];
+    float  br  = ((bg >> 16) & 0xFFu) * (1.0f / 255.0f);
+    float  bgi = ((bg >>  8) & 0xFFu) * (1.0f / 255.0f);
+    float  bb  = ( bg        & 0xFFu) * (1.0f / 255.0f);
+
+    float fr = br, fg = bgi, fb = bb;
+    if (transmittance < 0.998f) {
+        fr = br  * transmittance + cloud.x;
+        fg = bgi * transmittance + cloud.y;
+        fb = bb  * transmittance + cloud.z;
+    }
+
+    fr = clamp(fr + gr.x, 0.0f, 1.0f);
+    fg = clamp(fg + gr.y, 0.0f, 1.0f);
+    fb = clamp(fb + gr.z, 0.0f, 1.0f);
+
+    framebuffer[idx] = 0xFF000000u
+                     | ((uint)(fr * 255.0f) << 16)
+                     | ((uint)(fg * 255.0f) <<  8)
+                     |  (uint)(fb * 255.0f);
+}

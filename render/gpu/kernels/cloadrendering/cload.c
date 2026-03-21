@@ -23,28 +23,16 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->ctx = CL_Context_Create();
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
 	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
+	cr->compositePipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "compositeFrame", NULL);
 
-	// Pinned (page-locked) buffers — DMA-direct, no extra staging copy on readback
-	cr->outputBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float3), CL_MEM_READ_WRITE);
+	// Pinned (page-locked) buffers — DMA-direct transfers, no driver staging copy
+	cr->outputBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 	cr->depthBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
-	cr->godRayBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_WRITE_ONLY);
-
-	// CPU pointers are mapped lazily each frame — no malloc needed
-	cr->outputCpu = NULL;
-	cr->godRayCpu = NULL;
+	cr->godRayBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
+	cr->framebufferBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(uint32), CL_MEM_READ_WRITE);
 }
 
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params) {
-	// Unmap readback pointers acquired in the previous frame before reusing buffers
-	if (cr->outputCpu) {
-		CL_Buffer_Unmap(&cr->ctx, &cr->outputBuf, cr->outputCpu);
-		cr->outputCpu = NULL;
-	}
-	if (cr->godRayCpu) {
-		CL_Buffer_Unmap(&cr->ctx, &cr->godRayBuf, cr->godRayCpu);
-		cr->godRayCpu = NULL;
-	}
-
 	updateVolumeCache(vol);
 
 	// Upload scene depth via pinned map — avoids a pageable memcpy inside the driver
@@ -83,8 +71,6 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 	clSetKernelArg(k, a++, sizeof(int), &samplesPerPixel);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->depthBuf.buf);
 	CL_Dispatch2D(&cr->ctx, &cr->pipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
-	// CL_Dispatch2D already called clFinish — map directly, no extra copy
-	cr->outputCpu = CL_Buffer_Map(&cr->ctx, &cr->outputBuf, CL_MAP_READ);
 
 	if (params.godRays) {
 		// project lightDir to screen space to find the sun position
@@ -107,59 +93,42 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 		clSetKernelArg(gk, ga++, sizeof(float), &params.godRayDecay);
 		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->godRayBuf.buf);
 		CL_Dispatch2D(&cr->ctx, &cr->godRayPipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
-		cr->godRayCpu = CL_Buffer_Map(&cr->ctx, &cr->godRayBuf, CL_MAP_READ);
 	} else {
 		float4 zero = {0};
 		CL_Buffer_Fill(&cr->ctx, &cr->godRayBuf, &zero, sizeof(float4));
 		CL_Finish(&cr->ctx);
-		cr->godRayCpu = CL_Buffer_Map(&cr->ctx, &cr->godRayBuf, CL_MAP_READ);
 	}
 }
 
-void CloudRenderer_Composite(const CloudRenderer *cr, Camera *cam) {
-	int n = cr->width * cr->height;
-	for (int i = 0; i < n; i++) {
-		float3 cloud = cr->outputCpu[i];
-		float transmittance = cloud.w;
-		float4 gr = cr->godRayCpu[i];
+void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
+	size_t fbBytes = (size_t)cr->width * cr->height * sizeof(uint32);
 
-		// skip pixel if fully transparent and no god ray contribution
-		if (transmittance > 0.998f && gr.x < 0.001f && gr.y < 0.001f && gr.z < 0.001f) continue;
+	// Upload CPU framebuffer (written by ray tracer) to pinned GPU buffer
+	void *fbPtr = CL_Buffer_Map(&cr->ctx, &cr->framebufferBuf, CL_MAP_WRITE_INVALIDATE_REGION);
+	memcpy(fbPtr, cam->framebuffer, fbBytes);
+	CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
 
-		Color bg = cam->framebuffer[i];
-		float br = ((bg >> 16) & 0xFF) * (1.0f / 255.0f);
-		float bgi = ((bg >> 8) & 0xFF) * (1.0f / 255.0f);
-		float bb = (bg & 0xFF) * (1.0f / 255.0f);
+	// Dispatch GPU composite: blends cloud + god ray onto the framebuffer in parallel
+	CL_SetArgBuffer(&cr->compositePipeline, 0, &cr->outputBuf);
+	CL_SetArgBuffer(&cr->compositePipeline, 1, &cr->godRayBuf);
+	CL_SetArgBuffer(&cr->compositePipeline, 2, &cr->framebufferBuf);
+	CL_SetArgInt(&cr->compositePipeline, 3, cr->width);
+	CL_SetArgInt(&cr->compositePipeline, 4, cr->height);
+	CL_Dispatch2D(&cr->ctx, &cr->compositePipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
 
-		float fr = br, fg = bgi, fb = bb;
-
-		if (transmittance < 0.998f) {
-			fr = br * transmittance + cloud.x;
-			fg = bgi * transmittance + cloud.y;
-			fb = bb * transmittance + cloud.z;
-		}
-
-		// god rays are additive on all pixels so shafts appear in clear air too
-		fr += gr.x;
-		fg += gr.y;
-		fb += gr.z;
-
-		if (fr > 1.0f) fr = 1.0f;
-		if (fg > 1.0f) fg = 1.0f;
-		if (fb > 1.0f) fb = 1.0f;
-
-		cam->framebuffer[i] = 0xFF000000u | ((uint8)(fr * 255.0f) << 16) | ((uint8)(fg * 255.0f) << 8) | (uint8)(fb * 255.0f);
-	}
+	// Read blended framebuffer back via pinned map — DMA direct, no staging copy
+	fbPtr = CL_Buffer_Map(&cr->ctx, &cr->framebufferBuf, CL_MAP_READ);
+	memcpy(cam->framebuffer, fbPtr, fbBytes);
+	CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
 }
 
 void CloudRenderer_Destroy(CloudRenderer *cr) {
-	// Unmap before releasing — outputCpu/godRayCpu are mapped pointers, not malloc'd
-	if (cr->outputCpu) CL_Buffer_Unmap(&cr->ctx, &cr->outputBuf, cr->outputCpu);
-	if (cr->godRayCpu) CL_Buffer_Unmap(&cr->ctx, &cr->godRayBuf, cr->godRayCpu);
 	CL_Buffer_Destroy(&cr->outputBuf);
 	CL_Buffer_Destroy(&cr->depthBuf);
 	CL_Buffer_Destroy(&cr->godRayBuf);
+	CL_Buffer_Destroy(&cr->framebufferBuf);
 	CL_Pipeline_Destroy(&cr->pipeline);
 	CL_Pipeline_Destroy(&cr->godRayPipeline);
+	CL_Pipeline_Destroy(&cr->compositePipeline);
 	CL_Context_Destroy(&cr->ctx);
 }

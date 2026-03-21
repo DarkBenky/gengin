@@ -12,8 +12,8 @@ typedef struct {
 	CL_Buffer depthBuf; // scene depth buffer uploaded each frame
 	CL_Pipeline godRayPipeline;
 	CL_Buffer godRayBuf;
-	float4 *godRayCpu;
-	float3 *outputCpu;
+	CL_Pipeline compositePipeline;
+	CL_Buffer framebufferBuf; // pinned uint32 buffer — upload framebuffer, composite on GPU, read back
 	int width;
 	int height;
 } CloudRenderer;
@@ -38,8 +38,8 @@ typedef struct {
 // Render clouds for one frame. vol->gpuDensity must already be uploaded via UploadVolumeToGpu.
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params);
 
-// Blend cloud luminance into cam->framebuffer (call after CloudRenderer_Render).
-void CloudRenderer_Composite(const CloudRenderer *cr, Camera *cam);
+// Blend cloud luminance into cam->framebuffer via GPU composite kernel (call after CloudRenderer_Render).
+void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam);
 
 void CloudRenderer_Destroy(CloudRenderer *cr);
 

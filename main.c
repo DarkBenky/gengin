@@ -129,6 +129,7 @@ int main() {
 	double accumSetupTime = 0.0;
 	double accumShadowTime = 0.0;
 	double accumSSRTime = 0.0;
+	double accumCompositeTime = 0.0;
 	double accumSyncTime = 0.0;
 	double accumPresentTime = 0.0;
 	int accumFrames = 0;
@@ -145,6 +146,7 @@ int main() {
 		accumSyncTime += WDIFF(wSyncStart, wA);
 
 		frame++;
+		WNOW(wA); // setup timer covers clear + input + RenderSetup
 		clearBuffers(&camera);
 		const float2 jitterPattern[4] = {
 			{1.5f, 1.5f}, {-1.5f, 1.5f}, {-1.5f, -1.5f}, {1.5f, -1.5f}};
@@ -169,7 +171,6 @@ int main() {
 		plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
 		Object_UpdateWorldBounds(plane);
 
-		WNOW(wA);
 		RenderSetup(scene.objects, scene.count, &camera);
 		WNOW(wB);
 		double setupTime = WDIFF(wA, wB);
@@ -213,7 +214,10 @@ int main() {
 
 		benchCaptureFrame(&bench, camera.framebuffer, WIDTH * HEIGHT);
 
+		WNOW(wA);
 		CloudRenderer_Composite(&cloudRenderer, &camera);
+		WNOW(wB);
+		accumCompositeTime += WDIFF(wA, wB);
 
 #ifndef BENCH_MODE
 		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
@@ -236,15 +240,16 @@ int main() {
 			double avgRasterize = avgRender - avgSetup;
 			double avgShadow = accumShadowTime / accumFrames * 1000.0;
 			double avgSSR = accumSSRTime / accumFrames * 1000.0;
+			double avgComposite = accumCompositeTime / accumFrames * 1000.0;
 			double avgSync = accumSyncTime / accumFrames * 1000.0;
 			double avgPresent = accumPresentTime / accumFrames * 1000.0;
-			double avgTotal = avgRender + avgShadow + avgSSR + avgSync + avgPresent;
+			double avgTotal = avgRender + avgShadow + avgSSR + avgComposite + avgSync + avgPresent;
 			double avgFps = 1000.0 / avgTotal;
 			double targetFrameTime = 1.0 / 60.0;
 			int maxTriangles60 = (int)(ObjectList_CountTriangles(&scene) * ((targetFrameTime * 1000.0) / avgRasterize));
-			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  ssr: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
-				   frame, avgSetup, avgRasterize, avgShadow, avgSSR, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
-			accumRenderTime = accumSetupTime = accumShadowTime = accumSSRTime = accumSyncTime = accumPresentTime = 0.0;
+			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  ssr: %.2f ms  composite: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
+				   frame, avgSetup, avgRasterize, avgShadow, avgSSR, avgComposite, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
+			accumRenderTime = accumSetupTime = accumShadowTime = accumSSRTime = accumCompositeTime = accumSyncTime = accumPresentTime = 0.0;
 			accumFrames = 0;
 		}
 
