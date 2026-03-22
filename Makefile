@@ -31,10 +31,10 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test all clean run flame pgo bench, $(MAKECMDGOALS))
+_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
-.PHONY: all clean run flame pgo test bench callgraph perf-report $(if $(_SPECIFIC), $(_SPECIFIC))
+.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
@@ -48,6 +48,11 @@ bench: $(SRC)
 	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(TARGET)_bench $^ $(LDFLAGS) $(LIBS)
 	./$(TARGET)_bench
 	rm -f $(TARGET)_bench
+
+benchUnOpt: $(SRC)
+	$(CC) -O1 -w -I/usr/local/include -Iobject -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(TARGET)_bench_unopt $^ -L/usr/local/lib $(LIBS)
+	./$(TARGET)_bench_unopt
+	rm -f $(TARGET)_bench_unopt
 
 # Build rule for any test binary
 $(TESTS_DIR)/%: $(TESTS_DIR)/%.c $(TEST_COMMON)
@@ -104,4 +109,4 @@ perf-report:
 	sudo perf report -i perf.data --no-children
 
 clean:
-	rm -f $(TARGET) perf.data flamegraph.svg callgraph.svg $(TEST_BINS) $(TARGET)_bench bench_results.json
+	rm -f $(TARGET) perf.data flamegraph.svg callgraph.svg $(TEST_BINS) $(TARGET)_bench $(TARGET)_bench_unopt bench_results.json
