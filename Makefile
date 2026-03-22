@@ -50,7 +50,7 @@ bench: $(SRC)
 	rm -f $(TARGET)_bench
 
 benchUnOpt: $(SRC)
-	$(CC) -O1 -w -I/usr/local/include -Iobject -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(TARGET)_bench_unopt $^ -L/usr/local/lib $(LIBS)
+	$(CC) -O2 -w -I/usr/local/include -Iobject -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(TARGET)_bench_unopt $^ -L/usr/local/lib $(LIBS)
 	./$(TARGET)_bench_unopt
 	rm -f $(TARGET)_bench_unopt
 
