@@ -1,8 +1,8 @@
 {
-  "frames": 1167,
+  "frames": 1385,
   "duration_s": 10.0,
-  "avg_ms": 8.571,
-  "median_ms": 8.224,
-  "p99_ms": 11.913,
+  "avg_ms": 7.224,
+  "median_ms": 7.108,
+  "p99_ms": 9.027,
   "frame_hashes": ["0x2717c50e", "0x81745ff7", "0x81745ff7", "0x81745ff7", "0x81745ff7"]
 }
