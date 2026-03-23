@@ -2,12 +2,13 @@ package main
 
 import (
 	"log/slog"
+	"sync"
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
 
-var serverState SeverState
+var serverState ServerState
 
 type float3 struct {
 	X float64 `json:"x"`
@@ -16,7 +17,7 @@ type float3 struct {
 }
 
 type Object struct {
-	Id        uint32      `json:"id"`
+	Id        uint32   `json:"id"`
 	TimeStamp uint32   `json:"time_stamp"`
 	FileName  [32]byte `json:"file_name"`
 	Position  float3   `json:"position"`
@@ -24,11 +25,15 @@ type Object struct {
 	Scale     float3   `json:"scale"`
 }
 
-type SeverState struct {
+type ServerState struct {
+	mu      sync.RWMutex
 	Objects map[uint32]Object
 }
 
-func cleanOldObjects(state *SeverState, keepTime uint32) {
+func cleanOldObjects(state *ServerState, keepTime uint32) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
 	for id, obj := range state.Objects {
 		if obj.TimeStamp < keepTime {
 			delete(state.Objects, id)
@@ -36,13 +41,16 @@ func cleanOldObjects(state *SeverState, keepTime uint32) {
 	}
 }
 
-func addObject(state *SeverState, obj Object) {
+func addObject(state *ServerState, obj Object) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
 	if state.Objects == nil {
 		state.Objects = make(map[uint32]Object)
 	}
-	if _, exists := state.Objects[obj.Id]; exists {
+	if existing, exists := state.Objects[obj.Id]; exists {
 		// check if new timestamp is greater than existing timestamp
-		if obj.TimeStamp > state.Objects[obj.Id].TimeStamp {
+		if obj.TimeStamp > existing.TimeStamp {
 			state.Objects[obj.Id] = obj
 		}
 	} else {
@@ -50,7 +58,7 @@ func addObject(state *SeverState, obj Object) {
 	}
 }
 
-func PostAddObject(c echo.Context) error {
+func PostAddObject(c *echo.Context) error {
 	var obj Object
 	if err := c.Bind(&obj); err != nil {
 		slog.Error("failed to bind request body to Object struct", "error", err)
@@ -61,11 +69,14 @@ func PostAddObject(c echo.Context) error {
 	return c.JSON(200, map[string]string{"status": "success"})
 }
 
-func GetObjects(c echo.Context) error {
+func GetObjects(c *echo.Context) error {
+	serverState.mu.RLock()
 	objects := make([]Object, 0, len(serverState.Objects))
 	for _, obj := range serverState.Objects {
 		objects = append(objects, obj)
 	}
+	serverState.mu.RUnlock()
+
 	return c.JSON(200, objects)
 }
 
