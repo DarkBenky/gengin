@@ -72,6 +72,5 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;
-	generateID(obj);
 	fclose(file);
 }

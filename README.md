@@ -1,5 +1,14 @@
 ## TODO
 
+- [ ] Server Synchronization
+    - [ ] crete simple project that will test diffrent methods
+        - [ ] TCP server
+        - [ ] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
+        ```
+        on innit => get free plane
+        on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
+        on close => set planes as free and invisible
+        ```
 - [X] God Rays
 - [X] Emission
     - [X] crete emission map for each object

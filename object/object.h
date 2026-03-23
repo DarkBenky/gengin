@@ -100,8 +100,6 @@ typedef struct Object {
 	EmissionMap bottomFaceEmission;
 
 	BVH bvh;
-
-	uint32 id; // for server sync
 } Object;
 
 void LoadVolume(Volume *vol, const char *filename, float3 position, float3 rotation, float3 scale, VolumeType type);
@@ -112,7 +110,6 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib);
 // trace ray in direction of query object if we hit something before query object return 0 else return emission from query object
 float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, MaterialLib *lib);
 
-void generateID(Object *obj);
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
 void Object_Destroy(Object *obj);
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);

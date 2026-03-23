@@ -76,10 +76,6 @@ bool Frustum_TestAABB(const Frustum *f, float3 bbMin, float3 bbMax) {
 	return true;
 }
 
-void generateID(Object *obj) {
-	obj->id = (uint32)(time(NULL) * 1000);
-}
-
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib) {
 	LoadObj(filename, obj, lib);
 	obj->position = position;
@@ -88,7 +84,6 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 	CreateObjectBVH(obj, &obj->bvh);
 	Object_UpdateWorldBounds(obj);
 	CalculateFaceEmissions(obj, lib);
-	generateID(obj);
 }
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
@@ -146,7 +141,6 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	CreateObjectBVH(obj, &obj->bvh);
 	Object_UpdateWorldBounds(obj);
 	CalculateFaceEmissions(obj, lib);
-	generateID(obj);
 }
 
 void Object_SetMaterial(Object *obj, MaterialLib *lib, Material mat) {
