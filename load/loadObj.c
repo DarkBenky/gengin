@@ -3,6 +3,7 @@
 #include "../object/material/material.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include "../util/bbox.h"
 
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
@@ -71,5 +72,6 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;
+	generateID(obj);
 	fclose(file);
 }

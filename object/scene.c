@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 
 #include "../math/transform.h"
@@ -136,4 +137,5 @@ void ObjectList_Merge(ObjectList *src, ObjectList *dst) {
 	for (int i = 0; i < src->count; i++)
 		Object_Destroy(&src->objects[i]);
 	src->count = 0;
+	generateID(out);
 }
