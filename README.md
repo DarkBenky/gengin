@@ -1,5 +1,6 @@
 ## TODO
-
+- [ ] add object editor
+- [ ] sync all object
 - [ ] Server Synchronization
     - [ ] crete simple project that will test diffrent methods
         - [ ] TCP server
