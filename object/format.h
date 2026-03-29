@@ -25,6 +25,9 @@ typedef int32_t int32;
 
 typedef uint32_t Color;
 
+#define nil NULL
+#define boll bool
+
 typedef struct float3 {
 	float x;
 	float y;
