@@ -1,4 +1,12 @@
 ## TODO
+- [ ] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
+    - [ ] reqest designe  ```c
+    #typedef struct {
+        uint32 Size
+        int Id
+        type Type // POST => no repliy, GET => repley
+        uint8 data
+    } Reqest;
 - [ ] add object editor
 - [ ] sync all object
 - [ ] Server Synchronization
