@@ -9,6 +9,7 @@
         uint8 data
     } Reqest;
     ```
+    - expose function pointers on accept so we can implement own hadling for client and server for each type of reqest
 - [ ] add object editor
 - [ ] sync all object
 - [ ] Server Synchronization
