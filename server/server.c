@@ -70,13 +70,22 @@ void serverRun(Server *s) {
 			if (s->currentRequest.data) {
 				nr = recv(client_fd, s->currentRequest.data, incoming_size, MSG_WAITALL);
 				s->currentRequest.size = (uint32)nr;
-				// first byte encodes request type
-				s->currentRequest.type = (s->currentRequest.size > 0 && s->currentRequest.data[0] == 1) ? POST : GET;
+				// first byte encodes request type, strip it from data the handler sees
+				if (s->currentRequest.size > 0) {
+					s->currentRequest.type = (s->currentRequest.data[0] == 1) ? POST : GET;
+					s->currentRequest.data++;
+					s->currentRequest.size--;
+				}
 			}
 		}
 
 		if (s->handler) {
 			s->handler(&s->currentRequest, &s->currentResponse);
+		}
+
+		// restore pointer before freeing
+		if (s->currentRequest.type == POST || s->currentRequest.type == GET) {
+			s->currentRequest.data--;
 		}
 
 		if (s->currentResponse.data && s->currentResponse.size > 0) {
