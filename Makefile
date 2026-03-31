@@ -31,15 +31,20 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt, $(MAKECMDGOALS))
+_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
-.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report $(if $(_SPECIFIC), $(_SPECIFIC))
+EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
+
+.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
+
+exampleServer: $(EXAMPLE_SERVER_SRC)
+	$(CC) $(CFLAGS_BASE) -o $@ $^ $(LDFLAGS) -lm
 
 run: $(TARGET)
 	./$(TARGET)
