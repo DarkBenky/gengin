@@ -193,4 +193,9 @@ int main(void) {
 
 	RequestData_Free(&request);
 	idRegister_Free(&objectRegistry);
+
+    // TODO: handle on get request
+    // - if new object that isn't in registry, add to registry and scene
+    // - if existing object, update position/rotation/scale in registry and scene
+    // - if object in registry but not in request, remove from registry and scene
 }
