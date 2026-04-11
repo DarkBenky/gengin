@@ -25,6 +25,23 @@ static inline uint32 generateId(ModelType model) {
 static inline ModelType idModel(uint32 id) {
 	return (ModelType)(id >> 24);
 }
+
+static inline char *modelTypeToString(ModelType model) {
+	switch (model) {
+		case MODEL_F16: return "F16";
+		case MODEL_R27: return "R27";
+		default: return "Unknown";
+	}
+}
+
+static inline char *modelTypeToPath(ModelType model) {
+	switch (model) {
+		case MODEL_F16: return pathF16;
+		case MODEL_R27: return pathR27;
+		default: return NULL;
+	}
+}
+
 static inline uint32 idInstance(uint32 id) {
 	return id & 0x00FFFFFF;
 }
@@ -149,6 +166,8 @@ void postObjects(const Client *c, const RequestData *request) {
 	clientFreeResponse(&res);
 }
 
+void getObjects(const Client *c, )
+
 int main(void) {
 	srand((unsigned int)getpid());
 
@@ -189,6 +208,23 @@ int main(void) {
 	res = clientGet(&c, "some data", strlen("some data") + 1);
 	printf("[client] GET response (%u bytes): %s\n", res.size, res.data ? res.data : "(empty)");
 	hexDump(res.data, res.size);
+
+	// print response
+	uint32 numObjects;
+	memcpy(&numObjects, res.data, sizeof(uint32));
+	printf("Number of objects in response: %u\n", numObjects);
+	for (uint32 i = 0; i < numObjects; i++) {
+		requestObject *obj = (requestObject *)(res.data + sizeof(uint32) + i * sizeof(requestObject));
+		printf("Object %u: Id=%u, Position=(%.2f, %.2f, %.2f), Rotation=(%.2f, %.2f, %.2f), Scale=(%.2f, %.2f, %.2f)\n",
+			i, obj->Id,
+			obj->Position.x, obj->Position.y, obj->Position.z,
+			obj->Rotation.x, obj->Rotation.y, obj->Rotation.z,
+			obj->Scale.x, obj->Scale.y, obj->Scale.z);
+		printf("  ModelType: %u, InstanceId: %u\n", idModel(obj->Id), idInstance(obj->Id));
+		printf("  ModelType String: %s\n", modelTypeToString(idModel(obj->Id)));
+		printf("  ModelType Path: %s\n", modelTypeToPath(idModel(obj->Id)));
+	}
+
 	clientFreeResponse(&res);
 
 	RequestData_Free(&request);

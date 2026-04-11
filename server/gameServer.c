@@ -148,10 +148,13 @@ static void onRequest(const Request *req, Response *res) {
 	ServerState *state = gState;
 	if (req->type == GET) {
 		removeOldObjects(state);
-		Object *out = malloc(state->objectCount * sizeof(Object));
+		Object *out = malloc(state->objectCount * sizeof(Object) + sizeof(uint32));
+		memcpy(out, &state->objectCount, sizeof(uint32));
+		void *outObjects = (char *)out + sizeof(uint32);
 		for (uint32 i = 0; i < state->objectCount; i++)
-			InterpolateObjectsNextPosition(state, state->currentObjects[i].Id, &out[i]);
-		responseWrite(res, (char *)out, state->objectCount * sizeof(Object));
+			InterpolateObjectsNextPosition(state, state->currentObjects[i].Id, &((Object *)outObjects)[i]);
+		
+		responseWrite(res, (char *)out, state->objectCount * sizeof(Object) + sizeof(uint32));
 		free(out);
 	} else if (req->type == POST) {
 		// get object count and objects data from client and update server state
