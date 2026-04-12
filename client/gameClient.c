@@ -183,6 +183,7 @@ void postObjects(const Client *c, const RequestData *request) {
 
 void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegister *reg) {
 	ClientResponse res = clientGet(c, "get objects", strlen("get objects") + 1);
+	printf("[client] GET response (%u bytes)\n", res.size);
 	uint32 numObjects;
 	memcpy(&numObjects, res.data, sizeof(uint32));
 
@@ -276,14 +277,29 @@ int main(void) {
 
 	sleep(1);
 	getObjects(&c, &scene, &matLib, &objectRegistry);
+
+	// crete second clinet and add new object
+	Client c2 = {.host = "127.0.0.1", .port = 8080};
+
+	ObjectList scene2;
+	ObjectList_Init(&scene2, 0);
+	MaterialLib matLib2;
+	MaterialLib_Init(&matLib2, 0); 
+
+	uint32 r27SceneIndex = (uint32)scene2.count;
+	Object *planeR27 = ObjectList_Add(&scene2);
+	uint32 r27Id = generateId(MODEL_R27);
+	LoadObj(pathR27, planeR27, &matLib2);
+	idRegister_Add(&objectRegistry, r27Id, r27SceneIndex);
+	addFromRegistry(&request, &objectRegistry, &scene2, r27Id);
+	postObjects(&c2, &request);
+	RequestData_Reset(&request);
+
 	sleep(1);
+	getObjects(&c, &scene, &matLib, &objectRegistry);
+	sleep(15);
 	getObjects(&c, &scene, &matLib, &objectRegistry);
 
 	RequestData_Free(&request);
 	idRegister_Free(&objectRegistry);
-
-	// TODO: handle on get request
-	// - if new object that isn't in registry, add to registry and scene
-	// - if existing object, update position/rotation/scale in registry and scene
-	// - if object in registry but not in request, remove from registry and scene
 }
