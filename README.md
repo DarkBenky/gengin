@@ -1,4 +1,6 @@
 ## TODO
+- [ ] textures as post proces step on gpu we need to add uv mapping we shoulde use per triangle texture (normal, albedo ...)
+- [ ] model editor
 - [ ] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
     - [ ] reqest designe
     ```c
