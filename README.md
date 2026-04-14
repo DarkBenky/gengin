@@ -1,8 +1,26 @@
 ## TODO
 - [ ] textures as post proces step on gpu we need to add uv mapping we shoulde use per triangle texture (normal, albedo ...)
-- [ ] model editor
-- [ ] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
-    - [ ] reqest designe
+    - [ ] input
+        - [ ] 2d screen buffers (G-buffer)
+            - [ ] Albedo map (HDR above 1 = lit)          <- rendered scene color
+            - [ ] World space normal map
+            - [ ] UV map
+            - [ ] Texture ID map
+            - [ ] Depth map
+
+        - [ ] light
+            - [ ] sun direction
+            - [ ] light intensity
+
+        - [ ] texture atlas
+            - [ ] Albedo              <- source texture
+            - [ ] Normal map
+            - [ ] Roughness
+            - [ ] Metallic
+
+- [ ] model editor / object editor / texture editor
+- [X] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
+    - [X] reqest designe
     ```c
     #typedef struct {
         uint32 Size
@@ -12,12 +30,12 @@
     } Reqest;
     ```
     - expose function pointers on accept so we can implement own hadling for client and server for each type of reqest
-- [ ] add object editor
-- [ ] sync all object
-- [ ] Server Synchronization
-    - [ ] crete simple project that will test diffrent methods
-        - [ ] TCP server
-        - [ ] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
+
+- [X] sync all object
+- [X] Server Synchronization
+    - [X] crete simple project that will test diffrent methods
+        - [X] TCP server
+        - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
         ```
         on innit => get free plane
         on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
@@ -29,13 +47,15 @@
     ![img](./render.png)
 - [X] Shadows same as reflection
 - [X] Clouds
-- [ ] Bloom
-    - [ ] Too slow
+- [X] Bloom
+    - [X] Too slow
 - [X] Replace screen space refection by raytraced onece
     - [X] use lower resolution and blur row apply it to frame buffer
         - [X] apply direct reflection [red][green][blue][roughness]
             - [X] we blur based on 4th channel
 - [ ] GPU rendering (keep it simple — port current CPU pipeline (**later**)
+    - [X] clouds
+    - [X] god rays
 - [ ] Plane controls
   - [ ] Use something like this but we will simplified it
     - [ ] Example
