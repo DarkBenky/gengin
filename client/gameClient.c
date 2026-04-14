@@ -207,17 +207,21 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 					o->position = obj->Position;
 					o->rotation = obj->Rotation;
 					o->scale = obj->Scale;
+					Object_UpdateWorldBounds(o);
 					seen[j] = true;
 					break;
 				}
 			}
 		} else {
 			// new object — load model and add to scene and registry
+			printf("New object detected with Id=%u, loading model...\n", obj->Id);
 			const char *path = modelTypeToPath(idModel(obj->Id));
 			if (path) {
 				uint32 sceneIndex = (uint32)scene->count;
 				Object *newObj = ObjectList_Add(scene); // may realloc scene->objects
 				LoadObj(path, newObj, matLib);
+				CreateObjectBVH(newObj, &newObj->bvh);
+				Object_UpdateWorldBounds(newObj);
 				newObj->position = obj->Position;
 				newObj->rotation = obj->Rotation;
 				newObj->scale = obj->Scale;
@@ -278,27 +282,75 @@ int main(void) {
 	sleep(1);
 	getObjects(&c, &scene, &matLib, &objectRegistry);
 
-	// crete second clinet and add new object
+	// simulate a second client posting a new R27 object
 	Client c2 = {.host = "127.0.0.1", .port = 8080};
 
 	ObjectList scene2;
 	ObjectList_Init(&scene2, 0);
 	MaterialLib matLib2;
-	MaterialLib_Init(&matLib2, 0); 
+	MaterialLib_Init(&matLib2, 0);
 
-	uint32 r27SceneIndex = (uint32)scene2.count;
 	Object *planeR27 = ObjectList_Add(&scene2);
 	uint32 r27Id = generateId(MODEL_R27);
 	LoadObj(pathR27, planeR27, &matLib2);
-	idRegister_Add(&objectRegistry, r27Id, r27SceneIndex);
-	addFromRegistry(&request, &objectRegistry, &scene2, r27Id);
-	postObjects(&c2, &request);
-	RequestData_Reset(&request);
+
+
+	idRegister c2Registry;
+	idRegister_Init(&c2Registry, 4);
+	idRegister_Add(&c2Registry, r27Id, 0);
+
+	RequestData c2Request;
+	RequestData_Init(&c2Request, 4);
+	addFromRegistry(&c2Request, &c2Registry, &scene2, r27Id);
+	postObjects(&c2, &c2Request);
+
+	RequestData_Free(&c2Request);
+	idRegister_Free(&c2Registry);
 
 	sleep(1);
 	getObjects(&c, &scene, &matLib, &objectRegistry);
+	printf("[client] Scene objects count: %u\n", scene.count);
+	for (uint32 i = 0; i < scene.count; i++) {
+		Object *o = &scene.objects[i];
+		// check if bvh and triangles were loaded
+		if (o->bvh.nodes != nil && o->bvh.nodeCount > 0 && o->v1 != nil && o->v2 != nil && o->v3 != nil && o->triangleCount > 0) {
+			printf("[SUCCESS] %d Triangles loaded\n", o->triangleCount);
+		} else {
+			printf("[FAIL] Object %u has invalid geometry data\n", i);
+			if (o->bvh.nodes == nil || o->bvh.nodeCount == 0)
+				printf("  BVH not loaded\n");
+			if (o->v1 == nil || o->v2 == nil || o->v3 == nil || o->triangleCount == 0)
+				printf("  Triangle data not loaded\n");
+		}
+		// check if materials are loaded
+		if (matLib.count > 0) {
+			printf("[SUCCESS] MaterialLib has %d materials\n", matLib.count);
+		} else {
+			printf("[FAIL] MaterialLib is empty\n");
+		}
+	}
+
+	// short test how many GET/POST we can do in 30sec
+	float totalTime = 0.0f;
+	int iterations = 0;
+	while (totalTime < 30.0f) {
+		clock_t start = clock();
+		getObjects(&c, &scene, &matLib, &objectRegistry);
+		RequestData_Reset(&request);
+		for (uint32 i = 0; i < scene.count; i++) {
+			addObjectToRequestData(&request, &scene.objects[i], objectRegistry.Ids[i]);
+		}
+		postObjects(&c, &request);
+		clock_t end = clock();
+		float elapsed = (float)(end - start) / CLOCKS_PER_SEC;
+		totalTime += elapsed;
+		iterations++;
+	}
+	printf("[client] Completed %d GET/POST iterations average iteration time: %.2fms\n", iterations, (totalTime / iterations) * 1000.0f);
+
 	sleep(15);
 	getObjects(&c, &scene, &matLib, &objectRegistry);
+	printf("[client] Scene objects count: %u\n", scene.count);
 
 	RequestData_Free(&request);
 	idRegister_Free(&objectRegistry);

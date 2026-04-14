@@ -68,7 +68,7 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		obj->v2[i] = v2;
 		obj->v3[i] = v3;
 		obj->normals[i] = normal;
-		obj->materialIds[i] = MaterialLib_Add(lib, Material_Make(color, Roughness, Metallic, Emission));
+		obj->materialIds[i] = MaterialLib_FindOrAdd(lib, Material_Make(color, Roughness, Metallic, Emission));
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;

@@ -23,6 +23,13 @@ void MaterialLib_Destroy(MaterialLib *lib);
 // Add a material; returns its index. Returns -1 on allocation failure.
 int MaterialLib_Add(MaterialLib *lib, Material mat);
 
+// Returns the index of a matching material if one already exists, otherwise adds it.
+int MaterialLib_FindOrAdd(MaterialLib *lib, Material mat);
+
+// Remaps materialIds[0..count) so that equal materials share the lowest lib index.
+// Use after loading with a non-deduplicating path.
+void packMaterials(int *materialIds, int count, MaterialLib *lib);
+
 static inline Material Material_Make(float3 color, float roughness, float metallic, float emission) {
 	return (Material){color, roughness, metallic, emission};
 }
