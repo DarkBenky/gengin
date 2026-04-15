@@ -1,4 +1,15 @@
 ## TODO
+- [X] sync all object
+- [X] Server Synchronization
+    - [X] crete simple project that will test diffrent methods
+        - [X] TCP server
+        - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
+        ```
+        on innit => get free plane
+        on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
+        on close => set planes as free and invisible
+    - [ ] integrate it to main.c
+
 - [ ] textures as post proces step on gpu we need to add uv mapping we shoulde use per triangle texture (normal, albedo ...)
     - [ ] input
         - [ ] 2d screen buffers (G-buffer)
@@ -31,15 +42,7 @@
     ```
     - expose function pointers on accept so we can implement own hadling for client and server for each type of reqest
 
-- [X] sync all object
-- [X] Server Synchronization
-    - [X] crete simple project that will test diffrent methods
-        - [X] TCP server
-        - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
-        ```
-        on innit => get free plane
-        on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
-        on close => set planes as free and invisible
+
         ```
 - [X] God Rays
 - [X] Emission
