@@ -13,7 +13,7 @@
 #define pathR27 "assets/models/r27.bin"
 
 // upper 8 bits = ModelType, lower 24 bits = random instance (seeded per-process by PID)
-static inline uint32 generateId(ModelType model) {
+uint32 generateId(ModelType model) {
 	return ((uint32)model << 24) | ((uint32)rand() & 0x00FFFFFF);
 }
 
@@ -216,6 +216,7 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 	clientFreeResponse(&res);
 }
 
+#ifdef GAME_CLIENT_STANDALONE
 int main(void) {
 	srand((unsigned int)getpid());
 
@@ -328,3 +329,4 @@ int main(void) {
 	RequestData_Free(&request);
 	idRegister_Free(&objectRegistry);
 }
+#endif // GAME_CLIENT_STANDALONE

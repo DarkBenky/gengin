@@ -19,7 +19,7 @@ CFLAGS += -fprofile-use=$(PROFDATA) -fprofile-correction
 endif
 
 TARGET = main
-SRC = main.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboar/keyboar.c render/gpu/format.c render/gpu/kernels/cloadrendering/cload.c
+SRC = main.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboar/keyboar.c render/gpu/format.c render/gpu/kernels/cloadrendering/cload.c hexDump/hexDump.c
 
 FLAMEGRAPH_DIR = .flamegraph
 

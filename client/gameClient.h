@@ -38,6 +38,8 @@ bool idRegister_Contains(const idRegister *reg, uint32 Id);
 void idRegister_Free(idRegister *reg);
 void idRegister_Clear(idRegister *reg);
 
+uint32 generateId(ModelType model);
+
 void RequestData_Init(RequestData *r, uint32 initialCap);
 void RequestData_Reset(RequestData *r);
 void RequestData_Free(RequestData *r);

@@ -11,6 +11,7 @@ main_bench
 assets/models/cloud.bin
 assets/models/map.bin
 assets/models/map.obj
+assets/chars/*.bin
 
 # generated images
 tools/*.png

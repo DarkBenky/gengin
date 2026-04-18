@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "object/format.h"
 #include "object/object.h"
@@ -20,6 +21,7 @@
 #include "util/bench.h"
 #include "keyboar/keyboar.h"
 #include "render/gpu/kernels/cloadrendering/cload.h"
+#include "client/gameClient.h"
 
 #define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
 #define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
@@ -29,6 +31,8 @@
 #define GRID_ROWS 32
 
 int main() {
+	srand((uint32)getpid());
+
 	Input input;
 	Camera camera;
 	initCamera(&camera, WIDTH, HEIGHT, 90.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){0.0f, 80.0f, -60.0f});
@@ -38,6 +42,14 @@ int main() {
 
 	ObjectList scene;
 	ObjectList_Init(&scene, 1);
+
+	Client c = {.host = "127.0.0.1", .port = 8080};
+
+	idRegister objectRegistry;
+	idRegister_Init(&objectRegistry, 1);
+
+	RequestData request;
+	RequestData_Init(&request, 1);
 
 	// build checkerboard grid into a temporary list, then merge into one object
 	ObjectList grid;
@@ -83,13 +95,20 @@ int main() {
 	CreateCube(cube3, (float3){10.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.0f, 0.9f}, &matLib, 100.0f, 0.99f, 0.0f);
 	Object_UpdateWorldBounds(cube3);
 
+	uint32 f16SceneIndex = (uint32)scene.count;
 	Object *plane = ObjectList_Add(&scene);
+	uint32 f16Id = generateId(MODEL_F16);
 	LoadObj("assets/models/f16.bin", plane, &matLib);
+	idRegister_Add(&objectRegistry, f16Id, f16SceneIndex);
 	plane->position = (float3){0.0f, 10.0f, 20.0f};
 	plane->rotation = (float3){0.0f, 0.0f, 0.0f};
 	plane->scale = (float3){2.0f, 2.0f, 2.0f};
 	CreateObjectBVH(plane, &plane->bvh);
 	Object_UpdateWorldBounds(plane);
+
+	addFromRegistry(&request, &objectRegistry, &scene, f16Id);
+	postObjects(&c, &request);
+	RequestData_Reset(&request);
 
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
@@ -142,6 +161,9 @@ int main() {
 	benchInit(&bench);
 
 	while (1) {
+		// get current scene state from server
+		getObjects(&c, &scene, &matLib, &objectRegistry);
+		
 		benchFrameStart(&bench);
 		WNOW(wA);
 		accumSyncTime += WDIFF(wSyncStart, wA);
@@ -171,6 +193,11 @@ int main() {
 			Float3_Scale(Float3_Normalize(camera.up), -2.5f));
 		plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
 		Object_UpdateWorldBounds(plane);
+
+		// post current scene
+		addAllFromRegistry(&request, &objectRegistry, &scene);
+		postObjects(&c, &request);
+		RequestData_Reset(&request);
 
 		RenderSetup(scene.objects, scene.count, &camera);
 		WNOW(wB);
