@@ -14,6 +14,7 @@ assets/models/map.obj
 
 # generated images
 tools/*.png
+!tools/01.png
 tests/img/
 
 .ccls-cache
