@@ -1,4 +1,4 @@
-#include "client.h"
+#include "gameClient.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -11,11 +11,6 @@
 
 #define pathF16 "assets/models/f16.bin"
 #define pathR27 "assets/models/r27.bin"
-
-typedef enum {
-	MODEL_F16 = 1,
-	MODEL_R27 = 2,
-} ModelType;
 
 // upper 8 bits = ModelType, lower 24 bits = random instance (seeded per-process by PID)
 static inline uint32 generateId(ModelType model) {
@@ -51,27 +46,6 @@ static inline char *modelTypeToPath(ModelType model) {
 static inline uint32 idInstance(uint32 id) {
 	return id & 0x00FFFFFF;
 }
-
-typedef struct {
-	uint32 Id;
-	uint32 TimeStamp;
-	float3 Position;
-	float3 Rotation;
-	float3 Scale;
-} requestObject;
-
-typedef struct {
-	uint32 numOfObjects;
-	uint32 capacity;
-	requestObject *objects;
-} RequestData;
-
-typedef struct {
-	uint32 *Ids;
-	uint32 *Indices; // indices into ObjectList, stable across realloc
-	uint32 count;
-	uint32 capacity;
-} idRegister;
 
 void idRegister_Init(idRegister *reg, uint32 initialCapacity) {
 	reg->count = 0;
@@ -119,7 +93,7 @@ void idRegister_Free(idRegister *reg) {
 	reg->count = reg->capacity = 0;
 }
 
-static inline void idRegister_Clear(idRegister *reg) {
+void idRegister_Clear(idRegister *reg) {
 	reg->count = 0;
 }
 
@@ -129,7 +103,7 @@ void RequestData_Init(RequestData *r, uint32 initialCap) {
 	r->objects = initialCap ? malloc(initialCap * sizeof(requestObject)) : NULL;
 }
 
-static inline void RequestData_Reset(RequestData *r) {
+void RequestData_Reset(RequestData *r) {
 	r->numOfObjects = 0;
 }
 
@@ -293,7 +267,6 @@ int main(void) {
 	Object *planeR27 = ObjectList_Add(&scene2);
 	uint32 r27Id = generateId(MODEL_R27);
 	LoadObj(pathR27, planeR27, &matLib2);
-
 
 	idRegister c2Registry;
 	idRegister_Init(&c2Registry, 4);
