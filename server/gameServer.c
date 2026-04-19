@@ -128,6 +128,8 @@ void InterpolateObjectsNextPosition(const ServerState *state, uint32 id, Object 
 		deltaScale.z / deltaTime};
 
 	float timeSinceLastUpdate = (float)(now - curr->TimeStamp);
+	if (timeSinceLastUpdate > deltaTime)
+		timeSinceLastUpdate = deltaTime;
 
 	updatedObject->Position.x = curr->Position.x + positionChangeRate.x * timeSinceLastUpdate;
 	updatedObject->Position.y = curr->Position.y + positionChangeRate.y * timeSinceLastUpdate;
@@ -153,7 +155,7 @@ static void onRequest(const Request *req, Response *res) {
 		void *outObjects = (char *)out + sizeof(uint32);
 		for (uint32 i = 0; i < state->objectCount; i++)
 			InterpolateObjectsNextPosition(state, state->currentObjects[i].Id, &((Object *)outObjects)[i]);
-		
+
 		responseWrite(res, (char *)out, state->objectCount * sizeof(Object) + sizeof(uint32));
 		free(out);
 	} else if (req->type == POST) {

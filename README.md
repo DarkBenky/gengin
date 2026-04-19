@@ -1,5 +1,6 @@
 ## TODO
 - [X] sync all object
+    - [X] why movement si so jerky (jumping around)
 - [X] Server Synchronization
     - [X] crete simple project that will test diffrent methods
         - [X] TCP server
@@ -24,7 +25,8 @@
             - [ ] light intensity
 
         - [ ] texture atlas
-            - [ ] Albedo              <- source texture
+            - [ ] Blend Factor
+            - [ ] Albedo              <- source texture (blend wit base color)
             - [ ] Normal map
             - [ ] Roughness
             - [ ] Metallic

@@ -178,9 +178,16 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 			for (uint32 j = 0; j < reg->count; j++) {
 				if (reg->Ids[j] == obj->Id) {
 					Object *o = &scene->objects[reg->Indices[j]];
-					o->position = obj->Position;
-					o->rotation = obj->Rotation;
-					o->scale = obj->Scale;
+					float alpha = 0.2f;
+					o->position.x += (obj->Position.x - o->position.x) * alpha;
+					o->position.y += (obj->Position.y - o->position.y) * alpha;
+					o->position.z += (obj->Position.z - o->position.z) * alpha;
+					o->rotation.x += (obj->Rotation.x - o->rotation.x) * alpha;
+					o->rotation.y += (obj->Rotation.y - o->rotation.y) * alpha;
+					o->rotation.z += (obj->Rotation.z - o->rotation.z) * alpha;
+					o->scale.x += (obj->Scale.x - o->scale.x) * alpha;
+					o->scale.y += (obj->Scale.y - o->scale.y) * alpha;
+					o->scale.z += (obj->Scale.z - o->scale.z) * alpha;
 					Object_UpdateWorldBounds(o);
 					seen[j] = true;
 					break;
