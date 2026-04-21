@@ -54,6 +54,11 @@ typedef struct int4 {
 	int w;
 } int4;
 
+typedef struct uvMap {
+	uint16 x;
+	uint16 y;
+} uvMap;
+
 typedef struct Camera {
 	float3 position;
 	float3 forward;
@@ -78,6 +83,7 @@ typedef struct Camera {
 	float3 *bloomBuffer;
 	float3 *bloomTemp;
 	float3 *bloomDst;
+	uvMap *uvBuffer;
 	float *depthBuffer;
 	float seed;
 	Color *reflectCache;

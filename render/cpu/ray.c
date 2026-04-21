@@ -452,6 +452,35 @@ static float3 RandomObjectHitRay(const Object *object, float3 rayOrigin, float s
 	return Float3_Normalize(Float3_Sub(worldPos, rayOrigin));
 }
 
+static inline uvMap calculateUvCoordinates(const float3 hitPos, float3 v0, float3 v1, float3 v2) {
+	// Compute barycentric coordinates
+	float3 edge1 = Float3_Sub(v1, v0);
+	float3 edge2 = Float3_Sub(v2, v0);
+	float3 hitVec = Float3_Sub(hitPos, v0);
+
+	float d00 = Float3_Dot(edge1, edge1);
+	float d01 = Float3_Dot(edge1, edge2);
+	float d11 = Float3_Dot(edge2, edge2);
+	float d20 = Float3_Dot(hitVec, edge1);
+	float d21 = Float3_Dot(hitVec, edge2);
+
+	float denom = d00 * d11 - d01 * d01;
+	if (fabsf(denom) < 1e-6f) {
+		return (uvMap){0, 0}; // Degenerate triangle
+	}
+
+	float invDenom = 1.0f / denom;
+	float v = (d11 * d20 - d01 * d21) * invDenom;
+	float w = (d00 * d21 - d01 * d20) * invDenom;
+	float u = 1.0f - v - w;
+
+	// Convert to 16-bit UV coordinates
+	uint16 uvX = (uint16)(u * 65535.0f);
+	uint16 uvY = (uint16)(v * 65535.0f);
+
+	return (uvMap){uvX, uvY};
+}
+
 static void RayTraceRowFunc(void *arg) {
 	RayTraceTask *task = arg;
 	int row = task->row;
@@ -579,8 +608,7 @@ static void RayTraceRowFunc(void *arg) {
 			if (matId >= 0 && matId < lib->count) {
 				color = lib->entries[matId].color;
 				// emission = lib->entries[matId].emission;
-				emission = lib->entries[matId].emission * 0.01f; // scale down emission to prevent it from dominating the lighting — it's meant to be a subtle glow, not a full light source
-				roughness = lib->entries[matId].roughness;
+				emission = lib->entries[matId].emission * 0.01f; // scale down emission to prevent it from dominating the lighting
 				metallic = lib->entries[matId].metallic;
 			}
 		}
@@ -592,7 +620,7 @@ static void RayTraceRowFunc(void *arg) {
 		float diffuse = n.x * lightDir.x + n.y * lightDir.y + n.z * lightDir.z;
 		if (diffuse < 0.0f) diffuse = 0.0f;
 
-		// Blinn-Phong specular — metallic boosts gloss and tints specular by albedo
+		// BlinnPhong specular metallic boosts gloss and tints specular by albedo
 		float hx = lightDir.x - dx, hy = lightDir.y - dy, hz = lightDir.z - dz;
 		float hlen = 1.0f / sqrtf(hx * hx + hy * hy + hz * hz);
 		float NdotH = fmaxf(0.0f, (n.x * hx + n.y * hy + n.z * hz) * hlen);
@@ -605,7 +633,7 @@ static void RayTraceRowFunc(void *arg) {
 		float specG = specularBase * (1.0f - metallic) + specularBase * metallic * color.y;
 		float specB = specularBase * (1.0f - metallic) + specularBase * metallic * color.z;
 
-		// metals absorb no diffuse — all energy is specular
+		// metals absorb no diffuse all energy is specular
 		float diffuseWeight = 1.0f - metallic;
 		float lit = (0.12f + 0.88f * diffuse) * diffuseWeight;
 
@@ -616,21 +644,20 @@ static void RayTraceRowFunc(void *arg) {
 		uint8 g = (uint8)(ldr.y * 255.0f);
 		uint8 b = (uint8)(ldr.z * 255.0f);
 
-		// Fresnel-Schlick: metals use albedo-coloured F0 (~0.7-1.0), dielectrics use 0.04
 		float NdotV = fmaxf(0.0f, -(n.x * dx + n.y * dy + n.z * dz));
 		float invNdotV = 1.0f - NdotV;
 		float inv2 = invNdotV * invNdotV;
-		float fresnelT = inv2 * inv2 * invNdotV; // (1-NdotV)^5
-		float f0 = 0.04f + 0.96f * metallic;	 // base reflectivity driven by metallic
+		float fresnelT = inv2 * inv2 * invNdotV; 
+		float f0 = 0.04f + 0.96f * metallic;
 		float fresnel = f0 + (1.0f - f0) * fresnelT;
-		// emissive surfaces suppress sky reflection — their glow dominates
+		// emissive surfaces suppress sky reflection their glow dominates
 		float reflectStrength = fresnel * (1.0f - fminf(emission, 1.0f));
 
-		// perfect specular reflect dir — roughness already baked into reflectStrength
+		// perfect specular reflect dir roughness already baked into reflectStrength
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		// sky reflection blend — metals tint it by albedo, dielectrics reflect white sky
+		// sky reflection blend metals tint it by albedo, dielectrics reflect white sky
 		Color skyRefl = SampleSkybox(task->skybox, reflDir);
 		uint32 st = (uint32)(reflectStrength * 255.0f);
 		if (st > 255u) st = 255u;
@@ -653,8 +680,9 @@ static void RayTraceRowFunc(void *arg) {
 		// w = (1-roughness) for SSR reflectivity gating
 		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, (1.0f - roughness)};
 		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
+		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, obj->v1[bestTri], obj->v2[bestTri], obj->v3[bestTri]);
 
-		// ray traced reflection — only cast every REFLECTION_RESOLUTION columns
+		// ray traced reflection only cast every REFLECTION_RESOLUTION columns
 		if (x % REFLECTION_RESOLUTION == 0) {
 			int shadowHit = -1;
 			if (emission <= 0.0f) {
@@ -770,6 +798,7 @@ static void RayTraceRowFunc(void *arg) {
 		};
 
 		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+		// camera->framebuffer[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
 		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z));
 	}
 }
