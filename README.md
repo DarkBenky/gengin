@@ -1,4 +1,5 @@
 ## TODO
+- [ ] render directly wia open gl not c => open gl => minifb
 - [X] sync all object
     - [X] why movement si so jerky (jumping around)
 - [X] Server Synchronization
