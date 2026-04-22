@@ -71,7 +71,7 @@ run: $(TARGET)
 	./$(TARGET)
 
 bench: $(SRC)
-	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(TARGET)_bench $^ $(LDFLAGS) $(LIBS)
+	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=10.0 -o $(TARGET)_bench $^ $(LDFLAGS) $(LIBS)
 	./$(TARGET)_bench
 	rm -f $(TARGET)_bench
 
