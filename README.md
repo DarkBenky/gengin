@@ -1,5 +1,6 @@
 ## TODO
 
+- [ ] implement the simplified simulation in 2d then move to c
 - [ ] render directly wia open gl not c => open gl => minifb
 
 - [X] sync all object
