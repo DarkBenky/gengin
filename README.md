@@ -1,5 +1,9 @@
 ## TODO
 
+- [ ] Plane editor
+    - [ ] export
+    - [ ] import to c
+    - [ ] implement c wing simulation
 - [X] implement the simplified simulation in 2d then move to c
     - [ ] move python code to c
 - [ ] render directly wia open gl not c => open gl => minifb
