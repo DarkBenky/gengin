@@ -3,6 +3,7 @@
 #include "simulate.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define MAX_SPEED 700.0f
 #define MAX_ALTITUDE 25000.0f
@@ -96,10 +97,22 @@ static Model buildModel(void) {
 }
 
 #define POPULATION 512
+#define ELITE_COUNT (POPULATION / 10)
 #define GENERATIONS 10000
 #define SIM_STEPS 64
 #define DT 0.1f
 #define MUTATION_RATE 0.05f
+
+typedef struct {
+	float loss;
+	int idx;
+} RankedModel;
+
+static int cmpRanked(const void *a, const void *b) {
+	float la = ((const RankedModel *)a)->loss;
+	float lb = ((const RankedModel *)b)->loss;
+	return (la > lb) - (la < lb);
+}
 
 int main(void) {
 	Plane basePlane;
@@ -116,28 +129,38 @@ int main(void) {
 
 		for (int i = 0; i < POPULATION; i++) {
 			Plane plane = basePlane;
-			runInference(&population[i], &plane, &target);
-			for (int s = 0; s < SIM_STEPS; s++)
+			for (int s = 0; s < SIM_STEPS; s++) {
+				runInference(&population[i], &plane, &target);
 				updatePlane(&plane, DT, NULL);
+			}
 			losses[i] = lossFunc(&plane, &target);
 		}
 
-		int bestIdx = 0;
-		float totalLoss = 0.0f;
+		RankedModel ranked[POPULATION];
 		for (int i = 0; i < POPULATION; i++) {
-			totalLoss += losses[i];
-			if (losses[i] < losses[bestIdx])
-				bestIdx = i;
+			ranked[i].loss = losses[i];
+			ranked[i].idx = i;
 		}
+		qsort(ranked, POPULATION, sizeof(RankedModel), cmpRanked);
+
+		int eliteIdx[ELITE_COUNT];
+		int isElite[POPULATION];
+		for (int i = 0; i < POPULATION; i++) isElite[i] = 0;
+		for (int e = 0; e < ELITE_COUNT; e++) {
+			eliteIdx[e] = ranked[e].idx;
+			isElite[ranked[e].idx] = 1;
+		}
+
+		float totalLoss = 0.0f;
+		for (int i = 0; i < POPULATION; i++) totalLoss += losses[i];
 		printf("gen %4d  avg_loss %.4f  best_loss %.4f\n",
-			   gen, totalLoss / POPULATION, losses[bestIdx]);
+			   gen, totalLoss / POPULATION, losses[eliteIdx[0]]);
 
 		for (int i = 0; i < POPULATION; i++) {
-			if (i == bestIdx) continue;
-			if (losses[i] > totalLoss / POPULATION) {
-				CopyModel(&population[i], &population[bestIdx]);
-				MutateModel(&population[i], MUTATION_RATE);
-			}
+			if (isElite[i]) continue;
+			int parent = eliteIdx[rand() % ELITE_COUNT];
+			CopyModel(&population[i], &population[parent]);
+			MutateModel(&population[i], MUTATION_RATE);
 		}
 	}
 

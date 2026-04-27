@@ -26,8 +26,9 @@ void AddDenseLayer(Model *model, uint32 inputSize, uint32 outputSize, Activation
 	layer->weights = malloc(inputSize * outputSize * sizeof(float));
 	layer->biases = malloc(outputSize * sizeof(float));
 
+	float scale = sqrtf(2.0f / (float)inputSize);
 	for (uint32 i = 0; i < inputSize * outputSize; i++)
-		layer->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+		layer->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * scale;
 	for (uint32 i = 0; i < outputSize; i++)
 		layer->biases[i] = 0.0f;
 
