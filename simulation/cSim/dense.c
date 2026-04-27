@@ -1,4 +1,6 @@
 #include "dense.h"
+#include <math.h>
+#include <string.h>
 
 void InitModel(Model *model, uint32 inputSize, uint32 outputSize) {
 	model->numLayers = 0;

@@ -31,7 +31,7 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump, $(MAKECMDGOALS))
+_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
@@ -39,8 +39,9 @@ GAME_SERVER_SRC    = server/gameServer.c server/server.c object/format.c
 EXAMPLE_CLIENT_SRC = client/example.c client/client.c object/format.c
 GAME_CLIENT_SRC    = client/gameClient.c client/client.c object/format.c object/object.c object/scene.c object/material/material.c load/loadObj.c util/bbox.c util/threadPool.c hexDump/hexDump.c
 HEX_DUMP_SRC       = hexDump/hexDump.c
+TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c
 
-.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump $(if $(_SPECIFIC), $(_SPECIFIC))
+.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
@@ -66,6 +67,10 @@ gameClient: $(GAME_CLIENT_SRC)
 hexDump: hexDump/hexDumpTest.c $(HEX_DUMP_SRC)
 	$(CC) $(CFLAGS_BASE) -IhexDump -o hexDumpBin $^ $(LDFLAGS) -lm
 	./hexDumpBin
+
+train: $(TRAIN_SRC)
+	$(CC) $(CFLAGS_BASE) -Isimulation -o simulation/trainNN $^ $(LDFLAGS) -lm
+	./simulation/trainNN
 
 run: $(TARGET)
 	./$(TARGET)

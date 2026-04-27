@@ -1,11 +1,11 @@
-// TODO: train model with genetic algorithm to predict control surface deflections for given forward vector
 #include "dense.h"
 #include "import.h"
 #include "simulate.h"
+#include <math.h>
+#include <stdio.h>
 
 #define MAX_SPEED 700.0f
 #define MAX_ALTITUDE 25000.0f
-
 #define INPUT_SIZE 8
 #define OUTPUT_SIZE 5
 
@@ -61,29 +61,31 @@ static void applyOutputs(Plane *plane, const Outputs *out) {
 void runInference(Model *model, Plane *plane, const float3 *targetForward) {
 	Inputs inputs;
 	loadInputs(&inputs, plane, targetForward);
-
 	float inBuf[INPUT_SIZE];
 	float outBuf[OUTPUT_SIZE];
 	normalizeInputs(&inputs, inBuf);
 	Forward(model, inBuf, outBuf);
-
 	Outputs outputs;
 	readOutputs(outBuf, &outputs);
 	applyOutputs(plane, &outputs);
 }
 
-float f3Dot(float3 a, float3 b) {
+static float f3Dot(float3 a, float3 b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-float lossFunc(const Plane *plane, const float3 *targetForward) {
-	float3 fwd = plane->forward;
-	float3 tgt = *targetForward;
-	float dot = f3Dot(fwd, tgt);
-	return 1.0f - dot; // want to maximize dot product (cosine similarity)
+static float lossFunc(const Plane *plane, const float3 *targetForward) {
+	return 1.0f - f3Dot(plane->forward, *targetForward);
 }
 
-static Model buildModel() {
+static float3 randomPointOnSphere(void) {
+	float z = (float)rand() / RAND_MAX * 2.0f - 1.0f;
+	float t = (float)rand() / RAND_MAX * 2.0f * 3.14159265f;
+	float r = sqrtf(1.0f - z * z);
+	return (float3){r * cosf(t), r * sinf(t), z, 0.0f};
+}
+
+static Model buildModel(void) {
 	Model model;
 	InitModel(&model, INPUT_SIZE, OUTPUT_SIZE);
 	AddDenseLayer(&model, INPUT_SIZE, 16, RELU);
@@ -93,61 +95,54 @@ static Model buildModel() {
 	return model;
 }
 
-float3 randomPointOnSphere() {
-    float z = (float)rand() / RAND_MAX * 2.0f - 1.0f;
-    float t = (float)rand() / RAND_MAX * 2.0f * 3.14159265f;
-    float r = sqrtf(1.0f - z * z);
-    return (float3){r * cosf(t), r * sinf(t), z, 0.0f};
-}
+#define POPULATION 512
+#define GENERATIONS 10000
+#define SIM_STEPS 64
+#define DT 0.1f
+#define MUTATION_RATE 0.05f
 
 int main(void) {
-	Plane plane;
-	loadPlane(&plane, "../simModels/F-16C.bin");
+	Plane basePlane;
+	loadPlane(&basePlane, "simulation/simModels/F-16C.bin");
 
-	const populationSize = 32;
-	Model Models[populationSize];
-	for (int i = 0; i < populationSize; i++) {
-		Models[i] = buildModel();
+	Model population[POPULATION];
+	for (int i = 0; i < POPULATION; i++)
+		population[i] = buildModel();
+
+	float losses[POPULATION];
+
+	for (int gen = 0; gen < GENERATIONS; gen++) {
+		float3 target = randomPointOnSphere();
+
+		for (int i = 0; i < POPULATION; i++) {
+			Plane plane = basePlane;
+			runInference(&population[i], &plane, &target);
+			for (int s = 0; s < SIM_STEPS; s++)
+				updatePlane(&plane, DT, NULL);
+			losses[i] = lossFunc(&plane, &target);
+		}
+
+		int bestIdx = 0;
+		float totalLoss = 0.0f;
+		for (int i = 0; i < POPULATION; i++) {
+			totalLoss += losses[i];
+			if (losses[i] < losses[bestIdx])
+				bestIdx = i;
+		}
+		printf("gen %4d  avg_loss %.4f  best_loss %.4f\n",
+			   gen, totalLoss / POPULATION, losses[bestIdx]);
+
+		for (int i = 0; i < POPULATION; i++) {
+			if (i == bestIdx) continue;
+			if (losses[i] > totalLoss / POPULATION) {
+				CopyModel(&population[i], &population[bestIdx]);
+				MutateModel(&population[i], MUTATION_RATE);
+			}
+		}
 	}
 
-    float losses[populationSize];
-    for (int gen = 0; gen < 1000; gen++) {
-        float3 target = randomPointOnSphere();
-        for (int i = 0; i < populationSize; i++) {
-            runInference(&Models[i], &plane, &target);
-            for (int step = 0; step < 100; step++) {
-                updatePlane(&plane, 0.1f, &target);
-            }
-            losses[i] = lossFunc(&plane, &target);
-        }
-        float averageLoss = 0.0f;
-        for (int i = 0; i < populationSize; i++) {
-            averageLoss += losses[i];
-        }
-        averageLoss /= populationSize;
-        printf("Generation %d, Average Loss: %f\n", gen, averageLoss);
-        // keep above average, rest set to best + mutation
-        for (int i = 0; i < populationSize; i++) {
-            if (losses[i] > averageLoss) {
-                // copy from best
-                int bestIdx = 0;
-                for (int j = 1; j < populationSize; j++) {
-                    if (losses[j] < losses[bestIdx]) {
-                        bestIdx = j;
-                    }
-                }
-                FreeModel(&Models[i]);
-                Models[i] = buildModel();
-        
+	for (int i = 0; i < POPULATION; i++)
+		FreeModel(&population[i]);
 
-
-    }
-
-
-
-
-
-
-	FreeModel(&model);
 	return 0;
 }

@@ -38,6 +38,7 @@ applyTo: '**'
 - Generating tests unless explicitly requested
 - Generate Readme or other documentation files unless explicitly requested or are useful for your context
 - Avoid creating redundant comments that do not add value
+- Redundant comments: keep only high-level comments that explain the purpose of code blocks, not line-by-line explanations of what the code does
 
 ## Context Awareness
 - Consider existing codebase patterns and match that style
