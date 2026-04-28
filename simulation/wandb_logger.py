@@ -1,3 +1,4 @@
+import math
 import signal
 import socket
 import struct
@@ -27,15 +28,17 @@ def new_run():
     print("--- new wandb run started ---", flush=True)
 
 
-def log_stats(gen, avg_loss, best_loss):
+def log_stats(gen, avg_loss, best_loss, best_ever, avg_deg, best_deg):
     global last_gen
     with wandb_lock:
         if gen <= last_gen:
             new_run()
         last_gen = gen
-        print(f"gen={gen:5d}  avg_loss={avg_loss:.4f}  best_loss={best_loss:.4f}", flush=True)
+        alltime_deg = math.degrees(math.acos(max(-1.0, min(1.0, 1.0 - best_ever))))
+        print(f"gen={gen:5d}  avg={avg_deg:.1f}deg  best={best_deg:.1f}deg  val={alltime_deg:.1f}deg", flush=True)
         if HAS_WANDB:
-            wandb.log({"avg_loss": avg_loss, "best_loss": best_loss}, step=gen)
+            wandb.log({"avg_loss": avg_loss, "best_loss": best_loss, "val_loss": best_ever,
+                       "avg_deg": avg_deg, "best_deg": best_deg, "val_deg": alltime_deg}, step=gen)
 
 
 def recv_all(conn, n):
@@ -57,9 +60,9 @@ def handle(conn):
                 return
             recv_all(conn, 1)  # type byte (ignored)
             data = recv_all(conn, total_size - 1)
-            # payload: int32 gen, float avg_loss, float best_loss
-            gen, avg_loss, best_loss = struct.unpack('<iff', data)
-            log_stats(gen, avg_loss, best_loss)
+            # payload: int32 gen, float avg_loss, float best_loss, float best_ever, float avg_deg, float best_deg
+            gen, avg_loss, best_loss, best_ever, avg_deg, best_deg = struct.unpack('<ifffff', data)
+            log_stats(gen, avg_loss, best_loss, best_ever, avg_deg, best_deg)
         except Exception as e:
             print(f"handle error: {e}", flush=True)
         finally:

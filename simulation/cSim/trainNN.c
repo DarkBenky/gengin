@@ -100,12 +100,22 @@ static int wandbCheckAvailable(void) {
 	return ok;
 }
 
-static void postStats(const Client *c, int gen, float avgLoss, float bestLoss) {
+#define RAD2DEG 57.2957795f
+
+static float lossToDeg(float loss) {
+	float dot = fmaxf(-1.0f, fminf(1.0f, 1.0f - loss));
+	return acosf(dot) * RAD2DEG;
+}
+
+static void postStats(const Client *c, int gen, float avgLoss, float bestLoss, float bestEver, float avgDeg, float bestDeg) {
 	struct {
 		int gen;
 		float avgLoss;
 		float bestLoss;
-	} payload = {gen, avgLoss, bestLoss};
+		float bestEver;
+		float avgDeg;
+		float bestDeg;
+	} payload = {gen, avgLoss, bestLoss, bestEver, avgDeg, bestDeg};
 	ClientResponse r = clientPost(c, (const char *)&payload, sizeof(payload));
 	clientFreeResponse(&r);
 }
@@ -127,7 +137,7 @@ static void initPlane(Plane *p) {
 	}
 }
 
-#define MODEL_SIZE 256
+#define MODEL_SIZE 32
 
 static Model buildModel() {
 	Model model;
@@ -144,9 +154,10 @@ static Model buildModel() {
 #define GENERATIONS 10000
 #define SIM_STEPS 256
 #define N_EVAL_TARGETS 16
+#define N_VAL_TARGETS 64
 #define DT 0.1f
-#define MUTATION_RATE_START 0.1f
-#define MUTATION_RATE 0.01f
+#define MUTATION_RATE_START 0.05f
+#define MUTATION_RATE 0.001f
 #define STAGNATION_GENS (GENERATIONS / 100)
 #define STAGNATION_BOOST 4.0f
 
@@ -195,21 +206,28 @@ int main(void) {
 	}
 
 	float losses[POPULATION];
-	float bestLossEver = 2.0f;
+	float bestValLoss = 2.0f;
 	int stagnationCount = 0;
 
-	// Fixed targets: same set every generation so selection pressure accumulates.
+	// Fixed validation set — never resampled, used only for saving decisions.
+	float3 valTargets[N_VAL_TARGETS];
+	for (int t = 0; t < N_VAL_TARGETS; t++)
+		valTargets[t] = randomPointOnSphere();
+
 	float3 evalTargets[N_EVAL_TARGETS];
-	for (int t = 0; t < N_EVAL_TARGETS; t++)
-		evalTargets[t] = randomPointOnSphere();
 
 	for (int gen = 0; gen < GENERATIONS; gen++) {
+		// Resample targets every generation to force generalization.
+		for (int t = 0; t < N_EVAL_TARGETS; t++)
+			evalTargets[t] = randomPointOnSphere();
+
 		float totalInferenceTime = 0.0f;
 		int totalSteps = 0;
 		for (int i = 0; i < POPULATION; i++) {
 			float totalLoss = 0.0f;
 			for (int t = 0; t < N_EVAL_TARGETS; t++) {
 				Plane plane = basePlane;
+				float episodeLoss = 0.0f;
 				for (int s = 0; s < SIM_STEPS; s++) {
 					clock_t start = clock();
 					runInference(&population[i], &plane, &evalTargets[t]);
@@ -217,8 +235,9 @@ int main(void) {
 					totalInferenceTime += (double)(end - start) / CLOCKS_PER_SEC;
 					totalSteps++;
 					updatePlane(&plane, DT, NULL);
+					episodeLoss += lossFunc(&plane, &evalTargets[t]);
 				}
-				totalLoss += lossFunc(&plane, &evalTargets[t]);
+				totalLoss += episodeLoss / SIM_STEPS;
 			}
 			losses[i] = totalLoss / N_EVAL_TARGETS;
 		}
@@ -246,25 +265,44 @@ int main(void) {
 		float avgLoss = totalLoss / POPULATION;
 		float bestLoss = losses[eliteIdx[0]];
 
-		if (bestLoss < bestLossEver - 1e-5f) {
-			bestLossEver = bestLoss;
+		// Evaluate best model of this gen on the fixed validation set.
+		float valLoss = 0.0f;
+		for (int t = 0; t < N_VAL_TARGETS; t++) {
+			Plane plane = basePlane;
+			float episodeLoss = 0.0f;
+			for (int s = 0; s < SIM_STEPS; s++) {
+				runInference(&population[eliteIdx[0]], &plane, &valTargets[t]);
+				updatePlane(&plane, DT, NULL);
+				episodeLoss += lossFunc(&plane, &valTargets[t]);
+			}
+			valLoss += episodeLoss / SIM_STEPS;
+		}
+		valLoss /= N_VAL_TARGETS;
+
+		if (valLoss < bestValLoss - 1e-5f) {
+			bestValLoss = valLoss;
 			stagnationCount = 0;
+			if (SaveModel(&population[eliteIdx[0]], MODEL_PATH) != 0)
+				fprintf(stderr, "warning: failed to save model to %s\n", MODEL_PATH);
 		} else {
 			stagnationCount++;
 		}
 
+		float avgDeg = lossToDeg(avgLoss);
+		float bestDeg = lossToDeg(bestLoss);
+
 		float mutationRate = scaleMutationRate(gen);
+		int boosted = 0;
 		if (stagnationCount >= STAGNATION_GENS) {
 			mutationRate *= STAGNATION_BOOST;
 			stagnationCount = 0;
+			boosted = 1;
 		}
 
-		printf("gen %4d  avg_loss %.4f  best_loss %.4f  mutation_rate %.7f  stagnation %d\n", gen, avgLoss, bestLoss, mutationRate, stagnationCount);
+		printf("gen %4d  avg=%.1fdeg  best=%.1fdeg  val=%.1fdeg  stagnation=%d%s\n",
+			   gen, avgDeg, bestDeg, lossToDeg(bestValLoss), stagnationCount, boosted ? " [BOOST]" : "");
 		if (wandbEnabled)
-			postStats(&wandbClient, gen, avgLoss, bestLoss);
-
-		if (SaveModel(&population[eliteIdx[0]], MODEL_PATH) != 0)
-			fprintf(stderr, "warning: failed to save model to %s\n", MODEL_PATH);
+			postStats(&wandbClient, gen, avgLoss, bestLoss, bestValLoss, avgDeg, bestDeg);
 
 		for (int i = 0; i < POPULATION; i++) {
 			if (isElite[i]) continue;
