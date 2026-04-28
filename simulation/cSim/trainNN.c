@@ -196,6 +196,8 @@ static int cmpRanked(const void *a, const void *b) {
 	return (la > lb) - (la < lb);
 }
 
+#define MODEL_PATH "simulation/model.bin"
+
 int main(void) {
 	Plane basePlane;
 	initPlane(&basePlane);
@@ -203,6 +205,18 @@ int main(void) {
 	Model population[POPULATION];
 	for (int i = 0; i < POPULATION; i++)
 		population[i] = buildModel();
+
+	// Try to seed population from a saved checkpoint
+	Model seed = {0};
+	if (LoadModel(&seed, MODEL_PATH) == 0) {
+		printf("Loaded checkpoint from %s\n", MODEL_PATH);
+		for (int i = 0; i < POPULATION; i++) {
+			CopyModel(&population[i], &seed);
+			if (i > 0)
+				MutateModel(&population[i], MUTATION_RATE);
+		}
+		FreeModel(&seed);
+	}
 
 	float losses[POPULATION];
 
@@ -237,6 +251,9 @@ int main(void) {
 		for (int i = 0; i < POPULATION; i++) totalLoss += losses[i];
 		printf("gen %4d  avg_loss %.4f  best_loss %.4f\n",
 			   gen, totalLoss / POPULATION, losses[eliteIdx[0]]);
+
+		if (SaveModel(&population[eliteIdx[0]], MODEL_PATH) != 0)
+			fprintf(stderr, "warning: failed to save model to %s\n", MODEL_PATH);
 
 		for (int i = 0; i < POPULATION; i++) {
 			if (isElite[i]) continue;

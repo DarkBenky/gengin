@@ -31,3 +31,7 @@ void FreeModel(Model *model);
 void Forward(Model *model, const float *input, float *output);
 void CopyModel(Model *dest, const Model *src);
 void MutateModel(Model *model, float mutationRate);
+
+// Returns 0 on success, non-zero on failure.
+int SaveModel(const Model *model, const char *filename);
+int LoadModel(Model *model, const char *filename);
