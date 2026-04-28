@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define MAX_SPEED 700.0f
 #define MAX_ALTITUDE 25000.0f
@@ -86,6 +87,87 @@ static float3 randomPointOnSphere(void) {
 	return (float3){r * cosf(t), r * sinf(t), z, 0.0f};
 }
 
+static Surface makeSurface(float3 pos, float3 axis, float area, float cl, float cd,
+                            float ar, float eff, float stall, float camber,
+                            float minAng, float maxAng, float rate, bool active) {
+	Surface s;
+	memset(&s, 0, sizeof(s));
+	s.relativePos = pos;
+	s.rotationAxis = axis;
+	s.surfaceArea = area;
+	s.liftCoefficient = cl;
+	s.dragCoefficient = cd;
+	s.aspectRatio = ar;
+	s.efficiency = eff;
+	s.stallAngle = stall;
+	s.camber = camber;
+	s.minRotationAngle = minAng;
+	s.maxRotationAngle = maxAng;
+	s.rotationRate = rate;
+	s.active = active;
+	s.rotationAngle = 0.0f;
+	s.targetRotationAngle = 0.0f;
+	return s;
+}
+
+static void initPlane(Plane *p) {
+	memset(p, 0, sizeof(*p));
+	strncpy(p->name, "F-16C", sizeof(p->name) - 1);
+
+	p->forward           = (float3){1.0f, 0.0f, 0.0f, 0.0f};
+	p->position          = (float3){0.0f, 5000.0f, 0.0f, 0.0f};
+	p->rotation          = (float3){0.0f, 0.0f, 0.0f, 0.0f};
+	p->currentSpeed      = 220.0f;   // m/s, ~0.65 Mach at 5000m
+	p->currentAltitude   = 5000.0f;
+	p->baseMass          = 9207.0f;  // kg, F-16 empty weight
+	p->fuelMass          = 3162.0f;  // kg, internal fuel
+	p->currentFuelPercentage = 1.0f;
+	p->maxTrust          = 129000.0f; // N, F110-GE-129 with afterburner
+	p->currentTrustPercentage = 0.5f;
+	p->burnRate          = 2.8f;     // kg/s at full afterburner
+	p->burnWithoutAfterburner = 0.9f;
+
+	float3 yAxis = {0.0f, 1.0f, 0.0f, 0.0f};
+	float3 zAxis = {0.0f, 0.0f, 1.0f, 0.0f};
+
+	// Wings (large, fixed, provide main lift)
+	p->leftWing  = makeSurface((float3){0.0f,  0.0f, -3.5f, 0.0f}, yAxis,
+	                           13.9f, 1.6f, 0.02f, 3.0f, 0.85f, 18.0f, 0.04f,  0.0f, 0.0f, 0.0f, false);
+	p->rightWing = makeSurface((float3){0.0f,  0.0f,  3.5f, 0.0f}, yAxis,
+	                           13.9f, 1.6f, 0.02f, 3.0f, 0.85f, 18.0f, 0.04f,  0.0f, 0.0f, 0.0f, false);
+
+	// Horizontal stabilizer (fixed pitch trim surface)
+	p->horizontalStabilizer = makeSurface((float3){-4.5f, 0.0f, 0.0f, 0.0f}, yAxis,
+	                                      3.9f, 1.2f, 0.02f, 2.5f, 0.80f, 20.0f, 0.0f,  0.0f, 0.0f, 0.0f, false);
+
+	// Vertical stabilizer (fixed yaw stability)
+	p->verticalStabilizer   = makeSurface((float3){-4.5f, 0.5f, 0.0f, 0.0f}, zAxis,
+	                                      5.1f, 1.0f, 0.02f, 1.5f, 0.75f, 20.0f, 0.0f,  0.0f, 0.0f, 0.0f, false);
+
+	// Ailerons (roll control)
+	p->leftAileron  = makeSurface((float3){-0.5f, 0.0f, -4.5f, 0.0f}, yAxis,
+	                              1.5f, 1.2f, 0.025f, 4.0f, 0.82f, 25.0f, 0.0f, -25.0f, 25.0f, 60.0f, true);
+	p->rightAileron = makeSurface((float3){-0.5f, 0.0f,  4.5f, 0.0f}, yAxis,
+	                              1.5f, 1.2f, 0.025f, 4.0f, 0.82f, 25.0f, 0.0f, -25.0f, 25.0f, 60.0f, true);
+
+	// Elevators (pitch control)
+	p->leftElevator  = makeSurface((float3){-4.5f, 0.0f, -1.8f, 0.0f}, yAxis,
+	                               1.95f, 1.4f, 0.02f, 2.5f, 0.80f, 25.0f, 0.0f, -25.0f, 25.0f, 80.0f, true);
+	p->rightElevator = makeSurface((float3){-4.5f, 0.0f,  1.8f, 0.0f}, yAxis,
+	                               1.95f, 1.4f, 0.02f, 2.5f, 0.80f, 25.0f, 0.0f, -25.0f, 25.0f, 80.0f, true);
+
+	// Rudder (yaw control)
+	p->rudder = makeSurface((float3){-4.8f, 1.0f, 0.0f, 0.0f}, zAxis,
+	                        2.0f, 1.0f, 0.025f, 1.5f, 0.75f, 25.0f, 0.0f, -30.0f, 30.0f, 60.0f, true);
+
+	// Flaps (lift augmentation)
+	p->leftFlap  = makeSurface((float3){-0.2f, 0.0f, -2.5f, 0.0f}, yAxis,
+	                           1.5f, 1.8f, 0.04f, 2.5f, 0.78f, 15.0f, 0.06f, 0.0f, 40.0f, 30.0f, true);
+	p->rightFlap = makeSurface((float3){-0.2f, 0.0f,  2.5f, 0.0f}, yAxis,
+	                           1.5f, 1.8f, 0.04f, 2.5f, 0.78f, 15.0f, 0.06f, 0.0f, 40.0f, 30.0f, true);
+}
+
+
 static Model buildModel(void) {
 	Model model;
 	InitModel(&model, INPUT_SIZE, OUTPUT_SIZE);
@@ -116,7 +198,7 @@ static int cmpRanked(const void *a, const void *b) {
 
 int main(void) {
 	Plane basePlane;
-	loadPlane(&basePlane, "simulation/simModels/F-16C.bin");
+	initPlane(&basePlane);
 
 	Model population[POPULATION];
 	for (int i = 0; i < POPULATION; i++)
