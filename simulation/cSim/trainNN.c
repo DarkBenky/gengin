@@ -127,7 +127,7 @@ static void initPlane(Plane *p) {
 	}
 }
 
-#define MODEL_SIZE 128
+#define MODEL_SIZE 256
 
 static Model buildModel() {
 	Model model;
@@ -139,14 +139,16 @@ static Model buildModel() {
 	return model;
 }
 
-#define POPULATION 512
+#define POPULATION 256
 #define ELITE_COUNT (POPULATION / 10)
 #define GENERATIONS 10000
-#define SIM_STEPS 128
+#define SIM_STEPS 256
 #define N_EVAL_TARGETS 16
 #define DT 0.1f
 #define MUTATION_RATE_START 0.1f
 #define MUTATION_RATE 0.01f
+#define STAGNATION_GENS (GENERATIONS / 100)
+#define STAGNATION_BOOST 4.0f
 
 typedef struct {
 	float loss;
@@ -193,6 +195,8 @@ int main(void) {
 	}
 
 	float losses[POPULATION];
+	float bestLossEver = 2.0f;
+	int stagnationCount = 0;
 
 	// Fixed targets: same set every generation so selection pressure accumulates.
 	float3 evalTargets[N_EVAL_TARGETS];
@@ -241,8 +245,21 @@ int main(void) {
 			totalLoss += losses[i];
 		float avgLoss = totalLoss / POPULATION;
 		float bestLoss = losses[eliteIdx[0]];
+
+		if (bestLoss < bestLossEver - 1e-5f) {
+			bestLossEver = bestLoss;
+			stagnationCount = 0;
+		} else {
+			stagnationCount++;
+		}
+
 		float mutationRate = scaleMutationRate(gen);
-		printf("gen %4d  avg_loss %.4f  best_loss %.4f  mutation_rate %.7f\n", gen, avgLoss, bestLoss, mutationRate);
+		if (stagnationCount >= STAGNATION_GENS) {
+			mutationRate *= STAGNATION_BOOST;
+			stagnationCount = 0;
+		}
+
+		printf("gen %4d  avg_loss %.4f  best_loss %.4f  mutation_rate %.7f  stagnation %d\n", gen, avgLoss, bestLoss, mutationRate, stagnationCount);
 		if (wandbEnabled)
 			postStats(&wandbClient, gen, avgLoss, bestLoss);
 
@@ -253,7 +270,7 @@ int main(void) {
 			if (isElite[i]) continue;
 			int parent = eliteIdx[rand() % ELITE_COUNT];
 			CopyModel(&population[i], &population[parent]);
-			MutateModel(&population[i], scaleMutationRate(gen));
+			MutateModel(&population[i], mutationRate);
 		}
 	}
 

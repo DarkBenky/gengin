@@ -23,3 +23,5 @@ simulation/model.bin
 simulation/trainNN
 
 .ccls-cache
+
+simulation/wandb/

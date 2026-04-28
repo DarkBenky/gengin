@@ -7,6 +7,7 @@
 - [X] implement the simplified simulation in 2d then move to c
     - [X] move python code to c
     - [ ] train model
+    - [ ] integrate the model
 - [ ] render directly wia open gl not c => open gl => minifb
 
 - [X] sync all object
