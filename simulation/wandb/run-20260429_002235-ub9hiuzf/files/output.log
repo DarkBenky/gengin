@@ -1,0 +1,198 @@
+wandb logger listening on 127.0.0.1:6789
+handle error: connection closed
+gen=    0  avg_loss=0.7337  best_loss=0.7314
+gen=    1  avg_loss=0.7335  best_loss=0.7309
+gen=    2  avg_loss=0.7331  best_loss=0.7308
+gen=    3  avg_loss=0.7329  best_loss=0.7303
+gen=    4  avg_loss=0.7326  best_loss=0.7302
+gen=    5  avg_loss=0.7323  best_loss=0.7281
+gen=    6  avg_loss=0.7318  best_loss=0.7273
+gen=    7  avg_loss=0.7310  best_loss=0.7258
+gen=    8  avg_loss=0.7295  best_loss=0.7242
+gen=    9  avg_loss=0.7274  best_loss=0.7227
+gen=   10  avg_loss=0.7259  best_loss=0.7208
+gen=   11  avg_loss=0.7241  best_loss=0.7200
+gen=   12  avg_loss=0.7227  best_loss=0.7188
+gen=   13  avg_loss=0.7214  best_loss=0.7175
+gen=   14  avg_loss=0.7202  best_loss=0.7166
+gen=   15  avg_loss=0.7192  best_loss=0.7158
+gen=   16  avg_loss=0.7185  best_loss=0.7154
+gen=   17  avg_loss=0.7178  best_loss=0.7140
+gen=   18  avg_loss=0.7169  best_loss=0.7127
+gen=   19  avg_loss=0.7154  best_loss=0.7125
+gen=   20  avg_loss=0.7146  best_loss=0.7119
+gen=   21  avg_loss=0.7139  best_loss=0.7113
+gen=   22  avg_loss=0.7134  best_loss=0.7106
+gen=   23  avg_loss=0.7127  best_loss=0.7097
+gen=   24  avg_loss=0.7122  best_loss=0.7092
+gen=   25  avg_loss=0.7115  best_loss=0.7084
+gen=   26  avg_loss=0.7109  best_loss=0.7073
+gen=   27  avg_loss=0.7101  best_loss=0.7062
+gen=   28  avg_loss=0.7096  best_loss=0.7056
+gen=   29  avg_loss=0.7090  best_loss=0.7052
+gen=   30  avg_loss=0.7079  best_loss=0.7047
+gen=   31  avg_loss=0.7072  best_loss=0.7044
+gen=   32  avg_loss=0.7068  best_loss=0.7039
+gen=   33  avg_loss=0.7062  best_loss=0.7032
+gen=   34  avg_loss=0.7059  best_loss=0.7032
+gen=   35  avg_loss=0.7056  best_loss=0.7028
+gen=   36  avg_loss=0.7054  best_loss=0.7026
+gen=   37  avg_loss=0.7051  best_loss=0.7025
+gen=   38  avg_loss=0.7049  best_loss=0.7022
+gen=   39  avg_loss=0.7048  best_loss=0.7021
+gen=   40  avg_loss=0.7046  best_loss=0.7020
+gen=   41  avg_loss=0.7045  best_loss=0.7019
+gen=   42  avg_loss=0.7043  best_loss=0.7018
+gen=   43  avg_loss=0.7043  best_loss=0.7018
+gen=   44  avg_loss=0.7042  best_loss=0.7018
+gen=   45  avg_loss=0.7039  best_loss=0.7017
+gen=   46  avg_loss=0.7040  best_loss=0.7016
+gen=   47  avg_loss=0.7041  best_loss=0.7016
+gen=   48  avg_loss=0.7041  best_loss=0.7015
+gen=   49  avg_loss=0.7040  best_loss=0.7015
+gen=   50  avg_loss=0.7037  best_loss=0.7013
+gen=   51  avg_loss=0.7037  best_loss=0.7013
+gen=   52  avg_loss=0.7036  best_loss=0.7013
+gen=   53  avg_loss=0.7035  best_loss=0.7012
+gen=   54  avg_loss=0.7036  best_loss=0.7012
+gen=   55  avg_loss=0.7035  best_loss=0.7012
+gen=   56  avg_loss=0.7034  best_loss=0.7012
+gen=   57  avg_loss=0.7036  best_loss=0.7012
+gen=   58  avg_loss=0.7033  best_loss=0.7009
+gen=   59  avg_loss=0.7033  best_loss=0.7009
+gen=   60  avg_loss=0.7033  best_loss=0.7009
+gen=   61  avg_loss=0.7032  best_loss=0.7008
+gen=   62  avg_loss=0.7030  best_loss=0.7008
+gen=   63  avg_loss=0.7029  best_loss=0.7007
+gen=   64  avg_loss=0.7028  best_loss=0.7007
+gen=   65  avg_loss=0.7029  best_loss=0.7005
+gen=   66  avg_loss=0.7027  best_loss=0.7005
+gen=   67  avg_loss=0.7027  best_loss=0.7005
+gen=   68  avg_loss=0.7026  best_loss=0.7005
+gen=   69  avg_loss=0.7026  best_loss=0.7005
+gen=   70  avg_loss=0.7026  best_loss=0.7005
+gen=   71  avg_loss=0.7026  best_loss=0.7003
+gen=   72  avg_loss=0.7025  best_loss=0.7003
+gen=   73  avg_loss=0.7027  best_loss=0.7003
+gen=   74  avg_loss=0.7026  best_loss=0.7003
+gen=   75  avg_loss=0.7024  best_loss=0.7003
+gen=   76  avg_loss=0.7025  best_loss=0.7003
+gen=   77  avg_loss=0.7027  best_loss=0.7002
+gen=   78  avg_loss=0.7025  best_loss=0.7002
+gen=   79  avg_loss=0.7024  best_loss=0.7002
+gen=   80  avg_loss=0.7024  best_loss=0.7002
+gen=   81  avg_loss=0.7025  best_loss=0.7002
+gen=   82  avg_loss=0.7025  best_loss=0.7002
+gen=   83  avg_loss=0.7023  best_loss=0.7002
+gen=   84  avg_loss=0.7025  best_loss=0.7002
+gen=   85  avg_loss=0.7024  best_loss=0.7002
+gen=   86  avg_loss=0.7024  best_loss=0.7001
+gen=   87  avg_loss=0.7024  best_loss=0.7001
+gen=   88  avg_loss=0.7024  best_loss=0.7001
+gen=   89  avg_loss=0.7022  best_loss=0.7001
+gen=   90  avg_loss=0.7025  best_loss=0.7001
+gen=   91  avg_loss=0.7024  best_loss=0.7001
+gen=   92  avg_loss=0.7024  best_loss=0.7000
+gen=   93  avg_loss=0.7023  best_loss=0.7000
+gen=   94  avg_loss=0.7025  best_loss=0.7000
+gen=   95  avg_loss=0.7024  best_loss=0.7000
+gen=   96  avg_loss=0.7023  best_loss=0.7000
+gen=   97  avg_loss=0.7020  best_loss=0.7000
+gen=   98  avg_loss=0.7021  best_loss=0.7000
+gen=   99  avg_loss=0.7022  best_loss=0.7000
+gen=  100  avg_loss=0.7021  best_loss=0.6998
+gen=  101  avg_loss=0.7021  best_loss=0.6998
+gen=  102  avg_loss=0.7021  best_loss=0.6998
+gen=  103  avg_loss=0.7021  best_loss=0.6998
+gen=  104  avg_loss=0.7021  best_loss=0.6998
+gen=  105  avg_loss=0.7021  best_loss=0.6998
+gen=  106  avg_loss=0.7021  best_loss=0.6998
+gen=  107  avg_loss=0.7021  best_loss=0.6998
+gen=  108  avg_loss=0.7020  best_loss=0.6998
+gen=  109  avg_loss=0.7018  best_loss=0.6998
+gen=  110  avg_loss=0.7021  best_loss=0.6998
+gen=  111  avg_loss=0.7019  best_loss=0.6998
+gen=  112  avg_loss=0.7020  best_loss=0.6998
+gen=  113  avg_loss=0.7020  best_loss=0.6998
+handle error: connection closed
+gen=    0  avg_loss=0.5433  best_loss=0.5402
+gen=    1  avg_loss=0.5427  best_loss=0.5383
+gen=    2  avg_loss=0.5419  best_loss=0.5363
+gen=    3  avg_loss=0.5408  best_loss=0.5343
+gen=    4  avg_loss=0.5392  best_loss=0.5333
+gen=    5  avg_loss=0.5373  best_loss=0.5324
+gen=    6  avg_loss=0.5356  best_loss=0.5314
+gen=    7  avg_loss=0.5344  best_loss=0.5305
+gen=    8  avg_loss=0.5334  best_loss=0.5296
+gen=    9  avg_loss=0.5324  best_loss=0.5281
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 0 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 1 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 2 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 3 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 4 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 5 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 6 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 7 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 8 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 9 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+gen=   10  avg_loss=0.5318  best_loss=0.5270
+gen=   11  avg_loss=0.5306  best_loss=0.5266
+gen=   12  avg_loss=0.5302  best_loss=0.5263
+gen=   13  avg_loss=0.5296  best_loss=0.5261
+gen=   14  avg_loss=0.5291  best_loss=0.5258
+gen=   15  avg_loss=0.5290  best_loss=0.5250
+gen=   16  avg_loss=0.5285  best_loss=0.5250
+gen=   17  avg_loss=0.5282  best_loss=0.5250
+gen=   18  avg_loss=0.5280  best_loss=0.5248
+gen=   19  avg_loss=0.5277  best_loss=0.5248
+gen=   20  avg_loss=0.5274  best_loss=0.5246
+gen=   21  avg_loss=0.5272  best_loss=0.5239
+gen=   22  avg_loss=0.5271  best_loss=0.5239
+gen=   23  avg_loss=0.5268  best_loss=0.5237
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 10 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 11 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 12 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 13 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 14 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 15 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 16 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 17 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 18 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 19 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 20 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 21 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 22 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 23 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+gen=   24  avg_loss=0.5268  best_loss=0.5237
+gen=   25  avg_loss=0.5265  best_loss=0.5235
+gen=   26  avg_loss=0.5264  best_loss=0.5234
+gen=   27  avg_loss=0.5269  best_loss=0.5232
+gen=   28  avg_loss=0.5265  best_loss=0.5232
+gen=   29  avg_loss=0.5263  best_loss=0.5232
+gen=   30  avg_loss=0.5260  best_loss=0.5231
+gen=   31  avg_loss=0.5261  best_loss=0.5231
+gen=   32  avg_loss=0.5260  best_loss=0.5230
+gen=   33  avg_loss=0.5257  best_loss=0.5230
+gen=   34  avg_loss=0.5259  best_loss=0.5230
+gen=   35  avg_loss=0.5259  best_loss=0.5228
+gen=   36  avg_loss=0.5261  best_loss=0.5228
+gen=   37  avg_loss=0.5259  best_loss=0.5226
+gen=   38  avg_loss=0.5256  best_loss=0.5225
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 24 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 25 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 26 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 27 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 28 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 29 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 30 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 31 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 32 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 33 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 34 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 35 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 36 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 37 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+[34m[1mwandb[0m: [33mWARNING[0m Tried to log to step 38 that is less than the current step 113. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+gen=   39  avg_loss=0.5255  best_loss=0.5225
+gen=   40  avg_loss=0.5256  best_loss=0.5224
+shutting down

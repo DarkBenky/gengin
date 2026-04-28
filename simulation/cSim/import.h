@@ -50,5 +50,5 @@ typedef struct {
 	float currentAltitude; // in meters
 } Plane;
 
-void loadPlane(Plane *plane, const char *filename);
-void savePlane(const Plane *plane, const char *filename);
+int loadPlaneBin(Plane *plane, const char *path, float3 forward, float3 position, float speed, float throttle);
+int savePlaneBin(const Plane *plane, const char *path);

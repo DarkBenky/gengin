@@ -25,7 +25,8 @@ func NewF16() Plane {
 	mainWing := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{0.2, 0, side * wingSpan},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
+			rotationAngle:    3.0,  // trim incidence for level flight at 220 m/s, 5000 m
 			surfaceArea:      14.0, // half of 28 m^2 total
 			liftCoefficient:  1.1,
 			dragCoefficient:  0.025,
@@ -41,7 +42,7 @@ func NewF16() Plane {
 	flaperon := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{-0.8, 0, side * (wingSpan + 1.2)},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
 			maxRotationAngle: 35.0,
 			minRotationAngle: -35.0,
 			rotationRate:     80.0,
@@ -60,7 +61,7 @@ func NewF16() Plane {
 	lef := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{0.8, 0, side * wingSpan * 0.6},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
 			maxRotationAngle: 25.0,
 			minRotationAngle: 0.0,
 			rotationRate:     30.0,
@@ -79,7 +80,7 @@ func NewF16() Plane {
 	stabilator := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{tailX, 0, side * tailSpan},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
 			maxRotationAngle: 30.0,
 			minRotationAngle: -30.0,
 			rotationRate:     100.0,
@@ -170,7 +171,7 @@ func NewSu27() Plane {
 	mainWing := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{0.0, 0, side * wingSpan},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
 			surfaceArea:      31.0, // half of 62 m^2
 			liftCoefficient:  1.15,
 			dragCoefficient:  0.022,
@@ -185,7 +186,7 @@ func NewSu27() Plane {
 	aileron := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{-1.0, 0, side * (wingSpan + 1.5)},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
 			maxRotationAngle: 25.0,
 			minRotationAngle: -25.0,
 			rotationRate:     70.0,
@@ -203,7 +204,7 @@ func NewSu27() Plane {
 	flap := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{-0.5, 0, side * wingSpan * 0.5},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
 			maxRotationAngle: 45.0,
 			minRotationAngle: 0.0,
 			rotationRate:     30.0,
@@ -222,7 +223,7 @@ func NewSu27() Plane {
 	stabilator := func(side float32) Surface {
 		return Surface{
 			relativePosition: Float3{tailX, 0, side * tailSpan},
-			rotationAxis:     Float3{0, 0, side},
+			rotationAxis:     Float3{0, 0, 1},
 			maxRotationAngle: 35.0,
 			minRotationAngle: -35.0,
 			rotationRate:     90.0,

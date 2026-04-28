@@ -1,10 +1,18 @@
 #include "dense.h"
 #include "import.h"
 #include "simulate.h"
+#include <arpa/inet.h>
 #include <math.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include "client/client.h"
+#include <time.h>
+
+#define WANDB_HOST "127.0.0.1"
+#define WANDB_PORT 6789
 
 #define MAX_SPEED 700.0f
 #define MAX_ALTITUDE 25000.0f
@@ -80,6 +88,28 @@ static float lossFunc(const Plane *plane, const float3 *targetForward) {
 	return 1.0f - f3Dot(plane->forward, *targetForward);
 }
 
+static int wandbCheckAvailable(void) {
+	int fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (fd < 0) return 0;
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(WANDB_PORT);
+	inet_pton(AF_INET, WANDB_HOST, &addr.sin_addr);
+	int ok = connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0;
+	close(fd);
+	return ok;
+}
+
+static void postStats(const Client *c, int gen, float avgLoss, float bestLoss) {
+	struct {
+		int gen;
+		float avgLoss;
+		float bestLoss;
+	} payload = {gen, avgLoss, bestLoss};
+	ClientResponse r = clientPost(c, (const char *)&payload, sizeof(payload));
+	clientFreeResponse(&r);
+}
+
 static float3 randomPointOnSphere(void) {
 	float z = (float)rand() / RAND_MAX * 2.0f - 1.0f;
 	float t = (float)rand() / RAND_MAX * 2.0f * 3.14159265f;
@@ -87,103 +117,36 @@ static float3 randomPointOnSphere(void) {
 	return (float3){r * cosf(t), r * sinf(t), z, 0.0f};
 }
 
-static Surface makeSurface(float3 pos, float3 axis, float area, float cl, float cd,
-                            float ar, float eff, float stall, float camber,
-                            float minAng, float maxAng, float rate, bool active) {
-	Surface s;
-	memset(&s, 0, sizeof(s));
-	s.relativePos = pos;
-	s.rotationAxis = axis;
-	s.surfaceArea = area;
-	s.liftCoefficient = cl;
-	s.dragCoefficient = cd;
-	s.aspectRatio = ar;
-	s.efficiency = eff;
-	s.stallAngle = stall;
-	s.camber = camber;
-	s.minRotationAngle = minAng;
-	s.maxRotationAngle = maxAng;
-	s.rotationRate = rate;
-	s.active = active;
-	s.rotationAngle = 0.0f;
-	s.targetRotationAngle = 0.0f;
-	return s;
-}
-
 static void initPlane(Plane *p) {
-	memset(p, 0, sizeof(*p));
-	strncpy(p->name, "F-16C", sizeof(p->name) - 1);
-
-	p->forward           = (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	p->position          = (float3){0.0f, 5000.0f, 0.0f, 0.0f};
-	p->rotation          = (float3){0.0f, 0.0f, 0.0f, 0.0f};
-	p->currentSpeed      = 220.0f;   // m/s, ~0.65 Mach at 5000m
-	p->currentAltitude   = 5000.0f;
-	p->baseMass          = 9207.0f;  // kg, F-16 empty weight
-	p->fuelMass          = 3162.0f;  // kg, internal fuel
-	p->currentFuelPercentage = 1.0f;
-	p->maxTrust          = 129000.0f; // N, F110-GE-129 with afterburner
-	p->currentTrustPercentage = 0.5f;
-	p->burnRate          = 2.8f;     // kg/s at full afterburner
-	p->burnWithoutAfterburner = 0.9f;
-
-	float3 yAxis = {0.0f, 1.0f, 0.0f, 0.0f};
-	float3 zAxis = {0.0f, 0.0f, 1.0f, 0.0f};
-
-	// Wings (large, fixed, provide main lift)
-	p->leftWing  = makeSurface((float3){0.0f,  0.0f, -3.5f, 0.0f}, yAxis,
-	                           13.9f, 1.6f, 0.02f, 3.0f, 0.85f, 18.0f, 0.04f,  0.0f, 0.0f, 0.0f, false);
-	p->rightWing = makeSurface((float3){0.0f,  0.0f,  3.5f, 0.0f}, yAxis,
-	                           13.9f, 1.6f, 0.02f, 3.0f, 0.85f, 18.0f, 0.04f,  0.0f, 0.0f, 0.0f, false);
-
-	// Horizontal stabilizer (fixed pitch trim surface)
-	p->horizontalStabilizer = makeSurface((float3){-4.5f, 0.0f, 0.0f, 0.0f}, yAxis,
-	                                      3.9f, 1.2f, 0.02f, 2.5f, 0.80f, 20.0f, 0.0f,  0.0f, 0.0f, 0.0f, false);
-
-	// Vertical stabilizer (fixed yaw stability)
-	p->verticalStabilizer   = makeSurface((float3){-4.5f, 0.5f, 0.0f, 0.0f}, zAxis,
-	                                      5.1f, 1.0f, 0.02f, 1.5f, 0.75f, 20.0f, 0.0f,  0.0f, 0.0f, 0.0f, false);
-
-	// Ailerons (roll control)
-	p->leftAileron  = makeSurface((float3){-0.5f, 0.0f, -4.5f, 0.0f}, yAxis,
-	                              1.5f, 1.2f, 0.025f, 4.0f, 0.82f, 25.0f, 0.0f, -25.0f, 25.0f, 60.0f, true);
-	p->rightAileron = makeSurface((float3){-0.5f, 0.0f,  4.5f, 0.0f}, yAxis,
-	                              1.5f, 1.2f, 0.025f, 4.0f, 0.82f, 25.0f, 0.0f, -25.0f, 25.0f, 60.0f, true);
-
-	// Elevators (pitch control)
-	p->leftElevator  = makeSurface((float3){-4.5f, 0.0f, -1.8f, 0.0f}, yAxis,
-	                               1.95f, 1.4f, 0.02f, 2.5f, 0.80f, 25.0f, 0.0f, -25.0f, 25.0f, 80.0f, true);
-	p->rightElevator = makeSurface((float3){-4.5f, 0.0f,  1.8f, 0.0f}, yAxis,
-	                               1.95f, 1.4f, 0.02f, 2.5f, 0.80f, 25.0f, 0.0f, -25.0f, 25.0f, 80.0f, true);
-
-	// Rudder (yaw control)
-	p->rudder = makeSurface((float3){-4.8f, 1.0f, 0.0f, 0.0f}, zAxis,
-	                        2.0f, 1.0f, 0.025f, 1.5f, 0.75f, 25.0f, 0.0f, -30.0f, 30.0f, 60.0f, true);
-
-	// Flaps (lift augmentation)
-	p->leftFlap  = makeSurface((float3){-0.2f, 0.0f, -2.5f, 0.0f}, yAxis,
-	                           1.5f, 1.8f, 0.04f, 2.5f, 0.78f, 15.0f, 0.06f, 0.0f, 40.0f, 30.0f, true);
-	p->rightFlap = makeSurface((float3){-0.2f, 0.0f,  2.5f, 0.0f}, yAxis,
-	                           1.5f, 1.8f, 0.04f, 2.5f, 0.78f, 15.0f, 0.06f, 0.0f, 40.0f, 30.0f, true);
+	if (loadPlaneBin(p, "simulation/simModels/F-16C.bin",
+					 (float3){1.0f, 0.0f, 0.0f, 0.0f},
+					 (float3){0.0f, 5000.0f, 0.0f, 0.0f},
+					 220.0f, 0.5f) != 0) {
+		fprintf(stderr, "failed to load simulation/simModels/F-16C.bin\n");
+		exit(1);
+	}
 }
 
+#define MODEL_SIZE 128
 
-static Model buildModel(void) {
+static Model buildModel() {
 	Model model;
 	InitModel(&model, INPUT_SIZE, OUTPUT_SIZE);
-	AddDenseLayer(&model, INPUT_SIZE, 16, RELU);
-	AddDenseLayer(&model, 16, 16, RELU);
-	AddDenseLayer(&model, 16, 16, RELU);
-	AddDenseLayer(&model, 16, OUTPUT_SIZE, TANH);
+	AddDenseLayer(&model, INPUT_SIZE, MODEL_SIZE, RELU);
+	AddDenseLayer(&model, MODEL_SIZE, MODEL_SIZE, RELU);
+	AddDenseLayer(&model, MODEL_SIZE, MODEL_SIZE, RELU);
+	AddDenseLayer(&model, MODEL_SIZE, OUTPUT_SIZE, TANH);
 	return model;
 }
 
 #define POPULATION 512
 #define ELITE_COUNT (POPULATION / 10)
 #define GENERATIONS 10000
-#define SIM_STEPS 64
+#define SIM_STEPS 128
+#define N_EVAL_TARGETS 16
 #define DT 0.1f
-#define MUTATION_RATE 0.05f
+#define MUTATION_RATE_START 0.1f
+#define MUTATION_RATE 0.01f
 
 typedef struct {
 	float loss;
@@ -198,7 +161,19 @@ static int cmpRanked(const void *a, const void *b) {
 
 #define MODEL_PATH "simulation/model.bin"
 
+float scaleMutationRate(int generation) {
+	float progress = (float)generation / GENERATIONS;
+	return MUTATION_RATE_START * (1.0f - progress) + MUTATION_RATE * progress;
+}
+
 int main(void) {
+	Client wandbClient = {WANDB_HOST, WANDB_PORT};
+	int wandbEnabled = wandbCheckAvailable();
+	if (wandbEnabled)
+		printf("wandb logger connected on port %d\n", WANDB_PORT);
+	else
+		printf("wandb server not found, stats logged to stdout only\n");
+
 	Plane basePlane;
 	initPlane(&basePlane);
 
@@ -206,7 +181,6 @@ int main(void) {
 	for (int i = 0; i < POPULATION; i++)
 		population[i] = buildModel();
 
-	// Try to seed population from a saved checkpoint
 	Model seed = {0};
 	if (LoadModel(&seed, MODEL_PATH) == 0) {
 		printf("Loaded checkpoint from %s\n", MODEL_PATH);
@@ -220,17 +194,31 @@ int main(void) {
 
 	float losses[POPULATION];
 
-	for (int gen = 0; gen < GENERATIONS; gen++) {
-		float3 target = randomPointOnSphere();
+	// Fixed targets: same set every generation so selection pressure accumulates.
+	float3 evalTargets[N_EVAL_TARGETS];
+	for (int t = 0; t < N_EVAL_TARGETS; t++)
+		evalTargets[t] = randomPointOnSphere();
 
+	for (int gen = 0; gen < GENERATIONS; gen++) {
+		float totalInferenceTime = 0.0f;
+		int totalSteps = 0;
 		for (int i = 0; i < POPULATION; i++) {
-			Plane plane = basePlane;
-			for (int s = 0; s < SIM_STEPS; s++) {
-				runInference(&population[i], &plane, &target);
-				updatePlane(&plane, DT, NULL);
+			float totalLoss = 0.0f;
+			for (int t = 0; t < N_EVAL_TARGETS; t++) {
+				Plane plane = basePlane;
+				for (int s = 0; s < SIM_STEPS; s++) {
+					clock_t start = clock();
+					runInference(&population[i], &plane, &evalTargets[t]);
+					clock_t end = clock();
+					totalInferenceTime += (double)(end - start) / CLOCKS_PER_SEC;
+					totalSteps++;
+					updatePlane(&plane, DT, NULL);
+				}
+				totalLoss += lossFunc(&plane, &evalTargets[t]);
 			}
-			losses[i] = lossFunc(&plane, &target);
+			losses[i] = totalLoss / N_EVAL_TARGETS;
 		}
+		printf("avg inference time: %.4f ms\n", (totalInferenceTime / totalSteps) * 1000.0f);
 
 		RankedModel ranked[POPULATION];
 		for (int i = 0; i < POPULATION; i++) {
@@ -241,16 +229,22 @@ int main(void) {
 
 		int eliteIdx[ELITE_COUNT];
 		int isElite[POPULATION];
-		for (int i = 0; i < POPULATION; i++) isElite[i] = 0;
+		for (int i = 0; i < POPULATION; i++)
+			isElite[i] = 0;
 		for (int e = 0; e < ELITE_COUNT; e++) {
 			eliteIdx[e] = ranked[e].idx;
 			isElite[ranked[e].idx] = 1;
 		}
 
 		float totalLoss = 0.0f;
-		for (int i = 0; i < POPULATION; i++) totalLoss += losses[i];
-		printf("gen %4d  avg_loss %.4f  best_loss %.4f\n",
-			   gen, totalLoss / POPULATION, losses[eliteIdx[0]]);
+		for (int i = 0; i < POPULATION; i++)
+			totalLoss += losses[i];
+		float avgLoss = totalLoss / POPULATION;
+		float bestLoss = losses[eliteIdx[0]];
+		float mutationRate = scaleMutationRate(gen);
+		printf("gen %4d  avg_loss %.4f  best_loss %.4f  mutation_rate %.7f\n", gen, avgLoss, bestLoss, mutationRate);
+		if (wandbEnabled)
+			postStats(&wandbClient, gen, avgLoss, bestLoss);
 
 		if (SaveModel(&population[eliteIdx[0]], MODEL_PATH) != 0)
 			fprintf(stderr, "warning: failed to save model to %s\n", MODEL_PATH);
@@ -259,7 +253,7 @@ int main(void) {
 			if (isElite[i]) continue;
 			int parent = eliteIdx[rand() % ELITE_COUNT];
 			CopyModel(&population[i], &population[parent]);
-			MutateModel(&population[i], MUTATION_RATE);
+			MutateModel(&population[i], scaleMutationRate(gen));
 		}
 	}
 

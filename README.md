@@ -5,7 +5,8 @@
     - [ ] import to c
     - [ ] implement c wing simulation
 - [X] implement the simplified simulation in 2d then move to c
-    - [ ] move python code to c
+    - [X] move python code to c
+    - [ ] train model
 - [ ] render directly wia open gl not c => open gl => minifb
 
 - [X] sync all object

@@ -39,7 +39,7 @@ GAME_SERVER_SRC    = server/gameServer.c server/server.c object/format.c
 EXAMPLE_CLIENT_SRC = client/example.c client/client.c object/format.c
 GAME_CLIENT_SRC    = client/gameClient.c client/client.c object/format.c object/object.c object/scene.c object/material/material.c load/loadObj.c util/bbox.c util/threadPool.c hexDump/hexDump.c
 HEX_DUMP_SRC       = hexDump/hexDump.c
-TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c
+TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c client/client.c
 
 .PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train $(if $(_SPECIFIC), $(_SPECIFIC))
 
@@ -69,7 +69,8 @@ hexDump: hexDump/hexDumpTest.c $(HEX_DUMP_SRC)
 	./hexDumpBin
 
 train: $(TRAIN_SRC)
-	$(CC) $(CFLAGS_BASE) -Isimulation -o simulation/trainNN $^ $(LDFLAGS) -lm
+	cd simulation/cmd && go run .
+	$(CC) $(CFLAGS_BASE) -Isimulation -I. -o simulation/trainNN $^ $(LDFLAGS) -lm
 	./simulation/trainNN
 
 run: $(TARGET)

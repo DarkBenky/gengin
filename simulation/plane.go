@@ -96,7 +96,7 @@ type Plane struct {
 func newWing(relPos Float3, side float32) Surface {
 	return Surface{
 		relativePosition: relPos,
-		rotationAxis:     Float3{0, 0, side},
+		rotationAxis:     Float3{0, 0, 1},
 		rotationAngle:    2.0,
 		surfaceArea:      25.0,
 		liftCoefficient:  1.2,
@@ -112,7 +112,7 @@ func newWing(relPos Float3, side float32) Surface {
 func newAileron(relPos Float3, side float32) Surface {
 	return Surface{
 		relativePosition: relPos,
-		rotationAxis:     Float3{0, 0, side},
+		rotationAxis:     Float3{0, 0, 1},
 		maxRotationAngle: 25.0,
 		minRotationAngle: -25.0,
 		surfaceArea:      3.0,
@@ -129,7 +129,7 @@ func newAileron(relPos Float3, side float32) Surface {
 func newFlap(relPos Float3, side float32) Surface {
 	return Surface{
 		relativePosition: relPos,
-		rotationAxis:     Float3{0, 0, side},
+		rotationAxis:     Float3{0, 0, 1},
 		maxRotationAngle: 40.0,
 		minRotationAngle: 0.0,
 		surfaceArea:      6.0,
@@ -175,7 +175,7 @@ func newVerticalStabilizer(relPos Float3) Surface {
 func newElevator(relPos Float3, side float32) Surface {
 	return Surface{
 		relativePosition: relPos,
-		rotationAxis:     Float3{0, 0, side},
+		rotationAxis:     Float3{0, 0, 1},
 		maxRotationAngle: 30.0,
 		minRotationAngle: -30.0,
 		surfaceArea:      3.0,
@@ -275,20 +275,21 @@ func boolToByte(b bool) byte {
 }
 
 func surfaceToBytes(s Surface) []byte {
-	bytes := make([]byte, 65)
+	bytes := make([]byte, 69)
 	copy(bytes[0:12], float3ToBytes(s.relativePosition))
 	copy(bytes[12:24], float3ToBytes(s.rotationAxis))
 	copy(bytes[24:28], float32ToBytes(s.rotationAngle))
-	copy(bytes[28:32], float32ToBytes(s.maxRotationAngle))
-	copy(bytes[32:36], float32ToBytes(s.minRotationAngle))
-	copy(bytes[36:40], float32ToBytes(s.surfaceArea))
-	copy(bytes[40:44], float32ToBytes(s.liftCoefficient))
-	copy(bytes[44:48], float32ToBytes(s.dragCoefficient))
-	copy(bytes[48:52], float32ToBytes(s.aspectRatio))
-	copy(bytes[52:56], float32ToBytes(s.efficiency))
-	copy(bytes[56:60], float32ToBytes(s.stallAngle))
-	copy(bytes[60:64], float32ToBytes(s.camber))
-	bytes[64] = boolToByte(s.active)
+	copy(bytes[28:32], float32ToBytes(s.rotationRate))
+	copy(bytes[32:36], float32ToBytes(s.maxRotationAngle))
+	copy(bytes[36:40], float32ToBytes(s.minRotationAngle))
+	copy(bytes[40:44], float32ToBytes(s.surfaceArea))
+	copy(bytes[44:48], float32ToBytes(s.liftCoefficient))
+	copy(bytes[48:52], float32ToBytes(s.dragCoefficient))
+	copy(bytes[52:56], float32ToBytes(s.aspectRatio))
+	copy(bytes[56:60], float32ToBytes(s.efficiency))
+	copy(bytes[60:64], float32ToBytes(s.stallAngle))
+	copy(bytes[64:68], float32ToBytes(s.camber))
+	bytes[68] = boolToByte(s.active)
 	return bytes
 }
 
