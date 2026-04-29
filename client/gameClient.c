@@ -23,12 +23,12 @@ static inline ModelType idModel(uint32 id) {
 
 static inline char *modelTypeToString(ModelType model) {
 	switch (model) {
-	case MODEL_F16:
-		return "F16";
-	case MODEL_R27:
-		return "R27";
-	default:
-		return "Unknown";
+	case MODEL_F16:          return "F16";
+	case MODEL_R27:          return "R27";
+	case MODEL_CUBE_PLANE:   return "CubePlane";
+	case MODEL_CUBE_TARGET:  return "CubeTarget";
+	case MODEL_CUBE_START:   return "CubeStart";
+	default:                 return "Unknown";
 	}
 }
 
@@ -194,18 +194,30 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 				}
 			}
 		} else {
-			// new object — load model and add to scene and registry
+			// new object — load model or create cube and add to scene and registry
 			printf("New object detected with Id=%u, loading model...\n", obj->Id);
-			const char *path = modelTypeToPath(idModel(obj->Id));
+			ModelType mtype = idModel(obj->Id);
+			const char *path = modelTypeToPath(mtype);
+			uint32 sceneIndex = (uint32)scene->count;
+			Object *newObj = ObjectList_Add(scene);
+
 			if (path) {
-				uint32 sceneIndex = (uint32)scene->count;
-				Object *newObj = ObjectList_Add(scene); // may realloc scene->objects
 				LoadObj(path, newObj, matLib);
 				CreateObjectBVH(newObj, &newObj->bvh);
-				Object_UpdateWorldBounds(newObj);
 				newObj->position = obj->Position;
 				newObj->rotation = obj->Rotation;
 				newObj->scale = obj->Scale;
+				Object_UpdateWorldBounds(newObj);
+				idRegister_Add(reg, obj->Id, sceneIndex);
+				seen = realloc(seen, reg->count * sizeof(bool));
+				seen[reg->count - 1] = true;
+			} else {
+				float3 color = {0.5f, 0.5f, 0.5f, 0.0f};
+				if (mtype == MODEL_CUBE_PLANE)  color = (float3){0.1f, 0.4f, 0.9f, 0.0f};
+				if (mtype == MODEL_CUBE_TARGET) color = (float3){0.9f, 0.1f, 0.1f, 0.0f};
+				if (mtype == MODEL_CUBE_START)  color = (float3){0.9f, 0.9f, 0.9f, 0.0f};
+				CreateCube(newObj, obj->Position, obj->Rotation, obj->Scale, color, matLib, 0.0f, 0.6f, 0.0f);
+				Object_UpdateWorldBounds(newObj);
 				idRegister_Add(reg, obj->Id, sceneIndex);
 				seen = realloc(seen, reg->count * sizeof(bool));
 				seen[reg->count - 1] = true;

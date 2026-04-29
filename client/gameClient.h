@@ -8,6 +8,9 @@
 typedef enum {
 	MODEL_F16 = 1,
 	MODEL_R27 = 2,
+	MODEL_CUBE_PLANE  = 3, // blue  — current best plane position
+	MODEL_CUBE_TARGET = 4, // red   — target position
+	MODEL_CUBE_START  = 5, // white — episode start position
 } ModelType;
 
 typedef struct {
