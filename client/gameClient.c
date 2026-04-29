@@ -23,18 +23,25 @@ static inline ModelType idModel(uint32 id) {
 
 static inline char *modelTypeToString(ModelType model) {
 	switch (model) {
-	case MODEL_F16:          return "F16";
-	case MODEL_R27:          return "R27";
-	case MODEL_CUBE_PLANE:   return "CubePlane";
-	case MODEL_CUBE_TARGET:  return "CubeTarget";
-	case MODEL_CUBE_START:   return "CubeStart";
-	default:                 return "Unknown";
+	case MODEL_F16:
+		return "F16";
+	case MODEL_R27:
+		return "R27";
+	case MODEL_CUBE_PLANE:
+		return "CubePlane";
+	case MODEL_CUBE_TARGET:
+		return "CubeTarget";
+	case MODEL_CUBE_START:
+		return "CubeStart";
+	default:
+		return "Unknown";
 	}
 }
 
 static inline char *modelTypeToPath(ModelType model) {
 	switch (model) {
 	case MODEL_F16:
+	case MODEL_CUBE_PLANE:
 		return pathF16;
 	case MODEL_R27:
 		return pathR27;
@@ -157,9 +164,17 @@ void postObjects(const Client *c, const RequestData *request) {
 
 void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegister *reg) {
 	ClientResponse res = clientGet(c, "get objects", strlen("get objects") + 1);
+	if (!res.data || res.size < sizeof(uint32)) {
+		clientFreeResponse(&res);
+		return;
+	}
 	printf("[client] GET response (%u bytes)\n", res.size);
 	uint32 numObjects;
 	memcpy(&numObjects, res.data, sizeof(uint32));
+	if (res.size < sizeof(uint32) + numObjects * sizeof(requestObject)) {
+		clientFreeResponse(&res);
+		return;
+	}
 
 	// track which registry entries were seen to detect removals
 	bool *seen = calloc(reg->count, sizeof(bool));
@@ -214,10 +229,18 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 			} else {
 				float3 color;
 				switch (mtype) {
-				case MODEL_CUBE_PLANE:  color = (float3){0.1f, 0.4f, 0.9f, 0.0f}; break;
-				case MODEL_CUBE_TARGET: color = (float3){0.9f, 0.1f, 0.1f, 0.0f}; break;
-				case MODEL_CUBE_START:  color = (float3){0.9f, 0.9f, 0.9f, 0.0f}; break;
-				default:                color = (float3){0.5f, 0.5f, 0.5f, 0.0f}; break;
+				case MODEL_CUBE_PLANE:
+					color = (float3){0.1f, 0.4f, 0.9f, 0.0f};
+					break;
+				case MODEL_CUBE_TARGET:
+					color = (float3){0.9f, 0.1f, 0.1f, 0.0f};
+					break;
+				case MODEL_CUBE_START:
+					color = (float3){0.9f, 0.9f, 0.9f, 0.0f};
+					break;
+				default:
+					color = (float3){0.5f, 0.5f, 0.5f, 0.0f};
+					break;
 				}
 				CreateCube(newObj, obj->Position, obj->Rotation, obj->Scale, color, matLib, 0.0f, 0.6f, 0.0f);
 				Object_UpdateWorldBounds(newObj);

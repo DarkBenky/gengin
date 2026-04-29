@@ -48,6 +48,11 @@ typedef struct {
 	// added state fields for simulation
 	float currentSpeed;	   // in m/s
 	float currentAltitude; // in meters
+	float bankAngle;	   // radians, positive = right wing down
+	float bankRate;		   // radians/second
+	float3 velocity;	   // world-space velocity vector; magnitude == currentSpeed
+	float pitchRate;	   // rad/s, positive = nose up
+	float yawRate;		   // rad/s, positive = nose right
 } Plane;
 
 int loadPlaneBin(Plane *plane, const char *path, float3 forward, float3 position, float speed, float throttle);

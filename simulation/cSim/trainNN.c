@@ -4,13 +4,13 @@
 #include <arpa/inet.h>
 #include <math.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "client/client.h"
-#include <time.h>
 
 #define WANDB_HOST "127.0.0.1"
 #define WANDB_PORT 6789
@@ -18,25 +18,30 @@
 #define GAME_SERVER_HOST "127.0.0.1"
 #define GAME_SERVER_PORT 8080
 
-#define MAX_SPEED    700.0f
+#define MAX_SPEED 700.0f
 #define MAX_ALTITUDE 25000.0f
-#define MAX_DIST     20000.0f   // max distance used for normalization (meters)
-#define TARGET_RADIUS 300.0f   // consider target reached within this radius
-#define INPUT_SIZE  9
+#define MAX_DIST 20000.0f	 // max distance used for normalization (meters)
+#define TARGET_RADIUS 300.0f // consider target reached within this radius
+#define INPUT_SIZE 10
 #define OUTPUT_SIZE 5
 
 // IDs for the three visualization cubes posted to the game server.
 // Upper 8 bits = ModelType (3=plane, 4=target, 5=start), lower 24 bits = fixed instance.
-#define VIS_ID_PLANE  ((3u << 24) | 0x000001u)
+#define VIS_ID_PLANE ((3u << 24) | 0x000001u)
 #define VIS_ID_TARGET ((4u << 24) | 0x000001u)
-#define VIS_ID_START  ((5u << 24) | 0x000001u)
+#define VIS_ID_START ((5u << 24) | 0x000001u)
+
+// Replay animation: post every VIS_STRIDE steps, wait VIS_FRAME_US between frames.
+#define VIS_STRIDE 8
+#define VIS_FRAME_US 40000
 
 typedef struct {
 	float Speed;
 	float Altitude;
+	float bankAngle;
 	float3 currentForward;
-	float3 dirToTarget; // normalized direction toward target position
-	float distToTarget; // distance to target in meters
+	float3 dirToTarget;
+	float distToTarget;
 } Inputs;
 
 typedef struct {
@@ -48,8 +53,9 @@ typedef struct {
 } Outputs;
 
 static void loadInputs(Inputs *inputs, const Plane *plane, const float3 *target) {
-	inputs->Speed    = plane->currentSpeed;
+	inputs->Speed = plane->currentSpeed;
 	inputs->Altitude = plane->currentAltitude;
+	inputs->bankAngle = plane->bankAngle;
 	inputs->currentForward = plane->forward;
 
 	float dx = target->x - plane->position.x;
@@ -73,14 +79,15 @@ static void normalizeInputs(const Inputs *inputs, float buf[INPUT_SIZE]) {
 	buf[6] = fminf(inputs->distToTarget / MAX_DIST, 1.0f) * 2.0f - 1.0f;
 	buf[7] = (inputs->Speed / MAX_SPEED) * 2.0f - 1.0f;
 	buf[8] = (inputs->Altitude / MAX_ALTITUDE) * 2.0f - 1.0f;
+	buf[9] = inputs->bankAngle / (float)M_PI; // normalized to [-1, 1] for 180-deg range
 }
 
 static void readOutputs(const float raw[OUTPUT_SIZE], Outputs *out) {
-	out->Aileron   = raw[0];
-	out->Elevator  = raw[1];
-	out->Rudder    = raw[2];
-	out->Flap      = raw[3];
-	out->Throttle  = (raw[4] + 1.0f) * 0.5f;
+	out->Aileron = raw[0];
+	out->Elevator = raw[1];
+	out->Rudder = raw[2];
+	out->Flap = raw[3];
+	out->Throttle = (raw[4] + 1.0f) * 0.5f;
 }
 
 static void applyOutputs(Plane *plane, const Outputs *out) {
@@ -110,25 +117,16 @@ static float f3Dist(float3 a, float3 b) {
 	return sqrtf(dx * dx + dy * dy + dz * dz);
 }
 
-// Loss = average distance per step + time penalty for not reaching the target.
-// avgDist is in meters; the time penalty is multiplied by MAX_DIST * 0.1 (~2000 m)
-// so both terms are on the same order of magnitude when the plane is mid-range.
+// Returns a loss that rewards reaching the target AND reaching it quickly.
+// Early arrival → loss near 0. Never arriving → final distance (>> TARGET_RADIUS).
 static float evaluateEpisode(Model *model, Plane *plane, const float3 *target, int simSteps, float dt) {
-	float totalDist = 0.0f;
-	int reachedStep = simSteps; // step at which plane first entered TARGET_RADIUS
-
 	for (int s = 0; s < simSteps; s++) {
 		runInference(model, plane, target);
 		updatePlane(plane, dt, NULL);
-		float dist = f3Dist(plane->position, *target);
-		totalDist += dist;
-		if (reachedStep == simSteps && dist < TARGET_RADIUS)
-			reachedStep = s + 1;
+		if (f3Dist(plane->position, *target) < TARGET_RADIUS)
+			return TARGET_RADIUS * (float)(s + 1) / simSteps;
 	}
-
-	float avgDist     = totalDist / simSteps;
-	float timePenalty = (float)reachedStep / simSteps; // 0 = reached immediately, 1 = never
-	return avgDist + MAX_DIST * 0.1f * timePenalty;
+	return f3Dist(plane->position, *target);
 }
 
 static int wandbCheckAvailable(void) {
@@ -143,25 +141,28 @@ static int wandbCheckAvailable(void) {
 	return ok;
 }
 
-static void postStats(const Client *c, int gen, float avgLoss, float bestLoss, float bestEver, float avgDist, float bestDist) {
+static void postStats(const Client *c, int gen, float avgDist, float bestDist, float valDist) {
 	struct {
 		int gen;
-		float avgLoss;
-		float bestLoss;
-		float bestEver;
 		float avgDist;
 		float bestDist;
-	} payload = {gen, avgLoss, bestLoss, bestEver, avgDist, bestDist};
+		float valDist;
+	} payload = {gen, avgDist, bestDist, valDist};
 	ClientResponse r = clientPost(c, (const char *)&payload, sizeof(payload));
 	clientFreeResponse(&r);
 }
 
-// Generates a random 3-D target position in a realistic flight envelope.
-// The plane starts at altitude 5000 m, so targets span a wide volume.
 static float3 randomTargetPosition(void) {
 	float x = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * 8000.0f;
 	float y = 1500.0f + (float)rand() / RAND_MAX * 7000.0f;
 	float z = 1000.0f + (float)rand() / RAND_MAX * 12000.0f;
+	return (float3){x, y, z, 0.0f};
+}
+
+static float3 randomStartPosition(void) {
+	float x = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * 4000.0f;
+	float y = 3000.0f + (float)rand() / RAND_MAX * 4000.0f;
+	float z = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * 4000.0f;
 	return (float3){x, y, z, 0.0f};
 }
 
@@ -187,17 +188,17 @@ static Model buildModel() {
 	return model;
 }
 
-#define POPULATION         256
-#define ELITE_COUNT        (POPULATION / 10)
-#define GENERATIONS        10000
-#define SIM_STEPS          256
-#define N_EVAL_TARGETS     16
-#define N_VAL_TARGETS      64
-#define DT                 0.1f
+#define POPULATION 256
+#define ELITE_COUNT (POPULATION / 10)
+#define GENERATIONS 10000
+#define SIM_STEPS 1024
+#define N_EVAL_TARGETS 16
+#define N_VAL_TARGETS 64
+#define DT 0.1f
 #define MUTATION_RATE_START 0.05f
-#define MUTATION_RATE       0.001f
-#define STAGNATION_GENS    (GENERATIONS / 100)
-#define STAGNATION_BOOST   4.0f
+#define MUTATION_RATE 0.001f
+#define STAGNATION_GENS (GENERATIONS / 100)
+#define STAGNATION_BOOST 4.0f
 
 typedef struct {
 	float loss;
@@ -217,7 +218,54 @@ float scaleMutationRate(int generation) {
 	return MUTATION_RATE_START * (1.0f - progress) + MUTATION_RATE * progress;
 }
 
-// requestObject layout must match the game server's Object struct.
+static void postVisState(const Client *, float3, float3, float3, float3);
+
+typedef struct {
+	Client client;
+	float3 targetPos;
+	float3 startPos;
+	uint32 frameCount;
+	float3 *positions; // [frameCount]
+	float3 *rotations; // [frameCount]
+} ReplayThreadArg;
+
+static void *replayThread(void *arg) {
+	ReplayThreadArg *r = arg;
+	for (uint32 i = 0; i < r->frameCount; i++) {
+		postVisState(&r->client, r->positions[i], r->rotations[i], r->targetPos, r->startPos);
+		usleep(VIS_FRAME_US);
+	}
+	free(r->positions);
+	free(r->rotations);
+	free(r);
+	return NULL;
+}
+
+static void spawnReplayAsync(const Client *gameClient,
+							 float3 *positions, float3 *rotations, uint32 frameCount,
+							 float3 targetPos, float3 startPos) {
+	ReplayThreadArg *arg = malloc(sizeof(ReplayThreadArg));
+	if (!arg) {
+		free(positions);
+		free(rotations);
+		return;
+	}
+	arg->client = *gameClient;
+	arg->targetPos = targetPos;
+	arg->startPos = startPos;
+	arg->frameCount = frameCount;
+	arg->positions = positions;
+	arg->rotations = rotations;
+	pthread_t tid;
+	if (pthread_create(&tid, NULL, replayThread, arg) != 0) {
+		free(positions);
+		free(rotations);
+		free(arg);
+		return;
+	}
+	pthread_detach(tid);
+}
+
 typedef struct {
 	uint32 Id;
 	uint32 TimeStamp;
@@ -227,11 +275,11 @@ typedef struct {
 } VisObject;
 
 static void postVisState(const Client *gameClient,
-						 float3 planePos, float3 targetPos, float3 startPos) {
+						 float3 planePos, float3 planeRot, float3 targetPos, float3 startPos) {
 	VisObject objs[3] = {
-		{VIS_ID_PLANE,  0, planePos,  {0.0f, 0.0f, 0.0f, 0.0f}, {200.0f, 200.0f, 200.0f, 0.0f}},
+		{VIS_ID_PLANE, 0, planePos, planeRot, {200.0f, 200.0f, 200.0f, 0.0f}},
 		{VIS_ID_TARGET, 0, targetPos, {0.0f, 0.0f, 0.0f, 0.0f}, {200.0f, 200.0f, 200.0f, 0.0f}},
-		{VIS_ID_START,  0, startPos,  {0.0f, 0.0f, 0.0f, 0.0f}, {200.0f, 200.0f, 200.0f, 0.0f}},
+		{VIS_ID_START, 0, startPos, {0.0f, 0.0f, 0.0f, 0.0f}, {200.0f, 200.0f, 200.0f, 0.0f}},
 	};
 	uint32 n = 3;
 	size_t sz = sizeof(uint32) + sizeof(objs);
@@ -268,11 +316,10 @@ int main(void) {
 		printf("wandb server not found, stats logged to stdout only\n");
 
 	Client gameClient = {GAME_SERVER_HOST, GAME_SERVER_PORT};
-	int visEnabled = gameServerAvailable();
-	if (visEnabled)
+	if (gameServerAvailable())
 		printf("game server connected on port %d — visualization enabled\n", GAME_SERVER_PORT);
 	else
-		printf("game server not found — visualization disabled\n");
+		printf("game server not found — will retry each generation\n");
 
 	Plane basePlane;
 	initPlane(&basePlane);
@@ -296,39 +343,44 @@ int main(void) {
 	float bestValLoss = FLT_MAX;
 	int stagnationCount = 0;
 
-	// Fixed validation set — never resampled, used only for saving decisions.
 	float3 valTargets[N_VAL_TARGETS];
-	for (int t = 0; t < N_VAL_TARGETS; t++)
+	float3 valStarts[N_VAL_TARGETS];
+	for (int t = 0; t < N_VAL_TARGETS; t++) {
 		valTargets[t] = randomTargetPosition();
+		valStarts[t] = randomStartPosition();
+	}
 
 	float3 evalTargets[N_EVAL_TARGETS];
+	float3 evalStarts[N_EVAL_TARGETS];
 
 	for (int gen = 0; gen < GENERATIONS; gen++) {
-		// Resample targets every generation to force generalization.
-		for (int t = 0; t < N_EVAL_TARGETS; t++)
+		for (int t = 0; t < N_EVAL_TARGETS; t++) {
 			evalTargets[t] = randomTargetPosition();
+			evalStarts[t] = randomStartPosition();
+		}
 
-		float totalInferenceTime = 0.0f;
-		int totalSteps = 0;
 		for (int i = 0; i < POPULATION; i++) {
 			float totalLoss = 0.0f;
 			for (int t = 0; t < N_EVAL_TARGETS; t++) {
 				Plane plane = basePlane;
-				clock_t start = clock();
-				float epLoss = evaluateEpisode(&population[i], &plane, &evalTargets[t], SIM_STEPS, DT);
-				clock_t end = clock();
-				totalInferenceTime += (double)(end - start) / CLOCKS_PER_SEC;
-				totalSteps += SIM_STEPS;
-				totalLoss += epLoss;
+				plane.position = evalStarts[t];
+				plane.currentAltitude = evalStarts[t].y;
+				totalLoss += evaluateEpisode(&population[i], &plane, &evalTargets[t], SIM_STEPS, DT);
 			}
 			losses[i] = totalLoss / N_EVAL_TARGETS;
+			// Post current best during training so objects stay alive in the viewer.
+			if (i % (POPULATION / 4) == 0) {
+				Plane vizPlane = basePlane;
+				vizPlane.position = evalStarts[0];
+				vizPlane.currentAltitude = evalStarts[0].y;
+				postVisState(&gameClient, vizPlane.position, vizPlane.rotation, evalTargets[0], evalStarts[0]);
+			}
 		}
-		printf("avg inference time: %.4f ms\n", (totalInferenceTime / totalSteps) * 1000.0f);
 
 		RankedModel ranked[POPULATION];
 		for (int i = 0; i < POPULATION; i++) {
 			ranked[i].loss = losses[i];
-			ranked[i].idx  = i;
+			ranked[i].idx = i;
 		}
 		qsort(ranked, POPULATION, sizeof(RankedModel), cmpRanked);
 
@@ -344,15 +396,16 @@ int main(void) {
 		float totalLoss = 0.0f;
 		for (int i = 0; i < POPULATION; i++)
 			totalLoss += losses[i];
-		float avgLoss  = totalLoss / POPULATION;
+		float avgLoss = totalLoss / POPULATION;
 		float bestLoss = losses[eliteIdx[0]];
 
 		// Evaluate best model on the fixed validation set.
 		float valLoss = 0.0f;
 		for (int t = 0; t < N_VAL_TARGETS; t++) {
 			Plane plane = basePlane;
-			float epLoss = evaluateEpisode(&population[eliteIdx[0]], &plane, &valTargets[t], SIM_STEPS, DT);
-			valLoss += epLoss;
+			plane.position = valStarts[t];
+			plane.currentAltitude = valStarts[t].y;
+			valLoss += evaluateEpisode(&population[eliteIdx[0]], &plane, &valTargets[t], SIM_STEPS, DT);
 		}
 		valLoss /= N_VAL_TARGETS;
 
@@ -365,21 +418,32 @@ int main(void) {
 			stagnationCount++;
 		}
 
-		// Post visualization state: replay best model on first validation target.
-		if (visEnabled) {
+		// Simulate the full replay, collect frames, then hand off to a background thread.
+		// Training continues immediately while the thread posts frames at VIS_FRAME_US pace.
+		{
 			Plane vizPlane = basePlane;
+			vizPlane.position = valStarts[0];
+			vizPlane.currentAltitude = valStarts[0].y;
 			float3 vizTarget = valTargets[0];
-			float3 startPos  = vizPlane.position;
-			for (int s = 0; s < SIM_STEPS; s++) {
-				runInference(&population[eliteIdx[0]], &vizPlane, &vizTarget);
-				updatePlane(&vizPlane, DT, NULL);
+			float3 startPos = vizPlane.position;
+			uint32 frameCount = SIM_STEPS / VIS_STRIDE;
+			float3 *positions = malloc(frameCount * sizeof(float3));
+			float3 *rotations = malloc(frameCount * sizeof(float3));
+			uint32 fi = 0;
+			if (positions && rotations) {
+				for (int s = 0; s < SIM_STEPS; s++) {
+					runInference(&population[eliteIdx[0]], &vizPlane, &vizTarget);
+					updatePlane(&vizPlane, DT, NULL);
+					if ((s + 1) % VIS_STRIDE == 0)
+						positions[fi] = vizPlane.position,
+						rotations[fi++] = vizPlane.rotation;
+				}
+				spawnReplayAsync(&gameClient, positions, rotations, fi, vizTarget, startPos);
+			} else {
+				free(positions);
+				free(rotations);
 			}
-			postVisState(&gameClient, vizPlane.position, vizTarget, startPos);
 		}
-
-		// avgMetric/bestMetric include both the distance and time-penalty components.
-		float avgMetric  = avgLoss;
-		float bestMetric = bestLoss;
 
 		float mutationRate = scaleMutationRate(gen);
 		int boosted = 0;
@@ -389,10 +453,10 @@ int main(void) {
 			boosted = 1;
 		}
 
-		printf("gen %4d  avgLoss=%.1f  bestLoss=%.1f  val=%.1f  stagnation=%d%s\n",
-			   gen, avgMetric, bestMetric, bestValLoss, stagnationCount, boosted ? " [BOOST]" : "");
+		printf("gen %4d  avg=%.0fm  best=%.0fm  val=%.0fm  stagnation=%d%s\n",
+			   gen, avgLoss, bestLoss, bestValLoss, stagnationCount, boosted ? " [BOOST]" : "");
 		if (wandbEnabled)
-			postStats(&wandbClient, gen, avgLoss, bestLoss, bestValLoss, avgMetric, bestMetric);
+			postStats(&wandbClient, gen, avgLoss, bestLoss, bestValLoss);
 
 		for (int i = 0; i < POPULATION; i++) {
 			if (isElite[i]) continue;
@@ -407,4 +471,3 @@ int main(void) {
 
 	return 0;
 }
-

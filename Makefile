@@ -31,7 +31,7 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train, $(MAKECMDGOALS))
+_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train trainView, $(MAKECMDGOALS))
 _RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
@@ -41,7 +41,7 @@ GAME_CLIENT_SRC    = client/gameClient.c client/client.c object/format.c object/
 HEX_DUMP_SRC       = hexDump/hexDump.c
 TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c client/client.c
 
-TRAIN_VIEW_SRC = trainView.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c hexDump/hexDump.c
+TRAIN_VIEW_SRC = trainView.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboar/keyboar.c hexDump/hexDump.c
 
 .PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train trainView $(if $(_SPECIFIC), $(_SPECIFIC))
 

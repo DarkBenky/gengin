@@ -117,6 +117,7 @@ int loadPlaneBin(Plane *plane, const char *path, float3 forward, float3 position
 	plane->currentSpeed = speed;
 	plane->currentAltitude = position.y;
 	plane->currentTrustPercentage = throttle;
+	plane->velocity = (float3){forward.x * speed, forward.y * speed, forward.z * speed, 0.0f};
 
 	fclose(f);
 	return 0;
