@@ -30,6 +30,7 @@ void AddDenseLayer(Model *model, uint32 inputSize, uint32 outputSize, Activation
 void FreeModel(Model *model);
 void Forward(Model *model, const float *input, float *output);
 void CopyModel(Model *dest, const Model *src);
+void CrossoverModel(Model *dest, const Model *parentA, const Model *parentB);
 void MutateModel(Model *model, float mutationRate);
 
 // Returns 0 on success, non-zero on failure.

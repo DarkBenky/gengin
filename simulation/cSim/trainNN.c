@@ -217,8 +217,9 @@ int main(void) {
 	float3 evalTargets[N_EVAL_TARGETS];
 
 	for (int gen = 0; gen < GENERATIONS; gen++) {
-		// Resample targets every generation to force generalization.
-		for (int t = 0; t < N_EVAL_TARGETS; t++)
+		// Partial resample: replace half the targets each gen.
+		// Keeps selection pressure stable while still forcing generalization.
+		for (int t = 0; t < N_EVAL_TARGETS / 2; t++)
 			evalTargets[t] = randomPointOnSphere();
 
 		float totalInferenceTime = 0.0f;
@@ -235,9 +236,11 @@ int main(void) {
 					totalInferenceTime += (double)(end - start) / CLOCKS_PER_SEC;
 					totalSteps++;
 					updatePlane(&plane, DT, NULL);
-					episodeLoss += lossFunc(&plane, &evalTargets[t]);
+					// Only measure the second half — discards startup transient.
+					if (s >= SIM_STEPS / 2)
+						episodeLoss += lossFunc(&plane, &evalTargets[t]);
 				}
-				totalLoss += episodeLoss / SIM_STEPS;
+				totalLoss += episodeLoss / (SIM_STEPS / 2);
 			}
 			losses[i] = totalLoss / N_EVAL_TARGETS;
 		}
@@ -306,8 +309,12 @@ int main(void) {
 
 		for (int i = 0; i < POPULATION; i++) {
 			if (isElite[i]) continue;
-			int parent = eliteIdx[rand() % ELITE_COUNT];
-			CopyModel(&population[i], &population[parent]);
+			int parentA = eliteIdx[rand() % ELITE_COUNT];
+			int parentB = eliteIdx[rand() % ELITE_COUNT];
+			if (parentA == parentB)
+				CopyModel(&population[i], &population[parentA]);
+			else
+				CrossoverModel(&population[i], &population[parentA], &population[parentB]);
 			MutateModel(&population[i], mutationRate);
 		}
 	}
