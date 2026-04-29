@@ -111,7 +111,8 @@ static float f3Dist(float3 a, float3 b) {
 }
 
 // Loss = average distance per step + time penalty for not reaching the target.
-// Both terms are scaled to [0, ~1] so they contribute equally.
+// avgDist is in meters; the time penalty is multiplied by MAX_DIST * 0.1 (~2000 m)
+// so both terms are on the same order of magnitude when the plane is mid-range.
 static float evaluateEpisode(Model *model, Plane *plane, const float3 *target, int simSteps, float dt) {
 	float totalDist = 0.0f;
 	int reachedStep = simSteps; // step at which plane first entered TARGET_RADIUS
@@ -235,7 +236,10 @@ static void postVisState(const Client *gameClient,
 	uint32 n = 3;
 	size_t sz = sizeof(uint32) + sizeof(objs);
 	char *buf = malloc(sz);
-	if (!buf) return;
+	if (!buf) {
+		fprintf(stderr, "[vis] postVisState: out of memory\n");
+		return;
+	}
 	memcpy(buf, &n, sizeof(uint32));
 	memcpy(buf + sizeof(uint32), objs, sizeof(objs));
 	ClientResponse r = clientPost(gameClient, buf, (uint32)sz);
@@ -373,9 +377,9 @@ int main(void) {
 			postVisState(&gameClient, vizPlane.position, vizTarget, startPos);
 		}
 
-		// avgDist / bestDist = loss minus the time-penalty component (rough approximation for logging)
-		float avgDist  = avgLoss;
-		float bestDist = bestLoss;
+		// avgMetric/bestMetric include both the distance and time-penalty components.
+		float avgMetric  = avgLoss;
+		float bestMetric = bestLoss;
 
 		float mutationRate = scaleMutationRate(gen);
 		int boosted = 0;
@@ -386,9 +390,9 @@ int main(void) {
 		}
 
 		printf("gen %4d  avgLoss=%.1f  bestLoss=%.1f  val=%.1f  stagnation=%d%s\n",
-			   gen, avgDist, bestDist, bestValLoss, stagnationCount, boosted ? " [BOOST]" : "");
+			   gen, avgMetric, bestMetric, bestValLoss, stagnationCount, boosted ? " [BOOST]" : "");
 		if (wandbEnabled)
-			postStats(&wandbClient, gen, avgLoss, bestLoss, bestValLoss, avgDist, bestDist);
+			postStats(&wandbClient, gen, avgLoss, bestLoss, bestValLoss, avgMetric, bestMetric);
 
 		for (int i = 0; i < POPULATION; i++) {
 			if (isElite[i]) continue;

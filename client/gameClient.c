@@ -212,10 +212,13 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 				seen = realloc(seen, reg->count * sizeof(bool));
 				seen[reg->count - 1] = true;
 			} else {
-				float3 color = {0.5f, 0.5f, 0.5f, 0.0f};
-				if (mtype == MODEL_CUBE_PLANE)  color = (float3){0.1f, 0.4f, 0.9f, 0.0f};
-				if (mtype == MODEL_CUBE_TARGET) color = (float3){0.9f, 0.1f, 0.1f, 0.0f};
-				if (mtype == MODEL_CUBE_START)  color = (float3){0.9f, 0.9f, 0.9f, 0.0f};
+				float3 color;
+				switch (mtype) {
+				case MODEL_CUBE_PLANE:  color = (float3){0.1f, 0.4f, 0.9f, 0.0f}; break;
+				case MODEL_CUBE_TARGET: color = (float3){0.9f, 0.1f, 0.1f, 0.0f}; break;
+				case MODEL_CUBE_START:  color = (float3){0.9f, 0.9f, 0.9f, 0.0f}; break;
+				default:                color = (float3){0.5f, 0.5f, 0.5f, 0.0f}; break;
+				}
 				CreateCube(newObj, obj->Position, obj->Rotation, obj->Scale, color, matLib, 0.0f, 0.6f, 0.0f);
 				Object_UpdateWorldBounds(newObj);
 				idRegister_Add(reg, obj->Id, sceneIndex);
