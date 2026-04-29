@@ -41,7 +41,9 @@ GAME_CLIENT_SRC    = client/gameClient.c client/client.c object/format.c object/
 HEX_DUMP_SRC       = hexDump/hexDump.c
 TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c client/client.c
 
-.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train $(if $(_SPECIFIC), $(_SPECIFIC))
+TRAIN_VIEW_SRC = trainView.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c hexDump/hexDump.c
+
+.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train trainView $(if $(_SPECIFIC), $(_SPECIFIC))
 
 all: $(TARGET)
 
@@ -72,6 +74,10 @@ train: $(TRAIN_SRC)
 	cd simulation/cmd && go run .
 	$(CC) $(CFLAGS_BASE) -Isimulation -I. -o simulation/trainNN $^ $(LDFLAGS) -lm
 	./simulation/trainNN
+
+trainView: $(TRAIN_VIEW_SRC)
+	$(CC) $(CFLAGS_BASE) -o trainView $^ $(LDFLAGS) -lminifb -lX11 -lGL -lpthread -lm -ljpeg
+	./trainView
 
 run: $(TARGET)
 	./$(TARGET)
@@ -141,4 +147,4 @@ perf-report:
 	sudo perf report -i perf.data --no-children
 
 clean:
-	rm -f $(TARGET) perf.data flamegraph.svg callgraph.svg $(TEST_BINS) $(TARGET)_bench $(TARGET)_bench_unopt bench_results.json
+	rm -f $(TARGET) perf.data flamegraph.svg callgraph.svg $(TEST_BINS) $(TARGET)_bench $(TARGET)_bench_unopt bench_results.json trainView
