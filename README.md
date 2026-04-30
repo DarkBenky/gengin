@@ -7,7 +7,9 @@
 - [X] implement the simplified simulation in 2d then move to c
     - [X] move python code to c
     - [ ] train model
+        - [ ] train model to go to some to next waypoint but loss will be calculated based on pre calculated curve
     - [ ] integrate the model
+    - [ ] add the more advanced version of simulation to main
 - [ ] render directly wia open gl not c => open gl => minifb
 
 - [X] sync all object
