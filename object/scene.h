@@ -17,8 +17,9 @@ typedef struct {
 } ObjectList;
 
 void ObjectList_Init(ObjectList *list, int initialCapacity);
-Object *ObjectList_Add(ObjectList *list);  // returns pointer to new zeroed slot
-void ObjectList_Destroy(ObjectList *list); // destroys every object and frees the array
+Object *ObjectList_Add(ObjectList *list);			 // returns pointer to new zeroed slot
+void ObjectList_Remove(ObjectList *list, int index); // destroys object at index, fills gap with last
+void ObjectList_Destroy(ObjectList *list);			 // destroys every object and frees the array
 int ObjectList_CountTriangles(const ObjectList *list);
 
 // Merge all objects in src into a single world-space mesh added to dst.

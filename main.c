@@ -22,6 +22,8 @@
 #include "keyboar/keyboar.h"
 #include "render/gpu/kernels/cloadrendering/cload.h"
 #include "client/gameClient.h"
+#include "simulation/cSim/import.h"
+#include "simulation/cSim/simulate.h"
 
 #define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
 #define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
@@ -29,6 +31,56 @@
 #define ACCUMULATE_STATS 1024
 #define GRID_COLS 32
 #define GRID_ROWS 32
+
+// update render object to sim object and move camera to follow the plane
+void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input *input, struct mfb_window *window) {
+	float3 forward;
+	updatePlane(simPlane, 1.0f / 60.0f, &forward);
+	printf("Sim plane position: (%.2f, %.2f, %.2f), speed: %.2f m/s\n", simPlane->position.x, simPlane->position.y, simPlane->position.z, simPlane->currentSpeed);
+
+	renderObj->position = simPlane->position;
+	renderObj->rotation = simPlane->rotation;
+	Object_UpdateWorldBounds(renderObj);
+
+	float3 planeFwd = Float3_Normalize(simPlane->forward);
+	// compute plane's banked up vector
+	float3 worldRef = (fabsf(planeFwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
+	float3 planeRight = Float3_Normalize(Float3_Cross(planeFwd, worldRef));
+	float3 planeUp = Float3_Cross(planeRight, planeFwd);
+	float bank = simPlane->bankAngle;
+	float3 bankedUp = Float3_Add(Float3_Scale(planeUp, cosf(bank)), Float3_Scale(planeRight, sinf(bank)));
+
+	float3 camOffset = Float3_Add(Float3_Scale(planeFwd, -12.0f), Float3_Scale(bankedUp, 3.0f));
+	camera->position = Float3_Add(simPlane->position, camOffset);
+	camera->forward = Float3_Normalize(Float3_Sub(simPlane->position, camera->position));
+
+	Input_Poll(input, window);
+	float AileronPct = planeGetAileronPct(simPlane);
+	float elevatorPct = planeGetElevatorPct(simPlane);
+	float rudderPct = planeGetRudderPct(simPlane);
+	float flapPct = planeGetFlapPct(simPlane);
+
+	if (input->keys[KB_KEY_S])
+		planeSetElevatorPct(simPlane, fminf(100.0f, elevatorPct + 10.0f));
+	else if (input->keys[KB_KEY_W])
+		planeSetElevatorPct(simPlane, fmaxf(0.0f, elevatorPct - 10.0f));
+	else
+		planeSetElevatorPct(simPlane, 50.0f);
+
+	if (input->keys[KB_KEY_A])
+		planeSetAileronPct(simPlane, fmaxf(0.0f, AileronPct - 10.0f));
+	else if (input->keys[KB_KEY_D])
+		planeSetAileronPct(simPlane, fminf(100.0f, AileronPct + 10.0f));
+	else
+		planeSetAileronPct(simPlane, 50.0f);
+
+	if (input->keys[KB_KEY_Q])
+		planeSetRudderPct(simPlane, fminf(100.0f, rudderPct + 2.0f));
+	else if (input->keys[KB_KEY_E])
+		planeSetRudderPct(simPlane, fmaxf(0.0f, rudderPct - 2.0f));
+	else
+		planeSetRudderPct(simPlane, 50.0f);
+}
 
 int main() {
 	srand((uint32)getpid());
@@ -106,6 +158,9 @@ int main() {
 	CreateObjectBVH(plane, &plane->bvh);
 	Object_UpdateWorldBounds(plane);
 
+	Plane simPlane;
+	loadPlaneBin(&simPlane, "./simulation/simModels/F-16C.bin", (float3){0.0f, 0.0f, 1.0f}, (float3){0.0f, 10.0f, 20.0f}, 100.0f, 1.0f);
+
 	addFromRegistry(&request, &objectRegistry, &scene, f16Id);
 	postObjects(&c, &request);
 	RequestData_Reset(&request);
@@ -163,7 +218,7 @@ int main() {
 	while (1) {
 		// get current scene state from server
 		getObjects(&c, &scene, &matLib, &objectRegistry);
-		
+
 		benchFrameStart(&bench);
 		WNOW(wA);
 		accumSyncTime += WDIFF(wSyncStart, wA);
@@ -176,23 +231,25 @@ int main() {
 		camera.jitter = jitterPattern[frame & 3];
 		camera.seed = frame * (int)35527.0f << 16 | (int)11369.0f;
 
-		Input_Poll(&input, window);
-		if (input.keysDown[KB_KEY_ESCAPE]) break;
-		if (input.keys[KB_KEY_W]) CameraMoveForward(&camera, 0.2f);
-		if (input.keys[KB_KEY_S]) CameraMoveForward(&camera, -0.2f);
-		if (input.keys[KB_KEY_A]) CameraMoveRight(&camera, -0.2f);
-		if (input.keys[KB_KEY_D]) CameraMoveRight(&camera, 0.2f);
-		if (input.keys[KB_KEY_Q]) CameraMoveUp(&camera, 0.2f);
-		if (input.keys[KB_KEY_E]) CameraMoveUp(&camera, -0.2f);
-		if (input.mouse[MOUSE_LEFT]) CameraRotate(&camera, input.mouseDY * 0.005f, -input.mouseDX * 0.005f);
+		// Input_Poll(&input, window);
+		// if (input.keysDown[KB_KEY_ESCAPE]) break;
+		// if (input.keys[KB_KEY_W]) CameraMoveForward(&camera, 0.2f);
+		// if (input.keys[KB_KEY_S]) CameraMoveForward(&camera, -0.2f);
+		// if (input.keys[KB_KEY_A]) CameraMoveRight(&camera, -0.2f);
+		// if (input.keys[KB_KEY_D]) CameraMoveRight(&camera, 0.2f);
+		// if (input.keys[KB_KEY_Q]) CameraMoveUp(&camera, 0.2f);
+		// if (input.keys[KB_KEY_E]) CameraMoveUp(&camera, -0.2f);
+		// if (input.mouse[MOUSE_LEFT]) CameraRotate(&camera, input.mouseDY * 0.005f, -input.mouseDX * 0.005f);
 
-		// Keep plane in front of camera, facing the same direction, offset slightly below view center
-		float3 fwd = Float3_Normalize(camera.forward);
-		plane->position = Float3_Add(
-			Float3_Add(camera.position, Float3_Scale(fwd, 10.0f)),
-			Float3_Scale(Float3_Normalize(camera.up), -2.5f));
-		plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
-		Object_UpdateWorldBounds(plane);
+		// // Keep plane in front of camera, facing the same direction, offset slightly below view center
+		// float3 fwd = Float3_Normalize(camera.forward);
+		// plane->position = Float3_Add(
+		// 	Float3_Add(camera.position, Float3_Scale(fwd, 10.0f)),
+		// 	Float3_Scale(Float3_Normalize(camera.up), -2.5f));
+		// plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
+		// Object_UpdateWorldBounds(plane);
+
+		SimObjToRenderObj(&simPlane, plane, &camera, &input, window);
 
 		// post current scene
 		addAllFromRegistry(&request, &objectRegistry, &scene);

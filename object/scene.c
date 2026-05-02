@@ -78,6 +78,15 @@ int ObjectList_CountTriangles(const ObjectList *list) {
 	return Scene_CountTriangles(list->objects, list->count);
 }
 
+void ObjectList_Remove(ObjectList *list, int index) {
+	if (index < 0 || index >= list->count) return;
+	Object_Destroy(&list->objects[index]);
+	int last = list->count - 1;
+	if (index != last)
+		list->objects[index] = list->objects[last];
+	list->count--;
+}
+
 void ObjectList_Merge(ObjectList *src, ObjectList *dst) {
 	if (!src || src->count == 0) return;
 

@@ -5,6 +5,17 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#define MAX_ROLL_RATE 1.2f
+#define ROLL_DAMP 0.8f
+#define MAX_PITCH_RATE 0.45f
+#define PITCH_CMD_TC 0.25f
+#define PITCH_DAMP 3.0f
+#define PITCH_STAB 4.0f
+#define MAX_YAW_RATE 0.3f
+#define YAW_CMD_TC 0.25f
+#define YAW_DAMP 2.0f
+#define YAW_STAB 3.0f
+
 static void atmosphere(float altitude, float *outDensity, float *outSpeedOfSound) {
 	altitude = fmaxf(0.0f, fminf(altitude, 25000.0f));
 	float T, pressure;
@@ -17,66 +28,6 @@ static void atmosphere(float altitude, float *outDensity, float *outSpeedOfSound
 	}
 	*outDensity = pressure / (287.05f * T);
 	*outSpeedOfSound = sqrtf(1.4f * 287.05f * T);
-}
-
-float calculateAirDensity(float altitude) {
-	float density, sos;
-	atmosphere(altitude, &density, &sos);
-	return density;
-}
-
-void calculateSurfaceForces(const Surface *surface, float altitude, float airspeed, AerodynamicForces *forces) {
-	float airDensity, speedOfSound;
-	atmosphere(altitude, &airDensity, &speedOfSound);
-
-	float mach = airspeed / speedOfSound;
-	float dynamicPressure = 0.5f * airDensity * airspeed * airspeed;
-	float aoaRad = surface->rotationAngle * (float)(M_PI / 180.0);
-
-	float stallFactor = (fabsf(surface->rotationAngle) > surface->stallAngle) ? 0.3f : 1.0f;
-	float baseCL = (surface->liftCoefficient * sinf(aoaRad) + 2.0f * (float)M_PI * surface->camber) * stallFactor;
-
-	float compressibility;
-	if (mach < 0.85f) {
-		float beta = sqrtf(fmaxf(1.0f - mach * mach, 1e-4f));
-		compressibility = 1.0f / beta;
-	} else {
-		compressibility = 1.0f / sqrtf(1.0f - 0.85f * 0.85f);
-	}
-	float effectiveCL = baseCL * compressibility;
-
-	float parasiticCD = surface->dragCoefficient * cosf(aoaRad);
-	float waveCd;
-	if (mach < 0.8f) {
-		waveCd = 0.0f;
-	} else if (mach < 1.2f) {
-		float t = (mach - 0.8f) / 0.4f;
-		waveCd = 0.5f * t * t * t;
-	} else {
-		waveCd = 0.5f / sqrtf(fmaxf(mach * mach - 1.0f, 0.01f));
-	}
-
-	float parasiticDrag = dynamicPressure * surface->surfaceArea * (parasiticCD + waveCd);
-	float liftMagnitude = dynamicPressure * surface->surfaceArea * effectiveCL;
-	float inducedDrag = (liftMagnitude * liftMagnitude) /
-						(dynamicPressure * (float)M_PI * surface->aspectRatio * surface->efficiency * surface->surfaceArea + 1e-6f);
-	float dragMagnitude = parasiticDrag + inducedDrag;
-
-	// lift dir = cross(rotationAxis, +X_forward) = (0, ax.z, -ax.y)
-	float3 ax = surface->rotationAxis;
-	float ly = ax.z;
-	float lz = -ax.y;
-	float llen = sqrtf(ly * ly + lz * lz);
-	if (llen > 1e-6f) {
-		ly /= llen;
-		lz /= llen;
-	}
-
-	forces->Lift = (float3){0.0f, ly * liftMagnitude, lz * liftMagnitude, 0.0f};
-	forces->Drag = (float3){-dragMagnitude, 0.0f, 0.0f, 0.0f};
-	forces->CenterOfLift = surface->relativePos;
-	forces->CenterOfDrag = surface->relativePos;
-	forces->CenterOfMass = surface->relativePos;
 }
 
 static float3 f3Add(float3 a, float3 b) {
@@ -111,17 +62,13 @@ static void buildFrame(float3 fwd, float bank, float3 *outRight, float3 *outUp) 
 
 // Lift and drag magnitudes from real effective AoA (body AoA + surface deflection, in degrees).
 // Stall is evaluated on the total effective AoA instead of just the surface deflection.
-static void calcForceMagnitudes(const Surface *s, float altitude, float airspeed,
+static void calcForceMagnitudes(const Surface *s, float q, float mach,
 								float effectiveAoaDeg, float *outLift, float *outDrag) {
 	if (!s->active) {
 		*outLift = 0.0f;
 		*outDrag = 0.0f;
 		return;
 	}
-	float airDensity, speedOfSound;
-	atmosphere(altitude, &airDensity, &speedOfSound);
-	float mach = airspeed / (speedOfSound + 1e-6f);
-	float q = 0.5f * airDensity * airspeed * airspeed;
 	float aoaRad = effectiveAoaDeg * (float)(M_PI / 180.0);
 	float stallFactor = (fabsf(effectiveAoaDeg) > s->stallAngle) ? 0.3f : 1.0f;
 	float baseCL = (s->liftCoefficient * sinf(aoaRad) + 2.0f * (float)M_PI * s->camber) * stallFactor;
@@ -162,8 +109,109 @@ static void stepSurface(Surface *s, float dt) {
 		s->rotationAngle += (diff > 0.0f ? step : -step);
 }
 
+static float getSurfacePct(const Surface *surface) {
+	float range = surface->maxRotationAngle - surface->minRotationAngle;
+	if (range < 1e-6f) return 50.0f;
+	return (surface->rotationAngle - surface->minRotationAngle) / range * 100.0f;
+}
+
+static float getSurface01(const Surface *surface) {
+	float range = surface->maxRotationAngle - surface->minRotationAngle;
+	if (range < 1e-6f) return 0.5f;
+	return (surface->rotationAngle - surface->minRotationAngle) / range;
+}
+
+static float getSurfaceNorm(const Surface *surface) {
+	return getSurface01(surface) * 2.0f - 1.0f;
+}
+
 void planeSetThrottle(Plane *plane, float pct) {
 	plane->currentTrustPercentage = fmaxf(0.0f, fminf(1.0f, pct));
+}
+
+float planeGetThrottlePct(const Plane *plane) {
+	return plane->currentTrustPercentage * 100.0f;
+}
+float planeGetAileronPct(const Plane *plane) {
+	return getSurfacePct(&plane->rightAileron);
+}
+float planeGetElevatorPct(const Plane *plane) {
+	return getSurfacePct(&plane->rightElevator);
+}
+float planeGetRudderPct(const Plane *plane) {
+	return getSurfacePct(&plane->rudder);
+}
+float planeGetFlapPct(const Plane *plane) {
+	return getSurfacePct(&plane->rightFlap);
+}
+
+float planeGetThrottle01(const Plane *plane) {
+	return plane->currentTrustPercentage;
+}
+float planeGetAileron01(const Plane *plane) {
+	return getSurface01(&plane->rightAileron);
+}
+float planeGetElevator01(const Plane *plane) {
+	return getSurface01(&plane->rightElevator);
+}
+float planeGetRudder01(const Plane *plane) {
+	return getSurface01(&plane->rudder);
+}
+float planeGetFlap01(const Plane *plane) {
+	return getSurface01(&plane->rightFlap);
+}
+
+float planeGetAileronNorm(const Plane *plane) {
+	return getSurfaceNorm(&plane->rightAileron);
+}
+float planeGetElevatorNorm(const Plane *plane) {
+	return getSurfaceNorm(&plane->rightElevator);
+}
+float planeGetRudderNorm(const Plane *plane) {
+	return getSurfaceNorm(&plane->rudder);
+}
+float planeGetFlapNorm(const Plane *plane) {
+	return getSurfaceNorm(&plane->rightFlap);
+}
+
+static float pctToNorm(float pct) {
+	return pct / 50.0f - 1.0f;
+}
+
+static float norm01ToNorm(float v) {
+	return v * 2.0f - 1.0f;
+}
+
+void planeSetThrottlePct(Plane *plane, float pct) {
+	planeSetThrottle(plane, pct / 100.0f);
+}
+void planeSetAileronPct(Plane *plane, float pct) {
+	planeSetAileron(plane, pctToNorm(pct));
+}
+void planeSetElevatorPct(Plane *plane, float pct) {
+	planeSetElevator(plane, pctToNorm(pct));
+}
+void planeSetRudderPct(Plane *plane, float pct) {
+	planeSetRudder(plane, pctToNorm(pct));
+}
+void planeSetFlapPct(Plane *plane, float pct) {
+	planeSetFlap(plane, pctToNorm(pct));
+}
+
+void planeSetThrottle01(Plane *plane, float v) {
+	plane->currentTrustPercentage = fmaxf(0.0f, fminf(1.0f, v));
+}
+void planeSetAileron01(Plane *plane, float v) {
+	planeSetAileron(plane, norm01ToNorm(v));
+}
+void planeSetElevator01(Plane *plane, float v) {
+	planeSetElevator(plane, norm01ToNorm(v));
+}
+void planeSetRudder01(Plane *plane, float v) {
+	planeSetRudder(plane, norm01ToNorm(v));
+}
+void planeSetFlap01(Plane *plane, float v) {
+	planeSetFlap(plane, norm01ToNorm(v));
 }
 
 void planeSetAileron(Plane *plane, float norm) {
@@ -226,44 +274,67 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float aoa_deg = aoa_rad * (180.0f / (float)M_PI);
 	float sideslip_deg = sideslip_rad * (180.0f / (float)M_PI);
 
+	// Atmosphere state for this frame — computed once, shared across all surface force calcs.
+	float airDensity, speedOfSound;
+	atmosphere(plane->currentAltitude, &airDensity, &speedOfSound);
+	float mach = speed / (speedOfSound + 1e-6f);
+	float q = 0.5f * airDensity * speed * speed;
+
 	// Roll: aileron differential drives bankRate.
-#define MAX_ROLL_RATE 4.5f
-#define ROLL_DAMP 1.4f
-	if (plane->leftAileron.active && plane->leftAileron.maxRotationAngle > 0.0f) {
-		float ailCmd = plane->leftAileron.rotationAngle / plane->leftAileron.maxRotationAngle;
-		plane->bankRate += (ailCmd * MAX_ROLL_RATE - plane->bankRate) * (deltaTime / 0.12f);
+	if (plane->rightAileron.active) {
+		float neutral = (plane->rightAileron.minRotationAngle + plane->rightAileron.maxRotationAngle) * 0.5f;
+		float halfRange = (plane->rightAileron.maxRotationAngle - plane->rightAileron.minRotationAngle) * 0.5f;
+		float ailCmd = (halfRange > 1e-4f) ? (plane->rightAileron.targetRotationAngle - neutral) / halfRange : 0.0f;
+		plane->bankRate += (ailCmd * MAX_ROLL_RATE - plane->bankRate) * fminf(1.0f, deltaTime / 0.05f);
 	}
 	plane->bankRate -= ROLL_DAMP * plane->bankRate * deltaTime;
 	plane->bankAngle += plane->bankRate * deltaTime;
-	plane->bankAngle -= 0.1f * plane->bankAngle * deltaTime; // mild dihedral restoring
+	plane->bankAngle -= 0.15f * plane->bankAngle * deltaTime;
 
 	// Pitch rate: elevator command + aerodynamic pitch stability (AoA restoring moment).
-#define MAX_PITCH_RATE 1.8f // rad/s at full elevator
-#define PITCH_CMD_TC 0.15f	// elevator response time constant
-#define PITCH_DAMP 2.0f		// s^-1
-#define PITCH_STAB 4.0f		// rad/s^2 per rad of AoA — static pitch stability
-	if (plane->leftElevator.active && plane->leftElevator.maxRotationAngle != 0.0f) {
-		float elevCmd = 0.5f * (plane->leftElevator.rotationAngle + plane->rightElevator.rotationAngle) / plane->leftElevator.maxRotationAngle;
-		plane->pitchRate += (elevCmd * MAX_PITCH_RATE - plane->pitchRate) * (deltaTime / PITCH_CMD_TC);
+	if (plane->leftElevator.active) {
+		float neutral = (plane->leftElevator.minRotationAngle + plane->leftElevator.maxRotationAngle) * 0.5f;
+		float halfRange = (plane->leftElevator.maxRotationAngle - plane->leftElevator.minRotationAngle) * 0.5f;
+		float elevCmd = (halfRange > 1e-4f)
+							? 0.5f * ((plane->leftElevator.targetRotationAngle - neutral) + (plane->rightElevator.targetRotationAngle - neutral)) / halfRange
+							: 0.0f;
+		plane->pitchRate += (elevCmd * MAX_PITCH_RATE - plane->pitchRate) * fminf(1.0f, deltaTime / PITCH_CMD_TC);
 	}
 	plane->pitchRate -= PITCH_DAMP * plane->pitchRate * deltaTime;
-	plane->pitchRate -= PITCH_STAB * aoa_rad * deltaTime; // AoA drives nose back toward velocity
+	plane->pitchRate -= PITCH_STAB * aoa_rad * deltaTime;
 
 	// Yaw rate: rudder command + weathervane stability (sideslip restoring).
-#define MAX_YAW_RATE 0.8f
-#define YAW_CMD_TC 0.15f
-#define YAW_DAMP 2.0f
-#define YAW_STAB 3.0f // rad/s^2 per rad of sideslip
-	if (plane->rudder.active && plane->rudder.maxRotationAngle != 0.0f) {
-		float rudCmd = plane->rudder.rotationAngle / plane->rudder.maxRotationAngle;
-		plane->yawRate += (rudCmd * MAX_YAW_RATE - plane->yawRate) * (deltaTime / YAW_CMD_TC);
+	if (plane->rudder.active) {
+		float neutral = (plane->rudder.minRotationAngle + plane->rudder.maxRotationAngle) * 0.5f;
+		float halfRange = (plane->rudder.maxRotationAngle - plane->rudder.minRotationAngle) * 0.5f;
+		float rudCmd = (halfRange > 1e-4f) ? (plane->rudder.targetRotationAngle - neutral) / halfRange : 0.0f;
+		plane->yawRate += (rudCmd * MAX_YAW_RATE - plane->yawRate) * fminf(1.0f, deltaTime / YAW_CMD_TC);
 	}
 	plane->yawRate -= YAW_DAMP * plane->yawRate * deltaTime;
-	plane->yawRate -= YAW_STAB * sideslip_rad * deltaTime; // weathervane restoring
+	plane->yawRate -= YAW_STAB * sideslip_rad * deltaTime;
 
 	// Rotate nose direction by pitch and yaw rates, then rebuild the frame.
 	fwd = f3Norm(f3Add(fwd, f3Scale(up_banked, plane->pitchRate * deltaTime)));
 	fwd = f3Norm(f3Add(fwd, f3Scale(right_banked, plane->yawRate * deltaTime)));
+
+	// Banked-turn coupling: when banked, gravity component pulls nose down laterally,
+	// which turns the heading. This is what makes bank actually change direction of flight.
+	float turnYaw = (9.81f / fmaxf(speed, 10.0f)) * sinf(plane->bankAngle) * deltaTime;
+	fwd = f3Norm(f3Add(fwd, f3Scale(right_banked, turnYaw)));
+
+	// Clamp nose pitch to ±55° from horizontal to prevent full loops and gimbal lock.
+	// buildFrame() degenerates when fwd.y approaches ±1 (parallel to world-up).
+	const float kMaxPitchY = 0.82f; // sin(55°)
+	if (fwd.y > kMaxPitchY) {
+		fwd.y = kMaxPitchY;
+		fwd = f3Norm(fwd);
+		if (plane->pitchRate > 0.0f) plane->pitchRate = 0.0f;
+	} else if (fwd.y < -kMaxPitchY) {
+		fwd.y = -kMaxPitchY;
+		fwd = f3Norm(fwd);
+		if (plane->pitchRate < 0.0f) plane->pitchRate = 0.0f;
+	}
+
 	plane->forward = fwd;
 	buildFrame(fwd, plane->bankAngle, &right_banked, &up_banked);
 
@@ -282,8 +353,7 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	};
 	for (int i = 0; i < 7; i++) {
 		float lift, drag;
-		calcForceMagnitudes(hSurf[i], plane->currentAltitude, speed,
-							aoa_deg + hSurf[i]->rotationAngle, &lift, &drag);
+		calcForceMagnitudes(hSurf[i], q, mach, aoa_deg + hSurf[i]->rotationAngle, &lift, &drag);
 		totalLift += lift;
 		totalDrag += drag;
 	}
@@ -292,22 +362,23 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	Surface *vSurf[] = {&plane->verticalStabilizer, &plane->rudder};
 	for (int i = 0; i < 2; i++) {
 		float lift, drag;
-		calcForceMagnitudes(vSurf[i], plane->currentAltitude, speed,
-							sideslip_deg + vSurf[i]->rotationAngle, &lift, &drag);
-		totalLateral -= lift; // opposes sideslip (weathervane force)
+		calcForceMagnitudes(vSurf[i], q, mach, sideslip_deg + vSurf[i]->rotationAngle, &lift, &drag);
+		totalLateral -= lift;
 		totalDrag += drag;
 	}
 
 	// Ailerons: differential so net lift ~cancels; count their drag only.
 	{
 		float lift, drag;
-		calcForceMagnitudes(&plane->leftAileron, plane->currentAltitude, speed,
-							aoa_deg + plane->leftAileron.rotationAngle, &lift, &drag);
+		calcForceMagnitudes(&plane->leftAileron, q, mach, aoa_deg + plane->leftAileron.rotationAngle, &lift, &drag);
 		totalDrag += drag * 0.5f;
-		calcForceMagnitudes(&plane->rightAileron, plane->currentAltitude, speed,
-							aoa_deg + plane->rightAileron.rotationAngle, &lift, &drag);
+		calcForceMagnitudes(&plane->rightAileron, q, mach, aoa_deg + plane->rightAileron.rotationAngle, &lift, &drag);
 		totalDrag += drag * 0.5f;
 	}
+
+	// Maneuver-induced drag: turning hard costs speed (centripetal load on wings).
+	float turnRate2 = plane->pitchRate * plane->pitchRate + plane->yawRate * plane->yawRate;
+	totalDrag += turnRate2 * speed * totalMass * 0.08f;
 
 	float3 worldForce = {0.0f, 0.0f, 0.0f, 0.0f};
 	worldForce = f3Add(worldForce, f3Scale(up_banked, totalLift));		 // lift in banked-up direction
