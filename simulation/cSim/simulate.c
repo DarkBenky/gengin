@@ -5,16 +5,22 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define MAX_ROLL_RATE 1.2f
-#define ROLL_DAMP 0.8f
-#define MAX_PITCH_RATE 0.45f
-#define PITCH_CMD_TC 0.25f
-#define PITCH_DAMP 3.0f
-#define PITCH_STAB 4.0f
-#define MAX_YAW_RATE 0.3f
-#define YAW_CMD_TC 0.25f
-#define YAW_DAMP 2.0f
-#define YAW_STAB 3.0f
+// Moments of inertia (kg*m^2) — approximated for a fighter-sized aircraft.
+// Ixx = roll, Iyy = pitch, Izz = yaw.
+#define I_ROLL 40000.0f
+#define I_PITCH 80000.0f
+#define I_YAW 90000.0f
+
+// Aerodynamic damping coefficients (N*m per rad/s).
+// These model the natural resistance of the airframe to rotation.
+#define DAMP_ROLL 15000.0f
+#define DAMP_PITCH 25000.0f
+#define DAMP_YAW 20000.0f
+
+// Lever arms (m) from CG to surface aerodynamic center.
+#define LEVER_AILERON 5.0f
+#define LEVER_ELEVATOR 7.0f
+#define LEVER_RUDDER 7.0f
 
 static void atmosphere(float altitude, float *outDensity, float *outSpeedOfSound) {
 	altitude = fmaxf(0.0f, fminf(altitude, 25000.0f));
@@ -280,60 +286,63 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float mach = speed / (speedOfSound + 1e-6f);
 	float q = 0.5f * airDensity * speed * speed;
 
-	// Roll: aileron differential drives bankRate.
+	float controlScale = fminf(1.0f, q / 5000.0f);
+
+	// Resolve current surface deflections once — needed across multiple torque terms.
+	float ailDefl = 0.0f, elevDefl = 0.0f, rudDefl = 0.0f;
 	if (plane->rightAileron.active) {
 		float neutral = (plane->rightAileron.minRotationAngle + plane->rightAileron.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rightAileron.maxRotationAngle - plane->rightAileron.minRotationAngle) * 0.5f;
-		float ailCmd = (halfRange > 1e-4f) ? (plane->rightAileron.targetRotationAngle - neutral) / halfRange : 0.0f;
-		plane->bankRate += (ailCmd * MAX_ROLL_RATE - plane->bankRate) * fminf(1.0f, deltaTime / 0.05f);
+		if (halfRange > 1e-4f) ailDefl = (plane->rightAileron.rotationAngle - neutral) / halfRange;
 	}
-	plane->bankRate -= ROLL_DAMP * plane->bankRate * deltaTime;
-	plane->bankAngle += plane->bankRate * deltaTime;
-	plane->bankAngle -= 0.15f * plane->bankAngle * deltaTime;
-
-	// Pitch rate: elevator command + aerodynamic pitch stability (AoA restoring moment).
-	if (plane->leftElevator.active) {
-		float neutral = (plane->leftElevator.minRotationAngle + plane->leftElevator.maxRotationAngle) * 0.5f;
-		float halfRange = (plane->leftElevator.maxRotationAngle - plane->leftElevator.minRotationAngle) * 0.5f;
-		float elevCmd = (halfRange > 1e-4f)
-							? 0.5f * ((plane->leftElevator.targetRotationAngle - neutral) + (plane->rightElevator.targetRotationAngle - neutral)) / halfRange
-							: 0.0f;
-		plane->pitchRate += (elevCmd * MAX_PITCH_RATE - plane->pitchRate) * fminf(1.0f, deltaTime / PITCH_CMD_TC);
+	if (plane->rightElevator.active) {
+		float neutral = (plane->rightElevator.minRotationAngle + plane->rightElevator.maxRotationAngle) * 0.5f;
+		float halfRange = (plane->rightElevator.maxRotationAngle - plane->rightElevator.minRotationAngle) * 0.5f;
+		if (halfRange > 1e-4f) elevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
 	}
-	plane->pitchRate -= PITCH_DAMP * plane->pitchRate * deltaTime;
-	plane->pitchRate -= PITCH_STAB * aoa_rad * deltaTime;
-
-	// Yaw rate: rudder command + weathervane stability (sideslip restoring).
 	if (plane->rudder.active) {
 		float neutral = (plane->rudder.minRotationAngle + plane->rudder.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rudder.maxRotationAngle - plane->rudder.minRotationAngle) * 0.5f;
-		float rudCmd = (halfRange > 1e-4f) ? (plane->rudder.targetRotationAngle - neutral) / halfRange : 0.0f;
-		plane->yawRate += (rudCmd * MAX_YAW_RATE - plane->yawRate) * fminf(1.0f, deltaTime / YAW_CMD_TC);
+		if (halfRange > 1e-4f) rudDefl = (plane->rudder.targetRotationAngle - neutral) / halfRange;
 	}
-	plane->yawRate -= YAW_DAMP * plane->yawRate * deltaTime;
-	plane->yawRate -= YAW_STAB * sideslip_rad * deltaTime;
 
-	// Rotate nose direction by pitch and yaw rates, then rebuild the frame.
+	// Roll: aileron differential lift + dihedral stability (sideslip rolls wings level).
+	float rollTorque = ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.liftCoefficient * LEVER_AILERON * controlScale;
+	rollTorque -= sideslip_rad * q * plane->rightWing.surfaceArea * 0.1f * LEVER_AILERON * controlScale;
+
+	// Pitch: elevator + tail AoA restoring moment.
+	float pitchTorque = -elevDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEVATOR * controlScale;
+	pitchTorque -= aoa_rad * q * 8.0f * controlScale;
+
+	// Yaw: rudder + weathervane stability + adverse yaw from aileron differential drag.
+	float yawTorque = rudDefl * q * plane->rudder.surfaceArea * plane->rudder.liftCoefficient * LEVER_RUDDER * controlScale;
+	yawTorque -= sideslip_rad * q * 6.0f * controlScale;
+	yawTorque -= ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.dragCoefficient * LEVER_AILERON * 4.0f * controlScale;
+
+	// Engine gyroscopic precession: spinning turbine resists attitude changes.
+	// Pitching creates yaw, yawing creates pitch (CW engine from pilot view).
+	float H_engine = 6000.0f * plane->currentTrustPercentage;
+	pitchTorque -= plane->yawRate * H_engine;
+	yawTorque += plane->pitchRate * H_engine;
+
+	// Aerodynamic damping opposes rotation.
+	rollTorque -= plane->bankRate * DAMP_ROLL * controlScale;
+	pitchTorque -= plane->pitchRate * DAMP_PITCH * controlScale;
+	yawTorque -= plane->yawRate * DAMP_YAW * controlScale;
+
+	// Integrate angular acceleration.
+	plane->bankRate += (rollTorque / I_ROLL) * deltaTime;
+	plane->pitchRate += (pitchTorque / I_PITCH) * deltaTime;
+	plane->yawRate += (yawTorque / I_YAW) * deltaTime;
+
 	fwd = f3Norm(f3Add(fwd, f3Scale(up_banked, plane->pitchRate * deltaTime)));
 	fwd = f3Norm(f3Add(fwd, f3Scale(right_banked, plane->yawRate * deltaTime)));
+	plane->bankAngle += plane->bankRate * deltaTime;
 
-	// Banked-turn coupling: when banked, gravity component pulls nose down laterally,
-	// which turns the heading. This is what makes bank actually change direction of flight.
-	float turnYaw = (9.81f / fmaxf(speed, 10.0f)) * sinf(plane->bankAngle) * deltaTime;
+	// Banked-turn coupling: gravity component turns heading when banked.
+	float clampedBank = fmaxf(-1.2f, fminf(1.2f, plane->bankAngle));
+	float turnYaw = (9.81f / fmaxf(speed, 50.0f)) * tanf(clampedBank) * deltaTime;
 	fwd = f3Norm(f3Add(fwd, f3Scale(right_banked, turnYaw)));
-
-	// Clamp nose pitch to ±55° from horizontal to prevent full loops and gimbal lock.
-	// buildFrame() degenerates when fwd.y approaches ±1 (parallel to world-up).
-	const float kMaxPitchY = 0.82f; // sin(55°)
-	if (fwd.y > kMaxPitchY) {
-		fwd.y = kMaxPitchY;
-		fwd = f3Norm(fwd);
-		if (plane->pitchRate > 0.0f) plane->pitchRate = 0.0f;
-	} else if (fwd.y < -kMaxPitchY) {
-		fwd.y = -kMaxPitchY;
-		fwd = f3Norm(fwd);
-		if (plane->pitchRate < 0.0f) plane->pitchRate = 0.0f;
-	}
 
 	plane->forward = fwd;
 	buildFrame(fwd, plane->bankAngle, &right_banked, &up_banked);

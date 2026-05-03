@@ -35,7 +35,7 @@
 // update render object to sim object and move camera to follow the plane
 void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input *input, struct mfb_window *window) {
 	float3 forward;
-	updatePlane(simPlane, 1.0f / 60.0f, &forward);
+	updatePlane(simPlane, 1.0f / 160.0f, &forward);
 	printf("Sim plane position: (%.2f, %.2f, %.2f), speed: %.2f m/s\n", simPlane->position.x, simPlane->position.y, simPlane->position.z, simPlane->currentSpeed);
 
 	renderObj->position = simPlane->position;

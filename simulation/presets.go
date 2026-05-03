@@ -131,7 +131,7 @@ func NewF16() Plane {
 			maxRotationAngle: 30.0,
 			minRotationAngle: -30.0,
 			rotationRate:     80.0,
-			surfaceArea:      1.8,
+			surfaceArea:      3.8,
 			liftCoefficient:  0.60,
 			dragCoefficient:  0.025,
 			aspectRatio:      0.9,
