@@ -5,6 +5,7 @@
 #include "../../math/vector3.h"
 #include "../../object/scene.h"
 #include "dense.h"
+#include "../../object/format.h"
 
 typedef struct {
     float3 startPosition;
@@ -13,9 +14,39 @@ typedef struct {
     int iterationCount;
     int currentIteration;
     int ObjectIds[16];
-} Path;
+    Model *models;
+    float *losses;
+    float3 *paths; // TODO: model count * iteration count -> commit to python to visualize it
+    int numModels;
+    float startMutationRate;
+    float endMutationRate;
+    int epochs;
+    int currentEpoch;
+} ModelTrainer;
+typedef struct {
+    float3 currentPosition;
+    float3 currentVelocity;
+    float3 targetPosition;
+    float Throttle; // 0.0 to 1.0
+    float Aileron;  // 0.0 to 1.0
+    float Elevator; // 0.0 to 1.0
+    float Rudder;   // 0.0 to 1.0
+} ModelInput;
+    
+typedef struct {
+    float Throttle; // 0.0 to 1.0
+    float Aileron;  // 0.0 to 1.0
+    float Elevator; // 0.0 to 1.0
+    float Rudder;   // 0.0 to 1.0
+} ModelOutput;
 
-void generatePath(Path *p, Plane plane, float maxDivergenceAngleDegrees, float maxDistance, ObjectList *scene, int IterationCount) 
+float calculateMutationRate(float startRate, float endRate, int currentEpoch, int totalEpochs) {
+    if (currentEpoch >= totalEpochs) return endRate;
+    float progress = (float)currentEpoch / (float)totalEpochs;
+    return startRate + progress * (endRate - startRate);
+}
+
+void generatePath(ModelTrainer *p, Plane plane, float maxDivergenceAngleDegrees, float maxDistance, ObjectList *scene, int IterationCount) 
 {
     p->startPosition = plane.position;
     p->prevPosition = plane.position;
@@ -51,14 +82,29 @@ void generatePath(Path *p, Plane plane, float maxDivergenceAngleDegrees, float m
     }
 }
 
-void createModel(Model *model, int numHiddenLayers, int hiddenLayerSize) {
-    model->inputSize = sizeof(ModelInput) / sizeof(float);
-    model->outputSize = sizeof(ModelOutput) / sizeof(float);
-    // TODO : implement model and integrate into training loop
-    
+void initModelTrainer(ModelTrainer *p, int numModels, int epochs, float startMutationRate, float endMutationRate, int layerCount, int layerSize) {
+    p->numModels = numModels;
+    p->epochs = epochs;
+    p->startMutationRate = startMutationRate;
+    p->endMutationRate = endMutationRate;
+    p->currentEpoch = 0;
+    p->currentIteration = 0;
+
+    p->models = (Model *)malloc(sizeof(Model) * numModels);
+    p->losses = (float *)malloc(sizeof(float) * numModels);
+    for (int i = 0; i < numModels; i++) {
+        Model model;
+        InitModel(&model, sizeof(ModelInput) / sizeof(float), sizeof(ModelOutput) / sizeof(float));
+        p->models[i] = model;
+        for (int j = 0; j < layerCount; j++) {
+            AddDenseLayer(&p->models[i], layerSize, (j == layerCount - 1) ? ACTIVATION_SIGMOID : ACTIVATION_RELU);
+        }
+        MutateModel(p->models[i], startMutationRate);
+        p->losses[i] = 0.0f;
+    }
 }
 
-float loss(Path *p, Plane *plane, ObjectList *scene, Model *model) {
+float loss(ModelTrainer *p, Plane *plane, ObjectList *scene, Model *model) {
     if (p->currentIteration >= p->iterationCount) {
         generatePath(p, *plane, 90.0f, 5000.0f, scene, p->iterationCount);
     }
@@ -90,19 +136,18 @@ float loss(Path *p, Plane *plane, ObjectList *scene, Model *model) {
     return totalLoss;
 }
 
-typedef struct {
-    float3 currentPosition;
-    float3 currentVelocity;
-    float3 targetPosition;
-    float Throttle; // 0.0 to 1.0
-    float Aileron;  // 0.0 to 1.0
-    float Elevator; // 0.0 to 1.0
-    float Rudder;   // 0.0 to 1.0
-} ModelInput;
-    
-typedef struct {
-    float Throttle; // 0.0 to 1.0
-    float Aileron;  // 0.0 to 1.0
-    float Elevator; // 0.0 to 1.0
-    float Rudder;   // 0.0 to 1.0
-} ModelOutput;
+
+void epoch(ModelTrainer *p, Plane *plane, ObjectList *scene) {
+    float3 startPos = plane->position;
+    float3 startVel = plane->velocity;
+
+    generatePath(p, *plane, 90.0f, 5000.0f, scene, p->iterationCount);
+
+    for (int modelIdx = 0; modelIdx < p->numModels; modelIdx++) {
+        float totalLoss = 0.0f;
+        for (int step = 0; step < p->iterationCount; step++) {
+            // TODO: 
+        }
+    }
+
+}

@@ -59,5 +59,6 @@
   "editor.inlayHints.enabled": "on",
   "clangd.arguments": [
     "--inlay-hints=true"
-  ]
+  ],
+  "C_Cpp.intelliSenseEngine": "disabled"
 }
