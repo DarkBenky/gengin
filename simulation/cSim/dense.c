@@ -119,28 +119,28 @@ void MutateModel(Model *model, float mutationRate) {
 	}
 }
 
-#define MODEL_MAGIC   0x4D4E4E44u
+#define MODEL_MAGIC 0x4D4E4E44u
 #define MODEL_VERSION 1u
 
 int SaveModel(const Model *model, const char *filename) {
 	FILE *f = fopen(filename, "wb");
 	if (!f) return 1;
 
-	uint32 magic   = MODEL_MAGIC;
+	uint32 magic = MODEL_MAGIC;
 	uint32 version = MODEL_VERSION;
-	fwrite(&magic,            sizeof(uint32), 1, f);
-	fwrite(&version,          sizeof(uint32), 1, f);
+	fwrite(&magic, sizeof(uint32), 1, f);
+	fwrite(&version, sizeof(uint32), 1, f);
 	fwrite(&model->inputSize, sizeof(uint32), 1, f);
-	fwrite(&model->outputSize,sizeof(uint32), 1, f);
+	fwrite(&model->outputSize, sizeof(uint32), 1, f);
 	fwrite(&model->numLayers, sizeof(uint32), 1, f);
 
 	for (uint32 i = 0; i < model->numLayers; i++) {
 		const DenseLayer *layer = &model->layers[i];
-		fwrite(&layer->inputSize,  sizeof(uint32),        1,                             f);
-		fwrite(&layer->outputSize, sizeof(uint32),        1,                             f);
-		fwrite(&layer->activation, sizeof(ActivationFunc),1,                             f);
-		fwrite(layer->weights,     sizeof(float), layer->inputSize * layer->outputSize,  f);
-		fwrite(layer->biases,      sizeof(float), layer->outputSize,                     f);
+		fwrite(&layer->inputSize, sizeof(uint32), 1, f);
+		fwrite(&layer->outputSize, sizeof(uint32), 1, f);
+		fwrite(&layer->activation, sizeof(ActivationFunc), 1, f);
+		fwrite(layer->weights, sizeof(float), layer->inputSize * layer->outputSize, f);
+		fwrite(layer->biases, sizeof(float), layer->outputSize, f);
 	}
 
 	fclose(f);
@@ -152,11 +152,26 @@ int LoadModel(Model *model, const char *filename) {
 	if (!f) return 1;
 
 	uint32 magic, version, inputSize, outputSize, numLayers;
-	if (fread(&magic,      sizeof(uint32), 1, f) != 1 || magic   != MODEL_MAGIC)   { fclose(f); return 2; }
-	if (fread(&version,    sizeof(uint32), 1, f) != 1 || version != MODEL_VERSION) { fclose(f); return 3; }
-	if (fread(&inputSize,  sizeof(uint32), 1, f) != 1) { fclose(f); return 4; }
-	if (fread(&outputSize, sizeof(uint32), 1, f) != 1) { fclose(f); return 5; }
-	if (fread(&numLayers,  sizeof(uint32), 1, f) != 1) { fclose(f); return 6; }
+	if (fread(&magic, sizeof(uint32), 1, f) != 1 || magic != MODEL_MAGIC) {
+		fclose(f);
+		return 2;
+	}
+	if (fread(&version, sizeof(uint32), 1, f) != 1 || version != MODEL_VERSION) {
+		fclose(f);
+		return 3;
+	}
+	if (fread(&inputSize, sizeof(uint32), 1, f) != 1) {
+		fclose(f);
+		return 4;
+	}
+	if (fread(&outputSize, sizeof(uint32), 1, f) != 1) {
+		fclose(f);
+		return 5;
+	}
+	if (fread(&numLayers, sizeof(uint32), 1, f) != 1) {
+		fclose(f);
+		return 6;
+	}
 
 	// Zero stale state so FreeModel is safe on uninitialized models.
 	// If model was previously initialized, call FreeModel before LoadModel.
@@ -166,17 +181,67 @@ int LoadModel(Model *model, const char *filename) {
 	for (uint32 i = 0; i < numLayers; i++) {
 		uint32 lIn, lOut;
 		ActivationFunc act;
-		if (fread(&lIn,  sizeof(uint32),         1, f) != 1) { FreeModel(model); fclose(f); return 7; }
-		if (fread(&lOut, sizeof(uint32),         1, f) != 1) { FreeModel(model); fclose(f); return 7; }
-		if (fread(&act,  sizeof(ActivationFunc), 1, f) != 1) { FreeModel(model); fclose(f); return 7; }
+		if (fread(&lIn, sizeof(uint32), 1, f) != 1) {
+			FreeModel(model);
+			fclose(f);
+			return 7;
+		}
+		if (fread(&lOut, sizeof(uint32), 1, f) != 1) {
+			FreeModel(model);
+			fclose(f);
+			return 7;
+		}
+		if (fread(&act, sizeof(ActivationFunc), 1, f) != 1) {
+			FreeModel(model);
+			fclose(f);
+			return 7;
+		}
 
 		AddDenseLayer(model, lIn, lOut, act);
 		DenseLayer *layer = &model->layers[model->numLayers - 1];
 
-		if (fread(layer->weights, sizeof(float), lIn * lOut, f) != lIn * lOut) { FreeModel(model); fclose(f); return 8; }
-		if (fread(layer->biases,  sizeof(float), lOut,       f) != lOut)       { FreeModel(model); fclose(f); return 8; }
+		if (fread(layer->weights, sizeof(float), lIn * lOut, f) != lIn * lOut) {
+			FreeModel(model);
+			fclose(f);
+			return 8;
+		}
+		if (fread(layer->biases, sizeof(float), lOut, f) != lOut) {
+			FreeModel(model);
+			fclose(f);
+			return 8;
+		}
 	}
 
 	fclose(f);
 	return 0;
+}
+
+void CrossoverModels(Model *child, const Model *parentA, const Model *parentB, float mutationRate) {
+	if (parentA->numLayers != parentB->numLayers || parentA->inputSize != parentB->inputSize || parentA->outputSize != parentB->outputSize)
+		return;
+
+	FreeModel(child);
+	InitModel(child, parentA->inputSize, parentA->outputSize);
+
+	for (uint32 i = 0; i < parentA->numLayers; i++) {
+		const DenseLayer *layerA = &parentA->layers[i];
+		const DenseLayer *layerB = &parentB->layers[i];
+		if (layerA->inputSize != layerB->inputSize || layerA->outputSize != layerB->outputSize) {
+			FreeModel(child);
+			return;
+		}
+		AddDenseLayer(child, layerA->inputSize, layerA->outputSize, layerA->activation);
+		DenseLayer *childLayer = &child->layers[i];
+
+		for (uint32 j = 0; j < layerA->inputSize * layerA->outputSize; j++) {
+			childLayer->weights[j] = (rand() % 2 == 0) ? layerA->weights[j] : layerB->weights[j];
+			if ((float)rand() / RAND_MAX < mutationRate)
+				childLayer->weights[j] += ((float)rand() / RAND_MAX - 0.5f) * 0.2f;
+		}
+		for (uint32 j = 0; j < layerA->outputSize; j++) {
+			childLayer->biases[j] = (rand() % 2 == 0) ? layerA->biases[j] : layerB->biases[j];
+			if ((float)rand() / RAND_MAX < mutationRate)
+				childLayer->biases[j] += ((float)rand() / RAND_MAX - 0.5f) * 0.2f;
+		}
+	}
 }

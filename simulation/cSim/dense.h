@@ -31,6 +31,15 @@ void FreeModel(Model *model);
 void Forward(Model *model, const float *input, float *output);
 void CopyModel(Model *dest, const Model *src);
 void MutateModel(Model *model, float mutationRate);
+void CrossoverModels(Model *child, const Model *parentA, const Model *parentB, float mutationRate);
+
+// TODO: add backward pass (later)
+// typedef struct {
+//    ...
+//    ...
+// } Optimizer;
+// void Backward(Model *model, Optimizer *opt, ...);
+
 
 // Returns 0 on success, non-zero on failure.
 int SaveModel(const Model *model, const char *filename);
