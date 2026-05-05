@@ -1,7 +1,7 @@
 #include "simulate.h"
 #include "import.h"
-#include <cstddef>
-#include <cstring>
+#include <stddef.h>
+#include <string.h>
 #include <immintrin.h>
 #include <math.h>
 #include <time.h>
@@ -66,7 +66,7 @@ void generatePath(ModelTrainer *p, Plane plane, float maxDivergenceAngleDegrees,
     p->targetPosition = Float3_Add(plane.position, Float3_Add(Float3_Scale(forward, distance), Float3_Scale(right, tanf(randomAngle) * distance)));
 }
 
-void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationCount, float startMutationRate, float endMutationRate, int layerCount, int layerSize) {
+void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationCount, float startMutationRate, float endMutationRate, int layerCount, int layerSize, uint16 port) {
     p->numModels = numModels;
     p->epochs = epochs;
     p->iterationCount = iterationCount;
@@ -74,7 +74,7 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
     p->endMutationRate = endMutationRate;
     p->currentEpoch = 0;
     p->currentIteration = 0;
-    Client c = {.host = "127.0.0.1", .port = 5173};
+    Client c = {.host = "127.0.0.1", .port = port};
     p->client = c;
 
     p->models = (Model *)malloc(sizeof(Model) * numModels);
@@ -91,7 +91,7 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
         for (int j = 0; j < layerCount; j++) {
             uint32 inSize  = (j == 0)              ? p->models[i].inputSize  : (uint32)layerSize;
             uint32 outSize = (j == layerCount - 1) ? p->models[i].outputSize : (uint32)layerSize;
-            ActivationFunc act = (j == layerCount - 1) ? ACTIVATION_SIGMOID : ACTIVATION_RELU;
+            ActivationFunc act = (j == layerCount - 1) ? SIGMOID : RELU;
             AddDenseLayer(&p->models[i], inSize, outSize, act);
         }
         MutateModel(&p->models[i], startMutationRate);
@@ -103,6 +103,8 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
 typedef struct {
     uint32 modelCount;
     uint32 iterationCount;
+    float startPosition[3];
+    float targetPosition[3];
     // wire layout after this header:
     //   float[modelCount]                   losses
     //   float3[modelCount * iterationCount] paths
@@ -116,6 +118,12 @@ trainingStats* serializeTrainStats(ModelTrainer *p, int *size) {
     trainingStats *stats = (trainingStats *)malloc(sizeof(trainingStats) + lossSize + pathsSize + epochLossesSize);
     stats->modelCount = p->numModels;
     stats->iterationCount = p->iterationCount;
+    stats->startPosition[0] = p->startPosition.x;
+    stats->startPosition[1] = p->startPosition.y;
+    stats->startPosition[2] = p->startPosition.z;
+    stats->targetPosition[0] = p->targetPosition.x;
+    stats->targetPosition[1] = p->targetPosition.y;
+    stats->targetPosition[2] = p->targetPosition.z;
     uint8_t *base = (uint8_t *)(stats + 1);
     memcpy(base,                        p->losses,      lossSize);
     memcpy(base + lossSize,             p->paths,       pathsSize);
@@ -124,46 +132,54 @@ trainingStats* serializeTrainStats(ModelTrainer *p, int *size) {
     return stats;
 }
 
-void epoch(ModelTrainer *p, Plane *plane) {
+void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
     float3 startPos = plane->position;
     float3 modelOrientation = plane->forward;
     float3 startVel = plane->velocity;
+    float startBankAngle = plane->bankAngle;
+    float startBankRate  = plane->bankRate;
+    float startPitchRate = plane->pitchRate;
+    float startYawRate   = plane->yawRate;
 
-    generatePath(p, *plane, 90.0f, 5000.0f, p->iterationCount);
+    generatePath(p, *plane, 45.0f, 5000.0f, p->iterationCount);
+    float initialDist = Float3_Length(Float3_Sub(startPos, p->targetPosition));
+    if (initialDist < 1.0f) initialDist = 1.0f;
 
     for (int modelIdx = 0; modelIdx < p->numModels; modelIdx++) {
         // reset plane to start of epoch
         float totalLoss = 0.0f;
-        plane->position = startPos;
-        plane->forward = modelOrientation;
-        plane->velocity = startVel;
+        plane->position  = startPos;
+        plane->forward   = modelOrientation;
+        plane->velocity  = startVel;
+        plane->bankAngle = startBankAngle;
+        plane->bankRate  = startBankRate;
+        plane->pitchRate = startPitchRate;
+        plane->yawRate   = startYawRate;
 
         for (int step = 0; step < p->iterationCount; step++) {
-            float3 prevPos = plane->position;
             ModelInput input = {
                 .currentPosition = plane->position,
                 .currentVelocity = plane->velocity,
-                .targetPosition = p->targetPosition,
+                .targetPosition  = p->targetPosition,
                 .Throttle = planeGetThrottle01(plane),
-                .Aileron = planeGetAileron01(plane),
+                .Aileron  = planeGetAileron01(plane),
                 .Elevator = planeGetElevator01(plane),
-                .Rudder = planeGetRudder01(plane)
+                .Rudder   = planeGetRudder01(plane)
             };
             ModelOutput output;
             Forward(&p->models[modelIdx], (float *)&input, (float *)&output);
-            planeSetAileron01(plane, output.Aileron);
+            planeSetAileron01(plane,  output.Aileron);
             planeSetElevator01(plane, output.Elevator);
-            planeSetRudder01(plane, output.Rudder);
+            planeSetRudder01(plane,   output.Rudder);
             planeSetThrottle01(plane, output.Throttle);
             float3 newForward;
-            updatePlane(plane, 1.0f / 120.0f, &newForward);
+            updatePlane(plane, 1.0f / 60.0f, &newForward);
 
-            // loss calculation
             float distanceToTarget = Float3_Length(Float3_Sub(plane->position, p->targetPosition));
-            float prevDistanceToTarget = Float3_Length(Float3_Sub(prevPos, p->targetPosition));
-            float progressLoss = distanceToTarget / prevDistanceToTarget;
-            float controlEffortLoss = (output.Throttle * output.Throttle) + (output.Aileron * output.Aileron) + (output.Elevator * output.Elevator) + (output.Rudder * output.Rudder);
-            totalLoss += progressLoss + 0.0125f * controlEffortLoss;
+            float controlEffortLoss = (output.Throttle * output.Throttle) + (output.Aileron * output.Aileron)
+                                    + (output.Elevator * output.Elevator) + (output.Rudder * output.Rudder);
+            // normalize by initial distance so losses are comparable across epochs regardless of target distance
+            totalLoss += distanceToTarget / initialDist;
 
             p->paths[modelIdx * p->iterationCount + step] = plane->position;
             p->epochLosses[modelIdx * p->iterationCount + step] = (float3){totalLoss, distanceToTarget, controlEffortLoss};
@@ -204,9 +220,23 @@ void epoch(ModelTrainer *p, Plane *plane) {
 
     p->currentEpoch++;
 
+    float minEpochLoss = p->losses[p->modelLossOrders[0]];
+    float maxEpochLoss = p->losses[p->modelLossOrders[p->numModels - 1]];
+    float medianEpochLoss = p->losses[p->modelLossOrders[p->numModels / 2]];
+    printf("Epoch %d: min loss=%.6f, median loss=%.6f, max loss=%.6f, mutation rate=%.6f\n", p->currentEpoch, minEpochLoss, medianEpochLoss, maxEpochLoss, mutationRate);
+
+    // calculate top 10 percent average loss for model saving criteria
+    int top10Count = p->numModels / 10;
+    if (top10Count < 1) top10Count = 1;
+    float top10LossSum = 0.0f;
+    for (int i = 0; i < top10Count; i++) {
+        top10LossSum += p->losses[p->modelLossOrders[i]];
+    }
+    *top10PercentLoss = top10LossSum / (float)top10Count;
+
     int statsSize;
     trainingStats *stats = serializeTrainStats(p, &statsSize);
-    clientPost(p->client, (const char *)stats, statsSize);
+    clientPost(&p->client, (const char *)stats, statsSize);
     free(stats);
 }
 
