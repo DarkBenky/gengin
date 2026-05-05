@@ -1,6 +1,8 @@
 import socket
 import struct
 import numpy as np
+import numpy as np
+import plotly.graph_objects as go
 
 HOST = "127.0.0.1"
 PORT = 5173
@@ -12,6 +14,8 @@ PORT = 5173
 #   float[modelCount]                    losses
 #   float3[modelCount * iterationCount]  paths       (4 floats each, w unused)
 #   float3[modelCount * iterationCount]  epochLosses (x=totalLoss, y=distanceToTarget, z=controlEffortLoss, w unused)
+
+epochLosses = [] # [iterations][3] = [minForEpoch, avgForEpoch, maxForEpoch]
 
 def recv_all(conn, n):
     buf = bytearray()
@@ -33,6 +37,11 @@ def parse_training_stats(data):
     off += m * n * 16
 
     epoch_losses = np.frombuffer(data, dtype="<f4", count=m * n * 4, offset=off).reshape(m, n, 4).copy()
+
+    minEpochLoss = epoch_losses[:, :, 0].min()
+    averageEpochLoss = epoch_losses[:, :, 0].mean()
+    maxEpochLoss = epoch_losses[:, :, 0].max()
+    epochLosses.append((minEpochLoss, averageEpochLoss, maxEpochLoss))
 
     return {
         "modelCount":        m,
@@ -76,5 +85,78 @@ def main():
             conn, addr = srv.accept()
             handle(conn, addr)
 
+def visualizePath(paths, start, target):
+    # paths: [m][n][3]
+    m, n, _ = paths.shape
+    fig = go.Figure(layout=dict(template="plotly_dark"))
+    for i in range(m):
+        fig.add_trace(go.Scatter3d(
+            x=paths[i, :, 0],
+            y=paths[i, :, 1],
+            z=paths[i, :, 2],
+            mode='lines',
+            name=f'Model {i}'
+        ))
+    fig.add_trace(go.Scatter3d(
+        x=[start[0]],
+        y=[start[1]],
+        z=[start[2]],
+        mode='markers',
+        marker=dict(size=5, color='green'),
+        name='Start'
+    ))
+    fig.add_trace(go.Scatter3d(
+        x=[target[0]],
+        y=[target[1]],
+        z=[target[2]],
+        mode='markers',
+        marker=dict(size=5, color='red'),
+        name='Target'
+    ))
+    return fig
+
+def visualizeLosses(totalLoss, distanceToTarget, controlEffortLoss):
+    # totalLoss, distanceToTarget, controlEffortLoss: [m][n]
+    from plotly.subplots import make_subplots
+    m, n = totalLoss.shape
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                        subplot_titles=("Total Loss", "Distance to Target", "Control Effort Loss"))
+    x = np.arange(n)
+    for i in range(m):
+        fig.add_trace(go.Scatter(x=x, y=totalLoss[i],         mode='lines', name=f'Model {i}',                    legendgroup=f'{i}'),              row=1, col=1)
+        fig.add_trace(go.Scatter(x=x, y=distanceToTarget[i],  mode='lines', name=f'Model {i}',                    legendgroup=f'{i}', showlegend=False), row=2, col=1)
+        fig.add_trace(go.Scatter(x=x, y=controlEffortLoss[i], mode='lines', name=f'Model {i}',                    legendgroup=f'{i}', showlegend=False), row=3, col=1)
+    fig.update_layout(template="plotly_dark")
+    return fig
+
+def visualizeEpochLosses(epochLosses):
+    # epochLosses: [iterations][3] = [minForEpoch, avgForEpoch, maxForEpoch]
+    epochLosses = np.array(epochLosses)  # [iterations][3]
+    x = np.arange(len(epochLosses))
+    fig = go.Figure(layout=dict(template="plotly_dark"))
+    # bottom of band (min)
+    fig.add_trace(go.Scatter(
+        x=x, y=epochLosses[:, 0],
+        mode='lines', line=dict(width=0),
+        name='Min', showlegend=False
+    ))
+    # top of band (max), filled down to previous trace
+    fig.add_trace(go.Scatter(
+        x=x, y=epochLosses[:, 2],
+        mode='lines', line=dict(width=0),
+        fill='tonexty', fillcolor='rgba(99,110,250,0.2)',
+        name='Min-Max range'
+    ))
+    # average line on top
+    fig.add_trace(go.Scatter(
+        x=x, y=epochLosses[:, 1],
+        mode='lines', line=dict(width=2),
+        name='Avg'
+    ))
+    fig.update_layout(xaxis_title='Epoch', yaxis_title='Loss')
+    return fig
+
 if __name__ == "__main__":
-    main()
+    visualizePath(np.random.rand(3, 10, 3), [0, 0, 0], [1, 1, 1]).show(renderer="browser")
+    visualizeLosses(np.random.rand(3, 10), np.random.rand(3, 10), np.random.rand(3, 10)).show(renderer="browser")
+    visualizeEpochLosses([(0.5, 0.7, 0.9), (0.4, 0.6, 0.8), (0.3, 0.5, 0.7)]).show(renderer="browser")
