@@ -28,9 +28,8 @@ typedef struct {
     Client client; // for sending training data to python for visualization
 } ModelTrainer;
 typedef struct {
-    float3 currentPosition;
-    float3 currentVelocity;
-    float3 targetPosition;
+    float3 toTarget;        // (targetPosition - currentPosition) / 5000  [-1..1 approx]
+    float3 currentVelocity; // velocity / 500                              [-1..1 approx]
     float Throttle; // 0.0 to 1.0
     float Aileron;  // 0.0 to 1.0
     float Elevator; // 0.0 to 1.0
@@ -38,10 +37,10 @@ typedef struct {
 } ModelInput;
     
 typedef struct {
-    float Throttle; // 0.0 to 1.0
-    float Aileron;  // 0.0 to 1.0
-    float Elevator; // 0.0 to 1.0
-    float Rudder;   // 0.0 to 1.0
+    float Throttle; // 0.0 to 1.0 (mapped from tanh via (out+1)/2)
+    float Aileron;  // -1.0 to 1.0
+    float Elevator; // -1.0 to 1.0
+    float Rudder;   // -1.0 to 1.0
 } ModelOutput;
 
 float calculateMutationRate(float startRate, float endRate, int currentEpoch, int totalEpochs) {
@@ -50,19 +49,19 @@ float calculateMutationRate(float startRate, float endRate, int currentEpoch, in
     return startRate + progress * (endRate - startRate);
 }
 
-void generatePath(ModelTrainer *p, Plane plane, float maxDivergenceAngleDegrees, float maxDistance, int IterationCount) 
+void generatePath(ModelTrainer *p, Plane plane, float minDistance, float maxDistance, int IterationCount) 
 {
     p->startPosition = plane.position;
     p->prevPosition = plane.position;
     p->iterationCount = IterationCount;
     p->currentIteration = 0;
 
-    float maxDivergenceAngleRadians = maxDivergenceAngleDegrees * (M_PI / 180.0f);
+    float maxDivergenceAngleRadians = 45.0f * (M_PI / 180.0f);
     float randomAngle = ((float)rand() / RAND_MAX) * maxDivergenceAngleRadians - (maxDivergenceAngleRadians / 2.0f);
     float3 forward = Float3_Normalize(plane.forward);
     float3 right = Float3_Normalize(Float3_Cross(forward, (float3){0.0f, 1.0f, 0.0f, 0.0f}));
 
-    float distance = ((float)rand() / RAND_MAX) * maxDistance;
+    float distance = minDistance + ((float)rand() / RAND_MAX) * (maxDistance - minDistance);
     p->targetPosition = Float3_Add(plane.position, Float3_Add(Float3_Scale(forward, distance), Float3_Scale(right, tanf(randomAngle) * distance)));
 }
 
@@ -91,7 +90,7 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
         for (int j = 0; j < layerCount; j++) {
             uint32 inSize  = (j == 0)              ? p->models[i].inputSize  : (uint32)layerSize;
             uint32 outSize = (j == layerCount - 1) ? p->models[i].outputSize : (uint32)layerSize;
-            ActivationFunc act = (j == layerCount - 1) ? SIGMOID : RELU;
+            ActivationFunc act = (j == layerCount - 1) ? TANH : RELU;
             AddDenseLayer(&p->models[i], inSize, outSize, act);
         }
         MutateModel(&p->models[i], startMutationRate);
@@ -141,7 +140,11 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
     float startPitchRate = plane->pitchRate;
     float startYawRate   = plane->yawRate;
 
-    generatePath(p, *plane, 45.0f, 5000.0f, p->iterationCount);
+    // target 20-60% of the distance the plane can cruise in the allotted steps,
+    // so the plane has enough time to reach it but also isn't trivially close.
+    float simTime = p->iterationCount * (1.0f / 24.0f);
+    float cruiseRange = simTime * 250.0f;
+    generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount);
     float initialDist = Float3_Length(Float3_Sub(startPos, p->targetPosition));
     if (initialDist < 1.0f) initialDist = 1.0f;
 
@@ -157,10 +160,12 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
         plane->yawRate   = startYawRate;
 
         for (int step = 0; step < p->iterationCount; step++) {
+            // normalize by initialDist: magnitude=1 at start, ~0 at target — always well-conditioned
+            float3 toTarget = Float3_Scale(Float3_Sub(p->targetPosition, plane->position), 1.0f / initialDist);
+            float3 velNorm  = Float3_Scale(plane->velocity, 1.0f / 500.0f);
             ModelInput input = {
-                .currentPosition = plane->position,
-                .currentVelocity = plane->velocity,
-                .targetPosition  = p->targetPosition,
+                .toTarget        = toTarget,
+                .currentVelocity = velNorm,
                 .Throttle = planeGetThrottle01(plane),
                 .Aileron  = planeGetAileron01(plane),
                 .Elevator = planeGetElevator01(plane),
@@ -168,12 +173,13 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
             };
             ModelOutput output;
             Forward(&p->models[modelIdx], (float *)&input, (float *)&output);
-            planeSetAileron01(plane,  output.Aileron);
-            planeSetElevator01(plane, output.Elevator);
-            planeSetRudder01(plane,   output.Rudder);
-            planeSetThrottle01(plane, output.Throttle);
+            // tanh output: surfaces in [-1,1], throttle mapped from [-1,1] to [0,1]
+            planeSetAileron(plane,   output.Aileron);
+            planeSetElevator(plane,  output.Elevator);
+            planeSetRudder(plane,    output.Rudder);
+            planeSetThrottle(plane,  (output.Throttle + 1.0f) * 0.5f);
             float3 newForward;
-            updatePlane(plane, 1.0f / 60.0f, &newForward);
+            updatePlane(plane, 1.0f / 24.0f, &newForward);
 
             float distanceToTarget = Float3_Length(Float3_Sub(plane->position, p->targetPosition));
             float controlEffortLoss = (output.Throttle * output.Throttle) + (output.Aileron * output.Aileron)
@@ -199,7 +205,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
     }
 
     // elitism + crossover
-    int eliteCount = p->numModels / 5;
+    int eliteCount = p->numModels / 5; // top 20% are parents for next generation
     if (eliteCount < 1) eliteCount = 1;
 
     float mutationRate = calculateMutationRate(p->startMutationRate, p->endMutationRate, p->currentEpoch, p->epochs);

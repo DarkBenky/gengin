@@ -8,9 +8,9 @@
 int main() {
 	ModelTrainer trainer;
 	int epochs = 10000;
-	int iterationCount = 4096;
+	int iterationCount = 2048;
 	uint16 port = 5173;
-	initModelTrainer(&trainer, 2048, epochs, iterationCount, 0.1f, 0.001f, 3, 32, port);
+	initModelTrainer(&trainer, 2048, epochs, iterationCount, 0.1f, 0.001f, 3, 256, port);
 
 	Plane plane;
 	if (loadPlaneBin(&plane, "simulation/simModels/" MODEL_NAME ".bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 250.0f, 1.0f) != 0) {
