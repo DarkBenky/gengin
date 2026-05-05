@@ -158,6 +158,10 @@ void postObjects(const Client *c, const RequestData *request) {
 void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegister *reg) {
 	ClientResponse res = clientGet(c, "get objects", strlen("get objects") + 1);
 	printf("[client] GET response (%u bytes)\n", res.size);
+	if (!res.data || res.size < sizeof(uint32)) {
+		clientFreeResponse(&res);
+		return;
+	}
 	uint32 numObjects;
 	memcpy(&numObjects, res.data, sizeof(uint32));
 
