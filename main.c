@@ -43,10 +43,10 @@ void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input
 	Object_UpdateWorldBounds(renderObj);
 
 	float3 planeFwd = Float3_Normalize(simPlane->forward);
-	// compute plane's banked up vector
+	// compute plane's banked up vector (ref x fwd = right, fwd x right = up)
 	float3 worldRef = (fabsf(planeFwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	float3 planeRight = Float3_Normalize(Float3_Cross(planeFwd, worldRef));
-	float3 planeUp = Float3_Cross(planeRight, planeFwd);
+	float3 planeRight = Float3_Normalize(Float3_Cross(worldRef, planeFwd));
+	float3 planeUp = Float3_Cross(planeFwd, planeRight);
 	float bank = simPlane->bankAngle;
 	float3 bankedUp = Float3_Add(Float3_Scale(planeUp, cosf(bank)), Float3_Scale(planeRight, sinf(bank)));
 

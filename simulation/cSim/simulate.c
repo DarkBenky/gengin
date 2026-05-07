@@ -30,6 +30,23 @@
 // pendular stability (CG below wing aerodynamic center).
 #define BANK_RESTORE_COEFF 80000.0f
 
+// Dihedral coupling: roll torque per (rad * q * m^2) from sideslip.
+// Models the tendency of a swept/dihedral wing to roll into a sideslip.
+#define DIHEDRAL_EFFECT_COEFF 0.1f
+
+// Weathervane stability: yaw torque per (rad * q) from sideslip.
+// Represents the combined fin + fuselage directional stability derivative (Cnβ).
+#define WEATHERVANE_COEFF 6.0f
+
+// Adverse yaw scaling: multiplies aileron drag to produce differential yaw torque.
+#define ADVERSE_YAW_FACTOR 4.0f
+
+// Minimum surface area (m^2) below which no aerodynamic force is computed.
+#define MIN_SURFACE_AREA 1e-6f
+
+// Minimum control half-range (deg) below which deflection is treated as zero.
+#define MIN_CONTROL_RANGE 1e-4f
+
 static void atmosphere(float altitude, float *outDensity, float *outSpeedOfSound) {
 	altitude = fmaxf(0.0f, fminf(altitude, 25000.0f));
 	float T, pressure;
@@ -65,13 +82,17 @@ static float3 f3Norm(float3 v) {
 }
 
 // Build right and up vectors from forward direction and bank angle.
+// ref x fwd gives the true body-right vector; fwd x right gives body-up.
+// Bank rotation: positive bank = right wing down (D-key convention).
+// outUp  = wUp*cos + wRight*sin  -> tilts right at positive bank (lift curves right)
+// outRight = wRight*cos - wUp*sin -> tilts down-right at positive bank
 static void buildFrame(float3 fwd, float bank, float3 *outRight, float3 *outUp) {
 	float3 ref = (fabsf(fwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	float3 wRight = f3Norm(f3Cross(fwd, ref));
-	float3 wUp = f3Cross(wRight, fwd);
+	float3 wRight = f3Norm(f3Cross(ref, fwd));
+	float3 wUp = f3Cross(fwd, wRight);
 	float cb = cosf(bank), sb = sinf(bank);
-	*outRight = f3Add(f3Scale(wRight, cb), f3Scale(wUp, sb));
-	*outUp = f3Add(f3Scale(wUp, cb), f3Scale(f3Scale(wRight, -1.0f), sb));
+	*outRight = f3Add(f3Scale(wRight, cb), f3Scale(f3Scale(wUp, -1.0f), sb));
+	*outUp    = f3Add(f3Scale(wUp, cb), f3Scale(wRight, sb));
 }
 
 // Lift and drag magnitudes from real effective AoA (body AoA + surface deflection, in degrees).
@@ -81,7 +102,7 @@ static void calcForceMagnitudes(const Surface *s, float q, float mach,
 	// active=false means the surface is structurally fixed, not servo-driven.
 	// It still generates aerodynamic force based on its fixed angle and area.
 	// Zero-area surfaces (e.g. unused slots) produce zero force naturally.
-	if (s->surfaceArea < 1e-6f) {
+	if (s->surfaceArea < MIN_SURFACE_AREA) {
 		*outLift = 0.0f;
 		*outDrag = 0.0f;
 		return;
@@ -308,22 +329,22 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	if (plane->rightAileron.active) {
 		float neutral = (plane->rightAileron.minRotationAngle + plane->rightAileron.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rightAileron.maxRotationAngle - plane->rightAileron.minRotationAngle) * 0.5f;
-		if (halfRange > 1e-4f) ailDefl = (plane->rightAileron.rotationAngle - neutral) / halfRange;
+		if (halfRange > MIN_CONTROL_RANGE) ailDefl = (plane->rightAileron.rotationAngle - neutral) / halfRange;
 	}
 	if (plane->rightElevator.active) {
 		float neutral = (plane->rightElevator.minRotationAngle + plane->rightElevator.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rightElevator.maxRotationAngle - plane->rightElevator.minRotationAngle) * 0.5f;
-		if (halfRange > 1e-4f) elevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
+		if (halfRange > MIN_CONTROL_RANGE) elevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
 	}
 	if (plane->rudder.active) {
 		float neutral = (plane->rudder.minRotationAngle + plane->rudder.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rudder.maxRotationAngle - plane->rudder.minRotationAngle) * 0.5f;
-		if (halfRange > 1e-4f) rudDefl = (plane->rudder.targetRotationAngle - neutral) / halfRange;
+		if (halfRange > MIN_CONTROL_RANGE) rudDefl = (plane->rudder.rotationAngle - neutral) / halfRange;
 	}
 
 	// Roll: aileron differential lift + dihedral stability (sideslip rolls wings level).
 	float rollTorque = ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.liftCoefficient * LEVER_AILERON * controlScale;
-	rollTorque -= sideslip_rad * q * plane->rightWing.surfaceArea * 0.1f * LEVER_AILERON * controlScale;
+	rollTorque += sideslip_rad * q * plane->rightWing.surfaceArea * DIHEDRAL_EFFECT_COEFF * LEVER_AILERON * controlScale;
 	// Wing-leveling: combined dihedral and pendular stability produces a restoring
 	// roll torque when banked, giving natural tendency to return to wings-level.
 	rollTorque -= sinf(plane->bankAngle) * BANK_RESTORE_COEFF;
@@ -334,8 +355,8 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 
 	// Yaw: rudder + weathervane stability + adverse yaw from aileron differential drag.
 	float yawTorque = rudDefl * q * plane->rudder.surfaceArea * plane->rudder.liftCoefficient * LEVER_RUDDER * controlScale;
-	yawTorque -= sideslip_rad * q * 6.0f * controlScale;
-	yawTorque -= ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.dragCoefficient * LEVER_AILERON * 4.0f * controlScale;
+	yawTorque += sideslip_rad * q * WEATHERVANE_COEFF * controlScale;
+	yawTorque -= ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.dragCoefficient * LEVER_AILERON * ADVERSE_YAW_FACTOR * controlScale;
 
 	// Engine gyroscopic precession: spinning turbine resists attitude changes.
 	// Pitching creates yaw, yawing creates pitch (CW engine from pilot view).
