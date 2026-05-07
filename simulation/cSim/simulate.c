@@ -13,7 +13,9 @@
 
 // Aerodynamic damping coefficients (N*m per rad/s).
 // Model airframe rotational resistance proportional to angular velocity (Clp, Cmq, Cnr derivatives).
-// Tuned to give realistic decay times: ~0.4s roll, ~0.6s pitch, ~0.9s yaw at cruise speed.
+// Values derived from equilibrium roll rate: at cruise q=17821 (220m/s, 5000m), max aileron torque
+// ~306kN*m must give ~45 deg/s (0.78 rad/s) → DAMP_ROLL = torque / (rate * dampScale) ≈ 80000.
+// Gives decay times: ~0.4s roll, ~0.6s pitch, ~0.9s yaw at cruise speed.
 #define DAMP_ROLL  80000.0f
 #define DAMP_PITCH 130000.0f
 #define DAMP_YAW   100000.0f
@@ -76,7 +78,10 @@ static void buildFrame(float3 fwd, float bank, float3 *outRight, float3 *outUp) 
 // Stall is evaluated on the total effective AoA instead of just the surface deflection.
 static void calcForceMagnitudes(const Surface *s, float q, float mach,
 								float effectiveAoaDeg, float *outLift, float *outDrag) {
-	if (!s->active) {
+	// active=false means the surface is structurally fixed, not servo-driven.
+	// It still generates aerodynamic force based on its fixed angle and area.
+	// Zero-area surfaces (e.g. unused slots) produce zero force naturally.
+	if (s->surfaceArea < 1e-6f) {
 		*outLift = 0.0f;
 		*outDrag = 0.0f;
 		return;
@@ -400,10 +405,6 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 		calcForceMagnitudes(&plane->rightAileron, q, mach, aoa_deg + plane->rightAileron.rotationAngle, &lift, &drag);
 		totalDrag += drag * 0.5f;
 	}
-
-	// Maneuver-induced drag: turning hard costs speed (centripetal load on wings).
-	float turnRate2 = plane->pitchRate * plane->pitchRate + plane->yawRate * plane->yawRate;
-	totalDrag += turnRate2 * speed * totalMass * 0.08f;
 
 	float3 worldForce = {0.0f, 0.0f, 0.0f, 0.0f};
 	worldForce = f3Add(worldForce, f3Scale(up_banked, totalLift));		 // lift in banked-up direction
