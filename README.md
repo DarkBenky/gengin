@@ -10,6 +10,7 @@
         - [ ] train model to go to some to next waypoint but loss will be calculated based on pre calculated curve
     - [ ] integrate the model
     - [ ] add the more advanced version of simulation to main
+    - [ ] fix plane sim it feels wrong
 - [ ] render directly wia open gl not c => open gl => minifb
 
 - [X] sync all object
