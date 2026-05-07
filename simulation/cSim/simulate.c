@@ -12,15 +12,21 @@
 #define I_YAW 90000.0f
 
 // Aerodynamic damping coefficients (N*m per rad/s).
-// These model the natural resistance of the airframe to rotation.
-#define DAMP_ROLL 15000.0f
-#define DAMP_PITCH 25000.0f
-#define DAMP_YAW 20000.0f
+// Model airframe rotational resistance proportional to angular velocity (Clp, Cmq, Cnr derivatives).
+// Tuned to give realistic decay times: ~0.4s roll, ~0.6s pitch, ~0.9s yaw at cruise speed.
+#define DAMP_ROLL  80000.0f
+#define DAMP_PITCH 130000.0f
+#define DAMP_YAW   100000.0f
 
 // Lever arms (m) from CG to surface aerodynamic center.
 #define LEVER_AILERON 5.0f
 #define LEVER_ELEVATOR 7.0f
 #define LEVER_RUDDER 7.0f
+
+// Wing-leveling stability coefficient (N*m). Multiplied by sin(bankAngle) to
+// produce a restoring roll torque, modelling the combined dihedral effect and
+// pendular stability (CG below wing aerodynamic center).
+#define BANK_RESTORE_COEFF 80000.0f
 
 static void atmosphere(float altitude, float *outDensity, float *outSpeedOfSound) {
 	altitude = fmaxf(0.0f, fminf(altitude, 25000.0f));
@@ -287,6 +293,10 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float q = 0.5f * airDensity * speed * speed;
 
 	float controlScale = fminf(1.0f, q / 5000.0f);
+	// Separate uncapped scale for damping so it keeps growing with speed.
+	// This prevents the instability where control forces grow with q^2 but
+	// damping stays constant once controlScale hits its 1.0 cap.
+	float dampScale = q / 5000.0f;
 
 	// Resolve current surface deflections once — needed across multiple torque terms.
 	float ailDefl = 0.0f, elevDefl = 0.0f, rudDefl = 0.0f;
@@ -309,6 +319,9 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	// Roll: aileron differential lift + dihedral stability (sideslip rolls wings level).
 	float rollTorque = ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.liftCoefficient * LEVER_AILERON * controlScale;
 	rollTorque -= sideslip_rad * q * plane->rightWing.surfaceArea * 0.1f * LEVER_AILERON * controlScale;
+	// Wing-leveling: combined dihedral and pendular stability produces a restoring
+	// roll torque when banked, giving natural tendency to return to wings-level.
+	rollTorque -= sinf(plane->bankAngle) * BANK_RESTORE_COEFF;
 
 	// Pitch: elevator + tail AoA restoring moment.
 	float pitchTorque = -elevDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEVATOR * controlScale;
@@ -321,14 +334,17 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 
 	// Engine gyroscopic precession: spinning turbine resists attitude changes.
 	// Pitching creates yaw, yawing creates pitch (CW engine from pilot view).
-	float H_engine = 6000.0f * plane->currentTrustPercentage;
+	// Reduced from 6000 to avoid excessive cross-coupling that destabilises the model.
+	float H_engine = 1500.0f * plane->currentTrustPercentage;
 	pitchTorque -= plane->yawRate * H_engine;
 	yawTorque += plane->pitchRate * H_engine;
 
-	// Aerodynamic damping opposes rotation.
-	rollTorque -= plane->bankRate * DAMP_ROLL * controlScale;
-	pitchTorque -= plane->pitchRate * DAMP_PITCH * controlScale;
-	yawTorque -= plane->yawRate * DAMP_YAW * controlScale;
+	// Aerodynamic damping opposes rotation. Uses uncapped dampScale so damping
+	// keeps growing with airspeed — matching the physical q-dependence of the
+	// control forces and preventing instability at high speed.
+	rollTorque -= plane->bankRate * DAMP_ROLL * dampScale;
+	pitchTorque -= plane->pitchRate * DAMP_PITCH * dampScale;
+	yawTorque -= plane->yawRate * DAMP_YAW * dampScale;
 
 	// Integrate angular acceleration.
 	plane->bankRate += (rollTorque / I_ROLL) * deltaTime;
