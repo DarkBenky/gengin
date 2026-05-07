@@ -47,6 +47,11 @@
 // Minimum control half-range (deg) below which deflection is treated as zero.
 #define MIN_CONTROL_RANGE 1e-4f
 
+// Wave drag coefficient constant for the supersonic branch (Mach >= 1.2).
+// Derived from the cubic formula at Mach 1.2 (= 0.5) times sqrt(1.2^2 - 1) ≈ 0.3317
+// to ensure continuity with the transonic cubic at the boundary.
+#define WAVE_CD_SUPERSONIC 0.3317f
+
 static void atmosphere(float altitude, float *outDensity, float *outSpeedOfSound) {
 	altitude = fmaxf(0.0f, fminf(altitude, 25000.0f));
 	float T, pressure;
@@ -121,7 +126,7 @@ static void calcForceMagnitudes(const Surface *s, float q, float mach,
 		float t = (mach - 0.8f) / 0.4f;
 		waveCd = 0.5f * t * t * t;
 	} else
-		waveCd = 0.5f / sqrtf(fmaxf(mach * mach - 1.0f, 0.01f));
+		waveCd = WAVE_CD_SUPERSONIC / sqrtf(fmaxf(mach * mach - 1.0f, 0.01f));
 	float liftMag = q * s->surfaceArea * CL;
 	float parasiticDrag = q * s->surfaceArea * (s->dragCoefficient * cosf(aoaRad) + waveCd);
 	float inducedDrag = (liftMag * liftMag) /
@@ -307,7 +312,9 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float velRight = f3Dot(velNorm, right_banked);
 	// aoa_rad > 0 means nose is above the flight path (classic positive AoA).
 	float aoa_rad = atan2f(-velUp, fmaxf(velFwd, 0.01f));
-	// sideslip_rad > 0 means velocity comes from the right.
+	// sideslip_rad > 0 means the velocity vector points to the right of the nose
+	// (aircraft crabbing right, or equivalently: nose is left of the velocity direction).
+	// Weathervane: positive sideslip → yaw nose right (toward velocity) → yawTorque += K*sideslip.
 	float sideslip_rad = atan2f(velRight, fmaxf(velFwd, 0.01f));
 	float aoa_deg = aoa_rad * (180.0f / (float)M_PI);
 	float sideslip_deg = sideslip_rad * (180.0f / (float)M_PI);
@@ -343,8 +350,10 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	}
 
 	// Roll: aileron differential lift + dihedral stability (sideslip rolls wings level).
+	// Dihedral effect: right sideslip (sideslip_rad > 0) exposes right wing to more airflow →
+	// right wing generates more lift → aircraft rolls LEFT (negative torque). Using -= here.
 	float rollTorque = ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.liftCoefficient * LEVER_AILERON * controlScale;
-	rollTorque += sideslip_rad * q * plane->rightWing.surfaceArea * DIHEDRAL_EFFECT_COEFF * LEVER_AILERON * controlScale;
+	rollTorque -= sideslip_rad * q * plane->rightWing.surfaceArea * DIHEDRAL_EFFECT_COEFF * LEVER_AILERON * controlScale;
 	// Wing-leveling: combined dihedral and pendular stability produces a restoring
 	// roll torque when banked, giving natural tendency to return to wings-level.
 	rollTorque -= sinf(plane->bankAngle) * BANK_RESTORE_COEFF;
@@ -418,13 +427,15 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 		totalDrag += drag;
 	}
 
-	// Ailerons: differential so net lift ~cancels; count their drag only.
+	// Ailerons: rolling moment is already captured in rollTorque via ailDefl.
+	// Add their combined lift (sum of both sides) and average drag to force totals.
+	// Using 0.5 drag factor per side matches the intent of the previous drag-only code.
 	{
-		float lift, drag;
-		calcForceMagnitudes(&plane->leftAileron, q, mach, aoa_deg + plane->leftAileron.rotationAngle, &lift, &drag);
-		totalDrag += drag * 0.5f;
-		calcForceMagnitudes(&plane->rightAileron, q, mach, aoa_deg + plane->rightAileron.rotationAngle, &lift, &drag);
-		totalDrag += drag * 0.5f;
+		float liftL, dragL, liftR, dragR;
+		calcForceMagnitudes(&plane->leftAileron, q, mach, aoa_deg + plane->leftAileron.rotationAngle, &liftL, &dragL);
+		calcForceMagnitudes(&plane->rightAileron, q, mach, aoa_deg + plane->rightAileron.rotationAngle, &liftR, &dragR);
+		totalLift += liftL + liftR;
+		totalDrag += dragL * 0.5f + dragR * 0.5f;
 	}
 
 	float3 worldForce = {0.0f, 0.0f, 0.0f, 0.0f};
