@@ -1,5 +1,6 @@
 ## TODO
 
+- [ ] merge the new fixed flight model to main
 - [ ] Plane editor
     - [ ] export
     - [ ] import to c
