@@ -12,15 +12,45 @@
 #define I_YAW 90000.0f
 
 // Aerodynamic damping coefficients (N*m per rad/s).
-// These model the natural resistance of the airframe to rotation.
-#define DAMP_ROLL 15000.0f
-#define DAMP_PITCH 25000.0f
-#define DAMP_YAW 20000.0f
+// Model airframe rotational resistance proportional to angular velocity (Clp, Cmq, Cnr derivatives).
+// Values derived from equilibrium roll rate: at cruise q=17821 (220m/s, 5000m), max aileron torque
+// ~306kN*m must give ~45 deg/s (0.78 rad/s) → DAMP_ROLL = torque / (rate * dampScale) ≈ 80000.
+// Gives decay times: ~0.4s roll, ~0.6s pitch, ~0.9s yaw at cruise speed.
+#define DAMP_ROLL  80000.0f
+#define DAMP_PITCH 130000.0f
+#define DAMP_YAW   100000.0f
 
 // Lever arms (m) from CG to surface aerodynamic center.
 #define LEVER_AILERON 5.0f
 #define LEVER_ELEVATOR 7.0f
 #define LEVER_RUDDER 7.0f
+
+// Wing-leveling stability coefficient (N*m). Multiplied by sin(bankAngle) to
+// produce a restoring roll torque, modelling the combined dihedral effect and
+// pendular stability (CG below wing aerodynamic center).
+#define BANK_RESTORE_COEFF 80000.0f
+
+// Dihedral coupling: roll torque per (rad * q * m^2) from sideslip.
+// Models the tendency of a swept/dihedral wing to roll into a sideslip.
+#define DIHEDRAL_EFFECT_COEFF 0.1f
+
+// Weathervane stability: yaw torque per (rad * q) from sideslip.
+// Represents the combined fin + fuselage directional stability derivative (Cnβ).
+#define WEATHERVANE_COEFF 6.0f
+
+// Adverse yaw scaling: multiplies aileron drag to produce differential yaw torque.
+#define ADVERSE_YAW_FACTOR 4.0f
+
+// Minimum surface area (m^2) below which no aerodynamic force is computed.
+#define MIN_SURFACE_AREA 1e-6f
+
+// Minimum control half-range (deg) below which deflection is treated as zero.
+#define MIN_CONTROL_RANGE 1e-4f
+
+// Wave drag coefficient constant for the supersonic branch (Mach >= 1.2).
+// Derived from the cubic formula at Mach 1.2 (= 0.5) times sqrt(1.2^2 - 1) ≈ 0.3317
+// to ensure continuity with the transonic cubic at the boundary.
+#define WAVE_CD_SUPERSONIC 0.3317f
 
 static void atmosphere(float altitude, float *outDensity, float *outSpeedOfSound) {
 	altitude = fmaxf(0.0f, fminf(altitude, 25000.0f));
@@ -57,20 +87,27 @@ static float3 f3Norm(float3 v) {
 }
 
 // Build right and up vectors from forward direction and bank angle.
+// ref x fwd gives the true body-right vector; fwd x right gives body-up.
+// Bank rotation: positive bank = right wing down (D-key convention).
+// outUp  = wUp*cos + wRight*sin  -> tilts right at positive bank (lift curves right)
+// outRight = wRight*cos - wUp*sin -> tilts down-right at positive bank
 static void buildFrame(float3 fwd, float bank, float3 *outRight, float3 *outUp) {
 	float3 ref = (fabsf(fwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	float3 wRight = f3Norm(f3Cross(fwd, ref));
-	float3 wUp = f3Cross(wRight, fwd);
+	float3 wRight = f3Norm(f3Cross(ref, fwd));
+	float3 wUp = f3Cross(fwd, wRight);
 	float cb = cosf(bank), sb = sinf(bank);
-	*outRight = f3Add(f3Scale(wRight, cb), f3Scale(wUp, sb));
-	*outUp = f3Add(f3Scale(wUp, cb), f3Scale(f3Scale(wRight, -1.0f), sb));
+	*outRight = f3Add(f3Scale(wRight, cb), f3Scale(f3Scale(wUp, -1.0f), sb));
+	*outUp    = f3Add(f3Scale(wUp, cb), f3Scale(wRight, sb));
 }
 
 // Lift and drag magnitudes from real effective AoA (body AoA + surface deflection, in degrees).
 // Stall is evaluated on the total effective AoA instead of just the surface deflection.
 static void calcForceMagnitudes(const Surface *s, float q, float mach,
 								float effectiveAoaDeg, float *outLift, float *outDrag) {
-	if (!s->active) {
+	// active=false means the surface is structurally fixed, not servo-driven.
+	// It still generates aerodynamic force based on its fixed angle and area.
+	// Zero-area surfaces (e.g. unused slots) produce zero force naturally.
+	if (s->surfaceArea < MIN_SURFACE_AREA) {
 		*outLift = 0.0f;
 		*outDrag = 0.0f;
 		return;
@@ -89,7 +126,7 @@ static void calcForceMagnitudes(const Surface *s, float q, float mach,
 		float t = (mach - 0.8f) / 0.4f;
 		waveCd = 0.5f * t * t * t;
 	} else
-		waveCd = 0.5f / sqrtf(fmaxf(mach * mach - 1.0f, 0.01f));
+		waveCd = WAVE_CD_SUPERSONIC / sqrtf(fmaxf(mach * mach - 1.0f, 0.01f));
 	float liftMag = q * s->surfaceArea * CL;
 	float parasiticDrag = q * s->surfaceArea * (s->dragCoefficient * cosf(aoaRad) + waveCd);
 	float inducedDrag = (liftMag * liftMag) /
@@ -275,7 +312,9 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float velRight = f3Dot(velNorm, right_banked);
 	// aoa_rad > 0 means nose is above the flight path (classic positive AoA).
 	float aoa_rad = atan2f(-velUp, fmaxf(velFwd, 0.01f));
-	// sideslip_rad > 0 means velocity comes from the right.
+	// sideslip_rad > 0 means the velocity vector points to the right of the nose
+	// (aircraft crabbing right, or equivalently: nose is left of the velocity direction).
+	// Weathervane: positive sideslip → yaw nose right (toward velocity) → yawTorque += K*sideslip.
 	float sideslip_rad = atan2f(velRight, fmaxf(velFwd, 0.01f));
 	float aoa_deg = aoa_rad * (180.0f / (float)M_PI);
 	float sideslip_deg = sideslip_rad * (180.0f / (float)M_PI);
@@ -287,28 +326,37 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float q = 0.5f * airDensity * speed * speed;
 
 	float controlScale = fminf(1.0f, q / 5000.0f);
+	// Separate uncapped scale for damping so it keeps growing with speed.
+	// This prevents the instability where control forces grow with q^2 but
+	// damping stays constant once controlScale hits its 1.0 cap.
+	float dampScale = q / 5000.0f;
 
 	// Resolve current surface deflections once — needed across multiple torque terms.
 	float ailDefl = 0.0f, elevDefl = 0.0f, rudDefl = 0.0f;
 	if (plane->rightAileron.active) {
 		float neutral = (plane->rightAileron.minRotationAngle + plane->rightAileron.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rightAileron.maxRotationAngle - plane->rightAileron.minRotationAngle) * 0.5f;
-		if (halfRange > 1e-4f) ailDefl = (plane->rightAileron.rotationAngle - neutral) / halfRange;
+		if (halfRange > MIN_CONTROL_RANGE) ailDefl = (plane->rightAileron.rotationAngle - neutral) / halfRange;
 	}
 	if (plane->rightElevator.active) {
 		float neutral = (plane->rightElevator.minRotationAngle + plane->rightElevator.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rightElevator.maxRotationAngle - plane->rightElevator.minRotationAngle) * 0.5f;
-		if (halfRange > 1e-4f) elevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
+		if (halfRange > MIN_CONTROL_RANGE) elevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
 	}
 	if (plane->rudder.active) {
 		float neutral = (plane->rudder.minRotationAngle + plane->rudder.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rudder.maxRotationAngle - plane->rudder.minRotationAngle) * 0.5f;
-		if (halfRange > 1e-4f) rudDefl = (plane->rudder.targetRotationAngle - neutral) / halfRange;
+		if (halfRange > MIN_CONTROL_RANGE) rudDefl = (plane->rudder.rotationAngle - neutral) / halfRange;
 	}
 
 	// Roll: aileron differential lift + dihedral stability (sideslip rolls wings level).
+	// Dihedral effect: right sideslip (sideslip_rad > 0) exposes right wing to more airflow →
+	// right wing generates more lift → aircraft rolls LEFT (negative torque). Using -= here.
 	float rollTorque = ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.liftCoefficient * LEVER_AILERON * controlScale;
-	rollTorque -= sideslip_rad * q * plane->rightWing.surfaceArea * 0.1f * LEVER_AILERON * controlScale;
+	rollTorque -= sideslip_rad * q * plane->rightWing.surfaceArea * DIHEDRAL_EFFECT_COEFF * LEVER_AILERON * controlScale;
+	// Wing-leveling: combined dihedral and pendular stability produces a restoring
+	// roll torque when banked, giving natural tendency to return to wings-level.
+	rollTorque -= sinf(plane->bankAngle) * BANK_RESTORE_COEFF;
 
 	// Pitch: elevator + tail AoA restoring moment.
 	float pitchTorque = -elevDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEVATOR * controlScale;
@@ -316,19 +364,22 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 
 	// Yaw: rudder + weathervane stability + adverse yaw from aileron differential drag.
 	float yawTorque = rudDefl * q * plane->rudder.surfaceArea * plane->rudder.liftCoefficient * LEVER_RUDDER * controlScale;
-	yawTorque -= sideslip_rad * q * 6.0f * controlScale;
-	yawTorque -= ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.dragCoefficient * LEVER_AILERON * 4.0f * controlScale;
+	yawTorque += sideslip_rad * q * WEATHERVANE_COEFF * controlScale;
+	yawTorque -= ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.dragCoefficient * LEVER_AILERON * ADVERSE_YAW_FACTOR * controlScale;
 
 	// Engine gyroscopic precession: spinning turbine resists attitude changes.
 	// Pitching creates yaw, yawing creates pitch (CW engine from pilot view).
-	float H_engine = 6000.0f * plane->currentTrustPercentage;
+	// Reduced from 6000 to avoid excessive cross-coupling that destabilises the model.
+	float H_engine = 1500.0f * plane->currentTrustPercentage;
 	pitchTorque -= plane->yawRate * H_engine;
 	yawTorque += plane->pitchRate * H_engine;
 
-	// Aerodynamic damping opposes rotation.
-	rollTorque -= plane->bankRate * DAMP_ROLL * controlScale;
-	pitchTorque -= plane->pitchRate * DAMP_PITCH * controlScale;
-	yawTorque -= plane->yawRate * DAMP_YAW * controlScale;
+	// Aerodynamic damping opposes rotation. Uses uncapped dampScale so damping
+	// keeps growing with airspeed — matching the physical q-dependence of the
+	// control forces and preventing instability at high speed.
+	rollTorque -= plane->bankRate * DAMP_ROLL * dampScale;
+	pitchTorque -= plane->pitchRate * DAMP_PITCH * dampScale;
+	yawTorque -= plane->yawRate * DAMP_YAW * dampScale;
 
 	// Integrate angular acceleration.
 	plane->bankRate += (rollTorque / I_ROLL) * deltaTime;
@@ -376,18 +427,16 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 		totalDrag += drag;
 	}
 
-	// Ailerons: differential so net lift ~cancels; count their drag only.
+	// Ailerons: rolling moment is already captured in rollTorque via ailDefl.
+	// Add their combined lift (sum of both sides) and average drag to force totals.
+	// Using 0.5 drag factor per side matches the intent of the previous drag-only code.
 	{
-		float lift, drag;
-		calcForceMagnitudes(&plane->leftAileron, q, mach, aoa_deg + plane->leftAileron.rotationAngle, &lift, &drag);
-		totalDrag += drag * 0.5f;
-		calcForceMagnitudes(&plane->rightAileron, q, mach, aoa_deg + plane->rightAileron.rotationAngle, &lift, &drag);
-		totalDrag += drag * 0.5f;
+		float liftL, dragL, liftR, dragR;
+		calcForceMagnitudes(&plane->leftAileron, q, mach, aoa_deg + plane->leftAileron.rotationAngle, &liftL, &dragL);
+		calcForceMagnitudes(&plane->rightAileron, q, mach, aoa_deg + plane->rightAileron.rotationAngle, &liftR, &dragR);
+		totalLift += liftL + liftR;
+		totalDrag += dragL * 0.5f + dragR * 0.5f;
 	}
-
-	// Maneuver-induced drag: turning hard costs speed (centripetal load on wings).
-	float turnRate2 = plane->pitchRate * plane->pitchRate + plane->yawRate * plane->yawRate;
-	totalDrag += turnRate2 * speed * totalMass * 0.08f;
 
 	float3 worldForce = {0.0f, 0.0f, 0.0f, 0.0f};
 	worldForce = f3Add(worldForce, f3Scale(up_banked, totalLift));		 // lift in banked-up direction

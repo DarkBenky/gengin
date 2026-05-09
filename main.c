@@ -43,10 +43,10 @@ void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input
 	Object_UpdateWorldBounds(renderObj);
 
 	float3 planeFwd = Float3_Normalize(simPlane->forward);
-	// compute plane's banked up vector
+	// compute plane's banked up vector (ref x fwd = right, fwd x right = up)
 	float3 worldRef = (fabsf(planeFwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	float3 planeRight = Float3_Normalize(Float3_Cross(planeFwd, worldRef));
-	float3 planeUp = Float3_Cross(planeRight, planeFwd);
+	float3 planeRight = Float3_Normalize(Float3_Cross(worldRef, planeFwd));
+	float3 planeUp = Float3_Cross(planeFwd, planeRight);
 	float bank = simPlane->bankAngle;
 	float3 bankedUp = Float3_Add(Float3_Scale(planeUp, cosf(bank)), Float3_Scale(planeRight, sinf(bank)));
 
@@ -159,7 +159,12 @@ int main() {
 	Object_UpdateWorldBounds(plane);
 
 	Plane simPlane;
-	loadPlaneBin(&simPlane, "./simulation/simModels/F-16C.bin", (float3){0.0f, 0.0f, 1.0f}, (float3){0.0f, 10.0f, 20.0f}, 100.0f, 1.0f);
+	// Start at 220 m/s (within trim envelope) at 1000 m altitude, half throttle.
+	// 100 m/s (previous value) is below the ~193 m/s stall speed at sea level.
+	loadPlaneBin(&simPlane, "./simulation/simModels/F-16C.bin",
+	             (float3){0.0f, 0.0f, 1.0f},  // forward direction
+	             (float3){0.0f, 1000.0f, 20.0f}, // position (x, altitude, z)
+	             220.0f, 0.5f);                // speed m/s, throttle 0-1
 
 	addFromRegistry(&request, &objectRegistry, &scene, f16Id);
 	postObjects(&c, &request);
