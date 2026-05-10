@@ -14,6 +14,8 @@ typedef struct {
 	CL_Buffer godRayBuf;
 	CL_Pipeline compositePipeline;
 	CL_Buffer framebufferBuf; // pinned uint32 buffer — upload framebuffer, composite on GPU, read back
+	CL_Pipeline blurPipeline;
+	CL_Buffer outputBlurBuf;
 	int width;
 	int height;
 } CloudRenderer;
@@ -32,7 +34,8 @@ typedef struct {
 	int godRays;
 	float3 godRayColor;	   // additive tint, e.g. (1, 0.95, 0.8)
 	float godRayIntensity; // brightness multiplier, try 1.0-2.0
-	float godRayDecay;	   // per-step attenuation, try 0.97
+	float godRayDecay;     // per-step attenuation, try 0.97
+	int blurRadius;        // gaussian blur radius in pixels (0 = skip, standard 3-8)
 } CloudParams;
 
 // Render clouds for one frame. vol->gpuDensity must already be uploaded via UploadVolumeToGpu.

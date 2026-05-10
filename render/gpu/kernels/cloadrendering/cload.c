@@ -1,4 +1,6 @@
 #include "cload.h"
+#include <CL/cl.h>
+#include <stdint.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,12 +26,14 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
 	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
 	cr->compositePipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "compositeFrame", NULL);
+	cr->blurPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "blur", NULL);
 
 	// Pinned (page-locked) buffers — DMA-direct transfers, no driver staging copy
 	cr->outputBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 	cr->depthBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
 	cr->godRayBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 	cr->framebufferBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(uint32), CL_MEM_READ_WRITE);
+	cr->outputBlurBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 }
 
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params) {
@@ -67,10 +71,26 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 	clSetKernelArg(k, a++, sizeof(float), &params.shadowDist);
 	clSetKernelArg(k, a++, sizeof(float), &params.ambientLight);
 	int samplesPerPixel = 1;
-	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->outputBuf.buf);
+	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->outputBlurBuf.buf);
 	clSetKernelArg(k, a++, sizeof(int), &samplesPerPixel);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->depthBuf.buf);
 	CL_Dispatch2D(&cr->ctx, &cr->pipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
+
+	// apply blur pass
+	if (params.blurRadius > 0) {
+		cl_kernel blurK = cr->blurPipeline.kernel;
+		int ba = 0;
+		clSetKernelArg(blurK, ba++, sizeof(cl_mem), &cr->outputBlurBuf.buf);
+		clSetKernelArg(blurK, ba++, sizeof(cl_mem), &cr->outputBuf.buf);
+		clSetKernelArg(blurK, ba++, sizeof(int), &cr->width);
+		clSetKernelArg(blurK, ba++, sizeof(int), &cr->height);
+		clSetKernelArg(blurK, ba++, sizeof(int), &params.blurRadius);
+		// blur kernel requires work-group (128,1) — round global width up to the next multiple of 128
+		size_t blurGW = ((size_t)cr->width + 127) & ~(size_t)127;
+		CL_Dispatch2D(&cr->ctx, &cr->blurPipeline, blurGW, (size_t)cr->height, 128, 1);
+	} else {
+		clEnqueueCopyBuffer(cr->ctx.queue, cr->outputBuf.buf, cr->outputBlurBuf.buf, 0, 0, (size_t)cr->width * cr->height * sizeof(float4), 0, NULL, NULL);
+	}
 
 	if (params.godRays) {
 		// project lightDir to screen space to find the sun position

@@ -1,6 +1,6 @@
 ## TODO
 
-- [ ] merge the new fixed flight model to main
+- [X] merge the new fixed flight model to main
     - [ ] train the model
 - [ ] Plane editor
     - [ ] export
@@ -14,18 +14,6 @@
     - [ ] add the more advanced version of simulation to main
     - [ ] fix plane sim it feels wrong
 - [ ] render directly wia open gl not c => open gl => minifb
-
-- [X] sync all object
-    - [X] why movement si so jerky (jumping around)
-- [X] Server Synchronization
-    - [X] crete simple project that will test diffrent methods
-        - [X] TCP server
-        - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
-        ```
-        on innit => get free plane
-        on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
-        on close => set planes as free and invisible
-    - [ ] integrate it to main.c
 
 - [ ] textures as post proces step on gpu we need to add uv mapping we shoulde use per triangle texture (normal, albedo ...)
     - [ ] input
@@ -48,29 +36,6 @@
             - [ ] Metallic
 
 - [ ] model editor / object editor / texture editor
-- [X] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
-    - [X] reqest designe
-    ```c
-    #typedef struct {
-        uint32 Size
-        int Id
-        type Type // POST => no repliy, GET => repley
-        uint8 data
-    } Reqest;
-    ```
-- [X] God Rays
-- [X] Emission
-    - [X] crete emission map for each object
-    ![img](./render.png)
-- [X] Shadows same as reflection
-- [X] Clouds
-- [X] Bloom
-    - [X] Too slow
-
-- [X] Replace screen space refection by raytraced onece
-    - [X] use lower resolution and blur row apply it to frame buffer
-        - [X] apply direct reflection [red][green][blue][roughness]
-            - [X] we blur based on 4th channel
 
 - [ ] GPU rendering (keep it simple — port current CPU pipeline (**later**)
     - [X] clouds
@@ -97,6 +62,42 @@
 - [x] Test if using multiple rows per ray trace task improves performance (e.g. 8 rows per task)
   - Tested: it is better to use one task per row when there is a lot of work (**more work == fewer rows per task**, **less work == more rows per task**)
     - ![results](results.md)
+
+- [X] sync all object
+    - [X] why movement si so jerky (jumping around)
+- [X] Server Synchronization
+    - [X] crete simple project that will test diffrent methods
+        - [X] TCP server
+        - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
+        ```
+        on innit => get free plane
+        on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
+        on close => set planes as free and invisible
+    - [X] integrate it to main.c
+
+- [X] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
+    - [X] reqest designe
+    ```c
+    #typedef struct {
+        uint32 Size
+        int Id
+        type Type // POST => no repliy, GET => repley
+        uint8 data
+    } Reqest;
+    ```
+- [X] God Rays
+- [X] Emission
+    - [X] crete emission map for each object
+    ![img](./render.png)
+- [X] Shadows same as reflection
+- [X] Clouds
+- [X] Bloom
+    - [X] Too slow
+
+- [X] Replace screen space refection by raytraced onece
+    - [X] use lower resolution and blur row apply it to frame buffer
+        - [X] apply direct reflection [red][green][blue][roughness]
+            - [X] we blur based on 4th channel
 
 ## Current Render
 

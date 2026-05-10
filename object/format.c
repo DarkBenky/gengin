@@ -46,6 +46,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->shadowCache = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
 	camera->objectIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
 	camera->uvBuffer = (uvMap *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(uvMap)));
+	camera->triangleIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
 	camera->frameCounter = 0;
 	clearBuffers(camera);
 }
@@ -67,6 +68,7 @@ void destroyCamera(Camera *camera) {
 	free(camera->bloomTemp);
 	free(camera->bloomDst);
 	free(camera->uvBuffer);
+	free(camera->triangleIdBuffer);
 	camera->framebuffer = NULL;
 	camera->normalBuffer = NULL;
 	camera->positionBuffer = NULL;
@@ -82,6 +84,7 @@ void destroyCamera(Camera *camera) {
 	camera->bloomTemp = NULL;
 	camera->bloomDst = NULL;
 	camera->uvBuffer = NULL;
+	camera->triangleIdBuffer = NULL;
 }
 
 void CameraMoveForward(Camera *camera, float amount) {

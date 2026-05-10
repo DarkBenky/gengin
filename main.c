@@ -35,7 +35,7 @@
 // update render object to sim object and move camera to follow the plane
 void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input *input, struct mfb_window *window) {
 	float3 forward;
-	updatePlane(simPlane, 1.0f / 160.0f, &forward);
+	updatePlane(simPlane, 1.0f / 1024.0f, &forward);
 	printf("Sim plane position: (%.2f, %.2f, %.2f), speed: %.2f m/s\n", simPlane->position.x, simPlane->position.y, simPlane->position.z, simPlane->currentSpeed);
 
 	renderObj->position = simPlane->position;
@@ -95,7 +95,7 @@ int main() {
 	ObjectList scene;
 	ObjectList_Init(&scene, 1);
 
-	Client c = {.host = "127.0.0.1", .port = 8080};
+	Client c = {.host = "127.0.0.1", .port = 8081};
 
 	idRegister objectRegistry;
 	idRegister_Init(&objectRegistry, 1);
@@ -236,25 +236,25 @@ int main() {
 		camera.jitter = jitterPattern[frame & 3];
 		camera.seed = frame * (int)35527.0f << 16 | (int)11369.0f;
 
-		// Input_Poll(&input, window);
-		// if (input.keysDown[KB_KEY_ESCAPE]) break;
-		// if (input.keys[KB_KEY_W]) CameraMoveForward(&camera, 0.2f);
-		// if (input.keys[KB_KEY_S]) CameraMoveForward(&camera, -0.2f);
-		// if (input.keys[KB_KEY_A]) CameraMoveRight(&camera, -0.2f);
-		// if (input.keys[KB_KEY_D]) CameraMoveRight(&camera, 0.2f);
-		// if (input.keys[KB_KEY_Q]) CameraMoveUp(&camera, 0.2f);
-		// if (input.keys[KB_KEY_E]) CameraMoveUp(&camera, -0.2f);
-		// if (input.mouse[MOUSE_LEFT]) CameraRotate(&camera, input.mouseDY * 0.005f, -input.mouseDX * 0.005f);
+		Input_Poll(&input, window);
+		if (input.keysDown[KB_KEY_ESCAPE]) break;
+		if (input.keys[KB_KEY_W]) CameraMoveForward(&camera, 0.2f);
+		if (input.keys[KB_KEY_S]) CameraMoveForward(&camera, -0.2f);
+		if (input.keys[KB_KEY_A]) CameraMoveRight(&camera, -0.2f);
+		if (input.keys[KB_KEY_D]) CameraMoveRight(&camera, 0.2f);
+		if (input.keys[KB_KEY_Q]) CameraMoveUp(&camera, 0.2f);
+		if (input.keys[KB_KEY_E]) CameraMoveUp(&camera, -0.2f);
+		if (input.mouse[MOUSE_LEFT]) CameraRotate(&camera, input.mouseDY * 0.005f, -input.mouseDX * 0.005f);
 
-		// // Keep plane in front of camera, facing the same direction, offset slightly below view center
-		// float3 fwd = Float3_Normalize(camera.forward);
-		// plane->position = Float3_Add(
-		// 	Float3_Add(camera.position, Float3_Scale(fwd, 10.0f)),
-		// 	Float3_Scale(Float3_Normalize(camera.up), -2.5f));
-		// plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
-		// Object_UpdateWorldBounds(plane);
+		// Keep plane in front of camera, facing the same direction, offset slightly below view center
+		float3 fwd = Float3_Normalize(camera.forward);
+		plane->position = Float3_Add(
+			Float3_Add(camera.position, Float3_Scale(fwd, 10.0f)),
+			Float3_Scale(Float3_Normalize(camera.up), -2.5f));
+		plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
+		Object_UpdateWorldBounds(plane);
 
-		SimObjToRenderObj(&simPlane, plane, &camera, &input, window);
+		// SimObjToRenderObj(&simPlane, plane, &camera, &input, window);
 
 		// post current scene
 		addAllFromRegistry(&request, &objectRegistry, &scene);
@@ -298,6 +298,7 @@ int main() {
 																	 .godRayColor = {1.0f, 0.95f, 0.8f, 0.0f},
 																	 .godRayIntensity = 0.6f,
 																	 .godRayDecay = 0.95f,
+																	 .blurRadius = 5,
 																 });
 		WNOW(wB);
 		accumSSRTime += WDIFF(wA, wB);

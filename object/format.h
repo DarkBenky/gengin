@@ -90,8 +90,9 @@ typedef struct Camera {
 	Color *tempFramebuffer;
 	float *tempBuffer_1;
 	float *tempBuffer_2;
-	float *shadowCache;
+	float *shadowCache; 
 	int *objectIdBuffer;
+	int *triangleIdBuffer;
 	int frameCounter;
 } Camera;
 

@@ -681,6 +681,7 @@ static void RayTraceRowFunc(void *arg) {
 		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, (1.0f - roughness)};
 		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
 		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, obj->v1[bestTri], obj->v2[bestTri], obj->v3[bestTri]);
+		camera->triangleIdBuffer[idx] = bestTri;
 
 		// ray traced reflection only cast every REFLECTION_RESOLUTION columns
 		if (x % REFLECTION_RESOLUTION == 0) {
@@ -797,7 +798,9 @@ static void RayTraceRowFunc(void *arg) {
 			ownEmission.z + accumulatedEmission.z,
 		};
 
-		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+		// camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+		camera->framebuffer[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
+		// camera->framebuffer[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
 		// camera->framebuffer[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
 		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z));
 	}

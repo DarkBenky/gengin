@@ -1,4 +1,4 @@
-#define CLOUD_STEPS    32
+#define CLOUD_STEPS    64
 #define SHADOW_STEPS   8
 #define GOD_RAY_STEPS  64
 
@@ -20,7 +20,6 @@ static float sampleDensity(
 
     float u = fx - ix, v = fy - iy, w = fz - iz;
 
-    // Python writes [x][y][z] order: x is major axis, z is minor
     int xStride = yRes * zRes, yStride = zRes, zStride = 1;
     int base = ix * xStride + iy * yStride + iz * zStride;
 
@@ -56,6 +55,54 @@ static float shadowMarch(
 static float henyeyGreenstein(float cosTheta, float g) {
     float g2 = g * g;
     return (1.0f - g2) / pow(1.0f + g2 - 2.0f * g * cosTheta, 1.5f);
+}
+
+#define LOCAL_W 128
+#define LOCAL_PAD 32  // must be >= max radius
+
+__kernel __attribute__((reqd_work_group_size(LOCAL_W, 1, 1)))
+void blur(
+    __global const float4 *input,
+    __global float4 *output,
+    int screenWidth,
+    int screenHeight,
+    int radius
+) {
+    __local float4 tile[LOCAL_W + 2 * LOCAL_PAD];
+
+    int gx = get_global_id(0);
+    int gy = get_global_id(1);
+    int lx = get_local_id(0);
+
+    if (gy >= screenHeight) return;
+
+    // Load center + halo into local memory
+    int load_x = clamp(gx, 0, screenWidth - 1);
+    tile[lx + LOCAL_PAD] = input[gy * screenWidth + load_x];
+
+    // Load left halo
+    if (lx < LOCAL_PAD) {
+        int halo_x = clamp(gx - LOCAL_PAD, 0, screenWidth - 1);
+        tile[lx] = input[gy * screenWidth + halo_x];
+    }
+    // Load right halo
+    if (lx >= LOCAL_W - LOCAL_PAD) {
+        int halo_x = clamp(gx + LOCAL_PAD, 0, screenWidth - 1);
+        tile[lx + 2 * LOCAL_PAD] = input[gy * screenWidth + halo_x];
+    }
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if (gx >= screenWidth) return;
+
+    float4 sum = (float4)(0.0f);
+    float weight = 1.0f / (float)(2 * radius + 1);
+
+    for (int i = -radius; i <= radius; i++) {
+        sum += tile[lx + LOCAL_PAD + i];
+    }
+
+    output[gy * screenWidth + gx] = sum * weight;
 }
 
 __kernel void renderClouds(

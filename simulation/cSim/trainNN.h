@@ -1,6 +1,7 @@
 #include "simulate.h"
 #include "import.h"
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <immintrin.h>
 #include <math.h>
@@ -26,10 +27,18 @@ typedef struct {
     int epochs;
     int currentEpoch;
     Client client; // for sending training data to python for visualization
+    bool targetReached;
+    int epochsSinceLastTarget;
 } ModelTrainer;
 typedef struct {
-    float3 toTarget;        // (targetPosition - currentPosition) / 5000  [-1..1 approx]
-    float3 currentVelocity; // velocity / 500                              [-1..1 approx]
+    float3 toTarget;        // (targetPosition - currentPosition) / initialDist  [-1..1 approx]
+    float3 currentVelocity; // velocity / 500                                      [-1..1 approx]
+    float altitudeError;    // (targetAltitude - currentAltitude) / 500            [-1..1 approx]
+    float verticalVelocity; // velocity.y / 100                                    [-1..1 approx]
+    float bankAngle;        // radians / PI                                        [-1..1]
+    float bankRate;         // rad/s / 3                                           [-1..1 approx]
+    float pitchRate;        // rad/s / 3                                           [-1..1 approx]
+    float speed;            // currentSpeed / 500                                  [ 0..1 approx]
     float Throttle; // 0.0 to 1.0
     float Aileron;  // 0.0 to 1.0
     float Elevator; // 0.0 to 1.0
@@ -45,8 +54,10 @@ typedef struct {
 
 float calculateMutationRate(float startRate, float endRate, int currentEpoch, int totalEpochs) {
     if (currentEpoch >= totalEpochs) return endRate;
-    float progress = (float)currentEpoch / (float)totalEpochs;
-    return startRate + progress * (endRate - startRate);
+    // geometric (exponential) interpolation: reaches midpoint in log-space at half the epochs
+    // e.g. 0.01->0.0005 over 1000 epochs: at epoch 100 rate=0.00363, at epoch 500 rate=0.00158
+    float t = (float)currentEpoch / (float)totalEpochs;
+    return startRate * powf(endRate / startRate, t);
 }
 
 void generatePath(ModelTrainer *p, Plane plane, float minDistance, float maxDistance, int IterationCount) 
@@ -58,11 +69,23 @@ void generatePath(ModelTrainer *p, Plane plane, float minDistance, float maxDist
 
     float maxDivergenceAngleRadians = 45.0f * (M_PI / 180.0f);
     float randomAngle = ((float)rand() / RAND_MAX) * maxDivergenceAngleRadians - (maxDivergenceAngleRadians / 2.0f);
-    float3 forward = Float3_Normalize(plane.forward);
-    float3 right = Float3_Normalize(Float3_Cross(forward, (float3){0.0f, 1.0f, 0.0f, 0.0f}));
+
+    // project forward onto horizontal plane so target is never behind or above/below a cliff
+    float3 hFwd = {plane.forward.x, 0.0f, plane.forward.z, 0.0f};
+    float hLen = sqrtf(hFwd.x * hFwd.x + hFwd.z * hFwd.z);
+    if (hLen < 1e-4f) hFwd = (float3){0.0f, 0.0f, 1.0f, 0.0f}; // plane pointing straight up/down — fall back to world Z
+    else hFwd = Float3_Scale(hFwd, 1.0f / hLen);
+    float3 right = Float3_Normalize(Float3_Cross(hFwd, (float3){0.0f, 1.0f, 0.0f, 0.0f}));
 
     float distance = minDistance + ((float)rand() / RAND_MAX) * (maxDistance - minDistance);
-    p->targetPosition = Float3_Add(plane.position, Float3_Add(Float3_Scale(forward, distance), Float3_Scale(right, tanf(randomAngle) * distance)));
+    float3 horizontal = Float3_Add(Float3_Scale(hFwd, distance), Float3_Scale(right, tanf(randomAngle) * distance));
+    // bell-curve altitude bias: average 3 uniform samples so the distribution peaks at 0
+    // and extreme climbs/dives are rare — keeps most targets near the current altitude
+    float r0 = ((float)rand() / RAND_MAX) - 0.5f;
+    float r1 = ((float)rand() / RAND_MAX) - 0.5f;
+    float r2 = ((float)rand() / RAND_MAX) - 0.5f;
+    float altOffset = ((r0 + r1 + r2) / 3.0f) * 300.0f;
+    p->targetPosition = (float3){plane.position.x + horizontal.x, plane.position.y + altOffset, plane.position.z + horizontal.z, 0.0f};
 }
 
 void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationCount, float startMutationRate, float endMutationRate, int layerCount, int layerSize, uint16 port) {
@@ -75,6 +98,7 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
     p->currentIteration = 0;
     Client c = {.host = "127.0.0.1", .port = port};
     p->client = c;
+    p->targetReached = false;
 
     p->models = (Model *)malloc(sizeof(Model) * numModels);
     p->losses = (float *)malloc(sizeof(float) * numModels);
@@ -131,6 +155,7 @@ trainingStats* serializeTrainStats(ModelTrainer *p, int *size) {
     return stats;
 }
 
+#define ACCEPTABLE_DISTANCE_TO_TARGET 250.0f
 void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
     float3 startPos = plane->position;
     float3 modelOrientation = plane->forward;
@@ -144,7 +169,16 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
     // so the plane has enough time to reach it but also isn't trivially close.
     float simTime = p->iterationCount * (1.0f / 24.0f);
     float cruiseRange = simTime * 250.0f;
-    generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount);
+    // generate a new path on the very first epoch, when a model reached the target last epoch,
+    // or when the target has gone 100 epochs unreached (likely unreachable — pick a fresh one)
+    if (p->currentEpoch == 0 || p->targetReached || p->epochsSinceLastTarget >= 100) {
+        generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount);
+        p->epochsSinceLastTarget = 0;
+    }
+    printf("Target position: x: %f, y: %f, z: %f | Plane position: x: %f, y: %f, z: %f\n",
+           p->targetPosition.x, p->targetPosition.y, p->targetPosition.z,
+           startPos.x, startPos.y, startPos.z);
+    p->targetReached = false;
     float initialDist = Float3_Length(Float3_Sub(startPos, p->targetPosition));
     if (initialDist < 1.0f) initialDist = 1.0f;
 
@@ -163,9 +197,17 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
             // normalize by initialDist: magnitude=1 at start, ~0 at target — always well-conditioned
             float3 toTarget = Float3_Scale(Float3_Sub(p->targetPosition, plane->position), 1.0f / initialDist);
             float3 velNorm  = Float3_Scale(plane->velocity, 1.0f / 500.0f);
+            float altErr    = (p->targetPosition.y - plane->position.y) / 500.0f;
+            float vertVel   = plane->velocity.y / 100.0f;
             ModelInput input = {
-                .toTarget        = toTarget,
-                .currentVelocity = velNorm,
+                .toTarget         = toTarget,
+                .currentVelocity  = velNorm,
+                .altitudeError    = altErr,
+                .verticalVelocity = vertVel,
+                .bankAngle        = plane->bankAngle / (float)M_PI,
+                .bankRate         = plane->bankRate  / 3.0f,
+                .pitchRate        = plane->pitchRate / 3.0f,
+                .speed            = plane->currentSpeed / 500.0f,
                 .Throttle = planeGetThrottle01(plane),
                 .Aileron  = planeGetAileron01(plane),
                 .Elevator = planeGetElevator01(plane),
@@ -182,16 +224,32 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
             updatePlane(plane, 1.0f / 24.0f, &newForward);
 
             float distanceToTarget = Float3_Length(Float3_Sub(plane->position, p->targetPosition));
+            if (distanceToTarget < ACCEPTABLE_DISTANCE_TO_TARGET) {
+                printf("Model: %d reached target\n", modelIdx);
+                p->targetReached = true;
+                break;
+            }
+
             float controlEffortLoss = (output.Throttle * output.Throttle) + (output.Aileron * output.Aileron)
                                     + (output.Elevator * output.Elevator) + (output.Rudder * output.Rudder);
             // normalize by initial distance so losses are comparable across epochs regardless of target distance
-            totalLoss += distanceToTarget / initialDist;
+            // small control-effort penalty encourages smooth inputs and breaks ties between equal-distance models
+            totalLoss += distanceToTarget / initialDist + 0.05f * controlEffortLoss;
 
             p->paths[modelIdx * p->iterationCount + step] = plane->position;
             p->epochLosses[modelIdx * p->iterationCount + step] = (float3){totalLoss, distanceToTarget, controlEffortLoss};
         }
         p->losses[modelIdx] = totalLoss;
     }
+
+    // restore plane to its pre-epoch state so the next epoch captures the correct startPos
+    plane->position  = startPos;
+    plane->forward   = modelOrientation;
+    plane->velocity  = startVel;
+    plane->bankAngle = startBankAngle;
+    plane->bankRate  = startBankRate;
+    plane->pitchRate = startPitchRate;
+    plane->yawRate   = startYawRate;
 
     // sort ascending by loss: index 0 = best (lowest loss)
     for (int i = 1; i < p->numModels; i++) {
@@ -205,7 +263,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
     }
 
     // elitism + crossover
-    int eliteCount = p->numModels / 5; // top 20% are parents for next generation
+    int eliteCount = p->numModels / 10; // top 10% are parents for next generation
     if (eliteCount < 1) eliteCount = 1;
 
     float mutationRate = calculateMutationRate(p->startMutationRate, p->endMutationRate, p->currentEpoch, p->epochs);
@@ -225,6 +283,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
     free(nextGen);
 
     p->currentEpoch++;
+    p->epochsSinceLastTarget++;
 
     float minEpochLoss = p->losses[p->modelLossOrders[0]];
     float maxEpochLoss = p->losses[p->modelLossOrders[p->numModels - 1]];

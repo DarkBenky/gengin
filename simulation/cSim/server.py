@@ -12,6 +12,7 @@ HTTP_PORT = 8080
 
 _lock = threading.Lock()
 _epoch_losses = []
+_epoch_quantiles = []  # per epoch: [p10, p25, p50, p75, p90]
 _latest = None
 
 _HTML = """<!DOCTYPE html>
@@ -33,6 +34,7 @@ h1 { margin:2px 0 4px; font-size:1rem; font-weight:500; }
 <h1>Training Monitor</h1>
 <div id="status">Waiting for training data...</div>
 <div id="c-epoch" style="height:200px;margin-bottom:6px"></div>
+<div id="c-epoch-fan" style="height:220px;margin-bottom:6px"></div>
 <div class="row">
   <div class="col">
     <div id="c-total"    style="height:200px"></div>
@@ -43,6 +45,17 @@ h1 { margin:2px 0 4px; font-size:1rem; font-weight:500; }
     <div id="c-path" style="height:612px"></div>
   </div>
 </div>
+<div class="row" style="margin-top:6px">
+  <div class="col">
+    <div id="c-speed" style="height:200px"></div>
+  </div>
+  <div class="col">
+    <div id="c-altitude" style="height:200px"></div>
+  </div>
+  <div class="col">
+    <div id="c-hist" style="height:200px"></div>
+  </div>
+</div>
 <script>
 const BG  = {paper_bgcolor:'#111',plot_bgcolor:'#1a1a2e',font:{color:'#aaa'}};
 const AX  = {gridcolor:'#2a2a3e',zerolinecolor:'#333'};
@@ -50,11 +63,22 @@ const MAR = {t:28,b:30,l:50,r:10};
 let ready = {};
 
 function react(id, traces, layout) {
-  if (!ready[id]) { Plotly.newPlot(id,traces,layout,{responsive:true,displayModeBar:false}); ready[id]=true; }
-  else {
-    const el = document.getElementById(id);
-    if (el && el._fullLayout && el._fullLayout.scene) {
-      layout = {...layout, scene: {...(layout.scene||{}), camera: el._fullLayout.scene.camera}};
+  const el = document.getElementById(id);
+  if (!ready[id]) {
+    Plotly.newPlot(id, traces, layout, {responsive:true, displayModeBar:false});
+    ready[id] = true;
+  } else {
+    const fl = el && el._fullLayout;
+    if (fl) {
+      if (fl.scene) {
+        layout = {...layout, scene: {...(layout.scene||{}), camera: fl.scene.camera}};
+      }
+      // preserve user zoom/pan on 2D axes
+      for (const ax of ['xaxis','yaxis','xaxis2','yaxis2']) {
+        if (fl[ax] && fl[ax].autorange === false) {
+          layout = {...layout, [ax]: {...(layout[ax]||{}), range: fl[ax].range, autorange: false}};
+        }
+      }
     }
     Plotly.react(id, traces, layout);
   }
@@ -94,6 +118,24 @@ async function update() {
        title:{text:'Epoch Loss',font:{color:'#bbb',size:12}}});
   }
 
+  if (d.epoch_quantiles && d.epoch_quantiles.length) {
+    const eq=d.epoch_quantiles, x=eq.map((_,i)=>i);
+    const p10=eq.map(v=>v[0]), p25=eq.map(v=>v[1]), p50=eq.map(v=>v[2]),
+          p75=eq.map(v=>v[3]), p90=eq.map(v=>v[4]);
+    const c = 'rgba(99,110,250,';
+    react('c-epoch-fan', [
+      {x,y:p10,type:'scatter',mode:'lines',line:{width:0},showlegend:false},
+      {x,y:p90,type:'scatter',mode:'lines',line:{width:0},fill:'tonexty',
+       fillcolor:c+'0.10)',name:'p10-p90',showlegend:true},
+      {x,y:p25,type:'scatter',mode:'lines',line:{width:0},showlegend:false},
+      {x,y:p75,type:'scatter',mode:'lines',line:{width:0},fill:'tonexty',
+       fillcolor:c+'0.25)',name:'p25-p75',showlegend:true},
+      {x,y:p50,type:'scatter',mode:'lines',line:{width:2,color:c+'1)'},name:'Median'},
+    ], {...BG,margin:MAR,
+       xaxis:{...AX,title:'Epoch'},yaxis:{...AX,title:'Loss'},
+       title:{text:'Loss Distribution Over Time',font:{color:'#bbb',size:12}}});
+  }
+
   if (d.latest) {
     const lt=d.latest, x=lt.step_x;
     [['c-total','total','Total Loss'],
@@ -105,24 +147,45 @@ async function update() {
          title:{text:title,font:{color:'#bbb',size:12}}});
     });
 
+    if (lt.speed)
+      react('c-speed', bandTraces(lt.speed, lt.speed_x),
+        {...BG,margin:MAR,showlegend:false,
+         xaxis:{...AX,title:'Step'},yaxis:{...AX,title:'Speed (units/step)'},
+         title:{text:'Speed',font:{color:'#bbb',size:12}}});
+
+    if (lt.altitude)
+      react('c-altitude', bandTraces(lt.altitude, x),
+        {...BG,margin:MAR,showlegend:false,
+         xaxis:{...AX,title:'Step'},yaxis:{...AX,title:'Altitude (Y)'},
+         title:{text:'Altitude',font:{color:'#bbb',size:12}}});
+
+    if (lt.loss_hist) {
+      const h=lt.loss_hist;
+      react('c-hist',
+        [{x:h.x,y:h.y,type:'bar',marker:{color:'rgba(99,110,250,0.7)'},name:'Sims'}],
+        {...BG,margin:MAR,bargap:0.05,showlegend:false,
+         xaxis:{...AX,title:'Final Loss'},yaxis:{...AX,title:'Count'},
+         title:{text:'Loss Distribution',font:{color:'#bbb',size:12}}});
+    }
+
     const pt = [];
     (lt.sampled_paths||[]).forEach(p=>
-      pt.push({x:p.map(v=>v[0]),y:p.map(v=>v[1]),z:p.map(v=>v[2]),
+      pt.push({x:p.map(v=>v[0]),y:p.map(v=>v[2]),z:p.map(v=>v[1]),
                type:'scatter3d',mode:'lines',
                line:{width:1,color:'rgba(99,110,250,0.15)'},showlegend:false}));
     if (lt.mean_path) {
       const mp=lt.mean_path;
-      pt.push({x:mp.map(v=>v[0]),y:mp.map(v=>v[1]),z:mp.map(v=>v[2]),
+      pt.push({x:mp.map(v=>v[0]),y:mp.map(v=>v[2]),z:mp.map(v=>v[1]),
                type:'scatter3d',mode:'lines',
                line:{width:4,color:'rgba(99,110,250,1)'},name:'Mean'});
     }
     if (lt.start) {
-      pt.push({x:[lt.start[0]],y:[lt.start[1]],z:[lt.start[2]],
+      pt.push({x:[lt.start[0]],y:[lt.start[2]],z:[lt.start[1]],
                type:'scatter3d',mode:'markers',
                marker:{size:8,color:'#00e676',symbol:'circle'},name:'Start'});
     }
     if (lt.target) {
-      const tx=lt.target[0], ty=lt.target[1], tz=lt.target[2];
+      const tx=lt.target[0], ty=lt.target[2], tz=lt.target[1];
       // large glowing sphere
       pt.push({x:[tx],y:[ty],z:[tz],
                type:'scatter3d',mode:'markers+text',
@@ -149,9 +212,9 @@ async function update() {
       paper_bgcolor:'#111',font:{color:'#aaa'},margin:{t:28,b:10,l:10,r:10},
       title:{text:'Paths',font:{color:'#bbb',size:12}},
       scene:{bgcolor:'#1a1a2e',
-             xaxis:{gridcolor:'#2a2a3e',color:'#666'},
-             yaxis:{gridcolor:'#2a2a3e',color:'#666'},
-             zaxis:{gridcolor:'#2a2a3e',color:'#666'}}
+             xaxis:{gridcolor:'#2a2a3e',color:'#666',title:'X'},
+             yaxis:{gridcolor:'#2a2a3e',color:'#666',title:'Z (forward)'},
+             zaxis:{gridcolor:'#2a2a3e',color:'#666',title:'Y (altitude)'}}
     });
   }
 }
@@ -171,7 +234,7 @@ def recv_all(conn, n):
         buf.extend(chunk)
     return bytes(buf)
 
-def _compact(paths, totalLoss, distanceToTarget, controlEffortLoss, n, start=None, target=None):
+def _compact(paths, totalLoss, distanceToTarget, controlEffortLoss, n, start=None, target=None, losses=None):
     m = paths.shape[0]
     step = max(1, n // 256)
     idx = np.arange(0, n, step)
@@ -186,11 +249,31 @@ def _compact(paths, totalLoss, distanceToTarget, controlEffortLoss, n, start=Non
         return {"lo": d.min(axis=0).tolist(), "hi": d.max(axis=0).tolist(),
                 "avg": d.mean(axis=0).tolist(), "samples": d[s].tolist()}
 
+    # speed: euclidean distance between consecutive sampled positions
+    pts = paths[:, idx, :]  # [m, len(idx), 3]
+    diffs = np.diff(pts, axis=1)  # [m, len(idx)-1, 3]
+    spd = np.linalg.norm(diffs, axis=2)  # [m, len(idx)-1]
+    speed_band = {"lo": spd.min(axis=0).tolist(), "hi": spd.max(axis=0).tolist(),
+                  "avg": spd.mean(axis=0).tolist()}
+
+    # altitude: y component of position (index 1 = C's Y = altitude)
+    alt = paths[:, idx, 1]  # [m, len(idx)]
+    alt_band = {"lo": alt.min(axis=0).tolist(), "hi": alt.max(axis=0).tolist(),
+                "avg": alt.mean(axis=0).tolist()}
+
+    # final loss distribution histogram
+    loss_hist = None
+    if losses is not None:
+        counts, edges = np.histogram(losses, bins=30)
+        loss_hist = {"x": ((edges[:-1] + edges[1:]) / 2).tolist(), "y": counts.tolist()}
+
     return {"step_x": idx.tolist(), "mean_path": mean_path,
             "sampled_paths": sampled_paths,
             "start": start, "target": target,
             "total": band(totalLoss), "distance": band(distanceToTarget),
-            "control": band(controlEffortLoss)}
+            "control": band(controlEffortLoss),
+            "speed": speed_band, "speed_x": idx[1:].tolist(),
+            "altitude": alt_band, "loss_hist": loss_hist}
 
 
 def parse_training_stats(data):
@@ -209,10 +292,12 @@ def parse_training_stats(data):
     epoch_losses = np.frombuffer(data, dtype="<f4", count=m * n * 4, offset=off).reshape(m, n, 4).copy()
 
     compact = _compact(paths, epoch_losses[:, :, 0], epoch_losses[:, :, 1], epoch_losses[:, :, 2], n,
-                       list(start), list(target))
+                       list(start), list(target), losses)
 
     with _lock:
         _epoch_losses.append((float(losses.min()), float(losses.mean()), float(losses.max())))
+        qs = np.percentile(losses, [10, 25, 50, 75, 90])
+        _epoch_quantiles.append([float(q) for q in qs])
         _latest = compact
 
 def handle(conn, addr):
@@ -324,7 +409,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif self.path == '/data':
             with _lock:
-                payload = json.dumps({'epoch_losses': list(_epoch_losses), 'latest': _latest}).encode()
+                payload = json.dumps({'epoch_losses': list(_epoch_losses), 'epoch_quantiles': list(_epoch_quantiles), 'latest': _latest}).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(payload)))

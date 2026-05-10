@@ -186,7 +186,7 @@ int main(void) {
 	initServerState(&state);
 	gState = &state;
 	Server s;
-	serverInit(&s, 8080);
+	serverInit(&s, 8081);
 	serverSetHandler(&s, onRequest);
 	printf("[server] listening on port 8080\n");
 	serverRun(&s);
