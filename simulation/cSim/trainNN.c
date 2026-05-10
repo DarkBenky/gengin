@@ -16,7 +16,7 @@ void epochTask(void *args) {
 	epoch(((FunctionArgs *)args)->trainer, ((FunctionArgs *)args)->plane, ((FunctionArgs *)args)->currentTop10PercentLoss);
 }
 
-#define NUM_THREADS 28
+#define NUM_THREADS 30
 
 int main() {
 	ModelTrainer trainers[NUM_THREADS];
