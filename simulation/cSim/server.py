@@ -59,7 +59,7 @@ h1 { margin:2px 0 4px; font-size:1rem; font-weight:500; }
 <script>
 const BG  = {paper_bgcolor:'#111',plot_bgcolor:'#1a1a2e',font:{color:'#aaa'}};
 const AX  = {gridcolor:'#2a2a3e',zerolinecolor:'#333'};
-const MAR = {t:28,b:30,l:50,r:10};
+const MAR = {t:28,b:30,l:70,r:10};
 let ready = {};
 
 function react(id, traces, layout) {

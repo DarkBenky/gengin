@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 
 // Wire protocol:
 //   send: uint32 total_size (type byte + data), uint8 type, data
@@ -30,7 +31,8 @@ static ClientResponse sendRequest(const Client *c, uint8 type, const char *data,
 	}
 
 	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		perror("connect");
+		if (errno != ECONNREFUSED)
+			perror("connect");
 		close(fd);
 		return res;
 	}

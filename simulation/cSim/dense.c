@@ -11,6 +11,8 @@ void InitModel(Model *model, uint32 inputSize, uint32 outputSize) {
 	model->maxLayerSize = maxSize;
 	model->inputBuffer = malloc(maxSize * sizeof(float));
 	model->outputBuffer = malloc(maxSize * sizeof(float));
+	model->activations = malloc(sizeof(float *));
+	model->activations[0] = malloc(inputSize * sizeof(float));
 }
 
 void AddDenseLayer(Model *model, uint32 inputSize, uint32 outputSize, ActivationFunc activation) {
@@ -25,12 +27,20 @@ void AddDenseLayer(Model *model, uint32 inputSize, uint32 outputSize, Activation
 	layer->activation = activation;
 	layer->weights = malloc(inputSize * outputSize * sizeof(float));
 	layer->biases = malloc(outputSize * sizeof(float));
+	layer->preAct = malloc(outputSize * sizeof(float));
+	layer->gradWeights = calloc(inputSize * outputSize, sizeof(float));
+	layer->gradBiases = calloc(outputSize, sizeof(float));
 
 	float scale = sqrtf(2.0f / (float)inputSize);
 	for (uint32 i = 0; i < inputSize * outputSize; i++)
 		layer->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * scale;
 	for (uint32 i = 0; i < outputSize; i++)
 		layer->biases[i] = 0.0f;
+
+	float **newActivations = realloc(model->activations, (model->numLayers + 1) * sizeof(float *));
+	if (!newActivations) return;
+	model->activations = newActivations;
+	model->activations[model->numLayers] = malloc(outputSize * sizeof(float));
 
 	uint32 maxSize = inputSize > outputSize ? inputSize : outputSize;
 	if (maxSize > model->maxLayerSize) {
@@ -46,50 +56,49 @@ void FreeModel(Model *model) {
 	for (uint32 i = 0; i < model->numLayers; i++) {
 		free(model->layers[i].weights);
 		free(model->layers[i].biases);
+		free(model->layers[i].preAct);
+		free(model->layers[i].gradWeights);
+		free(model->layers[i].gradBiases);
 	}
 	free(model->layers);
 	free(model->inputBuffer);
 	free(model->outputBuffer);
-
-	model->layers = NULL;
-	model->inputBuffer = NULL;
-	model->outputBuffer = NULL;
-	model->numLayers = 0;
-	model->inputSize = 0;
-	model->outputSize = 0;
-	model->maxLayerSize = 0;
+	if (model->activations) {
+		for (uint32 i = 0; i <= model->numLayers; i++)
+			free(model->activations[i]);
+		free(model->activations);
+	}
+	memset(model, 0, sizeof(*model));
 }
 
 void Forward(Model *model, const float *input, float *output) {
-	memcpy(model->inputBuffer, input, model->inputSize * sizeof(float));
+	memcpy(model->activations[0], input, model->inputSize * sizeof(float));
 
 	for (uint32 i = 0; i < model->numLayers; i++) {
 		DenseLayer *layer = &model->layers[i];
+		float *in = model->activations[i];
+		float *out = model->activations[i + 1];
 
 		for (uint32 j = 0; j < layer->outputSize; j++) {
-			float sum = layer->biases[j];
+			float z = layer->biases[j];
 			for (uint32 k = 0; k < layer->inputSize; k++)
-				sum += layer->weights[j * layer->inputSize + k] * model->inputBuffer[k];
-
+				z += layer->weights[j * layer->inputSize + k] * in[k];
+			layer->preAct[j] = z;
 			switch (layer->activation) {
 			case RELU:
-				model->outputBuffer[j] = fmaxf(0.0f, sum);
+				out[j] = fmaxf(0.0f, z);
 				break;
 			case SIGMOID:
-				model->outputBuffer[j] = 1.0f / (1.0f + expf(-sum));
+				out[j] = 1.0f / (1.0f + expf(-z));
 				break;
 			case TANH:
-				model->outputBuffer[j] = tanhf(sum);
+				out[j] = tanhf(z);
 				break;
 			}
 		}
-
-		float *temp = model->inputBuffer;
-		model->inputBuffer = model->outputBuffer;
-		model->outputBuffer = temp;
 	}
 
-	memcpy(output, model->inputBuffer, model->outputSize * sizeof(float));
+	memcpy(output, model->activations[model->numLayers], model->outputSize * sizeof(float));
 }
 
 void CopyModel(Model *dest, const Model *src) {
@@ -242,6 +251,123 @@ void CrossoverModels(Model *child, const Model *parentA, const Model *parentB, f
 			childLayer->biases[j] = (rand() % 2 == 0) ? layerA->biases[j] : layerB->biases[j];
 			if ((float)rand() / RAND_MAX < mutationRate)
 				childLayer->biases[j] += ((float)rand() / RAND_MAX - 0.5f) * 0.2f;
+		}
+	}
+}
+
+static float activationDerivative(ActivationFunc act, float preAct, float postAct) {
+	switch (act) {
+	case RELU:
+		return preAct > 0.0f ? 1.0f : 0.0f;
+	case SIGMOID:
+		return postAct * (1.0f - postAct);
+	case TANH:
+		return 1.0f - postAct * postAct;
+	}
+	return 1.0f;
+}
+
+void ZeroGradients(Model *model) {
+	for (uint32 i = 0; i < model->numLayers; i++) {
+		DenseLayer *layer = &model->layers[i];
+		memset(layer->gradWeights, 0, layer->inputSize * layer->outputSize * sizeof(float));
+		memset(layer->gradBiases, 0, layer->outputSize * sizeof(float));
+	}
+}
+
+// outputGrad is dL/dOutput (size: model->outputSize), externally computed from
+// e.g. step-improvement or distance-reduction signal. Accumulates into gradWeights/gradBiases.
+void Backward(Model *model, const float *outputGrad) {
+	float *currentDelta = model->inputBuffer;
+	float *prevDelta = model->outputBuffer;
+
+	memcpy(currentDelta, outputGrad, model->outputSize * sizeof(float));
+
+	for (int i = (int)model->numLayers - 1; i >= 0; i--) {
+		DenseLayer *layer = &model->layers[i];
+		float *layerInput = model->activations[i];
+		float *layerOutput = model->activations[i + 1];
+
+		for (uint32 j = 0; j < layer->outputSize; j++)
+			currentDelta[j] *= activationDerivative(layer->activation, layer->preAct[j], layerOutput[j]);
+
+		for (uint32 j = 0; j < layer->outputSize; j++) {
+			layer->gradBiases[j] += currentDelta[j];
+			for (uint32 k = 0; k < layer->inputSize; k++)
+				layer->gradWeights[j * layer->inputSize + k] += currentDelta[j] * layerInput[k];
+		}
+
+		if (i > 0) {
+			memset(prevDelta, 0, layer->inputSize * sizeof(float));
+			for (uint32 j = 0; j < layer->outputSize; j++)
+				for (uint32 k = 0; k < layer->inputSize; k++)
+					prevDelta[k] += layer->weights[j * layer->inputSize + k] * currentDelta[j];
+			float *tmp = currentDelta;
+			currentDelta = prevDelta;
+			prevDelta = tmp;
+		}
+	}
+}
+
+void InitOptimizer(Optimizer *opt, const Model *model, float lr, float beta1, float beta2) {
+	opt->lr = lr;
+	opt->beta1 = beta1;
+	opt->beta2 = beta2;
+	opt->epsilon = 1e-8f;
+	opt->step = 0;
+	opt->numLayers = model->numLayers;
+	opt->mWeights = malloc(model->numLayers * sizeof(float *));
+	opt->mBiases = malloc(model->numLayers * sizeof(float *));
+	opt->vWeights = malloc(model->numLayers * sizeof(float *));
+	opt->vBiases = malloc(model->numLayers * sizeof(float *));
+	for (uint32 i = 0; i < model->numLayers; i++) {
+		uint32 wSize = model->layers[i].inputSize * model->layers[i].outputSize;
+		uint32 bSize = model->layers[i].outputSize;
+		opt->mWeights[i] = calloc(wSize, sizeof(float));
+		opt->mBiases[i] = calloc(bSize, sizeof(float));
+		opt->vWeights[i] = calloc(wSize, sizeof(float));
+		opt->vBiases[i] = calloc(bSize, sizeof(float));
+	}
+}
+
+void FreeOptimizer(Optimizer *opt) {
+	for (uint32 i = 0; i < opt->numLayers; i++) {
+		free(opt->mWeights[i]);
+		free(opt->mBiases[i]);
+		free(opt->vWeights[i]);
+		free(opt->vBiases[i]);
+	}
+	free(opt->mWeights);
+	free(opt->mBiases);
+	free(opt->vWeights);
+	free(opt->vBiases);
+	memset(opt, 0, sizeof(*opt));
+}
+
+// Adam optimizer update. Call after Backward, then ZeroGradients before next step.
+void UpdateWeights(Model *model, Optimizer *opt) {
+	opt->step++;
+	float bc1 = 1.0f - powf(opt->beta1, (float)opt->step);
+	float bc2 = 1.0f - powf(opt->beta2, (float)opt->step);
+
+	for (uint32 i = 0; i < model->numLayers; i++) {
+		DenseLayer *layer = &model->layers[i];
+		uint32 wSize = layer->inputSize * layer->outputSize;
+
+		for (uint32 j = 0; j < wSize; j++) {
+			opt->mWeights[i][j] = opt->beta1 * opt->mWeights[i][j] + (1.0f - opt->beta1) * layer->gradWeights[j];
+			opt->vWeights[i][j] = opt->beta2 * opt->vWeights[i][j] + (1.0f - opt->beta2) * layer->gradWeights[j] * layer->gradWeights[j];
+			float mHat = opt->mWeights[i][j] / bc1;
+			float vHat = opt->vWeights[i][j] / bc2;
+			layer->weights[j] -= opt->lr * mHat / (sqrtf(vHat) + opt->epsilon);
+		}
+
+		for (uint32 j = 0; j < layer->outputSize; j++) {
+			opt->mBiases[i][j] = opt->beta1 * opt->mBiases[i][j] + (1.0f - opt->beta1) * layer->gradBiases[j];
+			opt->vBiases[i][j] = opt->beta2 * opt->vBiases[i][j] + (1.0f - opt->beta2) * layer->gradBiases[j] * layer->gradBiases[j];
+			float mHat = opt->mBiases[i][j] / bc1;
+			float vHat = opt->vBiases[i][j] / bc2;
+			layer->biases[j] -= opt->lr * mHat / (sqrtf(vHat) + opt->epsilon);
 		}
 	}
 }

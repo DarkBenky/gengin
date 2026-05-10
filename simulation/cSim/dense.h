@@ -13,6 +13,9 @@ typedef struct {
 	ActivationFunc activation;
 	float *weights;
 	float *biases;
+	float *preAct;		// z = Wx + b, cached for backward pass
+	float *gradWeights; // accumulated dL/dW
+	float *gradBiases;	// accumulated dL/dB
 } DenseLayer;
 
 typedef struct {
@@ -21,9 +24,23 @@ typedef struct {
 	uint32 inputSize;
 	uint32 outputSize;
 	uint32 maxLayerSize;
-	float *inputBuffer;
-	float *outputBuffer;
+	float *inputBuffer;	 // scratch for backward pass deltas
+	float *outputBuffer; // scratch for backward pass deltas
+	float **activations; // [numLayers+1]: model input + each layer's output, cached for backward
 } Model;
+
+typedef struct {
+	float lr;
+	float beta1;
+	float beta2;
+	float epsilon;
+	uint32 step;
+	uint32 numLayers;
+	float **mWeights;
+	float **mBiases;
+	float **vWeights;
+	float **vBiases;
+} Optimizer;
 
 void InitModel(Model *model, uint32 inputSize, uint32 outputSize);
 void AddDenseLayer(Model *model, uint32 inputSize, uint32 outputSize, ActivationFunc activation);
@@ -33,13 +50,12 @@ void CopyModel(Model *dest, const Model *src);
 void MutateModel(Model *model, float mutationRate);
 void CrossoverModels(Model *child, const Model *parentA, const Model *parentB, float mutationRate);
 
-// TODO: add backward pass (later)
-// typedef struct {
-//    ...
-//    ...
-// } Optimizer;
-// void Backward(Model *model, Optimizer *opt, ...);
-
+void InitOptimizer(Optimizer *opt, const Model *model, float lr, float beta1, float beta2);
+void FreeOptimizer(Optimizer *opt);
+void ZeroGradients(Model *model);
+// outputGrad = dL/dOutput, externally computed from e.g. step-improvement or distance signal
+void Backward(Model *model, const float *outputGrad);
+void UpdateWeights(Model *model, Optimizer *opt);
 
 // Returns 0 on success, non-zero on failure.
 int SaveModel(const Model *model, const char *filename);
