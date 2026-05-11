@@ -16,7 +16,7 @@ void epochTask(void *args) {
 	epoch(((FunctionArgs *)args)->trainer, ((FunctionArgs *)args)->plane, ((FunctionArgs *)args)->currentTop10PercentLoss);
 }
 
-#define NUM_THREADS 30
+#define NUM_THREADS 8
 
 int main() {
 	ModelTrainer trainers[NUM_THREADS];
@@ -50,7 +50,18 @@ int main() {
 		FreeModel(&seedModel);
 	}
 
+	// load best backprop model if it exists
+	Model seedBackpropModel = {0};
+	int hasBackpropSeed = LoadModel(&seedBackpropModel, "simulation/best_backprop_model_" MODEL_NAME ".bin") == 0;
+	if (hasBackpropSeed) {
+		printf("Loaded existing best backprop model — seeding all trainers\n");
+		for (int i = 0; i < NUM_THREADS; i++)
+			CopyModel(&trainers[i].backpropModel, &seedBackpropModel);
+		FreeModel(&seedBackpropModel);
+	}
+
 	float globalBestLoss = MAX_FLOAT;
+	float globalBestBackpropLoss = MAX_FLOAT;
 
 	int crossMutateInterval = 10; // epochs
 	int crossMutateCount = 50;	  // bottom N models replaced per trainer per migration
@@ -85,6 +96,18 @@ int main() {
 			printf("Saving model with loss: %f (trainer %d, epoch %d)\n", globalBestLoss, bestTrainer, epochIdx + 1);
 			SaveModel(&trainers[bestTrainer].models[bestModelIdx], "simulation/best_model_" MODEL_NAME ".bin");
 		}
+
+		// find trainer with best backprop loss and save if improved
+		int bestBackpropTrainer = 0;
+		for (int i = 1; i < NUM_THREADS; i++) {
+			if (trainers[i].lastBackpropLoss < trainers[bestBackpropTrainer].lastBackpropLoss)
+				bestBackpropTrainer = i;
+		}
+		if (trainers[bestBackpropTrainer].lastBackpropLoss < globalBestBackpropLoss) {
+			globalBestBackpropLoss = trainers[bestBackpropTrainer].lastBackpropLoss;
+			printf("Saving backprop model with loss: %f (trainer %d, epoch %d)\n", globalBestBackpropLoss, bestBackpropTrainer, epochIdx + 1);
+			SaveModel(&trainers[bestBackpropTrainer].backpropModel, "simulation/best_backprop_model_" MODEL_NAME ".bin");
+		}
 		// cross mutate between trainers
 		if ((epochIdx + 1) % crossMutateInterval == 0) {
 			uint32 eliteIdx[NUM_THREADS];
@@ -99,11 +122,12 @@ int main() {
 					while (parentBIdx == parentAIdx)
 						parentBIdx = rand() % NUM_THREADS;
 					uint32 targetSlot = trainers[i].modelLossOrders[numModels - 1 - n];
+					float crossMutationRate = calculateMutationRate(trainers[i].startMutationRate, trainers[i].endMutationRate, epochIdx, epochs);
 					CrossoverModels(
 						&trainers[i].models[targetSlot],
 						&trainers[parentAIdx].models[eliteIdx[parentAIdx]],
 						&trainers[parentBIdx].models[eliteIdx[parentBIdx]],
-						0.05f);
+						crossMutationRate);
 				}
 			}
 		}

@@ -16,9 +16,9 @@
 // Values derived from equilibrium roll rate: at cruise q=17821 (220m/s, 5000m), max aileron torque
 // ~306kN*m must give ~45 deg/s (0.78 rad/s) → DAMP_ROLL = torque / (rate * dampScale) ≈ 80000.
 // Gives decay times: ~0.4s roll, ~0.6s pitch, ~0.9s yaw at cruise speed.
-#define DAMP_ROLL  80000.0f
+#define DAMP_ROLL 80000.0f
 #define DAMP_PITCH 130000.0f
-#define DAMP_YAW   100000.0f
+#define DAMP_YAW 100000.0f
 
 // Lever arms (m) from CG to surface aerodynamic center.
 #define LEVER_AILERON 5.0f
@@ -97,7 +97,7 @@ static void buildFrame(float3 fwd, float bank, float3 *outRight, float3 *outUp) 
 	float3 wUp = f3Cross(fwd, wRight);
 	float cb = cosf(bank), sb = sinf(bank);
 	*outRight = f3Add(f3Scale(wRight, cb), f3Scale(f3Scale(wUp, -1.0f), sb));
-	*outUp    = f3Add(f3Scale(wUp, cb), f3Scale(wRight, sb));
+	*outUp = f3Add(f3Scale(wUp, cb), f3Scale(wRight, sb));
 }
 
 // Lift and drag magnitudes from real effective AoA (body AoA + surface deflection, in degrees).
@@ -166,6 +166,22 @@ static float getSurface01(const Surface *surface) {
 
 static float getSurfaceNorm(const Surface *surface) {
 	return getSurface01(surface) * 2.0f - 1.0f;
+}
+
+float3 planeGetForwardVector(const Plane *plane) {
+	return plane->forward;
+}
+
+float3 planeGetRightVector(const Plane *plane) {
+	float3 right, up;
+	buildFrame(plane->forward, plane->bankAngle, &right, &up);
+	return right;
+}
+
+float3 planeGetUpVector(const Plane *plane) {
+	float3 right, up;
+	buildFrame(plane->forward, plane->bankAngle, &right, &up);
+	return up;
 }
 
 void planeSetThrottle(Plane *plane, float pct) {

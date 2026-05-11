@@ -60,5 +60,8 @@
   "clangd.arguments": [
     "--inlay-hints=true"
   ],
-  "C_Cpp.intelliSenseEngine": "disabled"
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "cSpell.words": [
+    "backpropagation"
+  ]
 }

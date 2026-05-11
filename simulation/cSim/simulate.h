@@ -1,6 +1,10 @@
 #pragma once
 #include "import.h"
 
+float3 planeGetForwardVector(const Plane *plane);
+float3 planeGetRightVector(const Plane *plane);
+float3 planeGetUpVector(const Plane *plane);
+
 // Setters accepting normalized -1 to 1 input for surfaces, 0 to 1 for throttle.
 void planeSetThrottle(Plane *plane, float pct);
 void planeSetAileron(Plane *plane, float angle);

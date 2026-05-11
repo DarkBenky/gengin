@@ -13,6 +13,7 @@ HTTP_PORT = 8081
 _lock = threading.Lock()
 _epoch_losses = []
 _epoch_quantiles = []  # per epoch: [p10, p25, p50, p75, p90]
+_backprop_losses = []
 _latest = None
 
 _HTML = """<!DOCTYPE html>
@@ -35,6 +36,7 @@ h1 { margin:2px 0 4px; font-size:1rem; font-weight:500; }
 <div id="status">Waiting for training data...</div>
 <div id="c-epoch" style="height:200px;margin-bottom:6px"></div>
 <div id="c-epoch-fan" style="height:220px;margin-bottom:6px"></div>
+<div id="c-backprop" style="height:200px;margin-bottom:6px"></div>
 <div class="row">
   <div class="col">
     <div id="c-total"    style="height:200px"></div>
@@ -116,6 +118,15 @@ async function update() {
        {x,y:avg,type:'scatter',mode:'lines',line:{width:2,color:'rgb(99,110,250)'},name:'Avg'}],
       {...BG,margin:MAR,xaxis:{...AX,title:'Epoch'},yaxis:{...AX,title:'Loss'},
        title:{text:'Epoch Loss',font:{color:'#bbb',size:12}}});
+  }
+
+  if (d.backprop_losses && d.backprop_losses.length) {
+    const bl=d.backprop_losses, x=bl.map((_,i)=>i);
+    react('c-backprop',
+      [{x,y:bl,type:'scatter',mode:'lines',line:{width:2,color:'rgb(255,100,100)'},name:'Backprop Loss'}],
+      {...BG,margin:MAR,
+       xaxis:{...AX,title:'Epoch'},yaxis:{...AX,title:'Avg Step Delta Dist'},
+       title:{text:'Backprop Model Loss (negative = moving closer)',font:{color:'#bbb',size:12}}});
   }
 
   if (d.epoch_quantiles && d.epoch_quantiles.length) {
@@ -281,7 +292,8 @@ def parse_training_stats(data):
     m, n = struct.unpack_from("<II", data, 0)
     start = struct.unpack_from("<3f", data, 8)
     target = struct.unpack_from("<3f", data, 20)
-    off = 32  # 2*uint32 + 2*float3 (3 floats each)
+    backprop_loss = struct.unpack_from("<f", data, 32)[0]
+    off = 36  # 2*uint32 + 2*float3 + 1*float
 
     losses = np.frombuffer(data, dtype="<f4", count=m, offset=off).copy()
     off += m * 4
@@ -298,6 +310,7 @@ def parse_training_stats(data):
         _epoch_losses.append((float(losses.min()), float(losses.mean()), float(losses.max())))
         qs = np.percentile(losses, [10, 25, 50, 75, 90])
         _epoch_quantiles.append([float(q) for q in qs])
+        _backprop_losses.append(float(backprop_loss))
         _latest = compact
 
 def handle(conn, addr):
@@ -409,7 +422,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif self.path == '/data':
             with _lock:
-                payload = json.dumps({'epoch_losses': list(_epoch_losses), 'epoch_quantiles': list(_epoch_quantiles), 'latest': _latest}).encode()
+                payload = json.dumps({'epoch_losses': list(_epoch_losses), 'epoch_quantiles': list(_epoch_quantiles), 'backprop_losses': list(_backprop_losses), 'latest': _latest}).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(payload)))

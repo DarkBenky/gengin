@@ -11,26 +11,6 @@
 #include "../../client/client.h"
 
 typedef struct {
-	float3 startPosition;
-	float3 targetPosition;
-	float3 prevPosition;
-	int iterationCount;
-	int currentIteration;
-	Model *models;
-	float *losses;			 // total epoch loss for each model
-	uint32 *modelLossOrders; // sorted indexes of models by loss for selection
-	float3 *paths;			 // model count * iteration count -> commit to python to visualize it
-	float3 *epochLosses;	 // model count * iteration count -> commit to python to visualize it
-	int numModels;
-	float startMutationRate;
-	float endMutationRate;
-	int epochs;
-	int currentEpoch;
-	Client client;			// for sending training data to python for visualization
-	int eliteReachedTarget; // count of elite models that reached target this epoch
-	int epochsSinceLastTarget;
-} ModelTrainer;
-typedef struct {
 	float3 toTargetDir;		// normalized (targetPosition - currentPosition) direction vector
 	float3 toTarget;		// (targetPosition - currentPosition) / initialDist  [-1..1 approx]
 	float3 currentVelocity; // velocity / 500                                      [-1..1 approx]
@@ -52,6 +32,32 @@ typedef struct {
 	float Elevator; // -1.0 to 1.0
 	float Rudder;	// -1.0 to 1.0
 } ModelOutput;
+typedef struct {
+	float3 startPosition;
+	float3 targetPosition;
+	float3 prevPosition;
+	int iterationCount;
+	int currentIteration;
+	Model *models;
+	float *losses;			 // total epoch loss for each model
+	uint32 *modelLossOrders; // sorted indexes of models by loss for selection
+	float3 *paths;			 // model count * iteration count -> commit to python to visualize it
+	float3 *epochLosses;	 // model count * iteration count -> commit to python to visualize it
+	ModelOutput *outputs;	 // model count * iteration count -> used to train back propagation model
+	ModelInput *inputs;		 // model count * iteration count -> used to train back propagation model
+	float *actionLosses;	 // model count * iteration count -> used to train back propagation model
+	int numModels;
+	float startMutationRate;
+	float endMutationRate;
+	int epochs;
+	int currentEpoch;
+	Client client;			// for sending training data to python for visualization
+	int eliteReachedTarget; // count of elite models that reached target this epoch
+	int epochsSinceLastTarget;
+	Model backpropModel; // trained on the inputs and outputs models
+	Optimizer opt;
+	float lastBackpropLoss;
+} ModelTrainer;
 
 float calculateMutationRate(float startRate, float endRate, int currentEpoch, int totalEpochs) {
 	if (currentEpoch >= totalEpochs) return endRate;
@@ -106,9 +112,15 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
 	p->losses = (float *)malloc(sizeof(float) * numModels);
 	p->paths = (float3 *)malloc(sizeof(float3) * numModels * p->iterationCount);
 	p->epochLosses = (float3 *)malloc(sizeof(float3) * numModels * p->iterationCount);
+	p->inputs = (ModelInput *)malloc(sizeof(ModelInput) * numModels * p->iterationCount);
+	p->outputs = (ModelOutput *)malloc(sizeof(ModelOutput) * numModels * p->iterationCount);
+	p->actionLosses = (float *)malloc(sizeof(float) * numModels * p->iterationCount);
 	p->modelLossOrders = (uint32 *)malloc(sizeof(uint32) * numModels);
 	memset(p->paths, 0, sizeof(float3) * numModels * p->iterationCount);
 	memset(p->epochLosses, 0, sizeof(float3) * numModels * p->iterationCount);
+	memset(p->inputs, 0, sizeof(ModelInput) * numModels * p->iterationCount);
+	memset(p->outputs, 0, sizeof(ModelOutput) * numModels * p->iterationCount);
+	memset(p->actionLosses, 0, sizeof(float) * numModels * p->iterationCount);
 	for (int i = 0; i < numModels; i++) {
 		Model model;
 		InitModel(&model, sizeof(ModelInput) / sizeof(float), sizeof(ModelOutput) / sizeof(float));
@@ -123,6 +135,22 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
 		p->losses[i] = 0.0f;
 		p->modelLossOrders[i] = i;
 	}
+
+	Model backpropModel;
+	InitModel(&backpropModel, sizeof(ModelInput) / sizeof(float), sizeof(ModelOutput) / sizeof(float));
+	p->backpropModel = backpropModel;
+	for (int j = 0; j < layerCount; j++) {
+		uint32 inSize = (j == 0) ? p->backpropModel.inputSize : (uint32)layerSize;
+		uint32 outSize = (j == layerCount - 1) ? p->backpropModel.outputSize : (uint32)layerSize;
+		ActivationFunc act = (j == layerCount - 1) ? TANH : RELU;
+		AddDenseLayer(&p->backpropModel, inSize, outSize, act);
+	}
+	MutateModel(&p->backpropModel, startMutationRate);
+
+	Optimizer opt;
+	InitOptimizer(&opt, &p->backpropModel, 0.001f, 0.9f, 0.999f);
+	p->opt = opt;
+	p->lastBackpropLoss = 0.0f;
 }
 
 typedef struct {
@@ -130,6 +158,7 @@ typedef struct {
 	uint32 iterationCount;
 	float startPosition[3];
 	float targetPosition[3];
+	float backpropLoss;
 	// wire layout after this header:
 	//   float[modelCount]                   losses
 	//   float3[modelCount * iterationCount] paths
@@ -149,6 +178,7 @@ trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 	stats->targetPosition[0] = p->targetPosition.x;
 	stats->targetPosition[1] = p->targetPosition.y;
 	stats->targetPosition[2] = p->targetPosition.z;
+	stats->backpropLoss = p->lastBackpropLoss;
 	uint8_t *base = (uint8_t *)(stats + 1);
 	memcpy(base, p->losses, lossSize);
 	memcpy(base + lossSize, p->paths, pathsSize);
@@ -204,6 +234,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 		plane->yawRate = startYawRate;
 		plane->currentFuelPercentage = startFuelPct;
 
+		float3 prevPos = plane->position;
 		for (int step = 0; step < p->iterationCount; step++) {
 			// normalize by initialDist: magnitude=1 at start, ~0 at target — always well-conditioned
 			float3 toTarget = Float3_Scale(Float3_Sub(p->targetPosition, plane->position), 1.0f / initialDist);
@@ -234,6 +265,14 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 			float3 newForward;
 			updatePlane(plane, 1.0f / 24.0f, &newForward);
 
+			// Store input output and loss (change in distance to target compared to previous step)
+			p->inputs[modelIdx * p->iterationCount + step] = input;
+			p->outputs[modelIdx * p->iterationCount + step] = output;
+			float currentDistanceToTarget = Float3_Length(Float3_Sub(plane->position, p->targetPosition));
+			float prevDistanceToTarget = Float3_Length(Float3_Sub(prevPos, p->targetPosition));
+			p->actionLosses[modelIdx * p->iterationCount + step] = currentDistanceToTarget - prevDistanceToTarget;
+			prevPos = plane->position;
+
 			float distanceToTarget = Float3_Length(Float3_Sub(plane->position, p->targetPosition));
 			if (distanceToTarget < ACCEPTABLE_DISTANCE_TO_TARGET) {
 				printf("Model: %d reached target\n", modelIdx);
@@ -243,13 +282,21 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 				// clear remaining path slots so visualization doesn't show stale data
 				memset(&p->paths[modelIdx * p->iterationCount + step + 1], 0,
 					   sizeof(float3) * (p->iterationCount - step - 1));
+				memset(&p->inputs[modelIdx * p->iterationCount + step + 1], 0,
+					   sizeof(ModelInput) * (p->iterationCount - step - 1));
+				memset(&p->outputs[modelIdx * p->iterationCount + step + 1], 0,
+					   sizeof(ModelOutput) * (p->iterationCount - step - 1));
+				memset(&p->actionLosses[modelIdx * p->iterationCount + step + 1], 0,
+					   sizeof(float) * (p->iterationCount - step - 1));
 				break;
 			}
 
 			float controlEffortLoss = (output.Throttle * output.Throttle) + (output.Aileron * output.Aileron) + (output.Elevator * output.Elevator) + (output.Rudder * output.Rudder);
+			// reward velocity component toward target — encourages reaching the target quickly
+			float speedTowardTarget = fmaxf(0.0f, Float3_Dot(plane->velocity, input.toTargetDir));
 			// normalize by initial distance so losses are comparable across epochs regardless of target distance
 			// small control-effort penalty encourages smooth inputs and breaks ties between equal-distance models
-			totalLoss += distanceToTarget / initialDist + 0.05f * controlEffortLoss;
+			totalLoss += distanceToTarget / initialDist + 0.05f * controlEffortLoss - 0.3f * speedTowardTarget / 500.0f;
 
 			p->paths[modelIdx * p->iterationCount + step] = plane->position;
 			p->epochLosses[modelIdx * p->iterationCount + step] = (float3){totalLoss, distanceToTarget, controlEffortLoss};
@@ -314,6 +361,72 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 		top10LossSum += p->losses[p->modelLossOrders[i]];
 	}
 	*top10PercentLoss = top10LossSum / (float)top10Count;
+
+	// train backprop model on elite trajectories (policy gradient: reinforce good steps, penalise bad ones)
+	int maxSamples = eliteCount * p->iterationCount;
+	int *sampleIndices = (int *)malloc(sizeof(int) * maxSamples);
+	int sampleCount = 0;
+	for (int i = 0; i < eliteCount; i++) {
+		int modelIdx = p->modelLossOrders[i];
+		for (int step = 0; step < p->iterationCount; step++) {
+			int idx = modelIdx * p->iterationCount + step;
+			ModelOutput *out = &p->outputs[idx];
+			// skip zero-padded tail (steps past where the model reached the target)
+			if (p->actionLosses[idx] == 0.0f && out->Throttle == 0.0f && out->Aileron == 0.0f)
+				continue;
+			sampleIndices[sampleCount++] = idx;
+		}
+	}
+
+	if (sampleCount > 0) {
+		int outputSize = (int)(sizeof(ModelOutput) / sizeof(float));
+		float *outputGrad = (float *)malloc(sizeof(float) * outputSize);
+		float *predicted = (float *)malloc(sizeof(float) * outputSize);
+
+		// 4 passes over the elite data per epoch with random mini-batches of 128
+		for (int pass = 0; pass < 4; pass++) {
+			for (int i = sampleCount - 1; i > 0; i--) {
+				int j = rand() % (i + 1);
+				int tmp = sampleIndices[i]; sampleIndices[i] = sampleIndices[j]; sampleIndices[j] = tmp;
+			}
+			for (int batchStart = 0; batchStart < sampleCount; batchStart += 128) {
+				int batchEnd = batchStart + 128;
+				if (batchEnd > sampleCount) batchEnd = sampleCount;
+				int batchSize = batchEnd - batchStart;
+
+				ZeroGradients(&p->backpropModel);
+				for (int b = batchStart; b < batchEnd; b++) {
+					int idx = sampleIndices[b];
+					// dL/dPrediction = actionLoss * (prediction - target) / batchSize
+					// negative actionLoss (moved closer) reinforces the output; positive penalises it
+					float actionLoss = p->actionLosses[idx];
+					Forward(&p->backpropModel, (float *)&p->inputs[idx], predicted);
+					float *target = (float *)&p->outputs[idx];
+					for (int k = 0; k < outputSize; k++)
+						outputGrad[k] = actionLoss * (predicted[k] - target[k]) / (float)batchSize;
+					Backward(&p->backpropModel, outputGrad);
+				}
+				UpdateWeights(&p->backpropModel, &p->opt);
+			}
+		}
+
+		free(outputGrad);
+		free(predicted);
+
+		// inject the trained backprop model into one non-elite slot so it competes next generation
+		int injectSlot = p->modelLossOrders[eliteCount];
+		FreeModel(&p->models[injectSlot]);
+		CopyModel(&p->models[injectSlot], &p->backpropModel);
+	}
+
+	// average step-distance-change across elite trajectories (negative = moving closer on average)
+	float backpropLoss = 0.0f;
+	for (int i = 0; i < sampleCount; i++)
+		backpropLoss += p->actionLosses[sampleIndices[i]];
+	if (sampleCount > 0)
+		backpropLoss /= (float)sampleCount;
+	p->lastBackpropLoss = backpropLoss;
+	free(sampleIndices);
 
 	int statsSize;
 	trainingStats *stats = serializeTrainStats(p, &statsSize);
