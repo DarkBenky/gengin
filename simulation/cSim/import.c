@@ -108,7 +108,7 @@ int loadPlaneBin(Plane *plane, const char *path, float3 forward, float3 position
 	plane->currentTrustPercentage = engine[1];
 	plane->baseMass = engine[2];
 	plane->fuelMass = engine[3];
-	plane->currentFuelPercentage = engine[4];
+	plane->currentFuelPercentage = 1.0f;
 	plane->burnRate = engine[5];
 	plane->burnWithoutAfterburner = engine[6];
 	plane->forward = forward;

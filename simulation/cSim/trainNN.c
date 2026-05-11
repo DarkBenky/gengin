@@ -26,7 +26,7 @@ int main() {
 	int epochs = 10000;
 	int iterationCount = 2048;
 	int ModelCount = 1024;
-	uint16 port = 5173;
+	uint16 port = 5174;
 
 	// init trainers and planes
 	for (int i = 0; i < NUM_THREADS; i++) {

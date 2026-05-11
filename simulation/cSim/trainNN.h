@@ -166,6 +166,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	float startBankRate = plane->bankRate;
 	float startPitchRate = plane->pitchRate;
 	float startYawRate = plane->yawRate;
+	float startFuelPct = plane->currentFuelPercentage;
 
 	// target 20-60% of the distance the plane can cruise in the allotted steps,
 	// so the plane has enough time to reach it but also isn't trivially close.
@@ -201,6 +202,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 		plane->bankRate = startBankRate;
 		plane->pitchRate = startPitchRate;
 		plane->yawRate = startYawRate;
+		plane->currentFuelPercentage = startFuelPct;
 
 		for (int step = 0; step < p->iterationCount; step++) {
 			// normalize by initialDist: magnitude=1 at start, ~0 at target — always well-conditioned

@@ -7,8 +7,8 @@ import plotly.graph_objects as go
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 HOST = "127.0.0.1"
-TCP_PORT = 5173
-HTTP_PORT = 8080
+TCP_PORT = 5174
+HTTP_PORT = 8081
 
 _lock = threading.Lock()
 _epoch_losses = []
