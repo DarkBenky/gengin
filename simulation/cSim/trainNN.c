@@ -30,7 +30,7 @@ int main() {
 
 	// init trainers and planes
 	for (int i = 0; i < NUM_THREADS; i++) {
-		initModelTrainer(&trainers[i], ModelCount, epochs, iterationCount, 0.01f, 0.0005f, 3, 64, port + i);
+		initModelTrainer(&trainers[i], ModelCount, epochs, iterationCount, 0.01f, 0.0005f, 4, 64, port + i);
 		if (loadPlaneBin(&planes[i], "simulation/simModels/" MODEL_NAME ".bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 250.0f, 1.0f) != 0) {
 			printf("Failed to load model: simulation/simModels/" MODEL_NAME ".bin\n");
 			return 1;
