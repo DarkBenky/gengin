@@ -190,6 +190,7 @@ trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 }
 
 #define ACCEPTABLE_DISTANCE_TO_TARGET 250.0f
+#define BACKPROP_EMA_ALPHA 0.05f
 void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	float3 startPos = plane->position;
 	float3 modelOrientation = plane->forward;
@@ -433,7 +434,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	if (p->currentEpoch == 1)
 		p->backpropLossEMA = backpropLoss;
 	else
-		p->backpropLossEMA = 0.05f * backpropLoss + 0.95f * p->backpropLossEMA;
+		p->backpropLossEMA = BACKPROP_EMA_ALPHA * backpropLoss + (1.0f - BACKPROP_EMA_ALPHA) * p->backpropLossEMA;
 	free(sampleIndices);
 
 	int statsSize;
