@@ -57,6 +57,7 @@ typedef struct {
 	Model backpropModel; // trained on the inputs and outputs models
 	Optimizer opt;
 	float lastBackpropLoss;
+	float backpropLossEMA; // exponential moving average of backprop loss — used for model saving
 } ModelTrainer;
 
 float calculateMutationRate(float startRate, float endRate, int currentEpoch, int totalEpochs) {
@@ -151,6 +152,7 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
 	InitOptimizer(&opt, &p->backpropModel, 0.001f, 0.9f, 0.999f);
 	p->opt = opt;
 	p->lastBackpropLoss = 0.0f;
+	p->backpropLossEMA = 0.0f;
 }
 
 typedef struct {
@@ -178,7 +180,7 @@ trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 	stats->targetPosition[0] = p->targetPosition.x;
 	stats->targetPosition[1] = p->targetPosition.y;
 	stats->targetPosition[2] = p->targetPosition.z;
-	stats->backpropLoss = p->lastBackpropLoss;
+	stats->backpropLoss = p->backpropLossEMA;
 	uint8_t *base = (uint8_t *)(stats + 1);
 	memcpy(base, p->losses, lossSize);
 	memcpy(base + lossSize, p->paths, pathsSize);
@@ -426,6 +428,12 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	if (sampleCount > 0)
 		backpropLoss /= (float)sampleCount;
 	p->lastBackpropLoss = backpropLoss;
+	// EMA smooths out spikes so a single lucky step doesn't set an unreachable bar.
+	// Seed with the first real value; then blend with alpha=0.05.
+	if (p->currentEpoch == 1)
+		p->backpropLossEMA = backpropLoss;
+	else
+		p->backpropLossEMA = 0.05f * backpropLoss + 0.95f * p->backpropLossEMA;
 	free(sampleIndices);
 
 	int statsSize;
