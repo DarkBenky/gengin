@@ -282,6 +282,9 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 				// only count elite models (already sorted from last epoch) to avoid noise from lucky randoms
 				if (isElite[modelIdx])
 					p->eliteReachedTarget++;
+				// write the arrival position into this slot so visualization doesn't show a stale value
+				p->paths[modelIdx * p->iterationCount + step] = plane->position;
+				p->epochLosses[modelIdx * p->iterationCount + step] = (float3){totalLoss, distanceToTarget, 0.0f};
 				// clear remaining path slots so visualization doesn't show stale data
 				memset(&p->paths[modelIdx * p->iterationCount + step + 1], 0,
 					   sizeof(float3) * (p->iterationCount - step - 1));
