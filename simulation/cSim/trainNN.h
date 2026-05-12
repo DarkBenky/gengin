@@ -285,9 +285,10 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 				// write the arrival position into this slot so visualization doesn't show a stale value
 				p->paths[modelIdx * p->iterationCount + step] = plane->position;
 				p->epochLosses[modelIdx * p->iterationCount + step] = (float3){totalLoss, distanceToTarget, 0.0f};
-				// clear remaining path slots so visualization doesn't show stale data
-				memset(&p->paths[modelIdx * p->iterationCount + step + 1], 0,
-					   sizeof(float3) * (p->iterationCount - step - 1));
+				// fill remaining path slots with the arrival position so the 3D path line terminates
+				// at the target rather than jumping to the world origin (which looks like teleportation)
+				for (int s = step + 1; s < p->iterationCount; s++)
+					p->paths[modelIdx * p->iterationCount + s] = plane->position;
 				memset(&p->inputs[modelIdx * p->iterationCount + step + 1], 0,
 					   sizeof(ModelInput) * (p->iterationCount - step - 1));
 				memset(&p->outputs[modelIdx * p->iterationCount + step + 1], 0,
