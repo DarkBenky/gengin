@@ -75,8 +75,6 @@ int main() {
 		}
 		poolWait(pool);
 
-		// reset per-trainer loss baseline on new scenario so stale easy-scenario
-		// losses don't block saves after a harder scenario is introduced
 		for (int i = 0; i < NUM_THREADS; i++) {
 			if (trainers[i].epochsSinceLastTarget == 1) {
 				top10PercentLosses[i] = MAX_FLOAT;
@@ -84,7 +82,6 @@ int main() {
 			}
 		}
 
-		// find the trainer with the best loss this epoch and save if improved
 		int bestTrainer = 0;
 		for (int i = 1; i < NUM_THREADS; i++) {
 			if (top10PercentLosses[i] < top10PercentLosses[bestTrainer])
@@ -97,7 +94,6 @@ int main() {
 			SaveModel(&trainers[bestTrainer].models[bestModelIdx], "simulation/best_model_" MODEL_NAME ".bin");
 		}
 
-		// find trainer with best backprop EMA loss and save if improved
 		int bestBackpropTrainer = 0;
 		for (int i = 1; i < NUM_THREADS; i++) {
 			if (trainers[i].backpropLossEMA < trainers[bestBackpropTrainer].backpropLossEMA)
