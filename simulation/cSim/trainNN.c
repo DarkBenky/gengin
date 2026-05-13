@@ -16,7 +16,7 @@ void epochTask(void *args) {
 	epoch(((FunctionArgs *)args)->trainer, ((FunctionArgs *)args)->plane, ((FunctionArgs *)args)->currentTop10PercentLoss);
 }
 
-#define NUM_THREADS 8
+#define NUM_THREADS 28
 
 int main() {
 	ModelTrainer trainers[NUM_THREADS];
@@ -24,7 +24,7 @@ int main() {
 	float top10PercentLosses[NUM_THREADS];
 
 	int epochs = 10000;
-	int iterationCount = 2048;
+	int iterationCount = 768;
 	int ModelCount = 1024;
 	uint16 port = 5174;
 
