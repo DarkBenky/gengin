@@ -57,6 +57,7 @@ typedef struct {
 	Model backpropModel; // trained on the inputs and outputs models
 	Optimizer opt;
 	float lastBackpropLoss;
+	float backpropLossEMA; // exponential moving average of backprop loss — used for model saving
 } ModelTrainer;
 
 float calculateMutationRate(float startRate, float endRate, int currentEpoch, int totalEpochs) {
@@ -151,6 +152,7 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
 	InitOptimizer(&opt, &p->backpropModel, 0.001f, 0.9f, 0.999f);
 	p->opt = opt;
 	p->lastBackpropLoss = 0.0f;
+	p->backpropLossEMA = 0.0f;
 }
 
 typedef struct {
@@ -178,7 +180,7 @@ trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 	stats->targetPosition[0] = p->targetPosition.x;
 	stats->targetPosition[1] = p->targetPosition.y;
 	stats->targetPosition[2] = p->targetPosition.z;
-	stats->backpropLoss = p->lastBackpropLoss;
+	stats->backpropLoss = p->backpropLossEMA;
 	uint8_t *base = (uint8_t *)(stats + 1);
 	memcpy(base, p->losses, lossSize);
 	memcpy(base + lossSize, p->paths, pathsSize);
@@ -188,6 +190,7 @@ trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 }
 
 #define ACCEPTABLE_DISTANCE_TO_TARGET 250.0f
+#define BACKPROP_EMA_ALPHA 0.05f
 void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	float3 startPos = plane->position;
 	float3 modelOrientation = plane->forward;
@@ -279,9 +282,13 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 				// only count elite models (already sorted from last epoch) to avoid noise from lucky randoms
 				if (isElite[modelIdx])
 					p->eliteReachedTarget++;
-				// clear remaining path slots so visualization doesn't show stale data
-				memset(&p->paths[modelIdx * p->iterationCount + step + 1], 0,
-					   sizeof(float3) * (p->iterationCount - step - 1));
+				// write the arrival position into this slot so visualization doesn't show a stale value
+				p->paths[modelIdx * p->iterationCount + step] = plane->position;
+				p->epochLosses[modelIdx * p->iterationCount + step] = (float3){totalLoss, distanceToTarget, 0.0f};
+				// fill remaining path slots with the arrival position so the 3D path line terminates
+				// at the target rather than jumping to the world origin (which looks like teleportation)
+				for (int s = step + 1; s < p->iterationCount; s++)
+					p->paths[modelIdx * p->iterationCount + s] = plane->position;
 				memset(&p->inputs[modelIdx * p->iterationCount + step + 1], 0,
 					   sizeof(ModelInput) * (p->iterationCount - step - 1));
 				memset(&p->outputs[modelIdx * p->iterationCount + step + 1], 0,
@@ -426,6 +433,12 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	if (sampleCount > 0)
 		backpropLoss /= (float)sampleCount;
 	p->lastBackpropLoss = backpropLoss;
+	// EMA smooths out spikes so a single lucky step doesn't set an unreachable bar.
+	// Seed with the first real value; then blend with alpha=0.05.
+	if (p->currentEpoch == 1)
+		p->backpropLossEMA = backpropLoss;
+	else
+		p->backpropLossEMA = BACKPROP_EMA_ALPHA * backpropLoss + (1.0f - BACKPROP_EMA_ALPHA) * p->backpropLossEMA;
 	free(sampleIndices);
 
 	int statsSize;

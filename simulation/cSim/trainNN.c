@@ -97,15 +97,15 @@ int main() {
 			SaveModel(&trainers[bestTrainer].models[bestModelIdx], "simulation/best_model_" MODEL_NAME ".bin");
 		}
 
-		// find trainer with best backprop loss and save if improved
+		// find trainer with best backprop EMA loss and save if improved
 		int bestBackpropTrainer = 0;
 		for (int i = 1; i < NUM_THREADS; i++) {
-			if (trainers[i].lastBackpropLoss < trainers[bestBackpropTrainer].lastBackpropLoss)
+			if (trainers[i].backpropLossEMA < trainers[bestBackpropTrainer].backpropLossEMA)
 				bestBackpropTrainer = i;
 		}
-		if (trainers[bestBackpropTrainer].lastBackpropLoss < globalBestBackpropLoss) {
-			globalBestBackpropLoss = trainers[bestBackpropTrainer].lastBackpropLoss;
-			printf("Saving backprop model with loss: %f (trainer %d, epoch %d)\n", globalBestBackpropLoss, bestBackpropTrainer, epochIdx + 1);
+		if (trainers[bestBackpropTrainer].backpropLossEMA < globalBestBackpropLoss) {
+			globalBestBackpropLoss = trainers[bestBackpropTrainer].backpropLossEMA;
+			printf("Saving backprop model with loss EMA: %f (trainer %d, epoch %d)\n", globalBestBackpropLoss, bestBackpropTrainer, epochIdx + 1);
 			SaveModel(&trainers[bestBackpropTrainer].backpropModel, "simulation/best_backprop_model_" MODEL_NAME ".bin");
 		}
 		// cross mutate between trainers
