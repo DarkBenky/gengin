@@ -3,7 +3,8 @@
 - [ ] TODO: better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 
 - [X] merge the new fixed flight model to main
-    - [ ] train the model
+    - [X] train the model
+    - [ ] fix the visualizer
 - [ ] Plane editor
     - [ ] export
     - [ ] import to c
