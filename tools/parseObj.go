@@ -21,6 +21,9 @@ type Triangle struct {
 	Emission                          float32
 	Color                             [3]float32
 	index                             int32
+	// TODO: store uv1, uv2, uv3 per triangle
+	// So we can sample textures in shaders
+	// TODO: create texture atlas file format
 }
 
 type FileObject struct {
