@@ -2,6 +2,7 @@
 
 - [ ] TODO: better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 - [ ] new import / export format to support textures
+- [ ] train model against moving target
 
 - [X] merge the new fixed flight model to main
     - [X] train the model
