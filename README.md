@@ -2,6 +2,7 @@
 
 - [ ] TODO: better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 - [ ] new import / export format to support textures
+    - [ ] add new high quality models
 - [ ] train model against moving target
 - [ ] disable trust control
 
