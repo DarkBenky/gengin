@@ -1,0 +1,24 @@
+# Blender 5.1.1 MTL File: 'F-2.blend'
+# www.blender.org
+
+newmtl F-2-airframe
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd F-2_Color.png
+map_Ns F-2_Roughness.png
+map_refl F-2_Metallic.png
+map_Bump -bm 1.000000 F-2_Normal.png
+
+newmtl Glass
+Ns 360.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
