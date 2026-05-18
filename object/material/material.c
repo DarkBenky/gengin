@@ -17,6 +17,18 @@ void MaterialLib_Init(MaterialLib *lib, int initialCapacity) {
 
 void MaterialLib_Destroy(MaterialLib *lib) {
 	if (!lib) return;
+	// Free each unique Textures pointer once.
+	for (int i = 0; i < lib->count; i++) {
+		if (!lib->entries[i].textures) continue;
+		int duplicate = 0;
+		for (int j = 0; j < i; j++) {
+			if (lib->entries[j].textures == lib->entries[i].textures) {
+				duplicate = 1;
+				break;
+			}
+		}
+		if (!duplicate) Textures_Destroy(lib->entries[i].textures);
+	}
 	free(lib->entries);
 	lib->entries = NULL;
 	lib->count = lib->capacity = 0;
@@ -57,4 +69,46 @@ void packMaterials(int *materialIds, int count, MaterialLib *lib) {
 			}
 		}
 	}
+}
+
+void Textures_Destroy(Textures *tex) {
+	free(tex);
+}
+
+Textures *Textures_LoadFromFile(FILE *file) {
+	Textures *tex = (Textures *)malloc(sizeof(Textures));
+	if (!tex) {
+		fprintf(stderr, "Error: Could not allocate Textures.\n");
+		return NULL;
+	}
+
+	// ColorMap: RGBA uint8 packed as uint32, read directly.
+	if (fread(tex->colorMap, sizeof(uint32), TEXTURE_SIZE * TEXTURE_SIZE, file) != (size_t)(TEXTURE_SIZE * TEXTURE_SIZE)) {
+		fprintf(stderr, "Error: Failed to read colorMap.\n");
+		free(tex);
+		return NULL;
+	}
+
+	// NormalMap: stored as RGB (3 bytes/pixel), unpack to RGBA with full alpha.
+	for (int i = 0; i < TEXTURE_SIZE * TEXTURE_SIZE; i++) {
+		uint8 rgb[3];
+		if (fread(rgb, 1, 3, file) != 3) {
+			fprintf(stderr, "Error: Failed to read normalMap.\n");
+			free(tex);
+			return NULL;
+		}
+		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[0] = rgb[0];
+		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[1] = rgb[1];
+		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[2] = rgb[2];
+		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[3] = 0xFF;
+	}
+
+	// MaterialMap: [roughness, metallic] as uint16, read directly.
+	if (fread(tex->MaterialMap, sizeof(uint16), TEXTURE_SIZE * TEXTURE_SIZE, file) != (size_t)(TEXTURE_SIZE * TEXTURE_SIZE)) {
+		fprintf(stderr, "Error: Failed to read MaterialMap.\n");
+		free(tex);
+		return NULL;
+	}
+
+	return tex;
 }

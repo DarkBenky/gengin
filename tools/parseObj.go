@@ -3,12 +3,17 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"image"
+	_ "image/png"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unsafe"
 )
+
+const texSize = 4096
 
 type Vertex struct {
 	X, Y, Z float32
@@ -16,24 +21,23 @@ type Vertex struct {
 
 type Triangle struct {
 	Vertex1, Vertex2, Vertex3, Normal Vertex
-	Roughness                         float32
-	Metallic                          float32
-	Emission                          float32
+	Roughness, Metallic, Emission     float32
 	Color                             [3]float32
 	index                             int32
-	// TODO: store uv1, uv2, uv3 per triangle
-	// So we can sample textures in shaders
-	// TODO: create texture atlas file format
+	UV1, UV2, UV3                     [2]uint16
 }
 
 type FileObject struct {
+	// Header
 	FileSize           uint32
 	TriangleStructSize uint32
-	Triangles          []Triangle
-	// TODO: add texture data for color, normal, material maps
-	// ColorMap     [4096][4096]uint32 // 16MB
-    // NormalMap    [4096][4096][3]uint8 // 12MB
-    // MaterialMap  [4096][4096][2]uint8 // 8MB
+	HasTextures        bool
+	// Textures
+	ColorMap    [texSize][texSize]uint32   // 64MB RGBA
+	NormalMap   [texSize][texSize][3]uint8 // 48MB RGB
+	MaterialMap [texSize][texSize][2]uint8 // 32MB [roughness, metallic]
+	// Dynamic data
+	Triangles []Triangle
 }
 
 func cross(a, b, c Vertex) float32 {
@@ -228,14 +232,12 @@ func Triangulate(v []Vertex) []Triangle {
 }
 
 type Material struct {
-	Name  string
-	Kd    [3]float32
-	Ks    [3]float32
-	Ke    [3]float32
-	Ns    float32
-	Ni    float32
-	D     float32
-	Illum int
+	Name                           string
+	Kd                             [3]float32
+	Ks, Ke                         [3]float32
+	Ns, Ni, D                      float32
+	Illum                          int
+	MapKd, MapNs, MapRefl, MapBump string
 }
 
 type TriangleMaterial struct {
@@ -306,6 +308,22 @@ func extractMaterials(filename string) ([]Material, error) {
 			if current != nil && len(parts) == 2 {
 				current.Illum = int(parseFloat(parts[1]))
 			}
+		case "map_Kd":
+			if current != nil && len(parts) >= 2 {
+				current.MapKd = parts[len(parts)-1]
+			}
+		case "map_Ns":
+			if current != nil && len(parts) >= 2 {
+				current.MapNs = parts[len(parts)-1]
+			}
+		case "map_refl":
+			if current != nil && len(parts) >= 2 {
+				current.MapRefl = parts[len(parts)-1]
+			}
+		case "map_Bump", "bump":
+			if current != nil && len(parts) >= 2 {
+				current.MapBump = parts[len(parts)-1]
+			}
 		}
 	}
 
@@ -358,13 +376,158 @@ func clamp(val, min, max float32) float32 {
 	return val
 }
 
+func encodeUV(u, v float32) [2]uint16 {
+	uc := clamp(u, 0, 1)
+	vc := clamp(1-v, 0, 1) // flip V: OBJ origin is bottom-left, stored top-left
+	return [2]uint16{uint16(uc * 65535), uint16(vc * 65535)}
+}
+
+// resizeBilinear resamples img to texSize×texSize using bilinear interpolation.
+// Returns separate R, G, B, A channels as uint8 slices of length texSize*texSize.
+func resizeBilinear(img image.Image) (rOut, gOut, bOut, aOut []uint8) {
+	bounds := img.Bounds()
+	srcW := bounds.Max.X - bounds.Min.X
+	srcH := bounds.Max.Y - bounds.Min.Y
+
+	// Flatten to RGBA for fast access (avoids repeated interface dispatch in inner loop)
+	stride := srcW * 4
+	flat := make([]uint8, srcH*stride)
+	for y := 0; y < srcH; y++ {
+		for x := 0; x < srcW; x++ {
+			r, g, b, a := img.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
+			i := (y*srcW + x) * 4
+			flat[i] = uint8(r >> 8)
+			flat[i+1] = uint8(g >> 8)
+			flat[i+2] = uint8(b >> 8)
+			flat[i+3] = uint8(a >> 8)
+		}
+	}
+
+	n := texSize * texSize
+	rOut = make([]uint8, n)
+	gOut = make([]uint8, n)
+	bOut = make([]uint8, n)
+	aOut = make([]uint8, n)
+
+	lerp := func(a, b, t float64) float64 { return a + t*(b-a) }
+
+	for y := 0; y < texSize; y++ {
+		for x := 0; x < texSize; x++ {
+			srcX := (float64(x)+0.5)*float64(srcW)/float64(texSize) - 0.5
+			srcY := (float64(y)+0.5)*float64(srcH)/float64(texSize) - 0.5
+
+			x0 := int(srcX)
+			y0 := int(srcY)
+			x1 := x0 + 1
+			y1 := y0 + 1
+			if x0 < 0 {
+				x0 = 0
+			}
+			if y0 < 0 {
+				y0 = 0
+			}
+			if x1 >= srcW {
+				x1 = srcW - 1
+			}
+			if y1 >= srcH {
+				y1 = srcH - 1
+			}
+			fx := srcX - float64(x0)
+			fy := srcY - float64(y0)
+			if fx < 0 {
+				fx = 0
+			}
+			if fy < 0 {
+				fy = 0
+			}
+
+			p00 := (y0*srcW + x0) * 4
+			p10 := (y0*srcW + x1) * 4
+			p01 := (y1*srcW + x0) * 4
+			p11 := (y1*srcW + x1) * 4
+
+			dst := y*texSize + x
+			rOut[dst] = uint8(lerp(lerp(float64(flat[p00]), float64(flat[p10]), fx), lerp(float64(flat[p01]), float64(flat[p11]), fx), fy))
+			gOut[dst] = uint8(lerp(lerp(float64(flat[p00+1]), float64(flat[p10+1]), fx), lerp(float64(flat[p01+1]), float64(flat[p11+1]), fx), fy))
+			bOut[dst] = uint8(lerp(lerp(float64(flat[p00+2]), float64(flat[p10+2]), fx), lerp(float64(flat[p01+2]), float64(flat[p11+2]), fx), fy))
+			aOut[dst] = uint8(lerp(lerp(float64(flat[p00+3]), float64(flat[p10+3]), fx), lerp(float64(flat[p01+3]), float64(flat[p11+3]), fx), fy))
+		}
+	}
+	return
+}
+
+func loadTextures(mtlDir string, mat *Material, obj *FileObject) bool {
+	if mat.MapKd == "" && mat.MapNs == "" && mat.MapRefl == "" && mat.MapBump == "" {
+		return false
+	}
+
+	// Default normal map pointing straight up.
+	for y := range texSize {
+		for x := range texSize {
+			obj.NormalMap[y][x] = [3]uint8{128, 128, 255}
+		}
+	}
+
+	openAndResize := func(name string) ([]uint8, []uint8, []uint8, []uint8) {
+		if name == "" {
+			return nil, nil, nil, nil
+		}
+		f, err := os.Open(filepath.Join(mtlDir, name))
+		if err != nil {
+			fmt.Printf("Warning: could not open texture %s: %v\n", name, err)
+			return nil, nil, nil, nil
+		}
+		defer f.Close()
+		img, _, err := image.Decode(f)
+		if err != nil {
+			fmt.Printf("Warning: could not decode texture %s: %v\n", name, err)
+			return nil, nil, nil, nil
+		}
+		return resizeBilinear(img)
+	}
+
+	if r, g, b, a := openAndResize(mat.MapKd); r != nil {
+		for y := range texSize {
+			for x := range texSize {
+				i := y*texSize + x
+				obj.ColorMap[y][x] = uint32(r[i]) | uint32(g[i])<<8 | uint32(b[i])<<16 | uint32(a[i])<<24
+			}
+		}
+	}
+	if r, g, b, _ := openAndResize(mat.MapBump); r != nil {
+		for y := range texSize {
+			for x := range texSize {
+				i := y*texSize + x
+				obj.NormalMap[y][x] = [3]uint8{r[i], g[i], b[i]}
+			}
+		}
+	}
+	if r, _, _, _ := openAndResize(mat.MapNs); r != nil {
+		for y := range texSize {
+			for x := range texSize {
+				obj.MaterialMap[y][x][0] = r[y*texSize+x]
+			}
+		}
+	}
+	if r, _, _, _ := openAndResize(mat.MapRefl); r != nil {
+		for y := range texSize {
+			for x := range texSize {
+				obj.MaterialMap[y][x][1] = r[y*texSize+x]
+			}
+		}
+	}
+
+	return true
+}
+
 func parseObjFile(filename string) (*FileObject, error) {
 	materialPath := strings.TrimSuffix(filename, ".obj") + ".mtl"
-	triangleMaterials, err := extractTriangleMaterials(materialPath)
+	materials, err := extractMaterials(materialPath)
 	if err != nil {
 		fmt.Printf("Warning: Could not load materials from %s: %v\n", materialPath, err)
 	}
 
+	triangleMaterials, _ := extractTriangleMaterials(materialPath)
 	materialMap := make(map[string]TriangleMaterial)
 	for _, mat := range triangleMaterials {
 		materialMap[mat.Name] = mat
@@ -378,12 +541,14 @@ func parseObjFile(filename string) (*FileObject, error) {
 
 	var vertices []Vertex
 	var normals []Vertex
+	var uvCoords [][2]float32
 	var faces [][]int
-	var faceNormals [][]int // per-vertex normal indices for each face
+	var faceNormals [][]int
+	var faceUVs [][]int
 	var currentMaterial string
 	var faceMaterials []string
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bufio.NewReaderSize(file, 1<<20))
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -403,11 +568,15 @@ func parseObjFile(filename string) (*FileObject, error) {
 				y, err2 := strconv.ParseFloat(parts[2], 32)
 				z, err3 := strconv.ParseFloat(parts[3], 32)
 				if err1 == nil && err2 == nil && err3 == nil {
-					vertices = append(vertices, Vertex{
-						X: float32(x),
-						Y: float32(y),
-						Z: float32(z),
-					})
+					vertices = append(vertices, Vertex{float32(x), float32(y), float32(z)})
+				}
+			}
+		case "vt":
+			if len(parts) >= 3 {
+				u, err1 := strconv.ParseFloat(parts[1], 32)
+				v, err2 := strconv.ParseFloat(parts[2], 32)
+				if err1 == nil && err2 == nil {
+					uvCoords = append(uvCoords, [2]float32{float32(u), float32(v)})
 				}
 			}
 		case "vn":
@@ -425,24 +594,31 @@ func parseObjFile(filename string) (*FileObject, error) {
 			}
 		case "f":
 			if len(parts) >= 4 {
-				var faceIndices []int
-				var faceNormalIndices []int
+				var faceIndices, faceNormalIndices, faceUVIndices []int
 				for i := 1; i < len(parts); i++ {
-					indexParts := strings.Split(parts[i], "/")
-					if len(indexParts) > 0 && indexParts[0] != "" {
-						index, err := strconv.Atoi(indexParts[0])
+					tok := strings.Split(parts[i], "/")
+					if len(tok) > 0 && tok[0] != "" {
+						idx, err := strconv.Atoi(tok[0])
 						if err == nil {
-							if index < 0 {
-								index = len(vertices) + index + 1
+							if idx < 0 {
+								idx = len(vertices) + idx + 1
 							}
-							if index > 0 && index <= len(vertices) {
-								faceIndices = append(faceIndices, index-1)
+							if idx > 0 && idx <= len(vertices) {
+								faceIndices = append(faceIndices, idx-1)
 							}
 						}
 					}
-					// Parse normal index (v/vt/vn format)
-					if len(indexParts) >= 3 && indexParts[2] != "" {
-						ni, err := strconv.Atoi(indexParts[2])
+					if len(tok) >= 2 && tok[1] != "" {
+						ui, err := strconv.Atoi(tok[1])
+						if err == nil {
+							if ui < 0 {
+								ui = len(uvCoords) + ui + 1
+							}
+							faceUVIndices = append(faceUVIndices, ui-1)
+						}
+					}
+					if len(tok) >= 3 && tok[2] != "" {
+						ni, err := strconv.Atoi(tok[2])
 						if err == nil {
 							if ni < 0 {
 								ni = len(normals) + ni + 1
@@ -454,6 +630,7 @@ func parseObjFile(filename string) (*FileObject, error) {
 				if len(faceIndices) >= 3 {
 					faces = append(faces, faceIndices)
 					faceNormals = append(faceNormals, faceNormalIndices)
+					faceUVs = append(faceUVs, faceUVIndices)
 					faceMaterials = append(faceMaterials, currentMaterial)
 				}
 			}
@@ -464,54 +641,110 @@ func parseObjFile(filename string) (*FileObject, error) {
 		return nil, err
 	}
 
+	defaultMaterial := TriangleMaterial{
+		Name:      "default",
+		Roughness: 0.5,
+		Metallic:  0.5,
+		Emission:  0.0,
+		Color:     [3]float32{0.8, 0.8, 0.8},
+	}
+
+	faceNormal := func(faceIdx int, verts [3]Vertex) Vertex {
+		fn := faceNormals[faceIdx]
+		n := len(fn)
+		if n >= 3 && fn[0] >= 0 && fn[0] < len(normals) &&
+			fn[1] >= 0 && fn[1] < len(normals) &&
+			fn[2] >= 0 && fn[2] < len(normals) {
+			return Normalize(Vertex{
+				X: (normals[fn[0]].X + normals[fn[1]].X + normals[fn[2]].X) / 3,
+				Y: (normals[fn[0]].Y + normals[fn[1]].Y + normals[fn[2]].Y) / 3,
+				Z: (normals[fn[0]].Z + normals[fn[1]].Z + normals[fn[2]].Z) / 3,
+			})
+		}
+		return CalculateTriangleNormal(verts[0], verts[1], verts[2])
+	}
+
+	faceUVAt := func(faceIdx, slot int) [2]uint16 {
+		fu := faceUVs[faceIdx]
+		if slot < len(fu) && fu[slot] >= 0 && fu[slot] < len(uvCoords) {
+			uv := uvCoords[fu[slot]]
+			return encodeUV(uv[0], uv[1])
+		}
+		return [2]uint16{}
+	}
+
 	var allTriangles []Triangle
 	triangleIndex := int32(0)
 
 	for faceIdx, face := range faces {
-		var material TriangleMaterial
+		material := defaultMaterial
 		if faceIdx < len(faceMaterials) && faceMaterials[faceIdx] != "" {
 			if mat, exists := materialMap[faceMaterials[faceIdx]]; exists {
 				material = mat
-			} else {
-				material = TriangleMaterial{
-					Name:      "default",
-					Roughness: 0.5,
-					Metallic:  0.5,
-					Emission:  0.5,
-					Color:     [3]float32{0.8, 0.8, 0.8},
-				}
-			}
-		} else {
-			material = TriangleMaterial{
-				Name:      "default",
-				Roughness: 0.5,
-				Metallic:  0.5,
-				Emission:  0.5,
-				Color:     [3]float32{0.8, 0.8, 0.8},
 			}
 		}
 
 		if len(face) == 3 {
-			if face[0] >= 0 && face[0] < len(vertices) &&
-				face[1] >= 0 && face[1] < len(vertices) &&
-				face[2] >= 0 && face[2] < len(vertices) {
+			if face[0] < 0 || face[0] >= len(vertices) ||
+				face[1] < 0 || face[1] >= len(vertices) ||
+				face[2] < 0 || face[2] >= len(vertices) {
+				continue
+			}
+			v1, v2, v3 := vertices[face[0]], vertices[face[1]], vertices[face[2]]
+			triangle := Triangle{
+				Vertex1:   v1,
+				Vertex2:   v2,
+				Vertex3:   v3,
+				Normal:    faceNormal(faceIdx, [3]Vertex{v1, v2, v3}),
+				Roughness: material.Roughness,
+				Metallic:  material.Metallic,
+				Emission:  material.Emission,
+				Color:     material.Color,
+				index:     triangleIndex,
+				UV1:       faceUVAt(faceIdx, 0),
+				UV2:       faceUVAt(faceIdx, 1),
+				UV3:       faceUVAt(faceIdx, 2),
+			}
+			allTriangles = append(allTriangles, triangle)
+			triangleIndex++
+		} else if len(face) > 3 {
+			// Fan triangulation from vertex 0: correct UV mapping for convex polygons.
+			valid := true
+			for _, idx := range face {
+				if idx < 0 || idx >= len(vertices) {
+					valid = false
+					break
+				}
+			}
+			if !valid {
+				continue
+			}
+			fu := faceUVs[faceIdx]
+			fn := faceNormals[faceIdx]
+			for i := 1; i < len(face)-1; i++ {
+				i0, i1, i2 := 0, i, i+1
+				v1, v2, v3 := vertices[face[i0]], vertices[face[i1]], vertices[face[i2]]
 
-				v1, v2, v3 := vertices[face[0]], vertices[face[1]], vertices[face[2]]
-
-				// Use OBJ normals when present — they encode the artist-specified outward direction.
-				// Average the per-vertex normals to get a stable face normal.
 				var normal Vertex
-				fn := faceNormals[faceIdx]
-				if len(fn) == 3 && fn[0] >= 0 && fn[0] < len(normals) &&
-					fn[1] >= 0 && fn[1] < len(normals) &&
-					fn[2] >= 0 && fn[2] < len(normals) {
+				if len(fn) == len(face) &&
+					fn[i0] >= 0 && fn[i0] < len(normals) &&
+					fn[i1] >= 0 && fn[i1] < len(normals) &&
+					fn[i2] >= 0 && fn[i2] < len(normals) {
 					normal = Normalize(Vertex{
-						X: (normals[fn[0]].X + normals[fn[1]].X + normals[fn[2]].X) / 3,
-						Y: (normals[fn[0]].Y + normals[fn[1]].Y + normals[fn[2]].Y) / 3,
-						Z: (normals[fn[0]].Z + normals[fn[1]].Z + normals[fn[2]].Z) / 3,
+						X: (normals[fn[i0]].X + normals[fn[i1]].X + normals[fn[i2]].X) / 3,
+						Y: (normals[fn[i0]].Y + normals[fn[i1]].Y + normals[fn[i2]].Y) / 3,
+						Z: (normals[fn[i0]].Z + normals[fn[i1]].Z + normals[fn[i2]].Z) / 3,
 					})
 				} else {
 					normal = CalculateTriangleNormal(v1, v2, v3)
+				}
+
+				uvAt := func(slot int) [2]uint16 {
+					if slot < len(fu) && fu[slot] >= 0 && fu[slot] < len(uvCoords) {
+						uv := uvCoords[fu[slot]]
+						return encodeUV(uv[0], uv[1])
+					}
+					return [2]uint16{}
 				}
 
 				triangle := Triangle{
@@ -524,38 +757,12 @@ func parseObjFile(filename string) (*FileObject, error) {
 					Emission:  material.Emission,
 					Color:     material.Color,
 					index:     triangleIndex,
+					UV1:       uvAt(i0),
+					UV2:       uvAt(i1),
+					UV3:       uvAt(i2),
 				}
 				allTriangles = append(allTriangles, triangle)
 				triangleIndex++
-			}
-		} else if len(face) > 3 {
-			faceVertices := make([]Vertex, len(face))
-			valid := true
-			for i, idx := range face {
-				if idx >= 0 && idx < len(vertices) {
-					faceVertices[i] = vertices[idx]
-				} else {
-					valid = false
-					break
-				}
-			}
-			if valid {
-				triangles := Triangulate(faceVertices)
-				for _, tri := range triangles {
-					triangle := Triangle{
-						Vertex1:   tri.Vertex1,
-						Vertex2:   tri.Vertex2,
-						Vertex3:   tri.Vertex3,
-						Normal:    tri.Normal,
-						Roughness: material.Roughness,
-						Metallic:  material.Metallic,
-						Emission:  material.Emission,
-						Color:     material.Color,
-						index:     triangleIndex,
-					}
-					allTriangles = append(allTriangles, triangle)
-					triangleIndex++
-				}
 			}
 		}
 	}
@@ -564,10 +771,22 @@ func parseObjFile(filename string) (*FileObject, error) {
 		Triangles: allTriangles,
 	}
 
+	// Load textures from the first material that references texture maps.
+	mtlDir := filepath.Dir(materialPath)
+	for i := range materials {
+		if materials[i].MapKd != "" || materials[i].MapBump != "" ||
+			materials[i].MapNs != "" || materials[i].MapRefl != "" {
+			fmt.Printf("Loading textures from material %q\n", materials[i].Name)
+			fileObj.HasTextures = loadTextures(mtlDir, &materials[i], fileObj)
+			break
+		}
+	}
+
 	fmt.Printf("Loaded %d triangles\n", len(allTriangles))
 	if len(triangleMaterials) > 0 {
 		fmt.Printf("Found %d materials in MTL file\n", len(triangleMaterials))
 	}
+	fmt.Printf("UV coordinates: %d\n", len(uvCoords))
 
 	return fileObj, nil
 }
@@ -591,40 +810,93 @@ func float32ToBytes(value float32) []byte {
 	}
 }
 
+func uint16ToBytes(value uint16) []byte {
+	return []byte{byte(value & 0xFF), byte(value >> 8)}
+}
+
 func writeFile(filename string, obj *FileObject, color *[3]float32) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	w := bufio.NewWriter(file)
+	w := bufio.NewWriterSize(file, 1<<20)
 
-	// float3 in C is {x,y,z,w} — 16 bytes due to w padding.
-	// Layout: 5×float3(16) + roughness(4) + metallic(4) + emission(4) = 92 bytes
-	triangleStructSize := uint32(5*16 + 3*4)
-	fileSize := uint32(8) + uint32(len(obj.Triangles))*triangleStructSize
+	// Binary layout:
+	// Header (16 bytes):
+	//   fileSize          uint32
+	//   triangleStructSize uint32  — 108 bytes
+	//   triangleCount     uint32
+	//   hasTextures       uint32   — 0 or 1
+	//
+	// Texture data (if hasTextures):
+	//   ColorMap     texSize*texSize*4 bytes (RGBA uint8)
+	//   NormalMap    texSize*texSize*3 bytes (RGB uint8)
+	//   MaterialMap  texSize*texSize*2 bytes ([roughness, metallic] uint8)
+	//
+	// Per triangle (108 bytes):
+	//   v1 v2 v3 normal   4 × float3 padded to float4 = 4×16 = 64
+	//   roughness metallic emission                    = 12
+	//   color float3 padded                            = 16
+	//   uv1[2] uv2[2] uv3[2] + 4 byte pad             = 16
+
+	const triangleStructSize = uint32(4*16 + 12 + 16 + 16) // 108
+	triCount := uint32(len(obj.Triangles))
+	hasTextures := uint32(0)
+	if obj.HasTextures {
+		hasTextures = 1
+	}
+
+	textureBytes := uint32(0)
+	if obj.HasTextures {
+		textureBytes = texSize * texSize * (4 + 3 + 1 + 1)
+	}
+	fileSize := uint32(16) + triCount*triangleStructSize + textureBytes
 
 	w.Write(uint32ToBytes(fileSize))
 	w.Write(uint32ToBytes(triangleStructSize))
+	w.Write(uint32ToBytes(triCount))
+	w.Write(uint32ToBytes(hasTextures))
 
-	zero := float32ToBytes(0)
+	if obj.HasTextures {
+		for y := range texSize {
+			for x := range texSize {
+				p := obj.ColorMap[y][x]
+				w.Write([]byte{byte(p), byte(p >> 8), byte(p >> 16), byte(p >> 24)})
+			}
+		}
+		for y := range texSize {
+			for x := range texSize {
+				w.Write(obj.NormalMap[y][x][:])
+			}
+		}
+		for y := range texSize {
+			for x := range texSize {
+				w.Write(obj.MaterialMap[y][x][:])
+			}
+		}
+	}
+
+	zero4 := float32ToBytes(0)
+	zeroPad := []byte{0, 0, 0, 0}
+
 	for _, tri := range obj.Triangles {
 		w.Write(float32ToBytes(tri.Vertex1.X))
 		w.Write(float32ToBytes(tri.Vertex1.Y))
 		w.Write(float32ToBytes(tri.Vertex1.Z))
-		w.Write(zero) // w padding
+		w.Write(zero4)
 		w.Write(float32ToBytes(tri.Vertex2.X))
 		w.Write(float32ToBytes(tri.Vertex2.Y))
 		w.Write(float32ToBytes(tri.Vertex2.Z))
-		w.Write(zero) // w padding
+		w.Write(zero4)
 		w.Write(float32ToBytes(tri.Vertex3.X))
 		w.Write(float32ToBytes(tri.Vertex3.Y))
 		w.Write(float32ToBytes(tri.Vertex3.Z))
-		w.Write(zero) // w padding
+		w.Write(zero4)
 		w.Write(float32ToBytes(tri.Normal.X))
 		w.Write(float32ToBytes(tri.Normal.Y))
 		w.Write(float32ToBytes(tri.Normal.Z))
-		w.Write(zero) // w padding
+		w.Write(zero4)
 		w.Write(float32ToBytes(tri.Roughness))
 		w.Write(float32ToBytes(tri.Metallic))
 		w.Write(float32ToBytes(tri.Emission))
@@ -637,7 +909,14 @@ func writeFile(filename string, obj *FileObject, color *[3]float32) error {
 			w.Write(float32ToBytes(tri.Color[1]))
 			w.Write(float32ToBytes(tri.Color[2]))
 		}
-		w.Write(zero) // w padding for color float3
+		w.Write(zero4) // color padding
+		w.Write(uint16ToBytes(tri.UV1[0]))
+		w.Write(uint16ToBytes(tri.UV1[1]))
+		w.Write(uint16ToBytes(tri.UV2[0]))
+		w.Write(uint16ToBytes(tri.UV2[1]))
+		w.Write(uint16ToBytes(tri.UV3[0]))
+		w.Write(uint16ToBytes(tri.UV3[1]))
+		w.Write(zeroPad) // UV block padding
 	}
 
 	return w.Flush()

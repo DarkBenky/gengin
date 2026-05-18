@@ -127,7 +127,7 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		{verts[0], verts[1], verts[5], {0, -1, 0}},
 		{verts[0], verts[5], verts[4], {0, -1, 0}}};
 
-	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission));
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
 	for (int i = 0; i < triCount; i++) {
 		obj->v1[i] = faces[i].a;
 		obj->v2[i] = faces[i].b;

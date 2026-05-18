@@ -60,3 +60,5 @@ float* buf = clEnqueueMapBuffer(..., pinned, ...);  // near theoretical bandwidt
 main.c should contain the entry point and high-level application logic. Avoid putting low-level details or utility functions here. Instead, organize those into separate modules for better maintainability and readability.
 
 run ```make``` to validate that the code compiles without errors. Do not generate code that fails to compile or has syntax errors.
+
+**Important**: do not change struct fileds or names without explicit instructions or if it is necessary for the implementation. Maintain the existing data structures and naming conventions unless there is a compelling reason to refactor them but always ask for confirmation before making such changes.

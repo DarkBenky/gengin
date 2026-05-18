@@ -18,11 +18,32 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 
 	// read first 32 bytes
-	uint32 fileSize, triangleStructSize;
+	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures;
 	fread(&fileSize, sizeof(uint32), 1, file);
 	fread(&triangleStructSize, sizeof(uint32), 1, file);
+	fread(&triangleCountRead, sizeof(uint32), 1, file);
+	fread(&hasTextures, sizeof(uint32), 1, file);
 
 	uint32 triangleCount = (fileSize - 8) / triangleStructSize;
+	if (triangleCountRead != triangleCount) {
+		fprintf(stderr, "Error: Triangle count mismatch. Header: %u, Calculated: %u\n", triangleCountRead, triangleCount);
+		fclose(file);
+		exit(1); // critical error, cannot continue if counts don't match
+	}
+
+	// load textures if present
+	Textures *tex = NULL;
+	if (hasTextures) {
+		obj->hasTexture = true;
+		tex = Textures_LoadFromFile(file);
+		if (!tex) {
+			fprintf(stderr, "Error: Failed to load textures from file.\n");
+			fclose(file);
+			exit(1);
+		}
+	} else {
+		obj->hasTexture = false;
+	}
 
 	// printf("File size: %u bytes\n", fileSize);
 	// printf("Triangle struct size: %u bytes\n", triangleStructSize);
@@ -33,8 +54,9 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	obj->v3 = (float3 *)malloc(triangleCount * sizeof(float3));
 	obj->normals = (float3 *)malloc(triangleCount * sizeof(float3));
 	obj->materialIds = (int *)malloc(triangleCount * sizeof(int));
+	obj->uvs = (UvCords *)malloc(triangleCount * sizeof(UvCords));
 
-	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds || !obj->uvs) {
 		fprintf(stderr, "Error: Could not allocate memory for triangles.\n");
 		Object_Destroy(obj);
 		fclose(file);
@@ -49,6 +71,7 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		float3 v1, v2, v3;
 		float3 normal, color;
 		float Roughness, Metallic, Emission;
+		uint16 uv1x, uv1y, uv2x, uv2y, uv3x, uv3y;
 
 		fread(&v1, sizeof(float3), 1, file);
 		fread(&v2, sizeof(float3), 1, file);
@@ -64,13 +87,24 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		fread(&Emission, sizeof(float), 1, file);
 		fread(&color, sizeof(float3), 1, file);
 
+		fread(&uv1x, sizeof(uint16), 1, file);
+		fread(&uv1y, sizeof(uint16), 1, file);
+		fread(&uv2x, sizeof(uint16), 1, file);
+		fread(&uv2y, sizeof(uint16), 1, file);
+		fread(&uv3x, sizeof(uint16), 1, file);
+		fread(&uv3y, sizeof(uint16), 1, file);
+
 		obj->v1[i] = v1;
 		obj->v2[i] = v2;
 		obj->v3[i] = v3;
 		obj->normals[i] = normal;
-		obj->materialIds[i] = MaterialLib_FindOrAdd(lib, Material_Make(color, Roughness, Metallic, Emission));
+		obj->uvs[i] = (UvCords){uv1x, uv1y, uv2x, uv2y, uv3x, uv3y};
+		obj->materialIds[i] = MaterialLib_FindOrAdd(lib, Material_Make(color, Roughness, Metallic, Emission, tex));
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;
 	fclose(file);
+	if (tex) {
+		Textures_Destroy(tex);
+	}
 }

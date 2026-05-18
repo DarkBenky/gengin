@@ -64,6 +64,15 @@ typedef struct EmissionMap {
 	float3 emissionMap[EMISSION_RESOLUTION][EMISSION_RESOLUTION]; // precomputed per-face emission for a 32x32 grid of world positions (for direct lighting)
 } EmissionMap;
 
+typedef struct UvCords {
+	uint16 uv1x;
+	uint16 uv1y;
+	uint16 uv2x;
+	uint16 uv2y;
+	uint16 uv3x;
+	uint16 uv3y;
+} UvCords;
+
 typedef struct Object {
 	float3 position;
 	float3 rotation;
@@ -88,9 +97,12 @@ typedef struct Object {
 	float3 *v2;
 	float3 *v3;
 	float3 *normals;
+	UvCords *uvs;
+
 	int *materialIds;
 	int triangleCount;
 
+	bool hasTexture;
 	bool hasEmission; // quick check to skip emission sampling when no faces emit
 	EmissionMap frontFaceEmission;
 	EmissionMap backFaceEmission;
