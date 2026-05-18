@@ -30,6 +30,10 @@ type FileObject struct {
 	FileSize           uint32
 	TriangleStructSize uint32
 	Triangles          []Triangle
+	// TODO: add texture data for color, normal, material maps
+	// ColorMap     [4096][4096]uint32 // 16MB
+    // NormalMap    [4096][4096][3]uint8 // 12MB
+    // MaterialMap  [4096][4096][2]uint8 // 8MB
 }
 
 func cross(a, b, c Vertex) float32 {
