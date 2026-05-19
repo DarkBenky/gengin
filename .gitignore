@@ -8,8 +8,7 @@ main
 main_bench
 
 # large binary assets
-assets/models/cloud.bin
-assets/models/map.bin
+assets/models/*.bin
 assets/models/map.obj
 assets/chars/*.bin
 

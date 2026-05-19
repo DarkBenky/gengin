@@ -481,6 +481,40 @@ static inline uvMap calculateUvCoordinates(const float3 hitPos, float3 v0, float
 	return (uvMap){uvX, uvY};
 }
 
+typedef struct uvCoordinates {
+	uint16 x;
+	uint16 y;
+} uvCoordinates;
+
+// Calculate x and y for sampling a texture for given hit point and triangle
+static inline uvCoordinates calculateUvCoordinatesForTriangle(const float3 hitPos, const float3 v0, const float3 v1, const float3 v2, const UvCords uvCords) {
+	float3 edge1 = Float3_Sub(v1, v0);
+	float3 edge2 = Float3_Sub(v2, v0);
+	float3 hitVec = Float3_Sub(hitPos, v0);
+
+	float d00 = Float3_Dot(edge1, edge1);
+	float d01 = Float3_Dot(edge1, edge2);
+	float d11 = Float3_Dot(edge2, edge2);
+	float d20 = Float3_Dot(hitVec, edge1);
+	float d21 = Float3_Dot(hitVec, edge2);
+
+	float denom = d00 * d11 - d01 * d01;
+	if (fabsf(denom) < 1e-6f) return (uvCoordinates){0, 0};
+
+	float invDenom = 1.0f / denom;
+	float bv = (d11 * d20 - d01 * d21) * invDenom;
+	float bw = (d00 * d21 - d01 * d20) * invDenom;
+	float bu = 1.0f - bv - bw;
+
+	// interpolate stored [0..65535] UV coords, then map to [0..TEXTURE_SIZE-1]
+	float u = bu * uvCords.uv1x + bv * uvCords.uv2x + bw * uvCords.uv3x;
+	float v = bu * uvCords.uv1y + bv * uvCords.uv2y + bw * uvCords.uv3y;
+	return (uvCoordinates){
+		(uint16)(u * (TEXTURE_SIZE - 1) / 65535.0f),
+		(uint16)(v * (TEXTURE_SIZE - 1) / 65535.0f),
+	};
+}
+
 static void RayTraceRowFunc(void *arg) {
 	RayTraceTask *task = arg;
 	int row = task->row;
@@ -586,6 +620,21 @@ static void RayTraceRowFunc(void *arg) {
 
 		const Object *obj = &objects[bestObj];
 
+		float3 v0, v1, v2;
+		v0 = obj->v1[bestTri];
+		v1 = obj->v2[bestTri];
+		v2 = obj->v3[bestTri];
+
+		// check if object has textures
+		uvCoordinates xyCordsTexture = {0, 0};
+		bool hasTexture = obj->hasTexture;
+
+		if (hasTexture) {
+			// barycentric needs local-space coords — transform world hit back to local
+			float3 localHit = InverseTransformPointTRS(bestHitPos, obj->position, obj->rotation, obj->scale);
+			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, obj->uvs[bestTri]);
+		}
+
 		float3 ln = obj->normals[bestTri];
 		float3 n = {
 			obj->_fwdRot0.x * ln.x + obj->_fwdRot0.y * ln.y + obj->_fwdRot0.z * ln.z,
@@ -603,6 +652,13 @@ static void RayTraceRowFunc(void *arg) {
 		float emission = 0.0f;
 		float roughness = 0.8f;
 		float metallic = 0.0f;
+
+		// texture data
+		float3 normalFromTexture_Float3 = {0.0f, 0.0f, 0.0f};
+		float3 colorFromTexture_Float3 = {0.0f, 0.0f, 0.0f};
+		float roughnessFromTexture_Float = 0.0f;
+		float metallicFromTexture_Float = 0.0f;
+
 		if (lib && obj->materialIds) {
 			int matId = obj->materialIds[bestTri];
 			if (matId >= 0 && matId < lib->count) {
@@ -610,6 +666,89 @@ static void RayTraceRowFunc(void *arg) {
 				// emission = lib->entries[matId].emission;
 				emission = lib->entries[matId].emission * 0.01f; // scale down emission to prevent it from dominating the lighting
 				metallic = lib->entries[matId].metallic;
+
+				if (hasTexture && lib->entries[matId].textures) {
+					Color colorFromTexture = lib->entries[matId].textures->colorMap[xyCordsTexture.y][xyCordsTexture.x];
+					Color normalFromTexture = lib->entries[matId].textures->normalMap[xyCordsTexture.y][xyCordsTexture.x];
+					uint16 roughnessAndMetallicFromTexture = lib->entries[matId].textures->MaterialMap[xyCordsTexture.y][xyCordsTexture.x];
+
+					// Texture maps are stored R=bits[0..7], G=bits[8..15], B=bits[16..23]
+					// UnpackColor reads R from bits[16..23], so channels would be swapped — extract directly.
+					colorFromTexture_Float3 = (float3){
+						(colorFromTexture & 0xFF) / 255.0f,
+						((colorFromTexture >> 8) & 0xFF) / 255.0f,
+						((colorFromTexture >> 16) & 0xFF) / 255.0f,
+					};
+					normalFromTexture_Float3 = (float3){
+						(normalFromTexture & 0xFF) / 255.0f,
+						((normalFromTexture >> 8) & 0xFF) / 255.0f,
+						((normalFromTexture >> 16) & 0xFF) / 255.0f,
+					};
+
+					colorFromTexture_Float3 = Float3_Scale(colorFromTexture_Float3, 1.5f); // boost texture color a bit to make it more visible
+
+					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
+					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;
+					// roughnessFromTexture_Float = 1.0f - roughnessFromTexture / 255.0f;
+					// metallicFromTexture_Float = 1.0f - metallicFromTexture / 255.0f;
+					// for testing make it rough and non-metallic when texture is present to better see the effect of the texture maps
+					roughnessFromTexture_Float = 0.99f;
+					metallicFromTexture_Float = 0.99f;
+				}
+			}
+		}
+
+		if (hasTexture) {
+			color = colorFromTexture_Float3;
+			roughness = roughnessFromTexture_Float;
+			metallic = metallicFromTexture_Float;
+
+			// decode tangent-space normal from [0,1] -> [-1,1]
+			// negate Y: Go flips V (vc = 1-v), which negates dV and thus B, inverting normal.y
+			float3 nTex = {
+				normalFromTexture_Float3.x * 2.0f - 1.0f,
+				-(normalFromTexture_Float3.y * 2.0f - 1.0f),
+				normalFromTexture_Float3.z * 2.0f - 1.0f,
+			};
+			float nTexLen = Float3_Length(nTex);
+			if (nTexLen > 1e-3f) {
+				UvCords uvCords = obj->uvs[bestTri];
+				float dU1 = ((int)uvCords.uv2x - (int)uvCords.uv1x) / 65535.0f;
+				float dV1 = ((int)uvCords.uv2y - (int)uvCords.uv1y) / 65535.0f;
+				float dU2 = ((int)uvCords.uv3x - (int)uvCords.uv1x) / 65535.0f;
+				float dV2 = ((int)uvCords.uv3y - (int)uvCords.uv1y) / 65535.0f;
+				float3 edge1 = Float3_Sub(v1, v0);
+				float3 edge2 = Float3_Sub(v2, v0);
+				float det = dU1 * dV2 - dU2 * dV1;
+				float3 T, B;
+				if (fabsf(det) > 1e-6f) {
+					float inv = 1.0f / det;
+					float3 tRaw = {
+						(dV2 * edge1.x - dV1 * edge2.x) * inv,
+						(dV2 * edge1.y - dV1 * edge2.y) * inv,
+						(dV2 * edge1.z - dV1 * edge2.z) * inv,
+					};
+					// rotate tangent to world space, same transform as normals
+					float3 tWorld = {
+						obj->_fwdRot0.x * tRaw.x + obj->_fwdRot0.y * tRaw.y + obj->_fwdRot0.z * tRaw.z,
+						obj->_fwdRot1.x * tRaw.x + obj->_fwdRot1.y * tRaw.y + obj->_fwdRot1.z * tRaw.z,
+						obj->_fwdRot2.x * tRaw.x + obj->_fwdRot2.y * tRaw.y + obj->_fwdRot2.z * tRaw.z,
+					};
+					// Gram-Schmidt orthogonalize against geometric normal
+					T = Float3_Normalize(Float3_Sub(tWorld, Float3_Scale(n, Float3_Dot(tWorld, n))));
+					B = Float3_Cross(n, T);
+				} else {
+					// degenerate UVs — build arbitrary frame from n
+					float3 up = fabsf(n.y) < 0.9f ? (float3){0.0f, 1.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f};
+					T = Float3_Normalize(Float3_Cross(up, n));
+					B = Float3_Cross(n, T);
+				}
+				float3 nTexN = Float3_Scale(nTex, 1.0f / nTexLen);
+				n = Float3_Normalize((float3){
+					T.x * nTexN.x + B.x * nTexN.y + n.x * nTexN.z,
+					T.y * nTexN.x + B.y * nTexN.y + n.y * nTexN.z,
+					T.z * nTexN.x + B.z * nTexN.y + n.z * nTexN.z,
+				});
 			}
 		}
 
@@ -647,7 +786,7 @@ static void RayTraceRowFunc(void *arg) {
 		float NdotV = fmaxf(0.0f, -(n.x * dx + n.y * dy + n.z * dz));
 		float invNdotV = 1.0f - NdotV;
 		float inv2 = invNdotV * invNdotV;
-		float fresnelT = inv2 * inv2 * invNdotV; 
+		float fresnelT = inv2 * inv2 * invNdotV;
 		float f0 = 0.04f + 0.96f * metallic;
 		float fresnel = f0 + (1.0f - f0) * fresnelT;
 		// emissive surfaces suppress sky reflection their glow dominates
@@ -680,7 +819,7 @@ static void RayTraceRowFunc(void *arg) {
 		// w = (1-roughness) for SSR reflectivity gating
 		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, (1.0f - roughness)};
 		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
-		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, obj->v1[bestTri], obj->v2[bestTri], obj->v3[bestTri]);
+		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, v0, v1, v2);
 		camera->triangleIdBuffer[idx] = bestTri;
 
 		// ray traced reflection only cast every REFLECTION_RESOLUTION columns
@@ -720,7 +859,7 @@ static void RayTraceRowFunc(void *arg) {
 				float3 toEmissive = Float3_Sub(targetPos, bestHitPos);
 				// NdotL: only surfaces facing the emitter receive light
 				float3 toEmissiveN = Float3_Normalize(toEmissive);
-				float NdotL = n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z;
+				float NdotL = fabsf(n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z);
 				if (NdotL <= 0.0f) continue;
 				float3 em = SampleEmission(objects, objectCount, bestHitPos, toEmissive, topEmissiveIndices[t], lib);
 				float falloff = NdotL / (topEmissiveDistances[t] * topEmissiveDistances[t] + 1e-6f);
@@ -798,8 +937,8 @@ static void RayTraceRowFunc(void *arg) {
 			ownEmission.z + accumulatedEmission.z,
 		};
 
-		// camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
-		camera->framebuffer[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
+		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+		// camera->framebuffer[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
 		// camera->framebuffer[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
 		// camera->framebuffer[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
 		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z));

@@ -154,7 +154,7 @@ int main() {
 	idRegister_Add(&objectRegistry, f16Id, f16SceneIndex);
 	plane->position = (float3){0.0f, 10.0f, 20.0f};
 	plane->rotation = (float3){0.0f, 0.0f, 0.0f};
-	plane->scale = (float3){2.0f, 2.0f, 2.0f};
+	plane->scale = (float3){1.0f, 1.0f, 1.0f};
 	CreateObjectBVH(plane, &plane->bvh);
 	Object_UpdateWorldBounds(plane);
 
@@ -251,7 +251,7 @@ int main() {
 		plane->position = Float3_Add(
 			Float3_Add(camera.position, Float3_Scale(fwd, 10.0f)),
 			Float3_Scale(Float3_Normalize(camera.up), -2.5f));
-		plane->rotation = (float3){asinf(-fwd.y), atan2f(fwd.x, fwd.z), 0.0f};
+		plane->rotation = (float3){0.0f, atan2f(fwd.x, fwd.z) + (float)(M_PI * 1.5), 0.0f};
 		Object_UpdateWorldBounds(plane);
 
 		// SimObjToRenderObj(&simPlane, plane, &camera, &input, window);

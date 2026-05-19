@@ -91,6 +91,8 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
 	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
 
 	const int triCount = 12;

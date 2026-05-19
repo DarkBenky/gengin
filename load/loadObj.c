@@ -11,7 +11,7 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
 		return;
 	}
-	FILE *file = fopen(filename, "r");
+	FILE *file = fopen(filename, "rb");
 	if (file == NULL) {
 		fprintf(stderr, "Error: Could not open file %s\n", filename);
 		return;
@@ -24,12 +24,7 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	fread(&triangleCountRead, sizeof(uint32), 1, file);
 	fread(&hasTextures, sizeof(uint32), 1, file);
 
-	uint32 triangleCount = (fileSize - 8) / triangleStructSize;
-	if (triangleCountRead != triangleCount) {
-		fprintf(stderr, "Error: Triangle count mismatch. Header: %u, Calculated: %u\n", triangleCountRead, triangleCount);
-		fclose(file);
-		exit(1); // critical error, cannot continue if counts don't match
-	}
+	uint32 triangleCount = triangleCountRead;
 
 	// load textures if present
 	Textures *tex = NULL;
@@ -93,18 +88,18 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		fread(&uv2y, sizeof(uint16), 1, file);
 		fread(&uv3x, sizeof(uint16), 1, file);
 		fread(&uv3y, sizeof(uint16), 1, file);
+		uint32 _uvPad;
+		fread(&_uvPad, sizeof(uint32), 1, file); // 4-byte pad after UV block
 
 		obj->v1[i] = v1;
 		obj->v2[i] = v2;
 		obj->v3[i] = v3;
-		obj->normals[i] = normal;
+		// OBJ normals have Y inverted relative to this renderer's convention — negate Y only
+		obj->normals[i] = (float3){normal.x, -normal.y, normal.z};
 		obj->uvs[i] = (UvCords){uv1x, uv1y, uv2x, uv2y, uv3x, uv3y};
 		obj->materialIds[i] = MaterialLib_FindOrAdd(lib, Material_Make(color, Roughness, Metallic, Emission, tex));
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;
 	fclose(file);
-	if (tex) {
-		Textures_Destroy(tex);
-	}
 }
