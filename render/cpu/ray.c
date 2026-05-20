@@ -556,12 +556,14 @@ static void RayTraceRowFunc(void *arg) {
 	memset(catchShadow, 0, sizeof(float3) * width);
 	float3 catchShadowValue = {0.0f, 0.0f, 0.0f};
 
-	int emissiveObjectIndices[32];
+	const int numberOfLightSamples = 8;
+
+	int emissiveObjectIndices[numberOfLightSamples];
 	int emissiveObjectCount = 0;
 
 	for (int i = 0; i < objectCount; i++) {
 		if (objects[i].hasEmission) {
-			if (emissiveObjectCount < 32) {
+			if (emissiveObjectCount < numberOfLightSamples) {
 				emissiveObjectIndices[emissiveObjectCount++] = i;
 			} else {
 				break;
@@ -685,15 +687,17 @@ static void RayTraceRowFunc(void *arg) {
 						((normalFromTexture >> 16) & 0xFF) / 255.0f,
 					};
 
-					colorFromTexture_Float3 = Float3_Scale(colorFromTexture_Float3, 1.5f); // boost texture color a bit to make it more visible
+					colorFromTexture_Float3 = Float3_Scale(colorFromTexture_Float3, 1.25f); // boost texture color a bit to make it more visible
 
 					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
 					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;
-					// roughnessFromTexture_Float = 1.0f - roughnessFromTexture / 255.0f;
-					// metallicFromTexture_Float = 1.0f - metallicFromTexture / 255.0f;
+					roughnessFromTexture_Float = 1.0f - roughnessFromTexture / 255.0f;
+					metallicFromTexture_Float = 1.0f - metallicFromTexture / 255.0f;
+					// roughnessFromTexture_Float = roughnessFromTexture / 255.0f;
+					// metallicFromTexture_Float = metallicFromTexture / 255.0f;
 					// for testing make it rough and non-metallic when texture is present to better see the effect of the texture maps
-					roughnessFromTexture_Float = 0.99f;
-					metallicFromTexture_Float = 0.99f;
+					// roughnessFromTexture_Float = 0.99f;
+					// metallicFromTexture_Float = 0.99f;
 				}
 			}
 		}
@@ -743,7 +747,7 @@ static void RayTraceRowFunc(void *arg) {
 					T = Float3_Normalize(Float3_Cross(up, n));
 					B = Float3_Cross(n, T);
 				}
-				float3 nTexN = Float3_Scale(nTex, 1.0f / nTexLen);
+				float3 nTexN = Float3_Normalize((float3){nTex.x * 5.0f / nTexLen, nTex.y * 5.0f / nTexLen, nTex.z / nTexLen});
 				n = Float3_Normalize((float3){
 					T.x * nTexN.x + B.x * nTexN.y + n.x * nTexN.z,
 					T.y * nTexN.x + B.y * nTexN.y + n.y * nTexN.z,
@@ -765,7 +769,9 @@ static void RayTraceRowFunc(void *arg) {
 		float NdotH = fmaxf(0.0f, (n.x * hx + n.y * hy + n.z * hz) * hlen);
 		float spec2 = NdotH * NdotH;
 		float spec4 = spec2 * spec2;
-		float glossiness = (1.0f - roughness) + metallic * 0.6f; // metals stay glossy regardless of roughness
+		float roughInv = 1.0f - roughness;
+		float roughInv2 = roughInv * roughInv;
+		float glossiness = roughInv2 + metallic * 0.5f; // metals stay glossy regardless of roughness
 		float specularBase = (diffuse > 0.0f) ? (spec4 * spec4 * glossiness * 0.6f) : 0.0f;
 		// dielectrics: white specular; metals: albedo-tinted specular
 		float specR = specularBase * (1.0f - metallic) + specularBase * metallic * color.x;
@@ -789,8 +795,10 @@ static void RayTraceRowFunc(void *arg) {
 		float fresnelT = inv2 * inv2 * invNdotV;
 		float f0 = 0.04f + 0.96f * metallic;
 		float fresnel = f0 + (1.0f - f0) * fresnelT;
-		// emissive surfaces suppress sky reflection their glow dominates
-		float reflectStrength = fresnel * (1.0f - fminf(emission, 1.0f));
+		// rough surfaces suppress reflections — fresnel alone drives too much gloss on matte materials
+		// scale down sky blend so geometry reflections can dominate
+		float roughnessDamp = roughInv * 0.4f;
+		float reflectStrength = fresnel * roughnessDamp * (1.0f - fminf(emission, 1.0f));
 
 		// perfect specular reflect dir roughness already baked into reflectStrength
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
@@ -816,8 +824,9 @@ static void RayTraceRowFunc(void *arg) {
 		// View-Z depth (dot with forward) keeps SSR depth comparisons consistent
 		camera->depthBuffer[idx] = (bestHitPos.x - orig.x) * fwd.x + (bestHitPos.y - orig.y) * fwd.y + (bestHitPos.z - orig.z) * fwd.z;
 		camera->objectIdBuffer[idx] = bestObj;
-		// w = (1-roughness) for SSR reflectivity gating
-		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, (1.0f - roughness)};
+		// w = geometry reflection strength — use roughGloss^2 so it stays stronger than sky blend
+		float roughGloss = 1.0f - roughness;
+		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, roughGloss * roughGloss};
 		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
 		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, v0, v1, v2);
 		camera->triangleIdBuffer[idx] = bestTri;
@@ -925,7 +934,7 @@ static void RayTraceRowFunc(void *arg) {
 		}
 		Color baseColor = camera->framebuffer[row * width + x];
 		float3 base = UnpackColor(baseColor);
-		float shadowMod = 0.12f + 0.88f * fminf(accumulatedShadow.x, 1.0f);
+		float shadowMod = 0.28f + 0.88f * fminf(accumulatedShadow.x, 1.0f);
 		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
 								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
 								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w);
