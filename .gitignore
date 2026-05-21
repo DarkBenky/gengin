@@ -7,6 +7,9 @@ bench_results.json
 main
 main_bench
 
+# llmOpt cloned workspace
+llmOpt/gengin
+
 # large binary assets
 assets/models/*.bin
 assets/models/map.obj

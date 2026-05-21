@@ -151,13 +151,13 @@ void postObjects(const Client *c, const RequestData *request) {
 
 	ClientResponse res = clientPost(c, payload, payloadSize);
 	free(payload);
-	printf("[client] POST response (%u bytes): %s\n", res.size, res.data ? res.data : "(empty)");
+	// printf("[client] POST response (%u bytes): %s\n", res.size, res.data ? res.data : "(empty)");
 	clientFreeResponse(&res);
 }
 
 void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegister *reg) {
 	ClientResponse res = clientGet(c, "get objects", strlen("get objects") + 1);
-	printf("[client] GET response (%u bytes)\n", res.size);
+	// printf("[client] GET response (%u bytes)\n", res.size);
 	if (!res.data || res.size < sizeof(uint32)) {
 		clientFreeResponse(&res);
 		return;
@@ -170,12 +170,12 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 
 	for (uint32 i = 0; i < numObjects; i++) {
 		requestObject *obj = (requestObject *)(res.data + sizeof(uint32) + i * sizeof(requestObject));
-		printf("Received object from server: Id=%u, Position=(%.2f, %.2f, %.2f), Rotation=(%.2f, %.2f, %.2f), Scale=(%.2f, %.2f, %.2f), ModelName=%s\n",
-			   obj->Id,
-			   obj->Position.x, obj->Position.y, obj->Position.z,
-			   obj->Rotation.x, obj->Rotation.y, obj->Rotation.z,
-			   obj->Scale.x, obj->Scale.y, obj->Scale.z,
-			   modelTypeToString(idModel(obj->Id)));
+		// printf("Received object from server: Id=%u, Position=(%.2f, %.2f, %.2f), Rotation=(%.2f, %.2f, %.2f), Scale=(%.2f, %.2f, %.2f), ModelName=%s\n",
+		// 	   obj->Id,
+		// 	   obj->Position.x, obj->Position.y, obj->Position.z,
+		// 	   obj->Rotation.x, obj->Rotation.y, obj->Rotation.z,
+		// 	   obj->Scale.x, obj->Scale.y, obj->Scale.z,
+		// 	   modelTypeToString(idModel(obj->Id)));
 
 		if (idRegister_Contains(reg, obj->Id)) {
 			// update existing object transform — safe: indices never invalidate

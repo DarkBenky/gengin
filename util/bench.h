@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 
 #ifndef BENCH_DURATION
@@ -9,7 +10,7 @@
 #endif
 
 #ifndef BENCH_HASH_FRAMES
-#define BENCH_HASH_FRAMES 5
+#define BENCH_HASH_FRAMES 10
 #endif
 
 #define BENCH_MAX_FRAMES 100000
@@ -20,6 +21,9 @@ typedef struct {
 	struct timespec start;
 	struct timespec frameStart;
 	uint32_t frameHashes[BENCH_HASH_FRAMES];
+	uint8_t *framePixels[BENCH_HASH_FRAMES];
+	int frameWidth;
+	int frameHeight;
 	int hashCount;
 } Bench;
 
@@ -45,16 +49,50 @@ static inline double benchDiff(struct timespec a, struct timespec b) {
 	return (double)(b.tv_sec - a.tv_sec) + (double)(b.tv_nsec - a.tv_nsec) * 1e-9;
 }
 
+static const char benchBase64Table[] =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static inline char *benchBase64Encode(const uint8_t *data, int len) {
+	int outLen = ((len + 2) / 3) * 4;
+	char *out = malloc(outLen + 1);
+	if (!out) return NULL;
+	int i = 0, j = 0;
+	while (i < len) {
+		uint32_t t = ((uint32_t)data[i] << 16)
+		           | (i+1 < len ? (uint32_t)data[i+1] << 8 : 0)
+		           | (i+2 < len ? (uint32_t)data[i+2]      : 0);
+		out[j++] = benchBase64Table[(t >> 18) & 0x3F];
+		out[j++] = benchBase64Table[(t >> 12) & 0x3F];
+		out[j++] = (i+1 < len) ? benchBase64Table[(t >> 6) & 0x3F] : '=';
+		out[j++] = (i+2 < len) ? benchBase64Table[t        & 0x3F] : '=';
+		i += 3;
+	}
+	out[j] = '\0';
+	return out;
+}
+
 static inline void benchInit(Bench *b) {
 	b->times = malloc(sizeof(double) * BENCH_MAX_FRAMES);
 	b->count = 0;
 	b->hashCount = 0;
+	b->frameWidth = 0;
+	b->frameHeight = 0;
+	for (int i = 0; i < BENCH_HASH_FRAMES; i++)
+		b->framePixels[i] = NULL;
 	clock_gettime(CLOCK_MONOTONIC, &b->start);
 }
 
-static inline void benchCaptureFrame(Bench *b, const uint32_t *pixels, int pixelCount) {
-	if (b->hashCount < BENCH_HASH_FRAMES)
-		b->frameHashes[b->hashCount++] = benchFnv1a(pixels, pixelCount);
+static inline void benchCaptureFrame(Bench *b, const uint32_t *pixels, int width, int height) {
+	if (b->hashCount >= BENCH_HASH_FRAMES) return;
+	int pixelCount = width * height;
+	b->frameWidth = width;
+	b->frameHeight = height;
+	b->frameHashes[b->hashCount] = benchFnv1a(pixels, pixelCount);
+	int bytes = pixelCount * 4;
+	b->framePixels[b->hashCount] = malloc(bytes);
+	if (b->framePixels[b->hashCount])
+		memcpy(b->framePixels[b->hashCount], pixels, bytes);
+	b->hashCount++;
 }
 
 static inline void benchFrameStart(Bench *b) {
@@ -94,10 +132,28 @@ static inline void benchReport(Bench *b) {
 		fprintf(f, "  \"avg_ms\": %.3f,\n", avg);
 		fprintf(f, "  \"median_ms\": %.3f,\n", median);
 		fprintf(f, "  \"p99_ms\": %.3f,\n", p99);
+		fprintf(f, "  \"frame_width\": %d,\n", b->frameWidth);
+		fprintf(f, "  \"frame_height\": %d,\n", b->frameHeight);
 		fprintf(f, "  \"frame_hashes\": [");
 		for (int i = 0; i < b->hashCount; i++) {
 			if (i > 0) fprintf(f, ", ");
 			fprintf(f, "\"0x%08x\"", b->frameHashes[i]);
+		}
+		fprintf(f, "],\n");
+		fprintf(f, "  \"frame_images\": [");
+		for (int i = 0; i < b->hashCount; i++) {
+			if (i > 0) fprintf(f, ", ");
+			if (b->framePixels[i]) {
+				char *b64 = benchBase64Encode(b->framePixels[i], b->frameWidth * b->frameHeight * 4);
+				if (b64) {
+					fprintf(f, "\"%s\"", b64);
+					free(b64);
+				} else {
+					fprintf(f, "null");
+				}
+			} else {
+				fprintf(f, "null");
+			}
 		}
 		fprintf(f, "]\n");
 		fprintf(f, "}\n");
@@ -109,6 +165,10 @@ static inline void benchReport(Bench *b) {
 static inline void benchFree(Bench *b) {
 	free(b->times);
 	b->times = NULL;
+	for (int i = 0; i < BENCH_HASH_FRAMES; i++) {
+		free(b->framePixels[i]);
+		b->framePixels[i] = NULL;
+	}
 }
 
 #else
@@ -116,10 +176,11 @@ static inline void benchFree(Bench *b) {
 static inline void benchInit(Bench *b) {
 	(void)b;
 }
-static inline void benchCaptureFrame(Bench *b, const uint32_t *pixels, int pixelCount) {
+static inline void benchCaptureFrame(Bench *b, const uint32_t *pixels, int width, int height) {
 	(void)b;
 	(void)pixels;
-	(void)pixelCount;
+	(void)width;
+	(void)height;
 }
 static inline void benchFrameStart(Bench *b) {
 	(void)b;

@@ -162,9 +162,9 @@ int main() {
 	// Start at 220 m/s (within trim envelope) at 1000 m altitude, half throttle.
 	// 100 m/s (previous value) is below the ~193 m/s stall speed at sea level.
 	loadPlaneBin(&simPlane, "./simulation/simModels/F-16C.bin",
-	             (float3){0.0f, 0.0f, 1.0f},  // forward direction
-	             (float3){0.0f, 1000.0f, 20.0f}, // position (x, altitude, z)
-	             220.0f, 0.5f);                // speed m/s, throttle 0-1
+				 (float3){0.0f, 0.0f, 1.0f},	 // forward direction
+				 (float3){0.0f, 1000.0f, 20.0f}, // position (x, altitude, z)
+				 220.0f, 0.5f);					 // speed m/s, throttle 0-1
 
 	addFromRegistry(&request, &objectRegistry, &scene, f16Id);
 	postObjects(&c, &request);
@@ -303,7 +303,7 @@ int main() {
 		WNOW(wB);
 		accumSSRTime += WDIFF(wA, wB);
 
-		benchCaptureFrame(&bench, camera.framebuffer, WIDTH * HEIGHT);
+		benchCaptureFrame(&bench, camera.framebuffer, WIDTH, HEIGHT);
 
 		WNOW(wA);
 		CloudRenderer_Composite(&cloudRenderer, &camera);

@@ -2,6 +2,15 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Python: main.py (conda base)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/llmOpt/main.py",
+      "python": "/home/user/anaconda3/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/llmOpt"
+    },
+    {
       "name": "C/C++ Runner: Debug Session",
       "type": "cppdbg",
       "request": "launch",
