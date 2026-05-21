@@ -13,16 +13,27 @@ GENGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gengin")
 
 _SKIP = {
     'if', 'for', 'while', 'switch', 'do', 'else', 'return',
-    'sizeof', 'typeof', '__typeof__', 'alignof', 'offsetof',
+    'sizeof', 'typeof', '__typeof__', 'alignof', 'offsetof', '__attribute__',
 }
 
 _FUNC_RE = re.compile(
-    r'^((?:(?:static|inline|extern|const|unsigned|signed|void|struct)\s+)*'
+    r'^((?:(?:static|inline|extern|const|unsigned|signed|void|struct|__kernel|__attribute__)\s+)*'
     r'[\w\s\*]+?)\s+(\w+)\s*\(([^;{]*?)\)\s*\{',
     re.MULTILINE,
 )
 
 _STRUCT_RE = re.compile(r'(typedef\s+)?struct\s+(\w*)\s*\{', re.MULTILINE)
+
+_sources = None
+_functions = None
+_structs = None
+
+
+def init(base_dir=None):
+    global _sources, _functions, _structs
+    _sources = _read_sources(base_dir or GENGIN)
+    _functions = find_functions(_sources)
+    _structs = find_structs(_sources)
 
 
 # --- Source parsing (private) ---
@@ -31,7 +42,7 @@ def _read_sources(base_dir):
     sources = {}
     for root, dirs, files in os.walk(base_dir):
         for f in files:
-            if f.endswith(('.c', '.h')):
+            if f.endswith(('.c', '.h', '.cl')):
                 path = os.path.join(root, f)
                 with open(path, errors='replace') as fh:
                     sources[path] = fh.read()
@@ -113,7 +124,9 @@ def find_structs(sources):
 
 # --- Public API ---
 
-def showContext(target_func, functions, structs, depth=1, returnString=False):
+def showContext(target_func, functions=None, structs=None, depth=1, returnString=False, context=None):
+    functions = functions if functions is not None else _functions
+    structs = structs if structs is not None else _structs
     if target_func not in functions:
         print(f"Function '{target_func}' not found in codebase.")
         return None
@@ -158,18 +171,16 @@ def showContext(target_func, functions, structs, depth=1, returnString=False):
             lines.append(tdata['full'])
 
     output = '\n'.join(lines)
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "showContext",
-        "input": {"func": target_func, "depth": depth},
-        "output": output,
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "showContext", "input": {"func": target_func, "depth": depth}, "output": output})
     if returnString:
         return output
     print(output)
 
 
-def getDefinition(name, functions, structs, returnString=False):
+def getDefinition(name, functions=None, structs=None, returnString=False, context=None):
+    functions = functions if functions is not None else _functions
+    structs = structs if structs is not None else _structs
     lines = []
     if name in functions:
         fdata = functions[name]
@@ -181,18 +192,15 @@ def getDefinition(name, functions, structs, returnString=False):
         lines.append(sdata['full'])
 
     output = '\n'.join(lines) if lines else f"'{name}' not found in functions or structs."
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "getDefinition",
-        "input": name,
-        "output": output,
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "getDefinition", "input": name, "output": output})
     if returnString:
         return output
     print(output)
 
 
-def getCallers(target_func, functions, returnString=False):
+def getCallers(target_func, functions=None, returnString=False, context=None):
+    functions = functions if functions is not None else _functions
     callers = {
         name: data for name, data in functions.items()
         if target_func in _called_functions(data['body'])
@@ -205,53 +213,42 @@ def getCallers(target_func, functions, returnString=False):
         lines.append("//   (none found)")
 
     output = '\n'.join(lines)
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "getCallers",
-        "input": target_func,
-        "output": output,
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "getCallers", "input": target_func, "output": output})
     if returnString:
         return output
     print(output)
 
 
-def getDiff(returnString=False):
+def getDiff(returnString=False, context=None):
     result = subprocess.run(
         ['git', 'diff', 'HEAD'],
         cwd=GENGIN, capture_output=True, text=True,
     )
     output = result.stdout or "(no changes)"
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "getDiff",
-        "input": None,
-        "output": output,
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "getDiff", "input": None, "output": output})
     if returnString:
         return output
     print(output)
 
 
-def readSourceFile(rel_path, returnString=False):
+def readSourceFile(rel_path, returnString=False, context=None):
     filepath = os.path.join(GENGIN, rel_path)
     try:
         with open(filepath, errors='replace') as fh:
             output = fh.read()
     except FileNotFoundError:
         output = f"File not found: {rel_path}"
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "readSourceFile",
-        "input": rel_path,
-        "output": output,
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "readSourceFile", "input": rel_path, "output": output})
     if returnString:
         return output
     print(output)
 
 
-def listFunctions(functions, returnString=False):
+def listFunctions(functions=None, returnString=False, context=None):
+    functions = functions if functions is not None else _functions
     entries = sorted(
         [{'name': name, 'file': data['file'], 'sig': data['sig']}
          for name, data in functions.items()],
@@ -259,29 +256,27 @@ def listFunctions(functions, returnString=False):
     )
     lines = [f"{e['file']:<45}  {e['name']}" for e in entries]
     output = '\n'.join(lines)
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "listFunctions",
-        "input": None,
-        "output": output,
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "listFunctions", "input": None, "output": output})
     if returnString:
         return output
     print(output)
     return entries
 
 
-def applyChange(func_name, new_definition, functions, sources):
+def applyChange(func_name, new_definition, functions=None, sources=None, context=None):
+    functions = functions if functions is not None else _functions
+    sources = sources if sources is not None else _sources
     if func_name not in functions:
-        CONTEXT.append({"type": "tool_use", "tool": "applyChange",
-                        "input": func_name, "output": f"failed: '{func_name}' not found"})
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "applyChange", "input": func_name, "output": f"failed: '{func_name}' not found"})
         return False
 
     info = functions[func_name]
     filepath = next((p for p in sources if os.path.relpath(p, GENGIN) == info['file']), None)
     if filepath is None:
-        CONTEXT.append({"type": "tool_use", "tool": "applyChange",
-                        "input": func_name, "output": f"failed: source file not found"})
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "applyChange", "input": func_name, "output": "failed: source file not found"})
         return False
 
     original_text = sources[filepath]
@@ -293,8 +288,8 @@ def applyChange(func_name, new_definition, functions, sources):
     )
     match = func_start_re.search(original_text)
     if match is None:
-        CONTEXT.append({"type": "tool_use", "tool": "applyChange",
-                        "input": func_name, "output": f"failed: could not locate '{func_name}' in {info['file']}"})
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "applyChange", "input": func_name, "output": f"failed: could not locate '{func_name}' in {info['file']}"})
         return False
 
     brace_pos = match.start() + match.group(0).rfind('{')
@@ -305,57 +300,47 @@ def applyChange(func_name, new_definition, functions, sources):
     new_text = original_text[:old_span_start] + '\n' + new_definition.strip() + '\n' + original_text[old_span_end:]
     with open(filepath, 'w') as fh:
         fh.write(new_text)
-
-    CONTEXT.append({"type": "tool_use", "tool": "applyChange",
-                    "input": func_name, "output": f"replaced '{func_name}' in {info['file']}"})
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "applyChange", "input": func_name, "output": f"replaced '{func_name}' in {info['file']}"})
     return True
 
 
-def restoreAll():
+def restoreAll(context=None):
     result = subprocess.run(
         ['git', 'checkout', 'HEAD', '--', '.'],
         cwd=GENGIN, capture_output=True, text=True,
     )
     success = result.returncode == 0
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "restoreAll",
-        "input": None,
-        "output": "restored all files to HEAD" if success else f"failed: {result.stderr.strip()}",
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "restoreAll", "input": None, "output": "restored all files to HEAD" if success else f"failed: {result.stderr.strip()}"})
     return success
 
 
-def restoreFile(rel_path):
+def restoreFile(rel_path, context=None):
     result = subprocess.run(
         ['git', 'checkout', 'HEAD', '--', rel_path],
         cwd=GENGIN, capture_output=True, text=True,
     )
     success = result.returncode == 0
-    CONTEXT.append({
-        "type": "tool_use",
-        "tool": "restoreFile",
-        "input": rel_path,
-        "output": f"restored {rel_path}" if success else f"failed: {result.stderr.strip()}",
-    })
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "restoreFile", "input": rel_path, "output": f"restored {rel_path}" if success else f"failed: {result.stderr.strip()}"})
     return success
 
 
-def restoreFunction(func_name, functions):
+def restoreFunction(func_name, functions=None, context=None):
+    functions = functions if functions is not None else _functions
     if func_name not in functions:
-        CONTEXT.append({"type": "tool_use", "tool": "restoreFunction",
-                        "input": func_name, "output": f"failed: '{func_name}' not found"})
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "restoreFunction", "input": func_name, "output": f"failed: '{func_name}' not found"})
         return False
-    return restoreFile(functions[func_name]['file'])
+    return restoreFile(functions[func_name]['file'], context=context)
 
 
 if __name__ == '__main__':
     args = sys.argv[1:]
     target = args[0] if args and not args[0].startswith('--') else 'RayTraceRowFunc'
 
-    sources = _read_sources(GENGIN)
-    functions = find_functions(sources)
-    structs = find_structs(sources)
+    init()
 
     depth = 1
     if '--depth' in args:
@@ -364,17 +349,17 @@ if __name__ == '__main__':
             depth = int(args[idx + 1])
 
     if '--list' in args:
-        listFunctions(functions)
+        listFunctions()
     elif '--restore-all' in args:
         restoreAll()
     elif '--restore' in args:
-        restoreFunction(target, functions)
+        restoreFunction(target)
     elif '--diff' in args:
         getDiff()
     elif '--callers' in args:
-        getCallers(target, functions)
+        getCallers(target)
     elif '--def' in args:
-        getDefinition(target, functions, structs)
+        getDefinition(target)
     elif '--replace' in args:
         idx = args.index('--replace')
         if idx + 1 >= len(args):
@@ -382,6 +367,6 @@ if __name__ == '__main__':
             sys.exit(1)
         with open(args[idx + 1]) as fh:
             new_def = fh.read()
-        applyChange(target, new_def, functions, sources)
+        applyChange(target, new_def)
     else:
-        showContext(target, functions, structs, depth=depth)
+        showContext(target, depth=depth)

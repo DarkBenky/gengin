@@ -16,6 +16,7 @@ import subprocess
 from pprint import pprint
 import json
 import perf as perfLib
+import getFunc as gf
 
 SYSTEM_PROMPT = "TODO: create prompt for model"
 
@@ -116,10 +117,13 @@ BASELINE_RESULTS = None
 
 if __name__ == "__main__":
     # git_pull_project()
+    gf.init()
+
     getTree()
     getTodos()
     buildProject()
     _ , BASELINE_RESULTS = makeBench()
     flame = makeFlame()
+    gf.listFunctions(context=CONTEXT)
     pprint(CONTEXT)
-    pprint(flame)
+    # pprint(flame)
