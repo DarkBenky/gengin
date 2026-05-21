@@ -862,6 +862,18 @@ func writeFile(filename string, obj *FileObject, color *[3]float32) error {
 		for y := range texSize {
 			for x := range texSize {
 				p := obj.ColorMap[y][x]
+				rf := float32(p&0xFF) / 255.0
+				gf := float32((p>>8)&0xFF) / 255.0
+				bf := float32((p>>16)&0xFF) / 255.0
+				alpha := uint8((p >> 24) & 0xFF)
+				// push channels away from luminance (saturation), then scale brightness
+				lum := 0.299*rf + 0.587*gf + 0.114*bf
+				const satFactor = 1.8
+				const brightFactor = 1.35
+				red := uint8(clamp((lum+satFactor*(rf-lum))*brightFactor*255.0, 0, 255))
+				green := uint8(clamp((lum+satFactor*(gf-lum))*brightFactor*255.0, 0, 255))
+				blue := uint8(clamp((lum+satFactor*(bf-lum))*brightFactor*255.0, 0, 255))
+				p = uint32(red) | uint32(green)<<8 | uint32(blue)<<16 | uint32(alpha)<<24
 				w.Write([]byte{byte(p), byte(p >> 8), byte(p >> 16), byte(p >> 24)})
 			}
 		}

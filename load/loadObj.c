@@ -94,8 +94,7 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		obj->v1[i] = v1;
 		obj->v2[i] = v2;
 		obj->v3[i] = v3;
-		// OBJ normals have Y inverted relative to this renderer's convention — negate Y only
-		obj->normals[i] = (float3){normal.x, -normal.y, normal.z};
+		obj->normals[i] = normal;
 		obj->uvs[i] = (UvCords){uv1x, uv1y, uv2x, uv2y, uv3x, uv3y};
 		obj->materialIds[i] = MaterialLib_FindOrAdd(lib, Material_Make(color, Roughness, Metallic, Emission, tex));
 	}

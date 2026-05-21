@@ -692,9 +692,12 @@ static void RayTraceRowFunc(void *arg) {
 					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
 					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;
 					roughnessFromTexture_Float = 1.0f - roughnessFromTexture / 255.0f;
-					metallicFromTexture_Float = 1.0f - metallicFromTexture / 255.0f;
+					// metallicFromTexture_Float = 1.0f - metallicFromTexture / 255.0f;
 					// roughnessFromTexture_Float = roughnessFromTexture / 255.0f;
-					// metallicFromTexture_Float = metallicFromTexture / 255.0f;
+					metallicFromTexture_Float = metallicFromTexture / 255.0f;
+					if (metallicFromTexture_Float > 0.25f) {
+						metallicFromTexture_Float = 0.25f + (metallicFromTexture_Float - 0.25f) * 0.75f; // compress metallic range to prevent it from dominating the lighting
+					}
 					// for testing make it rough and non-metallic when texture is present to better see the effect of the texture maps
 					// roughnessFromTexture_Float = 0.99f;
 					// metallicFromTexture_Float = 0.99f;
@@ -763,24 +766,35 @@ static void RayTraceRowFunc(void *arg) {
 		float diffuse = n.x * lightDir.x + n.y * lightDir.y + n.z * lightDir.z;
 		if (diffuse < 0.0f) diffuse = 0.0f;
 
-		// BlinnPhong specular metallic boosts gloss and tints specular by albedo
+		// fresnel hoisted before specular — shared with reflection strength
+		float NdotV = fmaxf(1e-4f, -(n.x * dx + n.y * dy + n.z * dz));
+		float invNdotV = 1.0f - NdotV;
+		float inv2 = invNdotV * invNdotV;
+		float fresnelT = inv2 * inv2 * invNdotV;
+		float roughInv = 1.0f - roughness;
+		float f0 = 0.04f + 0.96f * metallic;
+		float fresnel = f0 + (1.0f - f0) * fresnelT;
+
+		// GGX NDF + Smith G: smooth → narrow bright highlight, rough → broad dim
 		float hx = lightDir.x - dx, hy = lightDir.y - dy, hz = lightDir.z - dz;
 		float hlen = 1.0f / sqrtf(hx * hx + hy * hy + hz * hz);
 		float NdotH = fmaxf(0.0f, (n.x * hx + n.y * hy + n.z * hz) * hlen);
-		float spec2 = NdotH * NdotH;
-		float spec4 = spec2 * spec2;
-		float roughInv = 1.0f - roughness;
-		float roughInv2 = roughInv * roughInv;
-		float glossiness = roughInv2 + metallic * 0.5f; // metals stay glossy regardless of roughness
-		float specularBase = (diffuse > 0.0f) ? (spec4 * spec4 * glossiness * 0.6f) : 0.0f;
-		// dielectrics: white specular; metals: albedo-tinted specular
+		float alpha = roughness * roughness;
+		float alpha2 = alpha * alpha;
+		float dg = NdotH * NdotH * (alpha2 - 1.0f) + 1.0f;
+		float D = alpha2 / fmaxf(dg * dg, 1e-5f);
+		float k = alpha * 0.5f;
+		float GV = NdotV / fmaxf(NdotV * (1.0f - k) + k, 1e-5f);
+		float GL = diffuse / fmaxf(diffuse * (1.0f - k) + k, 1e-5f);
+		float specularBase = (diffuse > 0.0f) ? (D * GV * GL * fresnel / fmaxf(4.0f * diffuse * NdotV, 1e-5f)) : 0.0f;
+		// metals: albedo-tinted specular; dielectrics: white specular (Fresnel already in specularBase)
 		float specR = specularBase * (1.0f - metallic) + specularBase * metallic * color.x;
 		float specG = specularBase * (1.0f - metallic) + specularBase * metallic * color.y;
 		float specB = specularBase * (1.0f - metallic) + specularBase * metallic * color.z;
 
 		// metals absorb no diffuse all energy is specular
 		float diffuseWeight = 1.0f - metallic;
-		float lit = (0.12f + 0.88f * diffuse) * diffuseWeight;
+		float lit = (0.02f + 0.98f * diffuse) * diffuseWeight;
 
 		float3 ldr = hdrToLDR(color.x * lit + specR + color.x * emission,
 							  color.y * lit + specG + color.y * emission,
@@ -789,16 +803,11 @@ static void RayTraceRowFunc(void *arg) {
 		uint8 g = (uint8)(ldr.y * 255.0f);
 		uint8 b = (uint8)(ldr.z * 255.0f);
 
-		float NdotV = fmaxf(0.0f, -(n.x * dx + n.y * dy + n.z * dz));
-		float invNdotV = 1.0f - NdotV;
-		float inv2 = invNdotV * invNdotV;
-		float fresnelT = inv2 * inv2 * invNdotV;
-		float f0 = 0.04f + 0.96f * metallic;
-		float fresnel = f0 + (1.0f - f0) * fresnelT;
-		// rough surfaces suppress reflections — fresnel alone drives too much gloss on matte materials
-		// scale down sky blend so geometry reflections can dominate
-		float roughnessDamp = roughInv * 0.4f;
-		float reflectStrength = fresnel * roughnessDamp * (1.0f - fminf(emission, 1.0f));
+		// rough surfaces suppress reflections — fresnel already computed above
+		// also modulate by light facing: back-facing surfaces can't receive strong sky reflection
+		float roughnessDamp = roughInv * 0.18f;
+		float lightFacing = 0.15f + 0.85f * diffuse; // [0.15, 1.0] — never fully zero to preserve ambient sheen
+		float reflectStrength = fresnel * roughnessDamp * lightFacing * (1.0f - fminf(emission, 1.0f));
 
 		// perfect specular reflect dir roughness already baked into reflectStrength
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
@@ -879,7 +888,7 @@ static void RayTraceRowFunc(void *arg) {
 
 			catchEmission = accumulatedEmission;
 
-			float3 rOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
+			float3 rOrig = sOrig;
 			RayHit rHit;
 			if (RayCast((Object *)objects, objectCount, rOrig, reflDir, bestObj, lib, &rHit)) {
 				catchReflection.x = rHit.mat.color.x;
@@ -934,7 +943,7 @@ static void RayTraceRowFunc(void *arg) {
 		}
 		Color baseColor = camera->framebuffer[row * width + x];
 		float3 base = UnpackColor(baseColor);
-		float shadowMod = 0.28f + 0.88f * fminf(accumulatedShadow.x, 1.0f);
+		float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
 		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
 								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
 								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w);
