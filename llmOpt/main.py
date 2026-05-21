@@ -15,6 +15,7 @@
 import subprocess
 from pprint import pprint
 import json
+import perf as perfLib
 
 SYSTEM_PROMPT = "TODO: create prompt for model"
 
@@ -46,6 +47,8 @@ def git_pull_project():
     # copy gitignored assets and profdata from parent repo
     run(["rsync", "-a", "../assets/", "gengin/assets/"])
     run(["cp", "../default.profdata", "gengin/default.profdata"])
+    # copy flamegraph tools if available in parent
+    run(["rsync", "-a", "--ignore-missing-args", "../.flamegraph/", "gengin/.flamegraph/"])
 
 def getTree(path: str = PROJECT_DIR):
     res = run(["tree", "--charset=ascii"], cwd=path)
@@ -58,14 +61,19 @@ def getTree(path: str = PROJECT_DIR):
     return res.stdout
 
 def getTodos(path: str = "."):
-    res = run(["grep", "-r", "TODO", path], cwd=PROJECT_DIR)
+    result = subprocess.run(
+        ["grep", "-r", "--binary-files=without-match", "--exclude-dir=.git", "--exclude=perf.data", "TODO", path],
+        capture_output=True, text=True, cwd=PROJECT_DIR
+    )
+    if result.returncode == 2:
+        raise RuntimeError(f"grep failed: {result.stderr}")
     CONTEXT.append({
         "type": "tool_use",
         "tool": "getTodos",
         "input": path,
-        "output": res.stdout
+        "output": result.stdout
     })
-    return res.stdout
+    return result.stdout
 
 def buildProject():
     res = run(["make"], cwd=PROJECT_DIR)
@@ -80,26 +88,38 @@ def buildProject():
 def makeBench():
     res = run(["make", "bench"], cwd=PROJECT_DIR)
     with open(f"{PROJECT_DIR}/bench_results.json", "r") as f:
-        bench_results = f.read()
-    bench_results = json.loads(bench_results)
-    del bench_results["frame_images"]
-    data = json.loads(bench_results)
+        bench_results = json.load(f)
+        bench_results_raw = bench_results.copy()
+    bench_results.pop("frame_images", None)
     record = {
         "type": "tool_use",
         "tool": "makeBench",
         "input": None,
         "output": res.stdout,
-        "bench_results": str(bench_results)
+        "bench_results": bench_results
     }
     CONTEXT.append(record)
-    return res.stdout, data
+    return res.stdout, bench_results_raw
+
+def makeFlame():
+    run(["make", "flame"], cwd=PROJECT_DIR)
+    data = perfLib.getPerfData(cwd=PROJECT_DIR)
+    CONTEXT.append({
+        "type": "tool_use",
+        "tool": "makeFlame",
+        "input": None,
+        "output": data
+    })
+    return data
 
 BASELINE_RESULTS = None
 
 if __name__ == "__main__":
-    git_pull_project()
+    # git_pull_project()
     getTree()
     getTodos()
     buildProject()
     _ , BASELINE_RESULTS = makeBench()
+    flame = makeFlame()
     pprint(CONTEXT)
+    pprint(flame)
