@@ -134,11 +134,11 @@ def find_structs(sources):
 
 # --- Public API ---
 
-def showContext(target_func, functions=None, structs=None, depth=1, returnString=False, context=None):
+def showContext(func, functions=None, structs=None, depth=1, returnString=False, context=None):
     functions = functions if functions is not None else _functions
     structs = structs if structs is not None else _structs
-    if target_func not in functions:
-        print(f"Function '{target_func}' not found in codebase.")
+    if func not in functions:
+        print(f"Function '{func}' not found in codebase.")
         return None
 
     all_types = set()
@@ -153,16 +153,16 @@ def showContext(target_func, functions=None, structs=None, depth=1, returnString
             for callee in _called_functions(functions[name]['body']):
                 _collect(callee, current_depth + 1)
 
-    _collect(target_func, 0)
+    _collect(func, 0)
 
-    target = functions[target_func]
+    target = functions[func]
     lines = []
     lines.append(f"// {'=' * 60}")
-    lines.append(f"// TARGET: {target_func}  [{target['file']}:{target['start']}-{target['end']}]")
+    lines.append(f"// TARGET: {func}  [{target['file']}:{target['start']}-{target['end']}]")
     lines.append(f"// {'=' * 60}")
     lines.append(target['full'])
 
-    callees = {n: functions[n] for n in (visited - {target_func})}
+    callees = {n: functions[n] for n in (visited - {func})}
     if callees:
         lines.append(f"\n// {'=' * 60}")
         lines.append(f"// CALLED FUNCTIONS (depth={depth})")
@@ -182,7 +182,7 @@ def showContext(target_func, functions=None, structs=None, depth=1, returnString
 
     output = '\n'.join(lines)
     if context is not None:
-        context.append({"type": "tool_use", "tool": "showContext", "input": {"func": target_func, "depth": depth}, "output": output})
+        context.append({"type": "tool_use", "tool": "showContext", "input": {"func": func, "depth": depth}, "output": output})
     if returnString:
         return output
     print(output)
@@ -209,13 +209,13 @@ def getDefinition(name, functions=None, structs=None, returnString=False, contex
     print(output)
 
 
-def getCallers(target_func, functions=None, returnString=False, context=None):
+def getCallers(func, functions=None, returnString=False, context=None):
     functions = functions if functions is not None else _functions
     callers = {
         name: data for name, data in functions.items()
-        if target_func in _called_functions(data['body'])
+        if func in _called_functions(data['body'])
     }
-    lines = [f"// Callers of '{target_func}':"]
+    lines = [f"// Callers of '{func}':"]
     if callers:
         for fname, fdata in sorted(callers.items()):
             lines.append(f"//   {fname}  [{fdata['file']}]")
@@ -224,17 +224,19 @@ def getCallers(target_func, functions=None, returnString=False, context=None):
 
     output = '\n'.join(lines)
     if context is not None:
-        context.append({"type": "tool_use", "tool": "getCallers", "input": target_func, "output": output})
+        context.append({"type": "tool_use", "tool": "getCallers", "input": func, "output": output})
     if returnString:
         return output
     print(output)
 
 
-def getDiff(returnString=False, context=None):
-    result = subprocess.run(
-        ['git', 'diff', 'HEAD'],
-        cwd=GENGIN, capture_output=True, text=True,
-    )
+_CODE_EXTS = ('.c', '.h', '.cl', '.go', '.py')
+
+def getDiff(returnString=False, context=None, code_only=False):
+    cmd = ['git', 'diff', 'HEAD']
+    if code_only:
+        cmd += ['--', *[f'*{e}' for e in _CODE_EXTS]]
+    result = subprocess.run(cmd, cwd=GENGIN, capture_output=True, text=True)
     output = result.stdout or "(no changes)"
     if context is not None:
         context.append({"type": "tool_use", "tool": "getDiff", "input": None, "output": output})
@@ -310,6 +312,7 @@ def applyChange(func_name, new_definition, functions=None, sources=None, context
     new_text = original_text[:old_span_start] + '\n' + new_definition.strip() + '\n' + original_text[old_span_end:]
     with open(filepath, 'w') as fh:
         fh.write(new_text)
+    _refresh_file(filepath)
     if context is not None:
         context.append({"type": "tool_use", "tool": "applyChange", "input": func_name, "output": f"replaced '{func_name}' in {info['file']}"})
     return True
@@ -370,6 +373,7 @@ def replaceLines(rel_path, start, end, new_text, context=None):
 
     with open(filepath, 'w') as fh:
         fh.writelines(lines)
+    _refresh_file(filepath)
 
     msg = f"replaced lines {start}-{end} in {rel_path}"
     if context is not None:
@@ -403,6 +407,7 @@ def applyPatch(patches, context=None):
 
         with open(filepath, 'w') as fh:
             fh.writelines(lines)
+        _refresh_file(filepath)
         results.append(f"patched {len(file_patches)} region(s) in {rel_path}")
 
     output = '\n'.join(results) if results else "no patches applied"
@@ -412,11 +417,11 @@ def applyPatch(patches, context=None):
     return bool(results)
 
 
-def showContextWithMeta(target_func, functions=None, structs=None, depth=1, context=None):
+def showContextWithMeta(func, functions=None, structs=None, depth=1, context=None):
     """Like showContext but returns {"text": str, "functions": [...], "structs": [...]} with line metadata."""
     functions = functions if functions is not None else _functions
     structs = structs if structs is not None else _structs
-    if target_func not in functions:
+    if func not in functions:
         return None
 
     all_types = set()
@@ -431,18 +436,18 @@ def showContextWithMeta(target_func, functions=None, structs=None, depth=1, cont
             for callee in _called_functions(functions[name]['body']):
                 _collect(callee, current_depth + 1)
 
-    _collect(target_func, 0)
+    _collect(func, 0)
 
-    target = functions[target_func]
+    target = functions[func]
     lines = []
     lines.append(f"// {'=' * 60}")
-    lines.append(f"// TARGET: {target_func}  [{target['file']}:{target['start']}-{target['end']}]")
+    lines.append(f"// TARGET: {func}  [{target['file']}:{target['start']}-{target['end']}]")
     lines.append(f"// {'=' * 60}")
     lines.append(target['full'])
 
-    meta_functions = [{'name': target_func, 'file': target['file'], 'start': target['start'], 'end': target['end']}]
+    meta_functions = [{'name': func, 'file': target['file'], 'start': target['start'], 'end': target['end']}]
 
-    callees = {n: functions[n] for n in (visited - {target_func})}
+    callees = {n: functions[n] for n in (visited - {func})}
     if callees:
         lines.append(f"\n// {'=' * 60}")
         lines.append(f"// CALLED FUNCTIONS (depth={depth})")
@@ -465,8 +470,23 @@ def showContextWithMeta(target_func, functions=None, structs=None, depth=1, cont
 
     result = {'text': '\n'.join(lines), 'functions': meta_functions, 'structs': meta_structs}
     if context is not None:
-        context.append({"type": "tool_use", "tool": "showContextWithMeta", "input": {"func": target_func, "depth": depth}, "output": result})
+        context.append({"type": "tool_use", "tool": "showContextWithMeta", "input": {"func": func, "depth": depth}, "output": result})
     return result
+
+
+def _refresh_file(filepath):
+    """Re-parse a single file into the live _functions/_structs/_sources indexes."""
+    with open(filepath, errors='replace') as fh:
+        _sources[filepath] = fh.read()
+    single = {filepath: _sources[filepath]}
+    new_funcs = find_functions(single)
+    for k in [k for k, v in _functions.items() if os.path.join(GENGIN, v['file']) == filepath]:
+        del _functions[k]
+    _functions.update(new_funcs)
+    new_structs = find_structs(single)
+    for k in [k for k, v in _structs.items() if os.path.join(GENGIN, v['file']) == filepath]:
+        del _structs[k]
+    _structs.update(new_structs)
 
 
 def showSrc(rel_path, returnString=False, context=None):

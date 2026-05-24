@@ -20,6 +20,7 @@ _state = {
     "board": "",             # planner.showBoard() text
     "events": [],            # SSE event log
     "pr_url": "",
+    "diff": "",
 }
 _lock = threading.Lock()
 
@@ -38,7 +39,7 @@ _HTML = """<!DOCTYPE html>
   .running { background:#1a4a1a; color:#56d364; }
   .waiting_model { background:#3d2a00; color:#e3b341; }
   .done    { background:#0d3555; color:#58a6ff; }
-  main { display:grid; grid-template-columns:1fr 1fr; gap:0; height:calc(100vh - 49px); }
+  main { display:grid; grid-template-columns:1fr 1fr 1fr; gap:0; height:calc(100vh - 49px); }
   section { overflow-y:auto; padding:16px; border-right:1px solid #30363d; }
   section:last-child { border-right:none; }
   h2 { font-size:.85rem; color:#8b949e; text-transform:uppercase;
@@ -55,6 +56,10 @@ _HTML = """<!DOCTYPE html>
   .ev-info  { color:#8b949e; }
   #pr-banner { display:none; background:#0d3555; color:#58a6ff;
                padding:10px 20px; border-bottom:1px solid #30363d; }
+  .diff-add  { color:#56d364; }
+  .diff-del  { color:#f85149; }
+  .diff-hunk { color:#79c0ff; }
+  .diff-file { color:#e3b341; font-weight:bold; }
 </style>
 </head>
 <body>
@@ -84,6 +89,10 @@ _HTML = """<!DOCTYPE html>
       <pre id="event-log"></pre>
     </div>
   </section>
+  <section>
+    <h2>Code changes (git diff)</h2>
+    <pre id="diff-view" style="font-size:.75rem;line-height:1.45;"></pre>
+  </section>
 </main>
 <script>
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -98,6 +107,18 @@ function refresh() {
     document.getElementById('token-badge').textContent = d.token_count ? `~${d.token_count.toLocaleString()} tokens` : '';
     document.getElementById('last-response').innerHTML = esc(d.last_response);
     document.getElementById('board').innerHTML = esc(d.board);
+
+    const renderDiff = text => {
+      if (!text || text === '(no changes)') return '<span class="ev-info">(no changes)</span>';
+      return text.split('\\n').map(line => {
+        if (line.startsWith('+++') || line.startsWith('---')) return `<span class="diff-file">${esc(line)}</span>`;
+        if (line.startsWith('+')) return `<span class="diff-add">${esc(line)}</span>`;
+        if (line.startsWith('-')) return `<span class="diff-del">${esc(line)}</span>`;
+        if (line.startsWith('@@')) return `<span class="diff-hunk">${esc(line)}</span>`;
+        return esc(line);
+      }).join('\\n');
+    };
+    document.getElementById('diff-view').innerHTML = renderDiff(d.diff);
 
     const cl = document.getElementById('context-list');
     cl.innerHTML = d.context.slice().reverse().map(e => {
@@ -195,6 +216,11 @@ def _log(msg):
         _state["events"].append(f"{ts}  {msg}")
         if len(_state["events"]) > 200:
             _state["events"] = _state["events"][-200:]
+
+
+def sync_diff(text):
+    with _lock:
+        _state["diff"] = text or ""
 
 
 def start(port=5050):

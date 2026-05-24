@@ -82,12 +82,13 @@ def getTodos(path: str = "."):
     return result.stdout
 
 def buildProject():
+    _res = run(["make", "clean"], cwd=PROJECT_DIR)
     res = run(["make"], cwd=PROJECT_DIR)
     CONTEXT.append({
         "type": "tool_use",
         "tool": "buildProject",
         "input": None,
-        "output": res.stdout
+        "output": _res.stdout + res.stdout 
     })
     return res.stdout
 
@@ -121,14 +122,16 @@ def makeFlame():
 BASELINE_RESULTS = None
 
 def convertContextToXml():
+    def _esc(v):
+        return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     xml = "<context>\n"
     for entry in CONTEXT:
         xml += "  <entry>\n"
         for key, value in entry.items():
-            xml += f"    <{key}>{value}</{key}>\n"
+            xml += f"    <{key}>{_esc(value)}</{key}>\n"
         xml += "  </entry>\n"
     xml += "</context>"
-    tokenCount = len(xml.split()) * 4  # rough estimate: 1 word ~ 4 tokens rather overestimating to be safe
+    tokenCount = len(xml.split()) * 4
     return xml, tokenCount
 
 def removeStaffFromContext(maxTokens=128_000):
@@ -219,7 +222,8 @@ explicit instruction.
 
 
 if __name__ == "__main__":
-    # git_pull_project()
+    ui.start()
+    git_pull_project()
     gf.init()
     planner.resetBoard()
 
@@ -232,13 +236,12 @@ if __name__ == "__main__":
     gf.apiHelp(context=CONTEXT)
 
     TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
-    ui.start()
     iteration = 0
     while True:
         iteration += 1
         ui.set_iteration(iteration)
         ui.set_status("running")
-        removeStaffFromContext(1_000_000)
+        removeStaffFromContext(256_000)
         xmlContext, tokenCount = convertContextToXml()
         ui.set_token_count(tokenCount)
         ui.sync_context(CONTEXT)
@@ -246,7 +249,8 @@ if __name__ == "__main__":
         prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
-        response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
+        response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4") # Input 1M / 0.10$ Output 1M / 0.20$
+        # response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek") # Input 1M / 0.43$ Output 1M / 0.87$
         ui.set_last_response(response)
         print("Model response:", response)
         ui.set_status("running")
@@ -255,4 +259,4 @@ if __name__ == "__main__":
             ui.log_tool_result(r["tool"], r["error"])
         ui.sync_context(CONTEXT)
         ui.sync_board(planner.showBoard(returnString=True))
-        
+        ui.sync_diff(gf.getDiff(returnString=True, code_only=True))

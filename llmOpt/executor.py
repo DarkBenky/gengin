@@ -18,6 +18,7 @@ The regex captures from the outer { to the outer } via backtracking against the
 closing fence, so nested objects/arrays in args are handled correctly.
 """
 
+import inspect
 import json
 import re
 
@@ -29,6 +30,36 @@ _PATH_ARGS = {"rel_path", "file", "path"}
 
 class ExecutorError(Exception):
     pass
+
+
+def _sig_hint(fn):
+    """Return a human-readable call signature for error messages."""
+    try:
+        sig = inspect.signature(fn)
+        params = [
+            p for p in sig.parameters.values()
+            if p.name not in ("context",)
+        ]
+        parts = []
+        for p in params:
+            if p.default is inspect.Parameter.empty:
+                parts.append(p.name)
+            else:
+                parts.append(f"{p.name}={p.default!r}")
+        return f"{fn.__name__}({', '.join(parts)})"
+    except Exception:
+        return fn.__name__
+
+
+def _unknown_tool_hint(tool, tool_map):
+    import difflib
+    close = difflib.get_close_matches(tool, tool_map.keys(), n=3, cutoff=0.5)
+    hint = f"Unknown tool: {tool!r}."
+    if close:
+        hint += f" Did you mean: {', '.join(close)}?"
+    hint += " Call apiHelp() to list all available tools."
+    return hint
+
 
 
 def _checkPath(value):
@@ -65,7 +96,7 @@ def validateCommand(cmd, tool_map):
     if not isinstance(tool, str):
         raise ExecutorError(f"'tool' must be a string, got: {type(tool).__name__}")
     if tool not in tool_map:
-        raise ExecutorError(f"unknown tool: {tool!r}. Use apiHelp() to list available tools.")
+        raise ExecutorError(_unknown_tool_hint(tool, tool_map))
 
     args = cmd.get("args", {})
     if not isinstance(args, dict):
@@ -87,19 +118,29 @@ def executeCommand(cmd, tool_map, context=None):
     try:
         tool, args = validateCommand(cmd, tool_map)
     except ExecutorError as e:
-        return {"tool": cmd.get("tool", "?"), "result": None, "error": str(e)}
+        msg = str(e)
+        if context is not None:
+            context.append({"type": "tool_error", "tool": cmd.get("tool", "?"), "error": msg})
+        return {"tool": cmd.get("tool", "?"), "result": None, "error": msg}
 
     fn = tool_map[tool]
     try:
-        if context is not None:
+        sig = inspect.signature(fn)
+        if context is not None and "context" in sig.parameters:
             result = fn(**args, context=context)
         else:
             result = fn(**args)
         return {"tool": tool, "result": result, "error": None}
     except TypeError as e:
-        return {"tool": tool, "result": None, "error": f"wrong arguments for {tool!r}: {e}"}
+        hint = f"wrong arguments for {tool!r}: {e}. Expected signature: {_sig_hint(fn)}"
+        if context is not None:
+            context.append({"type": "tool_error", "tool": tool, "error": hint})
+        return {"tool": tool, "result": None, "error": hint}
     except Exception as e:
-        return {"tool": tool, "result": None, "error": f"{type(e).__name__}: {e}"}
+        msg = f"{type(e).__name__}: {e}"
+        if context is not None:
+            context.append({"type": "tool_error", "tool": tool, "error": msg})
+        return {"tool": tool, "result": None, "error": msg}
 
 
 def executeAll(text, tool_map, context=None):

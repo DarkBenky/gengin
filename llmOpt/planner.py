@@ -62,18 +62,18 @@ def listTasks(returnString=False, context=None):
 
 
 def markTaskDone(task_id, context=None):
-    return _setTaskStatus(task_id, "done", context)
+    return _setTaskStatus(task_id, "done", "markTaskDone", context)
 
 
 def markTaskInProgress(task_id, context=None):
-    return _setTaskStatus(task_id, "in_progress", context)
+    return _setTaskStatus(task_id, "in_progress", "markTaskInProgress", context)
 
 
 def markTaskTodo(task_id, context=None):
-    return _setTaskStatus(task_id, "todo", context)
+    return _setTaskStatus(task_id, "todo", "markTaskTodo", context)
 
 
-def _setTaskStatus(task_id, status, context):
+def _setTaskStatus(task_id, status, tool_name, context):
     _load()
     for t in _state["tasks"]:
         if t["id"] == task_id:
@@ -81,11 +81,11 @@ def _setTaskStatus(task_id, status, context):
             _save()
             msg = f"task #{task_id} -> {status}"
             if context is not None:
-                context.append({"type": "tool_use", "tool": "_setTaskStatus", "input": {"id": task_id, "status": status}, "output": msg})
+                context.append({"type": "tool_use", "tool": tool_name, "input": {"id": task_id, "status": status}, "output": msg})
             return True
     msg = f"task #{task_id} not found"
     if context is not None:
-        context.append({"type": "tool_use", "tool": "_setTaskStatus", "input": {"id": task_id, "status": status}, "output": msg})
+        context.append({"type": "tool_use", "tool": tool_name, "input": {"id": task_id, "status": status}, "output": msg})
     return False
 
 

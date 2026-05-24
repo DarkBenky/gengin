@@ -1,13 +1,32 @@
 from openrouter import OpenRouter
 import os
 
+def _load_env(path: str):
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip())
+    except FileNotFoundError:
+        pass
+
+_load_env(os.path.join(os.path.dirname(__file__), ".env"))
 API_KEY = os.getenv("KEY")
 
 def getResponse(prompt:str, model:str, provider:str) -> str:
     client = OpenRouter(api_key=API_KEY)
-    response = client.chat.completions.create(
+    res = client.chat.send(
+        messages=[{"role": "user", "content": prompt}],
         model=model,
-        provider=provider,
-        messages=[{"role": "user", "content": prompt}]
+        provider={"order": [provider]} if provider else None,
     )
-    return response.choices[0].message.content
+    return res.choices[0].message.content
+
+def getResponseOllama(prompt:str, model:str) -> str:
+    pass  # TODO: implement for Ollama
+
+if __name__ == "__main__":
+    test_prompt = "What is the capital of France?"
+    print(getResponse(test_prompt, model="deepseek/deepseek-v4-pro", provider="deepseek"))
