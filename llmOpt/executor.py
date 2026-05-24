@@ -1,13 +1,21 @@
 """
 executor.py -- safe model command parser and dispatcher.
 
-Model responses must contain one or more ```json blocks in this shape:
+Model responses must contain one or more ```json blocks, each a valid JSON object
+with "tool" (string) and "args" (object, may be omitted) fields:
+
     ```json
     {"tool": "showContext", "args": {"func": "renderFrame", "depth": 2}}
     ```
 
-Multiple blocks in one response are all executed in order.
+    ```json
+    {"tool": "getDiff", "args": {}}
+    ```
+
+Multiple blocks in one response are executed in order.
 Only tools registered in the tool map can be called.
+The regex captures from the outer { to the outer } via backtracking against the
+closing fence, so nested objects/arrays in args are handled correctly.
 """
 
 import json

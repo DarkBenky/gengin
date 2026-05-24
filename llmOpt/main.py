@@ -19,6 +19,9 @@ import perf as perfLib
 import getFunc as gf
 import planner
 import executor
+import modelSelector as model
+import sys
+import ui
 
 SYSTEM_PROMPT = "TODO: create prompt for model"
 
@@ -125,20 +128,16 @@ def convertContextToXml():
             xml += f"    <{key}>{value}</{key}>\n"
         xml += "  </entry>\n"
     xml += "</context>"
-    tokenCount = len(xml.split() * 4)  # rough estimate: 1 word ~ 4 tokens rather overestimating to be safe
+    tokenCount = len(xml.split()) * 4  # rough estimate: 1 word ~ 4 tokens rather overestimating to be safe
     return xml, tokenCount
 
-def removeStaffFromContext(maxTokens=128_000, currentTokens=0):
-    newContext = []
-    for entry in reversed(CONTEXT):
-        entryTokens = len(json.dumps(entry).split()) * 4  # rough estimate
-        if currentTokens + entryTokens > maxTokens:
-            break
-        newContext.append(entry)
-        currentTokens += entryTokens
-    newContext = list(reversed(newContext))
-    CONTEXT[:] = newContext
-    return newContext, currentTokens
+def removeStaffFromContext(maxTokens=128_000):
+    currentTokens = json.dumps(CONTEXT).count(" ") * 4  # rough estimate
+    while currentTokens > maxTokens and CONTEXT:
+        removed = CONTEXT.pop(0)
+        removedTokens = json.dumps(removed).count(" ") * 4
+        currentTokens -= removedTokens
+        print(f"Removed {removedTokens} tokens from context. Current token count: {currentTokens}. Removed entry: {removed}")
 
 def createPR(title, body, branch, commit_msg=None):
     """Commit staged changes, push to branch, open a GitHub PR via gh CLI."""
@@ -160,7 +159,64 @@ def createPR(title, body, branch, commit_msg=None):
         "input": {"title": title, "branch": branch},
         "output": url,
     })
-    return url
+    ui.set_pr_url(url)
+    print(f"PR created: {url}")
+    sys.exit(0)
+
+SYSTEM_PROMPT = """\
+You are an expert C software engineer. Your job is to analyse a renderer/engine \
+codebase and iteratively improve its performance. You work in a loop:
+
+  profile -> identify hotspot -> read code -> propose change \
+-> apply -> build -> bench -> compare -> repeat
+
+== CALLING TOOLS ==
+To call a tool, emit one or more fenced JSON blocks anywhere in your response.
+Every block must be valid JSON with "tool" (string) and "args" (object) fields:
+
+```json
+{"tool": "showContext", "args": {"func": "renderFrame", "depth": 2}}
+```
+
+```json
+{"tool": "replaceLines", "args": {"rel_path": "render/render.c", "start": 42, "end": 55, "new_text": "int foo() {\n    return 1;\n}"}}
+```
+
+```json
+{"tool": "getDiff", "args": {}}
+```
+
+Multiple blocks in one response are executed in order. Omitting "args" is also \
+accepted and treated as an empty object. Every tool result is appended to the \
+context so you can see it in the next turn. Use apiHelp() (already in context) to \
+list all available tools and their exact argument names.
+
+== WORKFLOW ==
+1. Read the flame graph and bench results already in the context.
+2. Use listFunctions() to get an overview of the codebase.
+3. Pick the top hotspot. Use showContext(func, depth=2) or showSrcPair(path) to \
+read the relevant code.
+4. Form a hypothesis. Record it with addNote(). Break the work into tasks with \
+addTask().
+5. Apply your change with replaceLines() or applyChange(). Multiple independent \
+regions can be batched with applyPatch().
+6. Call buildProject(). If it fails, read the error, fix the code, rebuild.
+7. Call makeBench() and compare against the baseline in context. If performance \
+regressed, call restoreAll() and try a different approach.
+8. When a change is solid, call createPR() with a clear title and body explaining \
+what you changed, why, and the measured speedup.
+9. Mark completed tasks with markTaskDone() and continue with the next hotspot.
+
+== CONSTRAINTS ==
+- Only call tools that are listed in apiHelp(). Anything else will be rejected.
+- File paths must be relative to the project root. Never use ".." to escape it.
+- Do not break the public API (function signatures visible in headers) without \
+explicit instruction.
+- Always build and bench after every change before moving on.
+- If you are unsure whether a change is safe, read more code first.
+- Keep changes focused and minimal — one logical improvement per PR.
+"""
+
 
 if __name__ == "__main__":
     # git_pull_project()
@@ -174,8 +230,29 @@ if __name__ == "__main__":
     flame = makeFlame()
     gf.listFunctions(context=CONTEXT)
     gf.apiHelp(context=CONTEXT)
-    pprint(CONTEXT)
-    
-    # TODO: main loop
-    import sys
+
     TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
+    ui.start()
+    iteration = 0
+    while True:
+        iteration += 1
+        ui.set_iteration(iteration)
+        ui.set_status("running")
+        removeStaffFromContext(1_000_000)
+        xmlContext, tokenCount = convertContextToXml()
+        ui.set_token_count(tokenCount)
+        ui.sync_context(CONTEXT)
+        ui.sync_board(planner.showBoard(returnString=True))
+        prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
+        print(f"Prompt token count: {tokenCount}")
+        ui.set_status("waiting_model")
+        response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
+        ui.set_last_response(response)
+        print("Model response:", response)
+        ui.set_status("running")
+        results = executor.executeAll(response, TOOL_MAP, context=CONTEXT)
+        for r in results:
+            ui.log_tool_result(r["tool"], r["error"])
+        ui.sync_context(CONTEXT)
+        ui.sync_board(planner.showBoard(returnString=True))
+        

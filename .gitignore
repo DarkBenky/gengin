@@ -27,3 +27,4 @@ simulation/trainNN
 .ccls-cache
 
 simulation/wandb/
+llmOpt/.env
