@@ -17,6 +17,8 @@ from pprint import pprint
 import json
 import perf as perfLib
 import getFunc as gf
+import planner
+import executor
 
 SYSTEM_PROMPT = "TODO: create prompt for model"
 
@@ -115,9 +117,55 @@ def makeFlame():
 
 BASELINE_RESULTS = None
 
+def convertContextToXml():
+    xml = "<context>\n"
+    for entry in CONTEXT:
+        xml += "  <entry>\n"
+        for key, value in entry.items():
+            xml += f"    <{key}>{value}</{key}>\n"
+        xml += "  </entry>\n"
+    xml += "</context>"
+    tokenCount = len(xml.split() * 4)  # rough estimate: 1 word ~ 4 tokens rather overestimating to be safe
+    return xml, tokenCount
+
+def removeStaffFromContext(maxTokens=128_000, currentTokens=0):
+    newContext = []
+    for entry in reversed(CONTEXT):
+        entryTokens = len(json.dumps(entry).split()) * 4  # rough estimate
+        if currentTokens + entryTokens > maxTokens:
+            break
+        newContext.append(entry)
+        currentTokens += entryTokens
+    newContext = list(reversed(newContext))
+    CONTEXT[:] = newContext
+    return newContext, currentTokens
+
+def createPR(title, body, branch, commit_msg=None):
+    """Commit staged changes, push to branch, open a GitHub PR via gh CLI."""
+    commit_msg = commit_msg or title
+
+    run(["git", "checkout", "-b", branch], cwd=PROJECT_DIR)
+    run(["git", "add", "-A"], cwd=PROJECT_DIR)
+    run(["git", "commit", "-m", commit_msg], cwd=PROJECT_DIR)
+    run(["git", "push", "-u", "origin", branch], cwd=PROJECT_DIR)
+
+    res = run(
+        ["gh", "pr", "create", "--title", title, "--body", body, "--head", branch],
+        cwd=PROJECT_DIR,
+    )
+    url = res.stdout.strip()
+    CONTEXT.append({
+        "type": "tool_use",
+        "tool": "createPR",
+        "input": {"title": title, "branch": branch},
+        "output": url,
+    })
+    return url
+
 if __name__ == "__main__":
     # git_pull_project()
     gf.init()
+    planner.resetBoard()
 
     getTree()
     getTodos()
@@ -125,5 +173,9 @@ if __name__ == "__main__":
     _ , BASELINE_RESULTS = makeBench()
     flame = makeFlame()
     gf.listFunctions(context=CONTEXT)
+    gf.apiHelp(context=CONTEXT)
     pprint(CONTEXT)
-    # pprint(flame)
+    
+    # TODO: main loop
+    import sys
+    TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
