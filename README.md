@@ -1,11 +1,9 @@
 ## Tasks
 
-- [ ] create python llm optimization routine
+- [ ] Create optimized version of rayAABB_inv
+
 - [ ] TODO: better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
-- [ ] new import / export format to support textures
-    - [ ] add new high quality models
-    - [ ] test if models are loaded successfully
-        - [ ] use normals for ray tracer handle coloring on gpu
+
 - [ ] train model against moving target
 - [ ] disable trust control
 
@@ -64,6 +62,13 @@
     - [ ] Doppler radar: filter out stationary objects (terrain), track only moving targets (missiles, planes); requires relative velocity per object
 
 - [ ] Missile guidance and control
+
+- [X] new import / export format to support textures
+    - [X] add new high quality models
+    - [X] test if models are loaded successfully
+        - [NotImplemented] use normals for ray tracer handle coloring on gpu
+
+- [X] create python llm optimization routine
 
 - [X] Server integration for multiplayer
 

@@ -9,12 +9,35 @@
       "id": 2,
       "text": "Analyze IntersectBVH for traversal order, branch reduction, and cache efficiency.",
       "status": "todo"
+    },
+    {
+      "id": 3,
+      "text": "Optimize rayTriangle (M\u00f6ller-Trumbore) which is 13.4% exclusive time.",
+      "status": "todo"
+    },
+    {
+      "id": 4,
+      "text": "Optimize rayAABB_inv further if possible.",
+      "status": "todo"
+    },
+    {
+      "id": 5,
+      "text": "Optimize rayTriangle by reducing operations and improving branch prediction.",
+      "status": "todo"
     }
   ],
   "notes": [
     {
       "id": 1,
       "text": "Primary hotspot: rayAABB_inv at 28.9% exclusive time (slab method). IntersectBVH exclusive 15.5% (tree traversal). Together they dominate the render time. Optimizing rayAABB_inv and BVH traversal will yield biggest wins."
+    },
+    {
+      "id": 2,
+      "text": "rayAABB_inv is a tight inner loop: 3 muls, 3 sub, 6 min/max, 1 cmp per AABB test. It is called twice per BVH node in IntersectBVH. The BVH traversal pushes children in order of distance to improve early culling. Current implementation is already quite optimized with precomputed bias and invDir. Potential micro-optimizations: 1) Use _mm_min_ps / _mm_max_ps for SIMD if compiler doesn't auto-vectorize (but it's inline scalar, likely already efficient). 2) Reduce branching in the slab test. 3) The current code uses fmaxf/fminf which are function calls unless inlined \u2014 with -O3 and -ffast-math they should be inlined. Let me check if there's a simpler optimization: the slab test can be unrolled more aggressively or use a single pass. Actually, looking at the flame graph, rayAABB_inv is 28.9% exclusive. The biggest win might be in IntersectBVH traversal order or rayTriangle. Let me look at rayTriangle next since it's 13.4% exclusive and called for every leaf triangle."
+    },
+    {
+      "id": 3,
+      "text": "rayTriangle is 13.4% exclusive. It uses M\u00f6ller-Trumbore with 2 cross products, 2 dot products, 1 division, and several branches. Key optimization: The function is called for every triangle in a leaf node. We can reduce the number of operations by: 1) Using branchless early-outs where possible. 2) Reordering tests to fail fast. 3) Using SIMD if beneficial. However, the biggest win in rayTriangle is often reducing the number of calls via better BVH traversal or culling. Let me look at optimizing rayTriangle itself first by reducing divisions and using fast inverse square root or other tricks. Actually, the current implementation is already quite standard. A key optimization is to use the 'fast' version of M-T that avoids some multiplications. Let me also check if we can unroll or vectorize. For now, let's focus on a micro-optimization: reduce the number of subtractions and use local variables more efficiently."
     }
   ]
 }
