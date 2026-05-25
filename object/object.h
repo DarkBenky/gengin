@@ -161,12 +161,24 @@ bool Frustum_TestAABB(const Frustum *f, float3 bbMin, float3 bbMax);
 // Branchless slab test with precomputed bias = ro * invRd.
 // Returns tmin on hit, FLT_MAX on miss. Shared between object.c and ray.c.
 static inline float rayAABB_inv(float3 bias, float3 invRd, const float *mn, const float *mx) {
+	// Unrolled slab test: compute all 6 t-values, then find tmin/tmax
 	float tx0 = mn[0] * invRd.x - bias.x, tx1 = mx[0] * invRd.x - bias.x;
 	float ty0 = mn[1] * invRd.y - bias.y, ty1 = mx[1] * invRd.y - bias.y;
 	float tz0 = mn[2] * invRd.z - bias.z, tz1 = mx[2] * invRd.z - bias.z;
-	float tmin = fmaxf(fmaxf(fminf(tx0, tx1), fminf(ty0, ty1)), fminf(tz0, tz1));
-	float tmax = fminf(fminf(fmaxf(tx0, tx1), fmaxf(ty0, ty1)), fmaxf(tz0, tz1));
+	// Use conditional moves (?:) instead of fminf/fmaxf — compiles to minss/maxss on x86
+	float tx_min = tx0 < tx1 ? tx0 : tx1;
+	float tx_max = tx0 > tx1 ? tx0 : tx1;
+	float ty_min = ty0 < ty1 ? ty0 : ty1;
+	float ty_max = ty0 > ty1 ? ty0 : ty1;
+	float tz_min = tz0 < tz1 ? tz0 : tz1;
+	float tz_max = tz0 > tz1 ? tz0 : tz1;
+	// Chain min/max — two levels deep (reduce serial dependency)
+	float tmin_xy = tx_min > ty_min ? tx_min : ty_min;
+	float tmin = tz_min > tmin_xy ? tz_min : tmin_xy;
+	float tmax_xy = tx_max < ty_max ? tx_max : ty_max;
+	float tmax = tz_max < tmax_xy ? tz_max : tmax_xy;
 	return tmax < tmin ? FLT_MAX : tmin;
 }
+
 
 #endif // OBJECT_H
