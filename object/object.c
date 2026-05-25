@@ -437,19 +437,19 @@ void DestroyObjectBVH(BVH *bvh) {
 static bool rayTriangle(float3 ro, float3 rd,
 						float3 v0, float3 v1, float3 v2, float *tOut) {
 	const float eps = 1e-7f;
-	float3 e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
-	float3 e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
-	float3 h = {rd.y * e2.z - rd.z * e2.y, rd.z * e2.x - rd.x * e2.z, rd.x * e2.y - rd.y * e2.x};
-	float a = e1.x * h.x + e1.y * h.y + e1.z * h.z;
+	float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
+	float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
+	float hx = rd.y * e2z - rd.z * e2y, hy = rd.z * e2x - rd.x * e2z, hz = rd.x * e2y - rd.y * e2x;
+	float a = e1x * hx + e1y * hy + e1z * hz;
 	if (fabsf(a) < eps) return false;
 	float f = 1.0f / a;
-	float3 s = {ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
-	float u = f * (s.x * h.x + s.y * h.y + s.z * h.z);
+	float sx = ro.x - v0.x, sy = ro.y - v0.y, sz = ro.z - v0.z;
+	float u = f * (sx * hx + sy * hy + sz * hz);
 	if (u < 0.0f || u > 1.0f) return false;
-	float3 q = {s.y * e1.z - s.z * e1.y, s.z * e1.x - s.x * e1.z, s.x * e1.y - s.y * e1.x};
-	float v = f * (rd.x * q.x + rd.y * q.y + rd.z * q.z);
+	float qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x;
+	float v = f * (rd.x * qx + rd.y * qy + rd.z * qz);
 	if (v < 0.0f || u + v > 1.0f) return false;
-	float t = f * (e2.x * q.x + e2.y * q.y + e2.z * q.z);
+	float t = f * (e2x * qx + e2y * qy + e2z * qz);
 	if (t < eps) return false;
 	*tOut = t;
 	return true;
