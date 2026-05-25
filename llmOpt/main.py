@@ -340,12 +340,10 @@ if __name__ == "__main__":
         prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
+        response = model.getResponseQwen3_6(prompt, mode="coding")
         # response = model.getResponseOllama(prompt, model="gemma4:e4b")
-        # if iteration % 8 == 0:
-        #     # use cheaper model every 8 iterations to save costs, since not every iteration needs a super detailed response
-        #     response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek") # Input 1M / 0.43$ Output 1M / 0.87$
-        # else:
-        response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4") # Input 1M / 0.10$ Output 1M / 0.20$
+        # response = model.getResponse(prompt, model="tencent/hy3-preview", provider="siliconflow")
+        # response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
         ui.set_last_response(response)
         print("Model response:", response)
         ui.set_status("running")

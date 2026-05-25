@@ -2,58 +2,14 @@
   "tasks": [
     {
       "id": 1,
-      "text": "Optimize rayAABB_inv by reducing min/max dependency chain depth",
-      "status": "done"
-    },
-    {
-      "id": 2,
-      "text": "Optimize BVH traversal in IntersectBVH to reduce memory traffic by loading BVHNode data more efficiently",
-      "status": "todo"
-    },
-    {
-      "id": 3,
-      "text": "Optimize RayBoxItersect calls in SampleEmission by precomputing invDir/bias and using rayAABB_inv",
-      "status": "todo"
-    },
-    {
-      "id": 4,
-      "text": "Replace RayBoxItersect in SampleEmission with precomputed bias/invDir and rayAABB_inv",
-      "status": "todo"
-    },
-    {
-      "id": 5,
-      "text": "SSE vectorize rayAABB_inv to reduce per-call latency",
+      "text": "Optimize rayAABB_inv BVH traversal slab test",
       "status": "todo"
     }
   ],
   "notes": [
     {
       "id": 1,
-      "text": "rayAABB_inv is the #1 hotspot at 29.7% exclusive time. It's a simple branchless slab test with precomputed bias/invRd. The function is heavily called from IntersectBVH traversal. Potential optimizations: (1) manually unroll the 3 components to reduce fminf/fmaxf overhead, (2) use SIMD intrinsics, (3) restructure to reduce register pressure."
-    },
-    {
-      "id": 2,
-      "text": "Let me try a more aggressive approach: use a flatter min/max tree to reduce dependency depth from 3 operations to 2 operations. Also try to coerce the compiler into using minss/maxss instructions by avoiding fminf/fmaxf."
-    },
-    {
-      "id": 3,
-      "text": "The modest improvement on rayAABB_inv suggests it's already quite optimized. Next target: IntersectBVH traversal - the stack is stored as int[64] but we could use a more efficient stack approach. Also notice that IntersectBVH pushes both children and we check rayAABB_inv twice per internal node. We could avoid the redundant float3 loads of BBmin/BBmax."
-    },
-    {
-      "id": 4,
-      "text": "Need to restore after regressed IntersectBVH change. Going to focus on rayAABB_inv optimization which gave a real improvement, and then look at avoiding redundant work in the BVH traversal."
-    },
-    {
-      "id": 5,
-      "text": "The current rayAABB_inv has a 3-deep dependency chain for tmin/tmax. By restructuring as a binary min/max tree we can reduce to 2 levels. Also, the && comparison at the end can be replaced with a bitwise trick: compute tmin > tmax via sign bit."
-    },
-    {
-      "id": 6,
-      "text": "rayTriangle is now the #1 hotspot at 19.8% exclusive. Attempting manual scalarization of the MT algorithm to reduce register spills and improve scheduling."
-    },
-    {
-      "id": 7,
-      "text": "SampleEmission loops over all objects calling RayBoxItersect, which recomputes 1/d per axis each time. Precompute invDir and bias once, then use rayAABB_inv directly to save divisions and branch overhead in the AABB test."
+      "text": "Baseline: 9.205ms avg, 1082 frames in 10s.\n\nHotspot Analysis:\n- RayTraceRowFunc: 97.5% inclusive\n  - IntersectBVH: 42.9% inclusive (15.3% exclusive)\n    - rayAABB_inv: 29.1% inclusive (28.9% exclusive) \u2014 TOP HOTSPOT\n    - rayTriangle: 13.5% inclusive\n  - sampleFace: 4.3%\n  - SampleEmission: 5.8%\n  - SampleSkybox: 1.6%\n\nThe #1 optimization target is rayAABB_inv which consumes ~29% of total time. It's called from IntersectBVH during BVH traversal. Since it's a small inline function in object/object.h, we can try to:\n1. Reduce function call overhead by inlining more aggressively\n2. Optimize the tmin/tmax computation\n3. Check if we can avoid some calls via early exit\n\nLet me first look at how rayAABB_inv is called and what the float3/bias structure looks like."
     }
   ]
 }
