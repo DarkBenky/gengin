@@ -518,11 +518,29 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 				}
 			}
 		} else {
+			// Inline rayAABB_inv for both children to avoid function call overhead.
 			// test both children immediately — they're adjacent in the array (same cache line).
 			// push farther child first so LIFO pops nearer child first → bestT converges faster.
 			int li = node->leftFirst, ri = li + 1;
-			float tl = rayAABB_inv(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax);
-			float tr = rayAABB_inv(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax);
+			const BVHNode *leftChild = &bvh->nodes[li];
+			const BVHNode *rightChild = &bvh->nodes[ri];
+
+			// Inline AABB test for left child
+			float ltx0 = leftChild->BBmin[0] * invDir.x - bias.x, ltx1 = leftChild->BBmax[0] * invDir.x - bias.x;
+			float lty0 = leftChild->BBmin[1] * invDir.y - bias.y, lty1 = leftChild->BBmax[1] * invDir.y - bias.y;
+			float ltz0 = leftChild->BBmin[2] * invDir.z - bias.z, ltz1 = leftChild->BBmax[2] * invDir.z - bias.z;
+			float tl = fmaxf(fmaxf(fminf(ltx0, ltx1), fminf(lty0, lty1)), fminf(ltz0, ltz1));
+			float tlmax = fminf(fminf(fmaxf(ltx0, ltx1), fmaxf(lty0, lty1)), fmaxf(ltz0, ltz1));
+			if (tlmax < tl) tl = FLT_MAX;
+
+			// Inline AABB test for right child
+			float rtx0 = rightChild->BBmin[0] * invDir.x - bias.x, rtx1 = rightChild->BBmax[0] * invDir.x - bias.x;
+			float rty0 = rightChild->BBmin[1] * invDir.y - bias.y, rty1 = rightChild->BBmax[1] * invDir.y - bias.y;
+			float rtz0 = rightChild->BBmin[2] * invDir.z - bias.z, rtz1 = rightChild->BBmax[2] * invDir.z - bias.z;
+			float tr = fmaxf(fmaxf(fminf(rtx0, rtx1), fminf(rty0, rty1)), fminf(rtz0, rtz1));
+			float trmax = fminf(fminf(fmaxf(rtx0, rtx1), fmaxf(rty0, rty1)), fmaxf(rtz0, rtz1));
+			if (trmax < tr) tr = FLT_MAX;
+
 			if (tl >= bestT) tl = FLT_MAX;
 			if (tr >= bestT) tr = FLT_MAX;
 			if (tl <= tr) {
