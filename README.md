@@ -1,6 +1,7 @@
 ## Tasks
 
 - [ ] Create optimized version of rayAABB_inv
+- [ ] Create Optimizes RayCast, SampleEmission, SampleFace, IntersectBVH
 
 - [ ] TODO: better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 

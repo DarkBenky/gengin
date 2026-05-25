@@ -3,7 +3,7 @@
     {
       "id": 1,
       "text": "Analyze rayAABB_inv for redundant calculations, precomputed inverse direction, and potential SIMD/vectorization.",
-      "status": "todo"
+      "status": "in_progress"
     },
     {
       "id": 2,
@@ -24,6 +24,31 @@
       "id": 5,
       "text": "Optimize rayTriangle by reducing operations and improving branch prediction.",
       "status": "todo"
+    },
+    {
+      "id": 6,
+      "text": "Optimize rayTriangle: reduce arithmetic by computing inverse determinant once, skip division if U/V bounds fail early, use const qualifiers to help compiler, and remove redundant subtractions.",
+      "status": "done"
+    },
+    {
+      "id": 7,
+      "text": "rayTriangle: Use inverse determinant multiplication instead of division, and defer division until after barycentric bounds checks to skip computations on misses.",
+      "status": "done"
+    },
+    {
+      "id": 8,
+      "text": "Analyze IntersectBVH for traversal order, branch reduction, and cache efficiency - next hotspot after rayTriangle.",
+      "status": "todo"
+    },
+    {
+      "id": 9,
+      "text": "Optimize rayAABB_inv: use explicit temporaries with fminf/fmaxf to reduce nested function call overhead and help compiler register allocation.",
+      "status": "todo"
+    },
+    {
+      "id": 10,
+      "text": "Optimize RayBoxItersect: unroll the axis loop, use slab method with precomputed invD, reduce branching.",
+      "status": "in_progress"
     }
   ],
   "notes": [
@@ -38,6 +63,66 @@
     {
       "id": 3,
       "text": "rayTriangle is 13.4% exclusive. It uses M\u00f6ller-Trumbore with 2 cross products, 2 dot products, 1 division, and several branches. Key optimization: The function is called for every triangle in a leaf node. We can reduce the number of operations by: 1) Using branchless early-outs where possible. 2) Reordering tests to fail fast. 3) Using SIMD if beneficial. However, the biggest win in rayTriangle is often reducing the number of calls via better BVH traversal or culling. Let me look at optimizing rayTriangle itself first by reducing divisions and using fast inverse square root or other tricks. Actually, the current implementation is already quite standard. A key optimization is to use the 'fast' version of M-T that avoids some multiplications. Let me also check if we can unroll or vectorize. For now, let's focus on a micro-optimization: reduce the number of subtractions and use local variables more efficiently."
+    },
+    {
+      "id": 4,
+      "text": "Optimizing rayAABB_inv by replacing fmaxf/fminf with conditional moves to reduce function call overhead and improve branch prediction."
+    },
+    {
+      "id": 5,
+      "text": "rayAABB_inv uses fmaxf/fminf which may prevent optimal instruction selection. Replacing with ternary operators allows compiler to emit minss/maxss directly."
+    },
+    {
+      "id": 6,
+      "text": "PERFORMANCE REGRESSION: Replacing fmaxf/fminf with ternaries in rayAABB_inv caused a massive slowdown (avg_ms: 8.9 -> 10234) and visual corruption (MSE=358). The ternary logic likely had a bug in the accumulation order or comparison logic. Restored to original. Need to investigate why the change broke things before trying again."
+    },
+    {
+      "id": 7,
+      "text": "Switching focus to rayTriangle (13.1% exclusive). It uses M\u00f6ller-Trumbore with 2 cross products, 2 dot products, 1 division, and several branches. Potential optimizations: reduce divisions by precomputing inverse determinant, reorder early-out tests to fail fast (check barycentric U/V before division), and use branchless min/max where possible."
+    },
+    {
+      "id": 8,
+      "text": "Plan: Optimize rayTriangle by replacing float3 struct usage with explicit scalar variables to reduce stack traffic and help compiler register allocation. Also, ensure early-outs are efficient."
+    },
+    {
+      "id": 9,
+      "text": "Found rayTriangle code. The function uses standard M\u00f6ller-Trumbore. Key observation: We compute 'f = 1.0f / a' before checking u. We can avoid the division by computing 'invDet = 1.0f / a' and using multiplication instead of division. More importantly, we can compute 'u' and 'v' without dividing by 'a' until after the bounds checks pass."
+    },
+    {
+      "id": 10,
+      "text": "rayTriangle scalar rewrite result: avg_ms 9.129 -> 9.03 (+1.1%), p99_ms 12.786 -> 10.903 (+14.7%). Visually identical. This is a win."
+    },
+    {
+      "id": 11,
+      "text": "rayAABB_inv is 28.7% exclusive. Previous ternary attempt failed due to logic bug in nested min/max. New plan: use explicit temporaries with fminf/fmaxf to help compiler, or try SIMD intrinsics if safe."
+    },
+    {
+      "id": 12,
+      "text": "Plan for rayAABB_inv: Expand nested fminf/fmaxf into explicit temporaries. This preserves exact semantics (using fminf/fmaxf which are safe) but reduces dependency depth, allowing the compiler to execute independent min/max operations in parallel. Previous ternary attempt failed due to logic bug; this approach avoids that risk entirely."
+    },
+    {
+      "id": 13,
+      "text": "Expanded temporaries in rayAABB_inv caused avg regression (-0.9%). Restoring. The compiler was already scheduling the nested fminf/fmaxf efficiently."
+    },
+    {
+      "id": 14,
+      "text": "rayAABB_inv expanded temporaries regressed. Restored. Next target: RayBoxItersect (2.9% exclusive) which uses a loop with branches and divisions per axis. Can unroll and use slab method pattern."
+    },
+    {
+      "id": 15,
+      "text": "Plan for RayBoxItersect: Unroll the axis loop, precompute invD for non-zero directions, use slab method with early-out. This replaces the loop with 3 ternary selects and per-axis division with a tight unrolled sequence."
+    },
+    {
+      "id": 16,
+      "text": "Applying RayBoxItersect optimization: unroll loop, precompute invD, use slab method with early-out."
+    },
+    {
+      "id": 17,
+      "text": "RayBoxItersect optimization result: unrolled loop with explicit axis blocks and slab method."
+    },
+    {
+      "id": 18,
+      "text": "Need to re-apply RayBoxItersect optimization with correct old_text."
     }
   ]
 }

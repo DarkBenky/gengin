@@ -197,13 +197,36 @@ def _benchSummary(current, baseline):
     return "\n".join(lines)
 
 
+BENCH_RUNS = 5  # number of bench runs to median-aggregate
+
+def _median(values):
+    s = sorted(v for v in values if v is not None)
+    if not s:
+        return None
+    mid = len(s) // 2
+    return s[mid] if len(s) & 1 else (s[mid - 1] + s[mid]) * 0.5
+
 def makeBench():
-    res = run(["make", "bench"], cwd=PROJECT_DIR)
-    with open(f"{PROJECT_DIR}/bench_results.json", "r") as f:
-        bench_results = json.load(f)
-        bench_results_raw = bench_results.copy()
-    bench_results.pop("frame_images", None)
-    bench_results.pop("frame_hashes", None)
+    scalar_keys = ["frames", "avg_ms", "median_ms", "p99_ms"]
+    runs = []
+    last_stdout = ""
+    for _ in range(BENCH_RUNS):
+        _res = run(["make", "clean"], cwd=PROJECT_DIR)
+        res = run(["make", "bench"], cwd=PROJECT_DIR)
+        last_stdout = res.stdout
+        with open(f"{PROJECT_DIR}/bench_results.json", "r") as f:
+            runs.append(json.load(f))
+
+    # median over scalar metrics; keep visual data from the middle run
+    mid_run = runs[len(runs) // 2]
+    bench_results_raw = mid_run.copy()
+    for k in scalar_keys:
+        vals = [r.get(k) for r in runs if r.get(k) is not None]
+        if vals:
+            bench_results_raw[k] = _median(vals)
+
+    bench_results = {k: v for k, v in bench_results_raw.items()
+                     if k not in ("frame_images", "frame_hashes")}
     summary = _benchSummary(bench_results_raw, BASELINE_RESULTS)
     record = {
         "type": "tool_use",
@@ -213,7 +236,7 @@ def makeBench():
         "bench_results": bench_results
     }
     CONTEXT.append(record)
-    return res.stdout, bench_results_raw
+    return last_stdout, bench_results_raw
 
 def makeFlame():
     run(["make", "flame"], cwd=PROJECT_DIR)
@@ -459,7 +482,7 @@ if __name__ == "__main__":
     ui.start()
     git_pull_project()
     gf.init()
-    planner.resetBoard()
+    # planner.resetBoard()
 
     getTree()
     # getTodos()
@@ -487,8 +510,9 @@ if __name__ == "__main__":
         xmlContext, tokenCount = convertContextToXml()
         ui.set_token_count(tokenCount)
         ui.sync_context(CONTEXT)
-        ui.sync_board(planner.showBoard(returnString=True))
-        prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
+        board = planner.showBoard(returnString=True)
+        ui.sync_board(board)
+        prompt = SYSTEM_PROMPT + "\n\n== CURRENT BOARD ==\n" + board + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
         is_plan_iteration = False
@@ -531,7 +555,6 @@ if __name__ == "__main__":
         ui.set_status("running")
         if is_plan_iteration:
             ui.sync_context(CONTEXT)
-            ui.sync_board(planner.showBoard(returnString=True))
             ui.sync_diff(gf.getDiff(returnString=True, code_only=True))
             continue
         results = executor.executeAll(response, TOOL_MAP, context=CONTEXT)
@@ -558,5 +581,4 @@ if __name__ == "__main__":
             print(f"[loop-detect] injected nudge for repeated '{loop_tool}'")
 
         ui.sync_context(CONTEXT)
-        ui.sync_board(planner.showBoard(returnString=True))
         ui.sync_diff(gf.getDiff(returnString=True, code_only=True))
