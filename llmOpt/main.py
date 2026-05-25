@@ -12,8 +12,9 @@
 # TODO: defines skills and tools for the model to use, e.g. git, perf, flamegraph, etc.
 # TODO: add boundaries so model can execute commands outside of the directory
 
-import subprocess
 import os
+import re
+import subprocess
 
 def _load_env(path):
     try:
@@ -346,6 +347,12 @@ if __name__ == "__main__":
         # response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
         ui.set_last_response(response)
         print("Model response:", response)
+        response_for_context = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+        CONTEXT.append({
+            "type": "model_response",
+            "iteration": iteration,
+            "output": response_for_context
+        })
         ui.set_status("running")
         results = executor.executeAll(response, TOOL_MAP, context=CONTEXT)
         for r in results:
