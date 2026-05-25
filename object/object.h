@@ -169,4 +169,15 @@ static inline float rayAABB_inv(float3 bias, float3 invRd, const float *mn, cons
 	return tmax < tmin ? FLT_MAX : tmin;
 }
 
+// Bool variant that returns true if the ray hits the AABB (no tmin extraction).
+// Used by IntersectBVH_Shadow to avoid the final comparison against FLT_MAX.
+static inline bool rayAABB_inv_isHit(float3 bias, float3 invRd, const float *mn, const float *mx) {
+	float tx0 = mn[0] * invRd.x - bias.x, tx1 = mx[0] * invRd.x - bias.x;
+	float ty0 = mn[1] * invRd.y - bias.y, ty1 = mx[1] * invRd.y - bias.y;
+	float tz0 = mn[2] * invRd.z - bias.z, tz1 = mx[2] * invRd.z - bias.z;
+	float tmin = fmaxf(fmaxf(fminf(tx0, tx1), fminf(ty0, ty1)), fminf(tz0, tz1));
+	float tmax = fminf(fminf(fmaxf(tx0, tx1), fmaxf(ty0, ty1)), fmaxf(tz0, tz1));
+	return tmax >= tmin;
+}
+
 #endif // OBJECT_H

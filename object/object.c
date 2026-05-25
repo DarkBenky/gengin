@@ -523,14 +523,13 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 			int li = node->leftFirst, ri = li + 1;
 			float tl = rayAABB_inv(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax);
 			float tr = rayAABB_inv(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax);
-			if (tl >= bestT) tl = FLT_MAX;
-			if (tr >= bestT) tr = FLT_MAX;
+			// order by distance: push farther child first so LIFO pops nearer child first → bestT converges faster.
 			if (tl <= tr) {
-				if (tr < FLT_MAX) stack[top++] = ri;
-				if (tl < FLT_MAX) stack[top++] = li;
+				if (tr < bestT) stack[top++] = ri;
+				if (tl < bestT) stack[top++] = li;
 			} else {
-				if (tl < FLT_MAX) stack[top++] = li;
-				if (tr < FLT_MAX) stack[top++] = ri;
+				if (tl < bestT) stack[top++] = li;
+				if (tr < bestT) stack[top++] = ri;
 			}
 		}
 	}
@@ -576,8 +575,8 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 			}
 		} else {
 			int li = node->leftFirst, ri = li + 1;
-			if (rayAABB_inv(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax) < FLT_MAX) stack[top++] = li;
-			if (rayAABB_inv(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax) < FLT_MAX) stack[top++] = ri;
+			if (rayAABB_inv_isHit(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax)) stack[top++] = li;
+			if (rayAABB_inv_isHit(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax)) stack[top++] = ri;
 		}
 	}
 	return false;
