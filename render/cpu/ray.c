@@ -908,58 +908,81 @@ static void RayTraceRowFunc(void *arg) {
 		catchShadow[x] = catchShadowValue;
 	}
 	// blur reflection emission and shadows contributions across the row
+	// O(width) sliding-window running sum (matching original clamped kernel)
+	const int kr = BLUR_RADIUS;
+
+	float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
+	float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
+	float3 accumulatedShadow = {0.0f, 0.0f, 0.0f};
+	int samples = 0;
+
+	// Init window for x=0: sum k=0..kr, clamped to width
+	for (int k = 0; k <= kr && k < width; k++) {
+		accumulatedColor.x += catchReflections[k].x;
+		accumulatedColor.y += catchReflections[k].y;
+		accumulatedColor.z += catchReflections[k].z;
+		accumulatedEmission.x += catchEmissions[k].x;
+		accumulatedEmission.y += catchEmissions[k].y;
+		accumulatedEmission.z += catchEmissions[k].z;
+		accumulatedShadow.x += catchShadow[k].x;
+		accumulatedShadow.y += catchShadow[k].y;
+		accumulatedShadow.z += catchShadow[k].z;
+		samples++;
+	}
+
 	for (int x = 0; x < width; x++) {
-		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
-		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
-		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
-		float3 accumulatedShadow = {0.0f, 0.0f, 0.0f};
-		int samples = 0;
-		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
-			int kIdx = x + kernelSize - BLUR_RADIUS - 1;
-			if (kIdx >= 0 && kIdx < width) {
-				accumulatedColor.x += catchReflections[kIdx].x;
-				accumulatedColor.y += catchReflections[kIdx].y;
-				accumulatedColor.z += catchReflections[kIdx].z;
-				accumulatedEmission.x += catchEmissions[kIdx].x;
-				accumulatedEmission.y += catchEmissions[kIdx].y;
-				accumulatedEmission.z += catchEmissions[kIdx].z;
-				accumulatedShadow.x += catchShadow[kIdx].x;
-				accumulatedShadow.y += catchShadow[kIdx].y;
-				accumulatedShadow.z += catchShadow[kIdx].z;
-				samples++;
-			}
-		}
-		if (samples > 0) {
-			float invW = 1.0f / samples;
-			accumulatedColor.x *= invW;
-			accumulatedColor.y *= invW;
-			accumulatedColor.z *= invW;
-			accumulatedEmission.x *= invW;
-			accumulatedEmission.y *= invW;
-			accumulatedEmission.z *= invW;
-			accumulatedShadow.x *= invW;
-			accumulatedShadow.y *= invW;
-			accumulatedShadow.z *= invW;
-		}
-		Color baseColor = camera->framebuffer[row * width + x];
-		float3 base = UnpackColor(baseColor);
-		float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
-		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
-								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
-								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w);
+		// Compute averaged result from raw window sum (do NOT mutate accumulators)
+		float invW = samples > 0 ? 1.0f / samples : 0.0f;
+		float3 avgColor = {accumulatedColor.x * invW, accumulatedColor.y * invW, accumulatedColor.z * invW};
+		float3 avgEmission = {accumulatedEmission.x * invW, accumulatedEmission.y * invW, accumulatedEmission.z * invW};
+		float3 avgShadow = {accumulatedShadow.x * invW, accumulatedShadow.y * invW, accumulatedShadow.z * invW};
 
-		float3 ownEmission = camera->bloomBuffer[row * width + x];
-		camera->bloomBuffer[row * width + x] = (float3){
-			ownEmission.x + accumulatedEmission.x,
-			ownEmission.y + accumulatedEmission.y,
-			ownEmission.z + accumulatedEmission.z,
-		};
+		if (camera->depthBuffer[row * width + x] < DEPTH_FAR) {
+			Color baseColor = camera->framebuffer[row * width + x];
+			float3 base = UnpackColor(baseColor);
+			float shadowMod = 0.03f + 0.97f * fminf(avgShadow.x, 1.0f);
+			float3 combined = hdrToLDR(base.x * shadowMod + avgEmission.x + avgColor.x * camera->reflectBuffer[row * width + x].w,
+								   base.y * shadowMod + avgEmission.y + avgColor.y * camera->reflectBuffer[row * width + x].w,
+								   base.z * shadowMod + avgEmission.z + avgColor.z * camera->reflectBuffer[row * width + x].w);
 
-		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
-		// camera->framebuffer[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
-		// camera->framebuffer[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
-		// camera->framebuffer[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
-		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z));
+			float3 ownEmission = camera->bloomBuffer[row * width + x];
+			camera->bloomBuffer[row * width + x] = (float3){
+				ownEmission.x + avgEmission.x,
+				ownEmission.y + avgEmission.y,
+				ownEmission.z + avgEmission.z,
+			};
+
+			camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+		}
+
+		// Advance window: outIdx = x - kr, inIdx = x + kr + 1
+		int outIdx = x - kr;
+		int inIdx = x + kr + 1;
+
+		if (outIdx >= 0 && outIdx < width) {
+			accumulatedColor.x -= catchReflections[outIdx].x;
+			accumulatedColor.y -= catchReflections[outIdx].y;
+			accumulatedColor.z -= catchReflections[outIdx].z;
+			accumulatedEmission.x -= catchEmissions[outIdx].x;
+			accumulatedEmission.y -= catchEmissions[outIdx].y;
+			accumulatedEmission.z -= catchEmissions[outIdx].z;
+			accumulatedShadow.x -= catchShadow[outIdx].x;
+			accumulatedShadow.y -= catchShadow[outIdx].y;
+			accumulatedShadow.z -= catchShadow[outIdx].z;
+			samples--;
+		}
+		if (inIdx >= 0 && inIdx < width) {
+			accumulatedColor.x += catchReflections[inIdx].x;
+			accumulatedColor.y += catchReflections[inIdx].y;
+			accumulatedColor.z += catchReflections[inIdx].z;
+			accumulatedEmission.x += catchEmissions[inIdx].x;
+			accumulatedEmission.y += catchEmissions[inIdx].y;
+			accumulatedEmission.z += catchEmissions[inIdx].z;
+			accumulatedShadow.x += catchShadow[inIdx].x;
+			accumulatedShadow.y += catchShadow[inIdx].y;
+			accumulatedShadow.z += catchShadow[inIdx].z;
+			samples++;
+		}
 	}
 }
 
