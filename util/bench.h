@@ -9,6 +9,10 @@
 #define BENCH_DURATION 5.0
 #endif
 
+#ifndef BENCH_WARMUP
+#define BENCH_WARMUP 2.0
+#endif
+
 #ifndef BENCH_HASH_FRAMES
 #define BENCH_HASH_FRAMES 10
 #endif
@@ -84,6 +88,9 @@ static inline void benchInit(Bench *b) {
 
 static inline void benchCaptureFrame(Bench *b, const uint32_t *pixels, int width, int height) {
 	if (b->hashCount >= BENCH_HASH_FRAMES) return;
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	if (benchDiff(b->start, now) < BENCH_WARMUP) return;
 	int pixelCount = width * height;
 	b->frameWidth = width;
 	b->frameHeight = height;
@@ -102,9 +109,10 @@ static inline void benchFrameStart(Bench *b) {
 static inline int benchFrameEnd(Bench *b) {
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	if (b->count < BENCH_MAX_FRAMES)
+	double elapsed = benchDiff(b->start, now);
+	if (elapsed >= BENCH_WARMUP && b->count < BENCH_MAX_FRAMES)
 		b->times[b->count++] = benchDiff(b->frameStart, now) * 1000.0;
-	return benchDiff(b->start, now) >= BENCH_DURATION;
+	return elapsed >= BENCH_WARMUP + BENCH_DURATION;
 }
 
 static inline void benchReport(Bench *b) {

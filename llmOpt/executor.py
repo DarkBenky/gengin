@@ -186,6 +186,8 @@ def buildToolMap(gf_module, planner_module, main_module=None):
         "showSrcPair":         gf.showSrcPair,
         "listFunctions":       gf.listFunctions,
         "readSourceFile":      gf.readSourceFile,
+        "hotAnnotateFunc":     gf.hotAnnotateFunc,
+        "hotAnnotateFile":     gf.hotAnnotateFile,
         "apiHelp":             gf.apiHelp,
         # --- applying changes ---
         "searchReplace":       gf.searchReplace,

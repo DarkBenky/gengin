@@ -5,6 +5,8 @@ Usage:  python getFunc.py [FunctionName] [--depth N]
         [--list|--diff|--callers|--def|--restore|--restore-all|--replace file.c]
         [--replace-lines FILE START END new_impl.c|--patch patches.json|--meta]
         [--src path/to/file.c|--src-pair path/to/file.c|--help-api]
+        [--hot-func FunctionName [--threshold N]]
+        [--hot-file path/to/file.c [--threshold N]]
 """
 
 import os
@@ -349,6 +351,17 @@ def restoreFunction(func_name, functions=None, context=None):
     return restoreFile(functions[func_name]['file'], context=context)
 
 
+def _find_normalized_lines(content_lines, old_lines):
+    """Find old_lines in content_lines ignoring trailing whitespace. Returns start index or -1."""
+    norm_old = [l.rstrip() for l in old_lines]
+    norm_content = [l.rstrip() for l in content_lines]
+    n = len(norm_old)
+    for i in range(len(norm_content) - n + 1):
+        if norm_content[i:i + n] == norm_old:
+            return i
+    return -1
+
+
 def searchReplace(rel_path, old_text, new_text, context=None):
     """Find old_text exactly once in rel_path and replace it with new_text."""
     filepath = os.path.join(GENGIN, rel_path)
@@ -362,18 +375,43 @@ def searchReplace(rel_path, old_text, new_text, context=None):
         return False
 
     count = content.count(old_text)
-    if count == 0:
-        msg = f"old_text not found in {rel_path}. Make sure you copy the exact text including whitespace/indentation."
-        if context is not None:
-            context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
-        return False
     if count > 1:
         msg = f"old_text matched {count} locations in {rel_path}. Add more surrounding lines to make it unique."
         if context is not None:
             context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
         return False
 
-    new_content = content.replace(old_text, new_text, 1)
+    if count == 1:
+        new_content = content.replace(old_text, new_text, 1)
+    else:
+        # Exact match failed — try trailing-whitespace-insensitive line match
+        content_lines = content.splitlines(keepends=True)
+        old_lines = old_text.splitlines(keepends=True)
+        idx = _find_normalized_lines(
+            [l.rstrip('\r\n') for l in content_lines],
+            [l.rstrip('\r\n') for l in old_lines],
+        )
+        if idx == -1:
+            msg = f"old_text not found in {rel_path} (tried exact and whitespace-normalized match). Use showSrcPair to copy the exact text."
+            if context is not None:
+                context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+            return False
+        # Check uniqueness of normalized match
+        matches = 0
+        norm_old = [l.rstrip() for l in old_lines]
+        norm_content = [l.rstrip() for l in content_lines]
+        n = len(norm_old)
+        for i in range(len(norm_content) - n + 1):
+            if norm_content[i:i + n] == norm_old:
+                matches += 1
+        if matches > 1:
+            msg = f"old_text matched {matches} locations (normalized) in {rel_path}. Add more surrounding lines."
+            if context is not None:
+                context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+            return False
+        new_lines = new_text.splitlines(keepends=True)
+        new_content = "".join(content_lines[:idx] + new_lines + content_lines[idx + n:])
+
     with open(filepath, 'w') as fh:
         fh.write(new_content)
     _refresh_file(filepath)
@@ -562,6 +600,180 @@ def showSrcPair(rel_path, returnString=False, context=None):
     print(output)
 
 
+# --- Perf hot-line annotation ---
+
+_ANNOT_LINE_RE = re.compile(r'^\s*([\d.]+)\s*:\s*([0-9a-f]+):\s')
+
+
+def _perfAnnotateFunc(func_name, cwd=None):
+    """
+    Return {source_lineno: pct} for func_name using perf annotate + addr2line.
+    Requires perf.data and a binary built with -g in the same directory.
+    """
+    search = cwd or GENGIN
+    perf_cwd = None
+    for _ in range(4):
+        if os.path.exists(os.path.join(search, "perf.data")):
+            perf_cwd = search
+            break
+        parent = os.path.dirname(search)
+        if parent == search:
+            break
+        search = parent
+    if perf_cwd is None:
+        return {}
+
+    binary = os.path.join(perf_cwd, "main")
+    if not os.path.exists(binary):
+        return {}
+
+    try:
+        result = subprocess.run(
+            ["sudo", "perf", "annotate", "--stdio", "-s", func_name,
+             "-i", "perf.data", "-f"],
+            capture_output=True, text=True, cwd=perf_cwd, timeout=30
+        )
+
+        # collect {addr: pct} from lines like "    4.17 :   124dd:  movss ..."
+        addr_pct = {}
+        for line in result.stdout.splitlines():
+            m = _ANNOT_LINE_RE.match(line)
+            if m:
+                pct = float(m.group(1))
+                if pct > 0.0:
+                    addr = int(m.group(2), 16)
+                    addr_pct[addr] = addr_pct.get(addr, 0.0) + pct
+
+        if not addr_pct:
+            return {}
+
+        # map addresses to source line numbers via addr2line
+        addrs_hex = [hex(a) for a in addr_pct]
+        a2l = subprocess.run(
+            ["addr2line", "-e", binary, "-f"] + addrs_hex,
+            capture_output=True, text=True, timeout=30
+        )
+
+        hotness = {}
+        a2l_lines = a2l.stdout.splitlines()
+        pcts = list(addr_pct.values())
+        # addr2line -f outputs 2 lines per address: func_name, then file:lineno
+        for i, pct in enumerate(pcts):
+            loc_idx = i * 2 + 1
+            if loc_idx >= len(a2l_lines):
+                break
+            loc = a2l_lines[loc_idx]
+            if ':' in loc and not loc.startswith('?'):
+                try:
+                    lineno = int(loc.rsplit(':', 1)[1])
+                    hotness[lineno] = hotness.get(lineno, 0.0) + pct
+                except (ValueError, IndexError):
+                    pass
+
+        return hotness
+    except Exception:
+        return {}
+
+
+def _annotateLines(source_lines, start_lineno, hotness, threshold):
+    """Prepend /* HOT X.X% */ markers to hot lines; pad cold lines to same width."""
+    pad = " " * 16
+    result = []
+    for i, line in enumerate(source_lines):
+        pct = hotness.get(start_lineno + i, 0.0)
+        if pct >= threshold:
+            result.append(f"/* HOT {pct:5.1f}% */ {line}")
+        else:
+            result.append(pad + line)
+    return result
+
+
+def hotAnnotateFunc(func_name, threshold=0.5, functions=None, context=None):
+    """
+    Return the source of func_name annotated with per-line perf percentages.
+    Lines consuming >= threshold% of samples are prefixed with /* HOT X.X% */.
+    Requires perf.data from a previous makeFlame() run.
+    """
+    functions = functions if functions is not None else _functions
+    if func_name not in functions:
+        output = f"Function '{func_name}' not found in codebase index."
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "hotAnnotateFunc",
+                            "input": func_name, "output": output})
+        return output
+
+    info = functions[func_name]
+    filepath = next(
+        (p for p in (_sources or {}) if os.path.relpath(p, GENGIN) == info['file']),
+        None
+    )
+    if filepath is None:
+        output = f"Source file not found for '{func_name}'."
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "hotAnnotateFunc",
+                            "input": func_name, "output": output})
+        return output
+
+    hotness = _perfAnnotateFunc(func_name)
+
+    with open(filepath, errors='replace') as fh:
+        all_lines = fh.read().splitlines()
+
+    func_lines = all_lines[info['start'] - 1:info['end']]
+    annotated = _annotateLines(func_lines, info['start'], hotness, threshold)
+
+    header = (
+        f"// hotAnnotateFunc: {func_name}  [{info['file']}:{info['start']}-{info['end']}]\n"
+        f"// threshold={threshold}%  |  /* HOT X.X% */ marks hot lines\n"
+    )
+    suffix = "" if hotness else "\n// NOTE: no perf.data or perf annotate failed -- run makeFlame() first."
+    output = header + '\n'.join(annotated) + suffix
+
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "hotAnnotateFunc",
+                        "input": {"func": func_name, "threshold": threshold}, "output": output})
+    return output
+
+
+def hotAnnotateFile(rel_path, threshold=0.5, functions=None, context=None):
+    """
+    Return an entire source file annotated with per-line perf percentages.
+    Collects perf annotate data for every function found in rel_path and
+    merges the line-level hotness across all of them.
+    Requires perf.data from a previous makeFlame() run.
+    """
+    functions = functions if functions is not None else _functions
+    filepath = os.path.join(GENGIN, rel_path)
+    try:
+        with open(filepath, errors='replace') as fh:
+            all_lines = fh.read().splitlines()
+    except FileNotFoundError:
+        output = f"File not found: {rel_path}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "hotAnnotateFile",
+                            "input": rel_path, "output": output})
+        return output
+
+    file_funcs = [name for name, data in functions.items() if data['file'] == rel_path]
+    combined = {}
+    for fn in file_funcs:
+        for lineno, pct in _perfAnnotateFunc(fn).items():
+            combined[lineno] = combined.get(lineno, 0.0) + pct
+
+    annotated = _annotateLines(all_lines, 1, combined, threshold)
+    header = (
+        f"// hotAnnotateFile: {rel_path}\n"
+        f"// threshold={threshold}%  |  /* HOT X.X% */ marks hot lines\n"
+    )
+    suffix = "" if combined else "\n// NOTE: no perf.data or no matching functions -- run makeFlame() first."
+    output = header + '\n'.join(annotated) + suffix
+
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "hotAnnotateFile",
+                        "input": {"rel_path": rel_path, "threshold": threshold}, "output": output})
+    return output
+
+
 _API = [
     ("Exploration", [
         ("showContext(func, depth=1)",
@@ -580,6 +792,10 @@ _API = [
          "List all indexed functions sorted by file. Returns list of {name, file, sig}."),
         ("readSourceFile(rel_path)",
          "Read raw file content (no line numbers)."),
+        ("hotAnnotateFunc(func_name, threshold=0.5)",
+         "Source of func_name annotated with /* HOT X.X% */ on lines that consumed >= threshold% of perf samples. Requires makeFlame() to have been run."),
+        ("hotAnnotateFile(rel_path, threshold=0.5)",
+         "Entire source file annotated with /* HOT X.X% */ per-line hotness across all functions in it. Requires makeFlame() to have been run."),
     ]),
     ("Applying Changes", [
         ("searchReplace(rel_path, old_text, new_text)",
@@ -744,6 +960,28 @@ if __name__ == '__main__':
             print("Usage: python getFunc.py --src path/to/file.c")
             sys.exit(1)
         showSrc(args[idx + 1])
+    elif '--hot-func' in args:
+        idx = args.index('--hot-func')
+        if idx + 1 >= len(args):
+            print("Usage: python getFunc.py --hot-func FunctionName [--threshold N]")
+            sys.exit(1)
+        threshold = 0.5
+        if '--threshold' in args:
+            tidx = args.index('--threshold')
+            if tidx + 1 < len(args):
+                threshold = float(args[tidx + 1])
+        print(hotAnnotateFunc(args[idx + 1], threshold=threshold))
+    elif '--hot-file' in args:
+        idx = args.index('--hot-file')
+        if idx + 1 >= len(args):
+            print("Usage: python getFunc.py --hot-file path/to/file.c [--threshold N]")
+            sys.exit(1)
+        threshold = 0.5
+        if '--threshold' in args:
+            tidx = args.index('--threshold')
+            if tidx + 1 < len(args):
+                threshold = float(args[tidx + 1])
+        print(hotAnnotateFile(args[idx + 1], threshold=threshold))
     elif '--help-api' in args:
         apiHelp()
     else:

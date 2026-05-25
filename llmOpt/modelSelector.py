@@ -130,7 +130,7 @@ def getResponseQwen3_6(
     def _post(token):
         payload = json.dumps({
             "messages": messages,
-            "max_tokens": 32768,
+            "max_tokens": 262_000,
             "stream": False,
             **p,
         }).encode()

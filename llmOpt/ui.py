@@ -7,7 +7,7 @@ updates. Open http://localhost:5050 in a browser to watch.
 
 import threading
 import time
-from flask import Flask, Response, jsonify, render_template_string
+from flask import Flask, Response, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
@@ -21,6 +21,7 @@ _state = {
     "events": [],            # SSE event log
     "pr_url": "",
     "diff": "",
+    "nudge_pending": "",     # set by UI button, consumed by main loop
 }
 _lock = threading.Lock()
 
@@ -69,6 +70,11 @@ _HTML = """<!DOCTYPE html>
   <span id="status-badge" class="idle">idle</span>
   <span id="iter-badge" style="color:#8b949e;font-size:.85rem;"></span>
   <span id="token-badge" style="color:#8b949e;font-size:.85rem;margin-left:auto;"></span>
+  <button id="nudge-btn" onclick="sendNudge()"
+    style="margin-left:12px;padding:3px 12px;border-radius:8px;border:1px solid #f85149;
+           background:#2a0a0a;color:#f85149;cursor:pointer;font-family:monospace;font-size:.82rem;">
+    nudge (unstuck)
+  </button>
 </header>
 <main>
   <section>
@@ -146,6 +152,16 @@ function refresh() {
 // poll every 1.5 s — simple, no SSE complexity needed
 setInterval(refresh, 1500);
 refresh();
+
+function sendNudge() {
+  const msg = prompt('Nudge message (leave blank for default):',
+    'Write your notes NOW: call addNote() with what you have observed and why it is slow, then addTask() with your plan. Then implement the change with searchReplace() or applyChange(). Do not just read more code.');
+  if (msg === null) return;
+  fetch('/api/nudge', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({message: msg || ''})});
+  document.getElementById('nudge-btn').textContent = 'nudge sent!';
+  setTimeout(() => document.getElementById('nudge-btn').textContent = 'nudge (unstuck)', 2000);
+}
 </script>
 </body>
 </html>"""
@@ -160,6 +176,22 @@ def index():
 def api_state():
     with _lock:
         return jsonify(dict(_state))
+
+
+@app.route("/api/nudge", methods=["POST"])
+def api_nudge():
+    data = request.get_json(silent=True) or {}
+    msg = (data.get("message") or "").strip()
+    if not msg:
+        msg = ("Write your notes NOW before doing anything else: "
+               "call addNote() with what you have observed and why the hotspot is slow, "
+               "then addTask() for each change you plan. "
+               "Notes survive context compression — anything not written to the board will be forgotten. "
+               "After noting, implement the top task with searchReplace() or applyChange().")
+    with _lock:
+        _state["nudge_pending"] = msg
+    _log(f"[info] nudge queued by user")
+    return jsonify({"ok": True})
 
 
 # --- Public API called by main loop ---
@@ -221,6 +253,14 @@ def _log(msg):
 def sync_diff(text):
     with _lock:
         _state["diff"] = text or ""
+
+
+def pop_nudge():
+    """Return and clear any pending nudge message. Returns empty string if none."""
+    with _lock:
+        msg = _state["nudge_pending"]
+        _state["nudge_pending"] = ""
+    return msg
 
 
 def start(port=5051):

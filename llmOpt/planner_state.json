@@ -2,14 +2,68 @@
   "tasks": [
     {
       "id": 1,
-      "text": "Optimize rayAABB_inv BVH traversal slab test",
+      "text": "Optimize rayAABB_inv: This is 29.4% exclusive. The current implementation likely uses divisions. Replace with precomputed inv_dir and avoid division in hot path.",
+      "status": "todo"
+    },
+    {
+      "id": 2,
+      "text": "Inline IntersectBVH: Move implementation to object/object.h as static inline to allow compiler optimization across function boundary",
+      "status": "todo"
+    },
+    {
+      "id": 3,
+      "text": "Optimize rayTriangle: The M\u00f6ller-Trumbore algorithm has a division (1.0f/a) per triangle test. Look for opportunities to reduce operations or use faster approximations.",
+      "status": "todo"
+    },
+    {
+      "id": 4,
+      "text": "Inline IntersectBVH: Move implementation to object/object.h as static inline to allow compiler optimization across function boundary",
+      "status": "todo"
+    },
+    {
+      "id": 5,
+      "text": "Re-apply float3 by-value to rayAABB_inv callers and rebuild without stale PGO data",
+      "status": "todo"
+    },
+    {
+      "id": 6,
+      "text": "Optimize rayTriangle: Restructure M\u00f6ller-Trumbore to reduce dependency chains and improve pipelining",
+      "status": "todo"
+    },
+    {
+      "id": 7,
+      "text": "Optimize BVH traversal: Reduce memory accesses in the inner loop by loading AABB data into local variables",
       "status": "todo"
     }
   ],
   "notes": [
     {
       "id": 1,
-      "text": "Baseline: 9.205ms avg, 1082 frames in 10s.\n\nHotspot Analysis:\n- RayTraceRowFunc: 97.5% inclusive\n  - IntersectBVH: 42.9% inclusive (15.3% exclusive)\n    - rayAABB_inv: 29.1% inclusive (28.9% exclusive) \u2014 TOP HOTSPOT\n    - rayTriangle: 13.5% inclusive\n  - sampleFace: 4.3%\n  - SampleEmission: 5.8%\n  - SampleSkybox: 1.6%\n\nThe #1 optimization target is rayAABB_inv which consumes ~29% of total time. It's called from IntersectBVH during BVH traversal. Since it's a small inline function in object/object.h, we can try to:\n1. Reduce function call overhead by inlining more aggressively\n2. Optimize the tmin/tmax computation\n3. Check if we can avoid some calls via early exit\n\nLet me first look at how rayAABB_inv is called and what the float3/bias structure looks like."
+      "text": "Baseline: avg 9.14ms, 1090 frames in 10s. Top hotspot is rayAABB_inv at 29.4% exclusive time, IntersectBVH at 43.4% inclusive. This is the BVH traversal and AABB intersection testing."
+    },
+    {
+      "id": 2,
+      "text": "Key insight: IntersectBVH is called per-object per-ray. The world AABB test in RayTraceRowFunc already culls objects, but IntersectBVH is still called for objects that pass. IntersectBVH transforms the ray to local space (18 mults, 6 adds), computes invDir/bias (3 divs, 3 mults), then traverses the BVH. Making IntersectBVH inline could help the compiler optimize across the function boundary."
+    },
+    {
+      "id": 3,
+      "text": "rayAABB_inv float3 by-value change: avg 9.06ms (was 9.14ms), +0.9% improvement. image_mse=0.00 (visually identical). The change passes float3 by value instead of const float* pointers, allowing better register allocation."
+    },
+    {
+      "id": 4,
+      "text": "Inlining rayAABB_inv directly in IntersectBVH caused -16% regression. Likely due to increased code complexity preventing compiler optimizations or increased register pressure. Restored to baseline + the float3 by-value change (which gave +0.9%)."
+    },
+    {
+      "id": 5,
+      "text": "Regression after re-applying float3 by-value: avg 9.806ms vs 9.14ms baseline. This may be due to stale profile-guided optimization data (.profdata). Need to rebuild without PGO or with fresh profile data. image_mse=0.00, visually identical."
+    },
+    {
+      "id": 6,
+      "text": "Re-applying float3 by-value change to rayAABB_inv. Previous regression likely due to stale .profdata PGO data. Will delete .profdata and rebuild clean."
+    },
+    {
+      "id": 7,
+      "text": "float3 by-value change to rayAABB_inv caused consistent -7-10% regression. Restoring. The change likely increased register pressure or hurt instruction scheduling. Need a different approach."
     }
   ]
 }

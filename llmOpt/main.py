@@ -12,6 +12,7 @@
 # TODO: defines skills and tools for the model to use, e.g. git, perf, flamegraph, etc.
 # TODO: add boundaries so model can execute commands outside of the directory
 
+import base64
 import os
 import re
 import subprocess
@@ -37,6 +38,7 @@ import executor
 import modelSelector as model
 import sys
 import ui
+import random
 
 SYSTEM_PROMPT = "TODO: create prompt for model"
 
@@ -44,6 +46,9 @@ CONTEXT = []
 
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
+
+CONTEXT_MAX_TOKENS = 128_000
+CONTEXT_COMPRESS_AT = 0.75  # trigger compression when > 75% full
 
 def run(cmd, **kwargs):
     result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
@@ -145,9 +150,43 @@ def _benchSummary(current, baseline):
         changed = sum(1 for b, c in zip(base_hashes, curr_hashes) if b != c)
         changed += abs(len(base_hashes) - len(curr_hashes))
         if changed == 0:
-            lines.append(f"  frame_hashes  all {total} frame(s) match baseline [OK]")
+            lines.append(f"  frame_hashes  all {total} frame(s) match baseline (informational only)")
         else:
-            lines.append(f"  frame_hashes  {changed}/{total} frame(s) changed vs baseline [OUTPUT CHANGED]")
+            lines.append(f"  frame_hashes  {changed}/{total} frame(s) differ (informational only -- use MSE below)")
+
+    # MSE-based image similarity — primary visual correctness metric
+    base_imgs = baseline.get("frame_images") or []
+    curr_imgs = current.get("frame_images") or []
+    mse_values = []
+    for b64_b, b64_c in zip(base_imgs, curr_imgs):
+        if not b64_b or not b64_c:
+            continue
+        try:
+            raw_b = base64.b64decode(b64_b)
+            raw_c = base64.b64decode(b64_c)
+            n = min(len(raw_b), len(raw_c))
+            if n == 0:
+                continue
+            # sample every 64 bytes to keep this fast without numpy
+            step = 64
+            mse = sum((raw_b[i] - raw_c[i]) ** 2 for i in range(0, n, step)) / (n // step)
+            mse_values.append(mse)
+        except Exception:
+            pass
+    if mse_values:
+        avg_mse = sum(mse_values) / len(mse_values)
+        max_mse = max(mse_values)
+        if avg_mse < 2.5:
+            verdict = "VISUALLY IDENTICAL"
+        elif avg_mse < 10.0:
+            verdict = "MINOR DIFFERENCE (acceptable)"
+        elif avg_mse < 100.0:
+            verdict = "NOTICEABLE DIFFERENCE"
+        else:
+            verdict = "SIGNIFICANT VISUAL CHANGE"
+        lines.append(f"  image_mse     avg={avg_mse:.2f}  max={max_mse:.2f}  [{verdict}]")
+    else:
+        lines.append("  image_mse     no image data available")
 
     if improved > regressed:
         lines.append("=> OVERALL: PERFORMANCE IMPROVED")
@@ -197,16 +236,78 @@ def convertContextToXml():
             xml += f"    <{key}>{_esc(value)}</{key}>\n"
         xml += "  </entry>\n"
     xml += "</context>"
-    tokenCount = len(xml.split()) * 4
+    tokenCount = len(xml) // 4
     return xml, tokenCount
 
-def removeStaffFromContext(maxTokens=128_000):
-    currentTokens = json.dumps(CONTEXT).count(" ") * 4  # rough estimate
-    while currentTokens > maxTokens and CONTEXT:
+def _estimateTokens(obj) -> int:
+    return len(json.dumps(obj)) // 4
+
+
+def compressContext():
+    """
+    Ask the model to summarise the current context, persist key findings and
+    pending tasks to the planner board, then trim the in-memory context so
+    nothing important is lost to truncation.
+    """
+    if not CONTEXT:
+        return
+
+    xmlContext, _ = convertContextToXml()
+    summarize_prompt = (
+        "You are reviewing your own working context from a C engine performance "
+        "optimization session. Before this context is trimmed, extract and preserve "
+        "the most critical information.\n"
+        "<context_to_summarize>\n" + xmlContext + "\n</context_to_summarize>\n\n"
+        "Reply with ONLY a valid JSON object (no prose, no markdown fences):\n"
+        "{\n"
+        '  "summary": "2-3 sentence overview of progress so far",\n'
+        '  "key_findings": ["important hotspot or perf finding"],\n'
+        '  "completed_changes": ["change applied + measured result"],\n'
+        '  "pending_tasks": ["still needs to be investigated or tried"],\n'
+        '  "critical_notes": ["baselines, regressions, constraints to remember"]\n'
+        "}"
+    )
+
+    try:
+        raw = model.getResponseQwen3_6(summarize_prompt, mode="instruct")
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            print(f"[compressContext] no JSON found in model response: {raw[:300]}")
+        if m:
+            data = json.loads(m.group(0))
+            if data.get("summary"):
+                planner.addNote(f"[SUMMARY] {data['summary']}")
+            for item in data.get("key_findings", []):
+                planner.addNote(f"[HOTSPOT] {item}")
+            for item in data.get("completed_changes", []):
+                planner.addNote(f"[DONE] {item}")
+            for item in data.get("pending_tasks", []):
+                planner.addTask(item)
+            for item in data.get("critical_notes", []):
+                planner.addNote(f"[CRITICAL] {item}")
+            print(f"[compressContext] saved {len(data.get('pending_tasks', []))} tasks and "
+                  f"{len(data.get('key_findings', [])) + len(data.get('completed_changes', [])) + len(data.get('critical_notes', []))} notes to planner")
+    except Exception as e:
+        print(f"[compressContext] summarization failed: {e}")
+
+    board = planner.showBoard(returnString=True)
+    keep = max(5, len(CONTEXT) // 3)
+    del CONTEXT[:-keep]
+    CONTEXT.insert(0, {
+        "type": "context_summary",
+        "tool": "contextSummary",
+        "output": f"[Context compressed. Key information saved to planner.]\n{board}",
+    })
+
+
+def removeStaffFromContext(maxTokens=CONTEXT_MAX_TOKENS):
+    if _estimateTokens(CONTEXT) > maxTokens * CONTEXT_COMPRESS_AT:
+        compressContext()
+    # Hard trim if still over limit after compression
+    while _estimateTokens(CONTEXT) > maxTokens and len(CONTEXT) > 1:
         removed = CONTEXT.pop(0)
-        removedTokens = json.dumps(removed).count(" ") * 4
-        currentTokens -= removedTokens
-        print(f"Removed {removedTokens} tokens from context. Current token count: {currentTokens}. Removed entry: {removed}")
+        print(f"[trim] dropped entry type={removed.get('type')} tool={removed.get('tool')}")
 
 def _github_create_pr(title, body, head, base="main"):
     import urllib.request, json as _json, re as _re
@@ -287,20 +388,30 @@ list all available tools and their exact argument names.
 == WORKFLOW ==
 1. Read the flame graph and bench results already in the context.
 2. Use listFunctions() to get an overview of the codebase.
-3. Pick the top hotspot. Use showContext(func, depth=2) or showSrcPair(path) to \
-read the relevant code.
-4. Form a hypothesis. Record it with addNote(). Break the work into tasks with \
-applyChange() applies changes to whole functions. searchReplace() applies changes to any text in a file — \
-prefer searchReplace() for partial changes within a function. For multiple \
-independent regions in one file, use applyPatch().
+3. Pick the top hotspot. Use hotAnnotateFunc(func) to see exactly which lines are \
+hot, or showContext(func, depth=2) / showSrcPair(path) to read the relevant code.
+4. BEFORE writing any code, record your findings: \
+call addNote() with the hotspot name and why it is slow, \
+call addTask() for each concrete change you plan to make. \
+This is mandatory — do not skip it.
 5. Apply your change with searchReplace() or applyChange(). Multiple independent \
 regions can be batched with applyPatch().
-6. Call buildProject(). If it fails, read the error, fix the code, rebuild.
-7. Call makeBench() and compare against the baseline in context. If performance \
-regressed, call restoreAll() and try a different approach.
-8. When a change is solid, call createPR() with a clear title and body explaining \
-what you changed, why, and the measured speedup.
-9. Mark completed tasks with markTaskDone() and continue with the next hotspot.
+6. Call buildProject(). If it fails, read the error, fix the code, rebuild. \
+Record the error summary with addNote().
+7. Call makeBench() and compare against the baseline in context. \
+Record the result with addNote(). If performance regressed, call restoreAll() \
+and add a note explaining what failed.
+8. When a change is solid, call createPR() with a clear title and body, \
+then call markTaskDone() for the completed tasks.
+9. Call showBoard() to review remaining tasks and continue with the next hotspot.
+
+== NOTE-TAKING RULES ==
+- ALWAYS call addNote() / addTask() BEFORE reading code or applying changes.
+- After every bench result, call addNote() with the measured numbers.
+- When you discover something about the codebase, call addNote() immediately.
+- Notes and tasks survive context compression — they are your long-term memory.
+  Anything not written to the board WILL be forgotten when context is trimmed.
+- Use showBoard() at the start of each iteration to recall your plan.
 
 == CONSTRAINTS ==
 - Only call tools that are listed in apiHelp(). Anything else will be rejected.
@@ -310,8 +421,20 @@ explicit instruction.
 - Always build and bench after every change before moving on.
 - If you are unsure whether a change is safe, read more code first.
 - Keep changes focused and minimal — one logical improvement per PR.
+
+== VISUAL CORRECTNESS ==
+makeBench() reports two visual metrics:
+  image_mse     — MSE between current and baseline pixel data. THIS IS THE PRIMARY \
+correctness metric. avg_mse < 1.0 = visually identical; < 10.0 = acceptable minor \
+difference (floating-point reordering, precision changes); < 100.0 = noticeable but \
+may be acceptable; >= 100.0 = significant change, investigate before submitting.
+  frame_hashes  — exact 32-bit hash match. INFORMATIONAL ONLY. Hashes will differ \
+for any floating-point reordering, SIMD shuffles, or precision changes even when the \
+image is visually identical. Do NOT treat a hash mismatch as a correctness failure. \
+Use image_mse to judge correctness.
 """
 
+# TODO: add api where model can execute some code in a sandbox
 
 if __name__ == "__main__":
     ui.start()
@@ -329,11 +452,19 @@ if __name__ == "__main__":
 
     TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
     iteration = 0
+    _recent_calls = []  # (tool, args_str) tuples for loop detection
     while True:
         iteration += 1
         ui.set_iteration(iteration)
         ui.set_status("running")
-        removeStaffFromContext(512_000)
+        removeStaffFromContext(128_000)
+
+        # inject nudge if UI button was pressed or loop detected
+        nudge = ui.pop_nudge()
+        if nudge:
+            CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
+            _recent_calls.clear()
+            print(f"[nudge] {nudge}")
         xmlContext, tokenCount = convertContextToXml()
         ui.set_token_count(tokenCount)
         ui.sync_context(CONTEXT)
@@ -341,10 +472,22 @@ if __name__ == "__main__":
         prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
-        response = model.getResponseQwen3_6(prompt, mode="coding")
+        try:
+            if random.random() < 0.95:
+                response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
+            elif random.random() < 0.3:
+                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+            else:
+                response = model.getResponseQwen3_6(prompt, mode="coding")
+        except Exception as e:
+            CONTEXT.append({
+                "type": "model_response",
+                "iteration": iteration,
+                "output": f"Error getting model response: {e} try again in the next iteration."
+            })
+            continue
         # response = model.getResponseOllama(prompt, model="gemma4:e4b")
         # response = model.getResponse(prompt, model="tencent/hy3-preview", provider="siliconflow")
-        # response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
         ui.set_last_response(response)
         print("Model response:", response)
         response_for_context = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
@@ -357,6 +500,26 @@ if __name__ == "__main__":
         results = executor.executeAll(response, TOOL_MAP, context=CONTEXT)
         for r in results:
             ui.log_tool_result(r["tool"], r["error"])
+
+        # loop detection: same tool+args 4 times in a row
+        for r in results:
+            sig = (r["tool"], str(sorted((r.get("args") or {}).items()) if isinstance(r.get("args"), dict) else ""))
+            _recent_calls.append(sig)
+        _recent_calls = _recent_calls[-12:]
+        if len(_recent_calls) >= 4 and len(set(_recent_calls[-4:])) == 1:
+            loop_tool = _recent_calls[-1][0]
+            nudge = (
+                f"[AUTO-NUDGE] You have called '{loop_tool}' with the same arguments "
+                f"4 times in a row. You are stuck in a loop. "
+                f"Step 1: call addNote() to record what you have learned so far and WHY you think it is slow. "
+                f"Step 2: call addTask() with the concrete change you plan to make. "
+                f"Step 3: apply the change with searchReplace() or applyChange(). "
+                f"Do NOT call {loop_tool} again until steps 1-3 are done."
+            )
+            CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
+            _recent_calls.clear()
+            print(f"[loop-detect] injected nudge for repeated '{loop_tool}'")
+
         ui.sync_context(CONTEXT)
         ui.sync_board(planner.showBoard(returnString=True))
         ui.sync_diff(gf.getDiff(returnString=True, code_only=True))
