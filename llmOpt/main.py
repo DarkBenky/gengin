@@ -357,6 +357,25 @@ def createPR(title, body, branch, commit_msg=None):
     ui.set_pr_url(url)
     print(f"PR created: {url}")
 
+PLAN_PROMPT = """\
+You are an expert C software engineer reviewing your own optimization session. \
+Your ONLY task right now is to think deeply and produce a structured plan. \
+Do NOT call any tools. Do NOT write any code. Do NOT emit any JSON tool blocks.
+
+Review everything in the context — flame graph data, bench results, code you have \
+already read, notes on the board, completed changes, regressions — and answer:
+
+1. What have I already tried and what were the results?
+2. What are the current top hotspots that are NOT yet addressed?
+3. What is the single most impactful change I should try next, and why?
+4. What do I need to read or profile first before I can safely make that change?
+5. Are there any risks or constraints I should keep in mind?
+
+Reply in plain prose. Be specific: name functions, file paths, and measured numbers \
+from the context where relevant. This plan will be injected into the context so your \
+future self can act on it directly.
+"""
+
 SYSTEM_PROMPT = """\
 You are an expert C software engineer. Your job is to analyse a renderer/engine \
 codebase and iteratively improve its performance. You work in a loop:
@@ -472,11 +491,16 @@ if __name__ == "__main__":
         prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
+        is_plan_iteration = False
         try:
-            if random.random() < 0.95:
+            if random.random() > 0.85:
                 response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
-            elif random.random() < 0.3:
+            elif random.random() < 0.35:
                 response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+            elif random.random() < 0.1:
+                is_plan_iteration = True
+                plan_prompt = PLAN_PROMPT + "\n\nContext:\n" + xmlContext
+                response = model.getResponseQwen3_6(plan_prompt, mode="general")
             else:
                 response = model.getResponseQwen3_6(prompt, mode="coding")
         except Exception as e:
@@ -490,13 +514,26 @@ if __name__ == "__main__":
         # response = model.getResponse(prompt, model="tencent/hy3-preview", provider="siliconflow")
         ui.set_last_response(response)
         print("Model response:", response)
+        if response is None:
+            CONTEXT.append({
+                "type": "model_response",
+                "iteration": iteration,
+                "output": "Error: model returned no response, try again in the next iteration."
+            })
+            continue
         response_for_context = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+        entry_type = "planning" if is_plan_iteration else "model_response"
         CONTEXT.append({
-            "type": "model_response",
+            "type": entry_type,
             "iteration": iteration,
             "output": response_for_context
         })
         ui.set_status("running")
+        if is_plan_iteration:
+            ui.sync_context(CONTEXT)
+            ui.sync_board(planner.showBoard(returnString=True))
+            ui.sync_diff(gf.getDiff(returnString=True, code_only=True))
+            continue
         results = executor.executeAll(response, TOOL_MAP, context=CONTEXT)
         for r in results:
             ui.log_tool_result(r["tool"], r["error"])

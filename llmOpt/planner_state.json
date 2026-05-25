@@ -2,68 +2,19 @@
   "tasks": [
     {
       "id": 1,
-      "text": "Optimize rayAABB_inv: This is 29.4% exclusive. The current implementation likely uses divisions. Replace with precomputed inv_dir and avoid division in hot path.",
+      "text": "Analyze rayAABB_inv for redundant calculations, precomputed inverse direction, and potential SIMD/vectorization.",
       "status": "todo"
     },
     {
       "id": 2,
-      "text": "Inline IntersectBVH: Move implementation to object/object.h as static inline to allow compiler optimization across function boundary",
-      "status": "todo"
-    },
-    {
-      "id": 3,
-      "text": "Optimize rayTriangle: The M\u00f6ller-Trumbore algorithm has a division (1.0f/a) per triangle test. Look for opportunities to reduce operations or use faster approximations.",
-      "status": "todo"
-    },
-    {
-      "id": 4,
-      "text": "Inline IntersectBVH: Move implementation to object/object.h as static inline to allow compiler optimization across function boundary",
-      "status": "todo"
-    },
-    {
-      "id": 5,
-      "text": "Re-apply float3 by-value to rayAABB_inv callers and rebuild without stale PGO data",
-      "status": "todo"
-    },
-    {
-      "id": 6,
-      "text": "Optimize rayTriangle: Restructure M\u00f6ller-Trumbore to reduce dependency chains and improve pipelining",
-      "status": "todo"
-    },
-    {
-      "id": 7,
-      "text": "Optimize BVH traversal: Reduce memory accesses in the inner loop by loading AABB data into local variables",
+      "text": "Analyze IntersectBVH for traversal order, branch reduction, and cache efficiency.",
       "status": "todo"
     }
   ],
   "notes": [
     {
       "id": 1,
-      "text": "Baseline: avg 9.14ms, 1090 frames in 10s. Top hotspot is rayAABB_inv at 29.4% exclusive time, IntersectBVH at 43.4% inclusive. This is the BVH traversal and AABB intersection testing."
-    },
-    {
-      "id": 2,
-      "text": "Key insight: IntersectBVH is called per-object per-ray. The world AABB test in RayTraceRowFunc already culls objects, but IntersectBVH is still called for objects that pass. IntersectBVH transforms the ray to local space (18 mults, 6 adds), computes invDir/bias (3 divs, 3 mults), then traverses the BVH. Making IntersectBVH inline could help the compiler optimize across the function boundary."
-    },
-    {
-      "id": 3,
-      "text": "rayAABB_inv float3 by-value change: avg 9.06ms (was 9.14ms), +0.9% improvement. image_mse=0.00 (visually identical). The change passes float3 by value instead of const float* pointers, allowing better register allocation."
-    },
-    {
-      "id": 4,
-      "text": "Inlining rayAABB_inv directly in IntersectBVH caused -16% regression. Likely due to increased code complexity preventing compiler optimizations or increased register pressure. Restored to baseline + the float3 by-value change (which gave +0.9%)."
-    },
-    {
-      "id": 5,
-      "text": "Regression after re-applying float3 by-value: avg 9.806ms vs 9.14ms baseline. This may be due to stale profile-guided optimization data (.profdata). Need to rebuild without PGO or with fresh profile data. image_mse=0.00, visually identical."
-    },
-    {
-      "id": 6,
-      "text": "Re-applying float3 by-value change to rayAABB_inv. Previous regression likely due to stale .profdata PGO data. Will delete .profdata and rebuild clean."
-    },
-    {
-      "id": 7,
-      "text": "float3 by-value change to rayAABB_inv caused consistent -7-10% regression. Restoring. The change likely increased register pressure or hurt instruction scheduling. Need a different approach."
+      "text": "Primary hotspot: rayAABB_inv at 28.9% exclusive time (slab method). IntersectBVH exclusive 15.5% (tree traversal). Together they dominate the render time. Optimizing rayAABB_inv and BVH traversal will yield biggest wins."
     }
   ]
 }
