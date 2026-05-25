@@ -15,6 +15,7 @@
 import os
 import re
 import subprocess
+from datetime import datetime
 
 def _load_env(path):
     try:
@@ -38,12 +39,29 @@ import modelSelector as model
 import sys
 import ui
 
-SYSTEM_PROMPT = "TODO: create prompt for model"
+MAX_CONTEXT_TOKENS    = 128_000   # hard context window limit
+SUMMARIZE_THRESHOLD   = 0.80      # summarize when at 80% of limit
+CRITICAL_THRESHOLD    = 0.95      # emergency drop when at 95% after summarization
+KEEP_RECENT           = 8         # number of most-recent entries to never summarize
+NOTES_FILE            = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model_notes.md")
 
 CONTEXT = []
+NOTES = ""
 
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
+
+
+def _count_tokens(obj) -> int:
+    """Estimate token count: character length / 4 is a reasonable approximation."""
+    if isinstance(obj, str):
+        return len(obj) // 4
+    return len(json.dumps(obj, ensure_ascii=False)) // 4
+
+
+def _print_token_usage(tokens: int, max_tokens: int = MAX_CONTEXT_TOKENS, label: str = "Tokens"):
+    pct = (tokens / max_tokens * 100) if max_tokens else 0.0
+    print(f"{label}: {tokens} / {max_tokens} ({pct:.1f}%)")
 
 def run(cmd, **kwargs):
     result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
@@ -187,6 +205,96 @@ def makeFlame():
     })
     return data
 
+
+def loadNotes() -> str:
+    """Load persistent notes from disk. Returns empty string if file doesn't exist."""
+    global NOTES
+    try:
+        with open(NOTES_FILE, "r", encoding="utf-8") as f:
+            NOTES = f.read().strip()
+    except FileNotFoundError:
+        NOTES = ""
+    return NOTES
+
+
+def saveNotes(content: str):
+    """Persist notes to disk."""
+    global NOTES
+    NOTES = (content or "").strip()
+    with open(NOTES_FILE, "w", encoding="utf-8") as f:
+        f.write(NOTES)
+
+
+def addNote(note: str = None, text: str = None, context=None):
+    """Append a timestamped note. Exposed as a tool to the model."""
+    note_text = note if note is not None else text
+    if note_text is None:
+        raise TypeError("addNote() missing required argument: 'note'")
+
+    note_text = str(note_text).strip()
+    if not note_text:
+        raise ValueError("note must not be empty")
+
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    entry = f"- [{timestamp}] {note_text}"
+    current = NOTES.rstrip()
+    updated = f"{current}\n{entry}" if current else entry
+    saveNotes(updated)
+
+    if context is not None:
+        context.append({
+            "type": "tool_use",
+            "tool": "addNote",
+            "input": note_text,
+            "output": entry
+        })
+    return entry
+
+
+def getNotes(context=None) -> str:
+    """Return current notes content. Exposed as a tool to the model."""
+    if context is not None:
+        context.append({
+            "type": "tool_use",
+            "tool": "getNotes",
+            "input": None,
+            "output": NOTES
+        })
+    return NOTES
+
+
+def updateNotes(content: str, context=None):
+    """Replace all notes with new content (for model to rewrite/compress its own notes). Exposed as a tool."""
+    saveNotes(content)
+    if context is not None:
+        context.append({
+            "type": "tool_use",
+            "tool": "updateNotes",
+            "input": None,
+            "output": NOTES
+        })
+    return NOTES
+
+
+def _registerPersistentNotesApiHelp():
+    if not hasattr(gf, "_API"):
+        return
+
+    section_name = "Persistent Notes  [main.py]"
+    for section, _entries in gf._API:
+        if section == section_name:
+            return
+
+    gf._API.append((section_name, [
+        ("addNote(note)",
+         f"Append a timestamped note to {NOTES_FILE}. Also accepts addNote(text=...)."),
+        ("getNotes()",
+         f"Return the full persistent note contents from {NOTES_FILE}."),
+        ("updateNotes(content)",
+         f"Replace the persistent notes stored in {NOTES_FILE}."),
+    ]))
+
+
 def convertContextToXml():
     def _esc(v):
         return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -197,16 +305,60 @@ def convertContextToXml():
             xml += f"    <{key}>{_esc(value)}</{key}>\n"
         xml += "  </entry>\n"
     xml += "</context>"
-    tokenCount = len(xml.split()) * 4
+    tokenCount = _count_tokens(xml)
     return xml, tokenCount
 
-def removeStaffFromContext(maxTokens=128_000):
-    currentTokens = json.dumps(CONTEXT).count(" ") * 4  # rough estimate
-    while currentTokens > maxTokens and CONTEXT:
-        removed = CONTEXT.pop(0)
-        removedTokens = json.dumps(removed).count(" ") * 4
-        currentTokens -= removedTokens
-        print(f"Removed {removedTokens} tokens from context. Current token count: {currentTokens}. Removed entry: {removed}")
+def manageContext(max_tokens: int = MAX_CONTEXT_TOKENS):
+    """
+    1. Count current tokens accurately.
+    2. If below SUMMARIZE_THRESHOLD * max_tokens → do nothing.
+    3. If above threshold:
+       a. Keep the last KEEP_RECENT entries untouched.
+       b. Send the older entries to the model asking for a dense summary.
+       c. Replace those entries with a single {"type": "context_summary", "output": <summary>} entry.
+       d. Re-count. If still above CRITICAL_THRESHOLD * max_tokens, drop oldest entries one by one.
+    4. Print/log the before/after token counts.
+    """
+    before_tokens = _count_tokens(CONTEXT)
+    _print_token_usage(before_tokens, max_tokens, label="Context tokens before management")
+
+    if before_tokens < max_tokens * SUMMARIZE_THRESHOLD:
+        _print_token_usage(before_tokens, max_tokens, label="Context tokens after management")
+        return before_tokens
+
+    if len(CONTEXT) > KEEP_RECENT:
+        older_entries = CONTEXT[:-KEEP_RECENT]
+        recent_entries = CONTEXT[-KEEP_RECENT:]
+        summarize_prompt = """You are a context compressor. Summarize the following optimization session context into a dense, information-preserving paragraph. Include: hotspots identified, changes attempted (success/failure), current benchmark deltas, and open tasks. Be concise.
+
+Optimization session context:
+""" + json.dumps(older_entries, ensure_ascii=False, indent=2)
+        try:
+            summary = model.getResponseQwen3_6(summarize_prompt, mode="instruct")
+            CONTEXT[:] = [{
+                "type": "context_summary",
+                "output": summary
+            }] + recent_entries
+            print(f"Summarized {len(older_entries)} older context entries into one context_summary entry.")
+        except Exception as e:
+            print(f"Context summarization failed: {e}")
+    else:
+        print("Context above summarize threshold, but there are no older entries to summarize.")
+
+    current_tokens = _count_tokens(CONTEXT)
+    while current_tokens > max_tokens * CRITICAL_THRESHOLD and CONTEXT:
+        drop_index = 0
+        if CONTEXT[0].get("type") == "context_summary" and len(CONTEXT) > 1:
+            drop_index = 1
+        removed = CONTEXT.pop(drop_index)
+        current_tokens = _count_tokens(CONTEXT)
+        print(f"Emergency-dropped oldest context entry ({removed.get('type', 'unknown')}).")
+
+    _print_token_usage(current_tokens, max_tokens, label="Context tokens after management")
+    return current_tokens
+
+
+NOTES = loadNotes()
 
 def _github_create_pr(title, body, head, base="main"):
     import urllib.request, json as _json, re as _re
@@ -297,10 +449,27 @@ independent regions in one file, use applyPatch().
 regions can be batched with applyPatch().
 6. Call buildProject(). If it fails, read the error, fix the code, rebuild.
 7. Call makeBench() and compare against the baseline in context. If performance \
-regressed, call restoreAll() and try a different approach.
+regressed, call restoreAll() and try a different approach. After calling \
+makeBench(), call addNote() to record the result.
 8. When a change is solid, call createPR() with a clear title and body explaining \
 what you changed, why, and the measured speedup.
 9. Mark completed tasks with markTaskDone() and continue with the next hotspot.
+
+== PERSISTENT NOTES ==
+You have a personal notepad that survives across iterations. Use it aggressively.
+Available note tools:
+  addNote(note)           — append a timestamped note (observations, hypotheses, decisions)
+  getNotes()              — read all your current notes
+  updateNotes(content)    — rewrite/compress your notes (do this when they get long)
+
+Use addNote() at least once per iteration to record:
+  - What hotspot you are focusing on and why
+  - What change you applied and your hypothesis
+  - The outcome (benchmark result, build error, etc.)
+  - Any insight for future iterations
+
+Your notes are prepended to every prompt, so keep them dense and useful.
+When the context is summarized, your notes are the primary way to preserve detailed reasoning.
 
 == CONSTRAINTS ==
 - Only call tools that are listed in apiHelp(). Anything else will be rejected.
@@ -325,21 +494,30 @@ if __name__ == "__main__":
     _ , BASELINE_RESULTS = makeBench()
     flame = makeFlame()
     gf.listFunctions(context=CONTEXT)
+    _registerPersistentNotesApiHelp()
     gf.apiHelp(context=CONTEXT)
 
     TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
+    TOOL_MAP.update({
+        "addNote": addNote,
+        "getNotes": getNotes,
+        "updateNotes": updateNotes,
+    })
     iteration = 0
     while True:
         iteration += 1
         ui.set_iteration(iteration)
         ui.set_status("running")
-        removeStaffFromContext(512_000)
+        manageContext()
         xmlContext, tokenCount = convertContextToXml()
-        ui.set_token_count(tokenCount)
         ui.sync_context(CONTEXT)
         ui.sync_board(planner.showBoard(returnString=True))
-        prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
-        print(f"Prompt token count: {tokenCount}")
+        notes_content = loadNotes()
+        notes_section = f"\n\n== YOUR NOTES ==\n{notes_content}\n" if notes_content else ""
+        prompt = SYSTEM_PROMPT + notes_section + "\n\nContext:\n" + xmlContext
+        prompt_token_count = _count_tokens(prompt)
+        ui.set_token_count(prompt_token_count)
+        _print_token_usage(prompt_token_count, MAX_CONTEXT_TOKENS)
         ui.set_status("waiting_model")
         response = model.getResponseQwen3_6(prompt, mode="coding")
         # response = model.getResponseOllama(prompt, model="gemma4:e4b")
