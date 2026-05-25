@@ -223,7 +223,7 @@ def sync_diff(text):
         _state["diff"] = text or ""
 
 
-def start(port=5050):
+def start(port=5051):
     """Start Flask in a daemon thread. Call once before the main loop."""
     t = threading.Thread(
         target=lambda: app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False),

@@ -24,8 +24,23 @@ def getResponse(prompt:str, model:str, provider:str) -> str:
     )
     return res.choices[0].message.content
 
-def getResponseOllama(prompt:str, model:str) -> str:
-    pass  # TODO: implement for Ollama
+def getResponseOllama(prompt: str, model: str) -> str:
+    import urllib.request
+    import json
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }).encode()
+    req = urllib.request.Request(
+        "http://localhost:11434/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read())
+    return data["message"]["content"]
 
 if __name__ == "__main__":
     test_prompt = "What is the capital of France?"

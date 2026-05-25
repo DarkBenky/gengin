@@ -349,8 +349,41 @@ def restoreFunction(func_name, functions=None, context=None):
     return restoreFile(functions[func_name]['file'], context=context)
 
 
-def replaceLines(rel_path, start, end, new_text, context=None):
+def searchReplace(rel_path, old_text, new_text, context=None):
+    """Find old_text exactly once in rel_path and replace it with new_text."""
     filepath = os.path.join(GENGIN, rel_path)
+    try:
+        with open(filepath, errors='replace') as fh:
+            content = fh.read()
+    except FileNotFoundError:
+        msg = f"File not found: {rel_path}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+        return False
+
+    count = content.count(old_text)
+    if count == 0:
+        msg = f"old_text not found in {rel_path}. Make sure you copy the exact text including whitespace/indentation."
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+        return False
+    if count > 1:
+        msg = f"old_text matched {count} locations in {rel_path}. Add more surrounding lines to make it unique."
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+        return False
+
+    new_content = content.replace(old_text, new_text, 1)
+    with open(filepath, 'w') as fh:
+        fh.write(new_content)
+    _refresh_file(filepath)
+    msg = f"replaced 1 occurrence in {rel_path}"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+    return True
+
+
+def replaceLines(rel_path, start, end, new_text, context=None):
     try:
         with open(filepath, errors='replace') as fh:
             lines = fh.readlines()
@@ -549,6 +582,8 @@ _API = [
          "Read raw file content (no line numbers)."),
     ]),
     ("Applying Changes", [
+        ("searchReplace(rel_path, old_text, new_text)",
+         "PREFERRED edit tool. Find old_text (must be unique in file) and replace with new_text. No line numbers needed — copy exact text from showSrc/showContext output."),
         ("applyChange(func_name, new_definition)",
          "Replace a named function in-place by locating its signature in the source file."),
         ("replaceLines(rel_path, start, end, new_text)",

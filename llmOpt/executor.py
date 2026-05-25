@@ -188,6 +188,7 @@ def buildToolMap(gf_module, planner_module, main_module=None):
         "readSourceFile":      gf.readSourceFile,
         "apiHelp":             gf.apiHelp,
         # --- applying changes ---
+        "searchReplace":       gf.searchReplace,
         "applyChange":         gf.applyChange,
         "replaceLines":        gf.replaceLines,
         "applyPatch":          gf.applyPatch,

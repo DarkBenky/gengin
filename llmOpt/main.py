@@ -28,6 +28,7 @@ SYSTEM_PROMPT = "TODO: create prompt for model"
 CONTEXT = []
 
 PROJECT_DIR = "gengin"
+BASELINE_RESULTS = None
 
 def run(cmd, **kwargs):
     result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
@@ -39,7 +40,8 @@ def run(cmd, **kwargs):
         print("ERR:", result.stderr)
 
     if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(cmd)}")
+        output = (result.stdout or "") + (result.stderr or "")
+        raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{output}")
     
     print(f"Command succeeded: {' '.join(cmd)}")
 
@@ -92,17 +94,68 @@ def buildProject():
     })
     return res.stdout
 
+def _benchSummary(current, baseline):
+    if baseline is None:
+        return "No baseline to compare against."
+    metrics = ["frames", "avg_ms", "median_ms", "p99_ms"]
+    lines = ["Benchmark comparison vs baseline:"]
+    improved = 0
+    regressed = 0
+    for m in metrics:
+        b = baseline.get(m)
+        c = current.get(m)
+        if b is None or c is None:
+            continue
+        # for frame count higher is better; for latency lower is better
+        higher_is_better = (m == "frames")
+        if higher_is_better:
+            delta = (c - b) / b * 100
+            better = delta > 0
+        else:
+            delta = (b - c) / b * 100  # positive = improvement
+            better = delta > 0
+        arrow = "IMPROVED" if better else ("REGRESSED" if delta < 0 else "unchanged")
+        if better:
+            improved += 1
+        elif delta < 0:
+            regressed += 1
+        lines.append(f"  {m:12s}  baseline={b}  now={c}  ({delta:+.1f}%)  [{arrow}]")
+
+    base_hashes = baseline.get("frame_hashes") or []
+    curr_hashes = current.get("frame_hashes") or []
+    total = max(len(base_hashes), len(curr_hashes))
+    if total == 0:
+        lines.append("  frame_hashes  no hash data available")
+    else:
+        changed = sum(1 for b, c in zip(base_hashes, curr_hashes) if b != c)
+        changed += abs(len(base_hashes) - len(curr_hashes))
+        if changed == 0:
+            lines.append(f"  frame_hashes  all {total} frame(s) match baseline [OK]")
+        else:
+            lines.append(f"  frame_hashes  {changed}/{total} frame(s) changed vs baseline [OUTPUT CHANGED]")
+
+    if improved > regressed:
+        lines.append("=> OVERALL: PERFORMANCE IMPROVED")
+    elif regressed > improved:
+        lines.append("=> OVERALL: PERFORMANCE REGRESSED -- consider restoreAll()")
+    else:
+        lines.append("=> OVERALL: no significant change")
+    return "\n".join(lines)
+
+
 def makeBench():
     res = run(["make", "bench"], cwd=PROJECT_DIR)
     with open(f"{PROJECT_DIR}/bench_results.json", "r") as f:
         bench_results = json.load(f)
         bench_results_raw = bench_results.copy()
     bench_results.pop("frame_images", None)
+    bench_results.pop("frame_hashes", None)
+    summary = _benchSummary(bench_results_raw, BASELINE_RESULTS)
     record = {
         "type": "tool_use",
         "tool": "makeBench",
         "input": None,
-        "output": res.stdout,
+        "output": summary,
         "bench_results": bench_results
     }
     CONTEXT.append(record)
@@ -118,8 +171,6 @@ def makeFlame():
         "output": data
     })
     return data
-
-BASELINE_RESULTS = None
 
 def convertContextToXml():
     def _esc(v):
@@ -200,8 +251,10 @@ list all available tools and their exact argument names.
 3. Pick the top hotspot. Use showContext(func, depth=2) or showSrcPair(path) to \
 read the relevant code.
 4. Form a hypothesis. Record it with addNote(). Break the work into tasks with \
-addTask().
-5. Apply your change with replaceLines() or applyChange(). Multiple independent \
+applyChange() applies changes to whole functions. searchReplace() applies changes to any text in a file — \
+prefer searchReplace() for partial changes within a function. For multiple \
+independent regions in one file, use applyPatch().
+5. Apply your change with searchReplace() or applyChange(). Multiple independent \
 regions can be batched with applyPatch().
 6. Call buildProject(). If it fails, read the error, fix the code, rebuild.
 7. Call makeBench() and compare against the baseline in context. If performance \
@@ -228,7 +281,7 @@ if __name__ == "__main__":
     planner.resetBoard()
 
     getTree()
-    getTodos()
+    # getTodos()
     buildProject()
     _ , BASELINE_RESULTS = makeBench()
     flame = makeFlame()
@@ -241,7 +294,7 @@ if __name__ == "__main__":
         iteration += 1
         ui.set_iteration(iteration)
         ui.set_status("running")
-        removeStaffFromContext(256_000)
+        removeStaffFromContext(512_000)
         xmlContext, tokenCount = convertContextToXml()
         ui.set_token_count(tokenCount)
         ui.sync_context(CONTEXT)
@@ -249,8 +302,12 @@ if __name__ == "__main__":
         prompt = SYSTEM_PROMPT + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
-        response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4") # Input 1M / 0.10$ Output 1M / 0.20$
-        # response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek") # Input 1M / 0.43$ Output 1M / 0.87$
+        # response = model.getResponseOllama(prompt, model="gemma4:e4b")
+        if iteration % 8 == 0:
+            # use cheaper model every 8 iterations to save costs, since not every iteration needs a super detailed response
+            response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek") # Input 1M / 0.43$ Output 1M / 0.87$
+        else:
+            response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4") # Input 1M / 0.10$ Output 1M / 0.20$
         ui.set_last_response(response)
         print("Model response:", response)
         ui.set_status("running")
