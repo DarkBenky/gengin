@@ -47,7 +47,7 @@ CONTEXT = []
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
 
-CONTEXT_MAX_TOKENS = 128_000
+CONTEXT_MAX_TOKENS = 48_000
 CONTEXT_COMPRESS_AT = 0.75  # trigger compression when > 75% full
 
 def run(cmd, **kwargs):
@@ -380,6 +380,16 @@ def createPR(title, body, branch, commit_msg=None):
     ui.set_pr_url(url)
     print(f"PR created: {url}")
 
+def removeDoublesFromContext():
+    # go from newest to oldest and remove entries with the same type, tool, and input (ignoring output)
+    seen = {}
+    for entry in reversed(CONTEXT):
+        key = (entry.get("type"), entry.get("tool"), str(entry.get("input")))
+        if key in seen:
+            CONTEXT.remove(entry)
+        else:
+            seen[key] = True
+
 PLAN_PROMPT = """\
 You are an expert C software engineer reviewing your own optimization session. \
 Your ONLY task right now is to think deeply and produce a structured plan. \
@@ -436,7 +446,13 @@ hot, or showContext(func, depth=2) / showSrcPair(path) to read the relevant code
 call addNote() with the hotspot name and why it is slow, \
 call addTask() for each concrete change you plan to make. \
 This is mandatory — do not skip it.
-5. Apply your change with searchReplace() or applyChange(). Multiple independent \
+5. Apply your change with one of the editing tools:\
+\n   - searchReplace(rel_path, old_text, new_text)  — preferred, no line numbers needed\
+\n   - searchReplaceMulti(rel_path, [{"old":...,"new":...},...])  — multiple edits in one call\
+\n   - insertLines(rel_path, after_line, new_text)  — add code without touching existing lines (after_line=0 to prepend)\
+\n   - deleteLines(rel_path, start, end)  — remove lines cleanly\
+\n   - applyChange(func_name, new_definition)  — replace a whole named function\
+\n   Multiple independent \
 regions can be batched with applyPatch().
 6. Call buildProject(). If it fails, read the error, fix the code, rebuild. \
 Record the error summary with addNote().
@@ -482,7 +498,7 @@ if __name__ == "__main__":
     ui.start()
     git_pull_project()
     gf.init()
-    # planner.resetBoard()
+    planner.resetBoard()
 
     getTree()
     # getTodos()
@@ -515,18 +531,26 @@ if __name__ == "__main__":
         prompt = SYSTEM_PROMPT + "\n\n== CURRENT BOARD ==\n" + board + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
+        steer = ui.pop_steer()
         is_plan_iteration = False
+        _cleared = [False]
+        def _on_token(delta):
+            if not _cleared[0]:
+                ui.clear_stream()
+                _cleared[0] = True
+            ui.push_token(delta)
         try:
-            if random.random() > 0.85:
-                response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
-            elif random.random() < 0.35:
-                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
-            elif random.random() < 0.1:
-                is_plan_iteration = True
-                plan_prompt = PLAN_PROMPT + "\n\nContext:\n" + xmlContext
-                response = model.getResponseQwen3_6(plan_prompt, mode="general")
-            else:
-                response = model.getResponseQwen3_6(prompt, mode="coding")
+            # if random.random() > 0.85:
+            #     response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
+            # elif random.random() < 0.35:
+            #     response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+            # elif random.random() < 0.1:
+            #     is_plan_iteration = True
+            #     plan_prompt = PLAN_PROMPT + "\n\nContext:\n" + xmlContext
+            #     response = model.getResponseQwen3_6(plan_prompt, mode="general")
+            # else:
+            mode = random.choices(["coding", "general", "instruct"], weights=[0.5, 0.2, 0.3])[0]
+            response = model.getResponseQwen3_6(prompt, mode=mode, on_token=_on_token, system_prompt=steer or None)
         except Exception as e:
             CONTEXT.append({
                 "type": "model_response",
@@ -582,3 +606,5 @@ if __name__ == "__main__":
 
         ui.sync_context(CONTEXT)
         ui.sync_diff(gf.getDiff(returnString=True, code_only=True))
+
+        removeDoublesFromContext()

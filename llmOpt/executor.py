@@ -191,8 +191,11 @@ def buildToolMap(gf_module, planner_module, main_module=None):
         "apiHelp":             gf.apiHelp,
         # --- applying changes ---
         "searchReplace":       gf.searchReplace,
+        "searchReplaceMulti":  gf.searchReplaceMulti,
         "applyChange":         gf.applyChange,
         "replaceLines":        gf.replaceLines,
+        "insertLines":         gf.insertLines,
+        "deleteLines":         gf.deleteLines,
         "applyPatch":          gf.applyPatch,
         # --- git / restore ---
         "getDiff":             gf.getDiff,

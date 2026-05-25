@@ -72,6 +72,8 @@ def getResponseQwen3_6(
     prompt: str,
     mode: str = "coding",   # "coding" | "general" | "instruct"
     host: str = "http://localhost:8888",
+    on_token=None,
+    system_prompt: str = None,
 ) -> str:
     """
     Call the Unsloth Studio server (localhost:8888) with Unsloth-recommended parameters.
@@ -125,13 +127,16 @@ def getResponseQwen3_6(
     thinking = p.pop("thinking")
 
     content = prompt if thinking else f"/no_think {prompt}"
-    messages = [{"role": "user", "content": content}]
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": content})
 
     def _post(token):
         payload = json.dumps({
             "messages": messages,
-            "max_tokens": 262_000,
-            "stream": False,
+            "max_tokens": 64_000,
+            "stream": True,
             **p,
         }).encode()
         req = urllib.request.Request(
@@ -145,20 +150,41 @@ def getResponseQwen3_6(
     token = _UNSLOTH_TOKEN or _unsloth_bearer(host)
     try:
         resp = _post(token)
-    except Exception as e:
-        if "401" in str(e):
-            # Token expired — re-authenticate once
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
             token = _unsloth_bearer(host)
             resp = _post(token)
         else:
             raise
 
+    chunks = []
+    in_think = False
     with resp:
-        data = json.loads(resp.read())
-
-    content = data["choices"][0]["message"]["content"]
-    content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL)
-    return content.strip()
+        for raw_line in resp:
+            line = raw_line.decode().strip()
+            if not line.startswith("data:"):
+                continue
+            chunk = line[5:].strip()
+            if chunk == "[DONE]":
+                break
+            try:
+                delta = json.loads(chunk)["choices"][0]["delta"].get("content", "")
+            except (KeyError, IndexError, json.JSONDecodeError):
+                continue
+            if not delta:
+                continue
+            chunks.append(delta)
+            if "<think>" in delta:
+                in_think = True
+            if not in_think:
+                print(delta, end="", flush=True)
+                if on_token:
+                    on_token(delta)
+            if "</think>" in delta:
+                in_think = False
+    print()
+    content = "".join(chunks)
+    return re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL).strip()
 
 if __name__ == "__main__":
     test_prompt = "What is the capital of France?"

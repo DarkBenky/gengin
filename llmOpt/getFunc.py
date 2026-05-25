@@ -452,6 +452,127 @@ def replaceLines(rel_path, start, end, new_text, context=None):
     return True
 
 
+def insertLines(rel_path, after_line, new_text, context=None):
+    """Insert new_text after after_line (1-indexed). Use after_line=0 to prepend."""
+    filepath = os.path.join(GENGIN, rel_path)
+    try:
+        with open(filepath, errors='replace') as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        msg = f"File not found: {rel_path}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "insertLines", "input": {"file": rel_path, "after_line": after_line}, "output": msg})
+        return False
+
+    if after_line < 0 or after_line > len(lines):
+        msg = f"after_line {after_line} out of range for {rel_path} ({len(lines)} lines)"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "insertLines", "input": {"file": rel_path, "after_line": after_line}, "output": msg})
+        return False
+
+    new_lines = new_text.splitlines(keepends=True)
+    if new_lines and not new_lines[-1].endswith('\n'):
+        new_lines[-1] += '\n'
+    lines[after_line:after_line] = new_lines
+
+    with open(filepath, 'w') as fh:
+        fh.writelines(lines)
+    _refresh_file(filepath)
+    msg = f"inserted {len(new_lines)} line(s) after line {after_line} in {rel_path}"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "insertLines", "input": {"file": rel_path, "after_line": after_line}, "output": msg})
+    return True
+
+
+def deleteLines(rel_path, start, end, context=None):
+    """Delete lines start..end (1-indexed inclusive) from rel_path."""
+    filepath = os.path.join(GENGIN, rel_path)
+    try:
+        with open(filepath, errors='replace') as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        msg = f"File not found: {rel_path}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "deleteLines", "input": {"file": rel_path, "start": start, "end": end}, "output": msg})
+        return False
+
+    if start < 1 or end > len(lines) or start > end:
+        msg = f"invalid range {start}-{end} for {rel_path} ({len(lines)} lines)"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "deleteLines", "input": {"file": rel_path, "start": start, "end": end}, "output": msg})
+        return False
+
+    del lines[start - 1:end]
+    with open(filepath, 'w') as fh:
+        fh.writelines(lines)
+    _refresh_file(filepath)
+    msg = f"deleted lines {start}-{end} from {rel_path}"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "deleteLines", "input": {"file": rel_path, "start": start, "end": end}, "output": msg})
+    return True
+
+
+def searchReplaceMulti(rel_path, replacements, context=None):
+    """
+    Apply multiple find-and-replace pairs in one call, top-to-bottom.
+    replacements: list of {"old": str, "new": str}
+    Each old_text must be unique in the file at the time it is applied.
+    Stops and reports the first failure without writing the file.
+    """
+    filepath = os.path.join(GENGIN, rel_path)
+    try:
+        with open(filepath, errors='replace') as fh:
+            content = fh.read()
+    except FileNotFoundError:
+        msg = f"File not found: {rel_path}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+        return False
+
+    for i, pair in enumerate(replacements):
+        old, new = pair["old"], pair["new"]
+        count = content.count(old)
+        if count == 0:
+            # fallback: whitespace-normalised line match
+            content_lines = content.splitlines(keepends=True)
+            old_lines = old.splitlines(keepends=True)
+            idx = _find_normalized_lines(
+                [l.rstrip('\r\n') for l in content_lines],
+                [l.rstrip('\r\n') for l in old_lines],
+            )
+            if idx == -1:
+                msg = f"replacement {i}: old_text not found in {rel_path}"
+                if context is not None:
+                    context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+                return False
+            norm_old = [l.rstrip() for l in old_lines]
+            norm_content = [l.rstrip() for l in content_lines]
+            n = len(norm_old)
+            matches = sum(1 for j in range(len(norm_content) - n + 1) if norm_content[j:j+n] == norm_old)
+            if matches > 1:
+                msg = f"replacement {i}: old_text matched {matches} locations (normalized) in {rel_path}. Add more context."
+                if context is not None:
+                    context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+                return False
+            new_lines = new.splitlines(keepends=True)
+            content = "".join(content_lines[:idx] + new_lines + content_lines[idx + n:])
+        elif count > 1:
+            msg = f"replacement {i}: old_text matched {count} locations in {rel_path}. Add more surrounding lines."
+            if context is not None:
+                context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+            return False
+        else:
+            content = content.replace(old, new, 1)
+
+    with open(filepath, 'w') as fh:
+        fh.write(content)
+    _refresh_file(filepath)
+    msg = f"applied {len(replacements)} replacement(s) in {rel_path}"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+    return True
+
+
 def applyPatch(patches, context=None):
     """patches: list of {"file": rel_path, "start": int, "end": int, "text": str}"""
     from collections import defaultdict
@@ -800,12 +921,18 @@ _API = [
     ("Applying Changes", [
         ("searchReplace(rel_path, old_text, new_text)",
          "PREFERRED edit tool. Find old_text (must be unique in file) and replace with new_text. No line numbers needed — copy exact text from showSrc/showContext output."),
+        ("searchReplaceMulti(rel_path, replacements)",
+         "Apply multiple find-and-replace pairs in one call. replacements = [{\"old\": str, \"new\": str}, ...]. Applied top-to-bottom; stops on first failure. Use when renaming a variable/symbol across a file or making several non-adjacent edits at once."),
         ("applyChange(func_name, new_definition)",
          "Replace a named function in-place by locating its signature in the source file."),
         ("replaceLines(rel_path, start, end, new_text)",
          "Replace lines start..end (1-indexed inclusive) with new_text. Pairs with showSrc line numbers."),
+        ("insertLines(rel_path, after_line, new_text)",
+         "Insert new_text after after_line (1-indexed). Use after_line=0 to prepend at top of file. Use to add #includes, helpers, or a new function without disturbing existing line numbers."),
+        ("deleteLines(rel_path, start, end)",
+         "Delete lines start..end (1-indexed inclusive). Use to remove dead code, redundant includes, or debug prints."),
         ("applyPatch(patches)",
-         "Batch replacement. patches = [{file, start, end, text}, ...]. Applied in reverse line order per file."),
+         "Batch line-range replacement. patches = [{file, start, end, text}, ...]. Applied in reverse line order per file."),
     ]),
     ("Git / Restore", [
         ("getDiff()",

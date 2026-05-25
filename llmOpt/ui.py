@@ -5,6 +5,8 @@ Runs in a background thread. The main loop calls ui.push_event() to stream
 updates. Open http://localhost:5050 in a browser to watch.
 """
 
+import json
+import queue
 import threading
 import time
 from flask import Flask, Response, jsonify, render_template_string, request
@@ -22,8 +24,12 @@ _state = {
     "pr_url": "",
     "diff": "",
     "nudge_pending": "",     # set by UI button, consumed by main loop
+    "steer_pending": "",     # set by UI steer input, consumed by main loop
+    "stream_buffer": "",     # accumulates tokens during generation
 }
 _lock = threading.Lock()
+_subscribers: list = []
+_subs_lock = threading.Lock()
 
 _HTML = """<!DOCTYPE html>
 <html>
@@ -49,7 +55,9 @@ _HTML = """<!DOCTYPE html>
         line-height:1.5; }
   .entry { border:1px solid #21262d; border-radius:6px; padding:8px 10px;
            margin-bottom:8px; }
+  .entry-err { border-color:#f85149; background:#2a0a0a; }
   .entry .tool { color:#58a6ff; font-weight:bold; }
+  .entry-err .tool { color:#f85149; }
   .entry .meta { color:#8b949e; font-size:.75rem; }
   #event-log { font-size:.78rem; }
   .ev-ok    { color:#56d364; }
@@ -81,7 +89,7 @@ _HTML = """<!DOCTYPE html>
     <h2>Context entries</h2>
     <div id="context-list"></div>
   </section>
-  <section style="display:grid;grid-template-rows:auto 1fr auto;gap:0;padding:0;">
+  <section style="display:grid;grid-template-rows:auto 1fr auto auto;gap:0;padding:0;">
     <div style="padding:16px;border-bottom:1px solid #30363d;">
       <h2>Last model response</h2>
       <pre id="last-response" style="max-height:260px;overflow-y:auto;"></pre>
@@ -90,9 +98,21 @@ _HTML = """<!DOCTYPE html>
       <h2>Planner board</h2>
       <pre id="board"></pre>
     </div>
-    <div style="padding:16px;overflow-y:auto;max-height:220px;">
+    <div style="padding:16px;overflow-y:auto;max-height:180px;border-bottom:1px solid #30363d;">
       <h2>Event log</h2>
       <pre id="event-log"></pre>
+    </div>
+    <div style="padding:12px 16px;">
+      <h2>Steer model</h2>
+      <textarea id="steer-input" rows="2" placeholder="System instruction to prepend to next request..."
+        style="width:100%;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;
+               border-radius:4px;padding:6px;font-family:monospace;font-size:.78rem;
+               box-sizing:border-box;resize:vertical;"></textarea>
+      <button id="steer-btn" onclick="sendSteer()"
+        style="margin-top:5px;padding:3px 12px;border-radius:8px;border:1px solid #58a6ff;
+               background:#0d3555;color:#58a6ff;cursor:pointer;font-family:monospace;font-size:.82rem;">
+        Steer
+      </button>
     </div>
   </section>
   <section>
@@ -111,7 +131,6 @@ function refresh() {
 
     document.getElementById('iter-badge').textContent = d.iteration ? `iteration ${d.iteration}` : '';
     document.getElementById('token-badge').textContent = d.token_count ? `~${d.token_count.toLocaleString()} tokens` : '';
-    document.getElementById('last-response').innerHTML = esc(d.last_response);
     document.getElementById('board').innerHTML = esc(d.board);
 
     const renderDiff = text => {
@@ -128,9 +147,12 @@ function refresh() {
 
     const cl = document.getElementById('context-list');
     cl.innerHTML = d.context.slice().reverse().map(e => {
-      const tool = e.tool || '?';
-      const out = typeof e.output === 'object' ? JSON.stringify(e.output, null, 2) : String(e.output || '');
-      return `<div class="entry"><div class="tool">${esc(tool)}</div>`+
+      const _typeLabel = {'model_response':'model','planning':'planning','tool_use':'tool','tool_error':'error','context_summary':'summary','intervention':'nudge'};
+      const tool = e.tool || _typeLabel[e.type] || e.type || '?';
+      const raw = e.output !== undefined ? e.output : (e.error !== undefined ? '[ERROR] ' + e.error : '');
+      const out = typeof raw === 'object' ? JSON.stringify(raw, null, 2) : String(raw || '');
+      const isErr = e.error !== undefined && e.output === undefined;
+      return `<div class="entry${isErr ? ' entry-err' : ''}"><div class="tool">${esc(tool)}</div>`+
              `<div class="meta">${esc(e.input !== undefined ? JSON.stringify(e.input) : '')}</div>`+
              `<pre>${esc(out.slice(0,1200))}${out.length>1200?'\\n[...]':''}</pre></div>`;
     }).join('');
@@ -162,6 +184,29 @@ function sendNudge() {
   document.getElementById('nudge-btn').textContent = 'nudge sent!';
   setTimeout(() => document.getElementById('nudge-btn').textContent = 'nudge (unstuck)', 2000);
 }
+
+function sendSteer() {
+  const msg = document.getElementById('steer-input').value.trim();
+  if (!msg) return;
+  fetch('/api/steer', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({message: msg})});
+  document.getElementById('steer-input').value = '';
+  const btn = document.getElementById('steer-btn');
+  btn.textContent = 'sent!';
+  setTimeout(() => btn.textContent = 'Steer', 2000);
+}
+
+const _lr = document.getElementById('last-response');
+const _es = new EventSource('/api/token-stream');
+_es.onmessage = function(e) {
+  try {
+    const m = JSON.parse(e.data);
+    if (m.t === 'i') { _lr.textContent = m.v; }
+    else if (m.t === 'r') { _lr.textContent = ''; }
+    else if (m.t === 'c') { _lr.textContent += m.v; _lr.parentElement.scrollTop = _lr.parentElement.scrollHeight; }
+    else if (m.t === 'f') { _lr.textContent = m.v; }
+  } catch(_) {}
+};
 </script>
 </body>
 </html>"""
@@ -176,6 +221,46 @@ def index():
 def api_state():
     with _lock:
         return jsonify(dict(_state))
+
+
+@app.route("/api/token-stream")
+def token_stream():
+    q = queue.Queue()
+    with _lock:
+        init_text = _state["last_response"]
+    q.put(json.dumps({"t": "i", "v": init_text}))
+    with _subs_lock:
+        _subscribers.append(q)
+
+    def generate():
+        try:
+            while True:
+                try:
+                    item = q.get(timeout=15)
+                    yield f"data: {item}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"
+        finally:
+            with _subs_lock:
+                if q in _subscribers:
+                    _subscribers.remove(q)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/steer", methods=["POST"])
+def api_steer():
+    data = request.get_json(silent=True) or {}
+    msg = (data.get("message") or "").strip()
+    if msg:
+        with _lock:
+            _state["steer_pending"] = msg
+        _log(f"[info] steer queued by user")
+    return jsonify({"ok": True})
 
 
 @app.route("/api/nudge", methods=["POST"])
@@ -212,9 +297,20 @@ def set_token_count(n):
         _state["token_count"] = n
 
 
+def _broadcast(payload: dict):
+    msg = json.dumps(payload)
+    with _subs_lock:
+        for q in _subscribers[:]:
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                pass
+
+
 def set_last_response(text):
     with _lock:
         _state["last_response"] = text
+    _broadcast({"t": "f", "v": text})
 
 
 def sync_context(context_list):
@@ -261,6 +357,26 @@ def pop_nudge():
         msg = _state["nudge_pending"]
         _state["nudge_pending"] = ""
     return msg
+
+
+def pop_steer() -> str:
+    """Return and clear any pending steer message."""
+    with _lock:
+        msg = _state["steer_pending"]
+        _state["steer_pending"] = ""
+    return msg
+
+
+def push_token(delta: str):
+    with _lock:
+        _state["stream_buffer"] += delta
+    _broadcast({"t": "c", "v": delta})
+
+
+def clear_stream():
+    with _lock:
+        _state["stream_buffer"] = ""
+    _broadcast({"t": "r"})
 
 
 def start(port=5051):

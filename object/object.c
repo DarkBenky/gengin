@@ -695,6 +695,7 @@ float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 
 	for (int i = 0; i < objCount; i++) {
 		if (i == queryObject) continue;
 		float tMin, tMax;
+		// TODO: potential vectorization
 		RayBoxItersect(&objs[i], position, direction, &tMin, &tMax);
 		if (tMin < tMax && tMin > 0.0f && tMin < emitTMin)
 			if (IntersectBVH_Shadow(&objs[i], &objs[i].bvh, position, direction))

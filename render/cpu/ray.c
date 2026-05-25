@@ -307,6 +307,7 @@ static void SkyBoxTaskFunc(void *arg) {
 		if (camera->depthBuffer[idx] >= DEPTH_FAR) {
 			// No geometry — fill with sky using primary ray direction
 			float3 rayDir = ComputeRayDirection(camera, x, row);
+			// TODO: can be vectorized by sampling color for multiple pixels at once
 			camera->framebuffer[idx] = SampleSkybox(skybox, rayDir);
 			continue;
 		}
@@ -594,6 +595,23 @@ static void RayTraceRowFunc(void *arg) {
 
 		const int *passIdx = task->frustumPassIndices;
 		const int passCount = task->frustumPassCount;
+		// TODO: Use SIMD test against 8 boundingBoxes at once
+		// int ci = 0;
+		// for (; ci + 8 <= passCount; ci += 8) {
+		// 	float3 mn8[8], mx8[8];
+		// 	for (int j = 0; j < 8; j++) {
+		// 		int i = passIdx[ci + j];
+		// 		mn8[j] = objects[i].worldBBmin;
+		// 		mx8[j] = objects[i].worldBBmax;
+		// 	}
+		// 	float out[8] __attribute__((aligned(32)));
+		// 	rayAABB_invV4_avx2(pixBias, pixInvDir, mn8, mx8, out);
+		// 	for (int j = 0; j < 8; j++) {
+		// 		if (out[j] >= bestT) continue;
+		// 		int i = passIdx[ci + j];
+		// 		// ... BVH intersect
+		// 	}
+		// }
 		for (int ci = 0; ci < passCount; ci++) {
 			int i = passIdx[ci];
 			float tAABB = rayAABB_inv(pixBias, pixInvDir, &objects[i].worldBBmin.x, &objects[i].worldBBmax.x);
