@@ -13,6 +13,20 @@
 # TODO: add boundaries so model can execute commands outside of the directory
 
 import subprocess
+import os
+
+def _load_env(path):
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip())
+    except FileNotFoundError:
+        pass
+
+_load_env(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 from pprint import pprint
 import json
 import perf as perfLib
@@ -193,8 +207,37 @@ def removeStaffFromContext(maxTokens=128_000):
         currentTokens -= removedTokens
         print(f"Removed {removedTokens} tokens from context. Current token count: {currentTokens}. Removed entry: {removed}")
 
+def _github_create_pr(title, body, head, base="main"):
+    import urllib.request, json as _json, re as _re
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        raise RuntimeError("GITHUB_TOKEN not set in environment or .env")
+    res = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True, text=True, cwd=PROJECT_DIR
+    )
+    remote = res.stdout.strip()
+    m = _re.search(r'[:/]([^/]+/[^/]+?)(?:\.git)?$', remote)
+    if not m:
+        raise RuntimeError(f"Cannot parse repo from remote URL: {remote}")
+    repo = m.group(1)
+    payload = _json.dumps({"title": title, "body": body, "head": head, "base": base}).encode()
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{repo}/pulls",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(req) as r:
+        data = _json.loads(r.read())
+    return data["html_url"]
+
+
 def createPR(title, body, branch, commit_msg=None):
-    """Commit staged changes, push to branch, open a GitHub PR via gh CLI."""
     commit_msg = commit_msg or title
 
     run(["git", "checkout", "-b", branch], cwd=PROJECT_DIR)
@@ -202,11 +245,7 @@ def createPR(title, body, branch, commit_msg=None):
     run(["git", "commit", "-m", commit_msg], cwd=PROJECT_DIR)
     run(["git", "push", "-u", "origin", branch], cwd=PROJECT_DIR)
 
-    res = run(
-        ["gh", "pr", "create", "--title", title, "--body", body, "--head", branch],
-        cwd=PROJECT_DIR,
-    )
-    url = res.stdout.strip()
+    url = _github_create_pr(title, body, head=branch)
     CONTEXT.append({
         "type": "tool_use",
         "tool": "createPR",
@@ -215,7 +254,6 @@ def createPR(title, body, branch, commit_msg=None):
     })
     ui.set_pr_url(url)
     print(f"PR created: {url}")
-    sys.exit(0)
 
 SYSTEM_PROMPT = """\
 You are an expert C software engineer. Your job is to analyse a renderer/engine \
@@ -303,11 +341,11 @@ if __name__ == "__main__":
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
         # response = model.getResponseOllama(prompt, model="gemma4:e4b")
-        if iteration % 8 == 0:
-            # use cheaper model every 8 iterations to save costs, since not every iteration needs a super detailed response
-            response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek") # Input 1M / 0.43$ Output 1M / 0.87$
-        else:
-            response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4") # Input 1M / 0.10$ Output 1M / 0.20$
+        # if iteration % 8 == 0:
+        #     # use cheaper model every 8 iterations to save costs, since not every iteration needs a super detailed response
+        #     response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek") # Input 1M / 0.43$ Output 1M / 0.87$
+        # else:
+        response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4") # Input 1M / 0.10$ Output 1M / 0.20$
         ui.set_last_response(response)
         print("Model response:", response)
         ui.set_status("running")
