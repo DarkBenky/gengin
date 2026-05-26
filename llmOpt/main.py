@@ -47,7 +47,7 @@ CONTEXT = []
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
 
-CONTEXT_MAX_TOKENS = 48_000
+CONTEXT_MAX_TOKENS = 32_000
 CONTEXT_COMPRESS_AT = 0.75  # trigger compression when > 75% full
 
 def run(cmd, **kwargs):
@@ -381,14 +381,15 @@ def createPR(title, body, branch, commit_msg=None):
     print(f"PR created: {url}")
 
 def removeDoublesFromContext():
-    # go from newest to oldest and remove entries with the same type, tool, and input (ignoring output)
-    seen = {}
+    # keep newest entry for each (type, tool, input) key
+    seen = set()
+    new_context = []
     for entry in reversed(CONTEXT):
         key = (entry.get("type"), entry.get("tool"), str(entry.get("input")))
-        if key in seen:
-            CONTEXT.remove(entry)
-        else:
-            seen[key] = True
+        if key not in seen:
+            seen.add(key)
+            new_context.append(entry)
+    CONTEXT[:] = list(reversed(new_context))
 
 PLAN_PROMPT = """\
 You are an expert C software engineer reviewing your own optimization session. \
@@ -515,7 +516,7 @@ if __name__ == "__main__":
         iteration += 1
         ui.set_iteration(iteration)
         ui.set_status("running")
-        removeStaffFromContext(128_000)
+        removeStaffFromContext(CONTEXT_MAX_TOKENS)
 
         # inject nudge if UI button was pressed or loop detected
         nudge = ui.pop_nudge()
