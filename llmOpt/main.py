@@ -47,7 +47,7 @@ CONTEXT = []
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
 
-CONTEXT_MAX_TOKENS = 32_000
+CONTEXT_MAX_TOKENS = 48_000
 CONTEXT_COMPRESS_AT = 0.75  # trigger compression when > 75% full
 
 def run(cmd, **kwargs):
@@ -544,14 +544,14 @@ if __name__ == "__main__":
             # if random.random() > 0.85:
             #     response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
             # elif random.random() < 0.35:
-            #     response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+            response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
             # elif random.random() < 0.1:
             #     is_plan_iteration = True
             #     plan_prompt = PLAN_PROMPT + "\n\nContext:\n" + xmlContext
             #     response = model.getResponseQwen3_6(plan_prompt, mode="general")
             # else:
-            mode = random.choices(["coding", "general", "instruct"], weights=[0.5, 0.2, 0.3])[0]
-            response = model.getResponseQwen3_6(prompt, mode=mode, on_token=_on_token, system_prompt=steer or None)
+            # mode = random.choices(["coding", "general", "instruct"], weights=[0.5, 0.2, 0.3])[0]
+            # response = model.getResponseQwen3_6(prompt, mode=mode, on_token=_on_token, system_prompt=steer or None)
         except Exception as e:
             CONTEXT.append({
                 "type": "model_response",

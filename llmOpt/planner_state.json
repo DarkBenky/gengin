@@ -1,4 +1,99 @@
 {
-  "tasks": [],
-  "notes": []
+  "tasks": [
+    {
+      "id": 1,
+      "text": "Optimize rayAABB_inv - use SIMD or precompute inv direction to reduce division overhead",
+      "status": "in_progress"
+    },
+    {
+      "id": 2,
+      "text": "Optimize rayTriangle - use M\u00f6ller\u2013Trumbore with SSE/AVX intrinsics",
+      "status": "todo"
+    },
+    {
+      "id": 3,
+      "text": "Optimize IntersectBVH - reduce branch mispredictions, prefetch nodes",
+      "status": "todo"
+    },
+    {
+      "id": 4,
+      "text": "Change rayAABB_inv signature to take const float3* instead of const float* mn/mx, update all call sites to cast arrays to float3*",
+      "status": "todo"
+    },
+    {
+      "id": 5,
+      "text": "Create an SSE version of rayAABB_inv that processes 2 BVH nodes at once (since we always test both children), using _mm_fmsub_ps and _mm_max_ps/_mm_min_ps.",
+      "status": "todo"
+    },
+    {
+      "id": 6,
+      "text": "Replace rayAABB_inv inline in object.h with SSE intrinsics version (based on V5 or V2 from tests/rayAABB_inv.h) to reduce the 28.6% hotspot overhead.",
+      "status": "todo"
+    },
+    {
+      "id": 7,
+      "text": "Replace the scalar rayAABB_inv in object.h with an SSE version that processes 2 nodes at once using _mm_fmsub_ps and _mm_max_ps/_mm_min_ps, and update all call sites to use the new dual-node function.",
+      "status": "todo"
+    },
+    {
+      "id": 8,
+      "text": "Replace scalar rayAABB_inv with SSE intrinsics version - single node, same signature, SSE loads + SSE arithmetic + scalar reduction.",
+      "status": "todo"
+    },
+    {
+      "id": 9,
+      "text": "Add SSE dual-node rayAABB_inv_x2 to object.h and update IntersectBVH/IntersectBVH_Shadow call sites",
+      "status": "todo"
+    }
+  ],
+  "notes": [
+    {
+      "id": 1,
+      "text": "Baseline: avg_ms=8.871, median_ms=8.759, 1124 frames in 10s. Top hotspots: rayAABB_inv (28.6% exclusive), rayTriangle (13.6%), IntersectBVH (15% exclusive), sampleFace (4.2%), RayBoxItersect (2.9%)"
+    },
+    {
+      "id": 2,
+      "text": "rayAABB_inv takes const float* for BBmin/BBmax from BVHNode. BVHNode stores BBmin/BBmax as float[3], but converting to float3* is safe since float3 has float x,y,z at same offsets. This lets compiler use wider loads and enables SIMD auto-vectorization. Currently 3 separate scalar loads per axis, can be 1 SSE load per axis."
+    },
+    {
+      "id": 3,
+      "text": "rayAABB_inv signature change to const float3* regressed because function body still used array indexing mn[0],mn[1],mn[2] treating float3* as array of float3. Need to use ->x, ->y, ->z access for the float3 pointer and change the logic to match."
+    },
+    {
+      "id": 4,
+      "text": "Plan: change BVHNode to use float3, change rayAABB_inv to take const float3*, use ->x,->y,->z access. Update call sites in object.c and ray.c. This should reduce memory loads and enable auto-vectorization."
+    },
+    {
+      "id": 5,
+      "text": "After restoreAll: The BVHNode struct is 32 bytes (2 per cache line) which is optimal. Changing to float3 would waste space. Need a different approach: keep BVHNode as-is, but optimize rayAABB_inv function body itself using fmaf() or auto-vectorization hints, or precompute more at the call site."
+    },
+    {
+      "id": 6,
+      "text": "Looking at rayAABB_inv: it takes const float* mn, mx (pointers to float[3] in BVHNode). The loads from memory are the bottleneck. Option 1: keep the function as-is but use __builtin_assume_aligned hints. Option 2: Keep as const float3* in the function signature but keep BVHNode as float[3], cast at call site (this only changes the function's internal codegen, not the memory layout). Option 3: Use SSE/AVX directly (already have test code proving it works)."
+    },
+    {
+      "id": 7,
+      "text": "Found tests/rayAABB_inv.h with SSE/AVX variants already implemented (V2-V5). The render uses the scalar version in object.h. Plan: replace the inline scalar rayAABB_inv with the SSE version from the test file that processes one node at a time using SSE intrinsics. This should reduce loads and enable SIMD."
+    },
+    {
+      "id": 8,
+      "text": "Both object.c and render/cpu/ray.c call rayAABB_inv via the inline in object.h. The render/cpu/ray.c has its own IntersectBVH that may also call it. Need to check both."
+    },
+    {
+      "id": 9,
+      "text": "Plan: Create SSE-optimized dual-node rayAABB_inv that processes 2 BVH children at once. Since sibling nodes are adjacent in memory, we can load all 12 floats (6 from each node) with aligned SSE loads and compute both tmin values in parallel. This reduces the loop overhead and enables SIMD execution for the 28.6% hotspot."
+    },
+    {
+      "id": 10,
+      "text": "Restored all files. Now implementing correct SSE dual-node rayAABB_inv_x2. The function will process 2 adjacent BVH nodes simultaneously, loading 12 floats total with _mm_loadu_ps, computing tmin/tmax for both nodes in parallel."
+    },
+    {
+      "id": 11,
+      "text": "Plan: Replace scalar rayAABB_inv with SSE version that loads 4 floats per load (safe, within BVHNode struct), computes 3-axis t0/t1/tmin/tmax with SSE, stores to temps for scalar reduction. Keeps signature intact."
+    },
+    {
+      "id": 12,
+      "text": "Plan: Add SSE dual-node rayAABB_inv_x2. Uses _mm_loadu_ps to load 2 adjacent BVHNode's BB data (8 floats), shuffles into SoA format with _mm_unpacklo/hi_ps + _mm_movelh/movehl_ps, computes tmin/tmax for both nodes in parallel with _mm_fmsub_ps, _mm_max_ps, _mm_min_ps. Updates IntersectBVH/IntersectBVH_Shadow to call x2. Keep scalar version for non-critical use."
+    }
+  ]
 }
