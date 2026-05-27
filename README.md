@@ -4,7 +4,7 @@
     - [ ] use optimized version processing 8 BoundingBoxes in same time
 - [ ] Create Optimizes RayCast, SampleEmission, SampleFace, IntersectBVH
 
-- [ ] TODO: better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
+- [ ] better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 
 - [ ] train model against moving target
 - [ ] disable trust control

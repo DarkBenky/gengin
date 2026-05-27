@@ -348,6 +348,7 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 		for (int i = 0; i < objectCount; i++) {
 			if (i == excludeObj) continue;
 			float bboxMin, bboxMax;
+			// TODO: replace with RayBoxIntersectV4 to use vectorization
 			RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
 			if (bboxMin >= bboxMax) continue;
 			if (IntersectBVH_Shadow(&objects[i], &objects[i].bvh, rayOrigin, rayDir)) {
@@ -361,11 +362,10 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 	float bestT = DEPTH_FAR;
 
 	for (int i = 0; i < objectCount; i++) {
-		if (ObjectBehindCamera(&objects[i], rayOrigin, rayDir)) continue;
-
 		if (i == excludeObj) continue;
 		// reject with world AABB first — cheap
 		float bboxMin, bboxMax;
+		// TODO: replace with RayBoxIntersectV4 to use vectorization
 		RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
 		if (bboxMin >= bboxMax || bboxMin >= bestT) continue;
 

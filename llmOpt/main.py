@@ -1,4 +1,3 @@
-# TODO: Implement model optimization pipeline
 # git_pull()
 # build(target)                    // make, make bench, make loss, etc.
 # run_perf(duration)               // perf record → flamegraph SVG + folded data
@@ -9,8 +8,6 @@
 # reset()                          // git checkout -- .
 # create_pr(title, body, branch)
 
-# TODO: defines skills and tools for the model to use, e.g. git, perf, flamegraph, etc.
-# TODO: add boundaries so model can execute commands outside of the directory
 
 import base64
 import os
@@ -39,8 +36,6 @@ import modelSelector as model
 import sys
 import ui
 import random
-
-SYSTEM_PROMPT = "TODO: create prompt for model"
 
 CONTEXT = []
 

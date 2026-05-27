@@ -1,15 +1,12 @@
 ========================================
-Running: tests/rayAABB_inv
+Running: tests/ObjectBehindCamera
 ========================================
 ========================================
-V1 rayAABB_inv   (pointers): 3.562 ns/call
-V2 rayAABB_invV2 (float3):   3.610 ns/call
-V3 rayAABB_invV3 (fma):      3.622 ns/call
-V4 rayAABB_invV4 (avx2 x8):  24.322 ns/batch(8)  |  3.040 ns/call (normalized)
-V5 rayAABB_invV5 (sse  x4):  13.883 ns/batch(4)  |  3.471 ns/call (normalized)
-========================================
-Validation (same inputs, relative eps 1e-5):
-Mismatches V1 vs V2:  0 / 99900000
-Mismatches V1 vs V3:  0 / 99900000
-Mismatches V4 vs ref: 0 / 99900000
-Mismatches V5 vs ref: 0 / 99900000
+ObjectBehindCamera scalar time: 26.165 ns per object
+ObjectBehindCameraV2 time: 23.608 ns per object
+ObjectBehindCameraV4 time: 19.581 ns per object
+Speedup V2: 1.11x
+Speedup V4: 1.34x
+Behind rate scalar: 6.38%
+Behind rate V2:     6.33%
+Behind rate V4:     6.38%

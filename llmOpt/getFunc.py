@@ -247,6 +247,165 @@ def getDiff(returnString=False, context=None, code_only=False):
     print(output)
 
 
+def grepSource(pattern, rel_path=None, ignore_case=False, returnString=False, context=None):
+    """grep pattern across project source files (or a specific path)."""
+    search_root = GENGIN
+    if rel_path:
+        # reuse the same traversal guard used for all path args
+        normalized = rel_path.replace("\\", "/")
+        if ".." in normalized.split("/"):
+            msg = f"path traversal rejected: {rel_path!r}"
+            if context is not None:
+                context.append({"type": "tool_use", "tool": "grepSource", "input": {"pattern": pattern, "rel_path": rel_path}, "output": msg})
+            return msg
+        search_root = os.path.join(GENGIN, rel_path)
+
+    cmd = ["grep", "-rn", "--binary-files=without-match",
+           "--include=*.c", "--include=*.h", "--include=*.cl"]
+    if ignore_case:
+        cmd.append("-i")
+    cmd += [pattern, search_root]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 2:
+        output = f"grep error: {result.stderr.strip()}"
+    else:
+        raw = result.stdout.strip()
+        # make paths relative to project root for readability
+        raw = raw.replace(GENGIN + "/", "")
+        output = raw if raw else "(no matches)"
+
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "grepSource",
+                        "input": {"pattern": pattern, "rel_path": rel_path},
+                        "output": output})
+    if returnString:
+        return output
+    print(output)
+
+
+def findSymbol(name, returnString=False, context=None):
+    """Word-boundary grep for an identifier across all source files."""
+    cmd = ["grep", "-rn", "--binary-files=without-match",
+           "--include=*.c", "--include=*.h", "--include=*.cl",
+           "-w", name, GENGIN]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 2:
+        output = f"grep error: {result.stderr.strip()}"
+    else:
+        raw = result.stdout.strip().replace(GENGIN + "/", "")
+        output = raw if raw else "(no matches)"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "findSymbol", "input": name, "output": output})
+    if returnString:
+        return output
+    print(output)
+
+
+def listDir(rel_path=".", returnString=False, context=None):
+    """List files and directories under rel_path (relative to project root)."""
+    normalized = rel_path.replace("\\", "/")
+    if ".." in normalized.split("/"):
+        msg = f"path traversal rejected: {rel_path!r}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "listDir", "input": rel_path, "output": msg})
+        return msg
+    target = os.path.join(GENGIN, rel_path)
+    if not os.path.isdir(target):
+        output = f"Not a directory: {rel_path}"
+    else:
+        lines = []
+        for entry in sorted(os.scandir(target), key=lambda e: (e.is_file(), e.name)):
+            suffix = "/" if entry.is_dir() else ""
+            lines.append(os.path.join(rel_path, entry.name) + suffix)
+        output = "\n".join(lines) if lines else "(empty directory)"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "listDir", "input": rel_path, "output": output})
+    if returnString:
+        return output
+    print(output)
+
+
+def readLines(rel_path, start, end, returnString=False, context=None):
+    """Read lines start..end (1-indexed inclusive) from a source file."""
+    normalized = rel_path.replace("\\", "/")
+    if ".." in normalized.split("/"):
+        msg = f"path traversal rejected: {rel_path!r}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "readLines",
+                            "input": {"rel_path": rel_path, "start": start, "end": end}, "output": msg})
+        return msg
+    filepath = os.path.join(GENGIN, rel_path)
+    try:
+        with open(filepath, errors='replace') as fh:
+            all_lines = fh.readlines()
+        s = max(1, start) - 1
+        e = min(len(all_lines), end)
+        selected = all_lines[s:e]
+        numbered = "".join(f"{s + i + 1}: {line}" for i, line in enumerate(selected))
+        output = numbered if numbered else "(no lines in range)"
+    except FileNotFoundError:
+        output = f"File not found: {rel_path}"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "readLines",
+                        "input": {"rel_path": rel_path, "start": start, "end": end}, "output": output})
+    if returnString:
+        return output
+    print(output)
+
+
+_ALLOWED_COMMANDS = {
+    # binary analysis
+    "nm", "size", "objdump", "readelf", "addr2line", "strings", "ldd", "file", "ar", "strip", "objcopy",
+    # profiling
+    "perf", "gprof", "valgrind",
+    # build
+    "make", "cmake", "ninja",
+    # compilers / static analysis
+    "gcc", "g++", "clang", "clang++", "cc", "clang-format", "clang-tidy", "cppcheck",
+    # scripting / runtimes
+    "python", "python3", "go", "perl",
+    # file editing via CLI
+    "patch",   # apply unified diff patches
+    "tee",     # write stdin to a file (useful at end of a pipeline)
+    "tr",      # translate/delete characters
+    # text analysis (read-only)
+    "diff", "wc", "awk", "sed", "sort", "uniq", "head", "tail", "xxd", "hexdump", "cat",
+}
+
+def runCommand(cmd_list, returnString=False, context=None):
+    """Run a whitelisted analysis command in the project directory."""
+    if not cmd_list or not isinstance(cmd_list, list):
+        output = "cmd_list must be a non-empty list of strings"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "runCommand", "input": cmd_list, "output": output})
+        return output
+    executable = os.path.basename(cmd_list[0])
+    if executable not in _ALLOWED_COMMANDS:
+        output = f"Command not allowed: {executable!r}. Allowed: {sorted(_ALLOWED_COMMANDS)}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "runCommand", "input": cmd_list, "output": output})
+        return output
+    # block path traversal in any argument
+    for arg in cmd_list[1:]:
+        normalized = str(arg).replace("\\", "/")
+        if ".." in normalized.split("/"):
+            output = f"path traversal rejected in args: {arg!r}"
+            if context is not None:
+                context.append({"type": "tool_use", "tool": "runCommand", "input": cmd_list, "output": output})
+            return output
+    try:
+        result = subprocess.run(cmd_list, capture_output=True, text=True, cwd=GENGIN)
+        raw = (result.stdout + result.stderr).strip()
+        output = raw if raw else "(no output)"
+    except FileNotFoundError:
+        output = f"Command not found: {cmd_list[0]!r} — is it installed?"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "runCommand", "input": cmd_list, "output": output})
+    if returnString:
+        return output
+    print(output)
+
 def readSourceFile(rel_path, returnString=False, context=None):
     filepath = os.path.join(GENGIN, rel_path)
     try:
@@ -917,6 +1076,22 @@ _API = [
          "Source of func_name annotated with /* HOT X.X% */ on lines that consumed >= threshold% of perf samples. Requires makeFlame() to have been run."),
         ("hotAnnotateFile(rel_path, threshold=0.5)",
          "Entire source file annotated with /* HOT X.X% */ per-line hotness across all functions in it. Requires makeFlame() to have been run."),
+        ("grepSource(pattern, rel_path=None, ignore_case=False)",
+         "grep a regex/literal pattern across all .c/.h/.cl source files. rel_path limits search to a subdirectory. Returns file:line:match lines."),
+        ("findSymbol(name)",
+         "Word-boundary grep for a symbol name across all source files. Finds declarations, definitions, and call sites without noise from partial matches."),
+        ("listDir(rel_path='.')",
+         "List files and subdirectories under rel_path (relative to project root). Useful to discover file layout before reading."),
+        ("readLines(rel_path, start, end)",
+         "Read lines start..end (1-indexed inclusive) from a file with line-number prefixes. Pairs with showSrc output to zoom into a specific region."),
+        ("runCommand(cmd_list)",
+         "Run a whitelisted command in the project directory. cmd_list is a list of strings. "
+         "Analysis: nm, size, objdump, readelf, addr2line, strings, ldd, file, ar, strip, objcopy, perf, gprof, valgrind. "
+         "Build: make, cmake, ninja. "
+         "Compilers/static analysis: gcc, g++, clang, clang++, cc, clang-format, clang-tidy, cppcheck. "
+         "Scripting: python, python3, go, perl. "
+         "File editing: patch (apply unified diffs), tee (write pipeline output to file), tr, sed -i, awk. "
+         "Text/read: diff, wc, sort, uniq, head, tail, xxd, hexdump, cat."),
     ]),
     ("Applying Changes", [
         ("searchReplace(rel_path, old_text, new_text)",
