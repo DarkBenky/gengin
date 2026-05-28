@@ -2,6 +2,7 @@
 #define OBJECT_H
 
 #include <math.h>
+#include <immintrin.h>
 
 #define EMISSION_RESOLUTION 32
 
@@ -46,14 +47,17 @@ typedef struct Volume {
 } Volume;
 
 typedef struct BVHNode {
-	float BBmin[3]; // 12 bytes (no float3 padding waste)
-	float BBmax[3]; // 12 bytes
+	// Internal nodes: SoA bounds of both children.
+	// Per axis layout: {child0.mn, child0.mx, child1.mn, child1.mx}
+	// soa[0..3] = x-axis, soa[4..7] = y-axis, soa[8..11] = z-axis
+	float soa[12] __attribute__((aligned(16))); // 48 bytes
 	union {
-		int leftFirst; // internal node: index of left child (right = leftFirst+1)
-		int triStart;  // leaf node: start index into triIndices
+		int leftFirst; // internal: left child index
+		int triStart;  // leaf: start in triIndices
 	};
-	int triCount; // 0 = internal node, >0 = leaf
-} BVHNode;		  // 32 bytes — 2 nodes per cache line
+	int triCount;  // 0 = internal, >0 = leaf
+	int _pad[2];   // pad to 64 bytes
+} BVHNode;        // 64 bytes — 1 per cache line
 
 typedef struct BVH {
 	BVHNode *nodes;
@@ -142,6 +146,7 @@ void CreateObjectBVH(Object *obj, BVH *bvh);
 void DestroyObjectBVH(BVH *bvh);
 void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld);
 bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir);
+void getBvhStats(const BVH *bvh, int *outNodeCount, int *outTriCount);
 
 // Perspective frustum — 5 planes (near, left, right, bottom, top), all inward-facing.
 // Test: dot(normal, P) + d >= 0 means P is on the inside of the plane.
@@ -167,6 +172,23 @@ static inline float rayAABB_inv(float3 bias, float3 invRd, const float *mn, cons
 	float tmin = fmaxf(fmaxf(fminf(tx0, tx1), fminf(ty0, ty1)), fminf(tz0, tz1));
 	float tmax = fminf(fminf(fmaxf(tx0, tx1), fmaxf(ty0, ty1)), fmaxf(tz0, tz1));
 	return tmax < tmin ? FLT_MAX : tmin;
+}
+
+// Test 2 BVHNode children simultaneously using SSE.
+// soa layout (BVHNode.soa): per axis {child0.mn, child0.mx, child1.mn, child1.mx}
+// out[0] = tmin for child0, out[1] = tmin for child1; FLT_MAX on miss.
+static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *soa, float out[2]) {
+	__m128 tx = _mm_fmsub_ps(_mm_loadu_ps(soa + 0), _mm_set1_ps(invRd.x), _mm_set1_ps(bias.x));
+	__m128 ty = _mm_fmsub_ps(_mm_loadu_ps(soa + 4), _mm_set1_ps(invRd.y), _mm_set1_ps(bias.y));
+	__m128 tz = _mm_fmsub_ps(_mm_loadu_ps(soa + 8), _mm_set1_ps(invRd.z), _mm_set1_ps(bias.z));
+	__m128 tx_sw = _mm_shuffle_ps(tx, tx, _MM_SHUFFLE(2, 3, 0, 1));
+	__m128 ty_sw = _mm_shuffle_ps(ty, ty, _MM_SHUFFLE(2, 3, 0, 1));
+	__m128 tz_sw = _mm_shuffle_ps(tz, tz, _MM_SHUFFLE(2, 3, 0, 1));
+	__m128 tmin = _mm_max_ps(_mm_max_ps(_mm_min_ps(tx, tx_sw), _mm_min_ps(ty, ty_sw)), _mm_min_ps(tz, tz_sw));
+	__m128 tmax = _mm_min_ps(_mm_min_ps(_mm_max_ps(tx, tx_sw), _mm_max_ps(ty, ty_sw)), _mm_max_ps(tz, tz_sw));
+	__m128 result = _mm_blendv_ps(tmin, _mm_set1_ps(FLT_MAX), _mm_cmplt_ps(tmax, tmin));
+	out[0] = _mm_cvtss_f32(result);
+	out[1] = _mm_cvtss_f32(_mm_shuffle_ps(result, result, _MM_SHUFFLE(2, 2, 2, 2)));
 }
 
 #endif // OBJECT_H

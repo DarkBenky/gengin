@@ -98,9 +98,91 @@ int main() {
 		for (int j = 0; j < 4; j++)
 			resultsV5_ref[i + j] = rayAABB_inv(biasArr[i], invRdArr[i], &mnArr[i + j].x, &mxArr[i + j].x);
 
+	// V6: 2 boxes SSE with current BVHNode layout (Path A — _mm_setr_ps packing inside)
+	int samplesV6 = (SAMPLES / 2) * 2;
+	float outV6[2] __attribute__((aligned(16)));
+	float *resultsV6 = (float *)malloc(samplesV6 * sizeof(float));
+	float *resultsV6_ref = (float *)malloc(samplesV6 * sizeof(float));
+
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	for (int i = 0; i < samplesV6; i += 2) {
+		rayAABB_inv_x2_sse(biasArr[i], invRdArr[i],
+						   (const float *)&mnArr[i], (const float *)&mxArr[i],
+						   (const float *)&mnArr[i + 1], (const float *)&mxArr[i + 1],
+						   outV6);
+		resultsV6[i] = outV6[0];
+		resultsV6[i + 1] = outV6[1];
+	}
+	clock_gettime(CLOCK_MONOTONIC, &t1);
+	sink = resultsV6[0];
+	double nsV6_batch = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (double)(samplesV6 / 2);
+	double nsV6_per = nsV6_batch / 2.0;
+
+	for (int i = 0; i < samplesV6; i += 2) {
+		resultsV6_ref[i] = rayAABB_inv(biasArr[i], invRdArr[i], &mnArr[i].x, &mxArr[i].x);
+		resultsV6_ref[i + 1] = rayAABB_inv(biasArr[i], invRdArr[i], &mnArr[i + 1].x, &mxArr[i + 1].x);
+	}
+
+	// V7: 2 boxes SSE with pre-packed SoA data (Path B — scalar-store packing included)
+	int samplesV7 = (SAMPLES / 2) * 2;
+	float soaV7[12] __attribute__((aligned(16)));
+	float outV7[2] __attribute__((aligned(16)));
+	float *resultsV7 = (float *)malloc(samplesV7 * sizeof(float));
+	float *resultsV7_ref = (float *)malloc(samplesV7 * sizeof(float));
+
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	for (int i = 0; i < samplesV7; i += 2) {
+		pack_2box_to_soa(
+			(const float *)&mnArr[i], (const float *)&mxArr[i],
+			(const float *)&mnArr[i + 1], (const float *)&mxArr[i + 1],
+			soaV7);
+		rayAABB_inv_x2_soa(biasArr[i], invRdArr[i], soaV7, outV7);
+		resultsV7[i] = outV7[0];
+		resultsV7[i + 1] = outV7[1];
+	}
+	clock_gettime(CLOCK_MONOTONIC, &t1);
+	sink = resultsV7[0];
+	double nsV7_batch = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (double)(samplesV7 / 2);
+	double nsV7_per = nsV7_batch / 2.0;
+
+	// V7_noPack: V7 compute only — pre-pack all data before timing (ideal Path B)
+	// Uses a separate, smaller sample count to keep memory usage reasonable
+	int samplesV7np = (SAMPLES / 16) * 2; // smaller set for the pre-packed benchmark
+	float *soaPrepacked = (float *)malloc((size_t)(samplesV7np / 2) * 12 * sizeof(float));
+	if (soaPrepacked) {
+		for (int i = 0; i < samplesV7np; i += 2) {
+			pack_2box_to_soa(
+				(const float *)&mnArr[i], (const float *)&mxArr[i],
+				(const float *)&mnArr[i + 1], (const float *)&mxArr[i + 1],
+				soaPrepacked + (i / 2) * 12);
+		}
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		for (int i = 0; i < samplesV7np; i += 2) {
+			rayAABB_inv_x2_soa(biasArr[i], invRdArr[i], soaPrepacked + (i / 2) * 12, outV7);
+			resultsV7[i] = outV7[0];
+			resultsV7[i + 1] = outV7[1];
+		}
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		sink = resultsV7[0];
+		double nsV7np_batch = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (double)(samplesV7np / 2);
+		double nsV7np_per = nsV7np_batch / 2.0;
+		printf("V7 rayAABB_x2_soa  (ideal): %.3f ns/batch(2)  |  %.3f ns/call (normalized)  [pre-packed, no pack cost]\n", nsV7np_batch, nsV7np_per);
+		free(soaPrepacked);
+	} else {
+		printf("V7 rayAABB_x2_soa  (ideal): (skipped — out of memory for prepack buffer)\n");
+	}
+
+	for (int i = 0; i < samplesV7; i += 2) {
+		resultsV7_ref[i] = rayAABB_inv(biasArr[i], invRdArr[i], &mnArr[i].x, &mxArr[i].x);
+		resultsV7_ref[i + 1] = rayAABB_inv(biasArr[i], invRdArr[i], &mnArr[i + 1].x, &mxArr[i + 1].x);
+	}
+
 	printf("V5 rayAABB_invV5 (sse  x4):  %.3f ns/batch(4)  |  %.3f ns/call (normalized)\n", nsV5_batch, nsV5_per);
+	printf("V6 rayAABB_x2_sse  (cur):   %.3f ns/batch(2)  |  %.3f ns/call (normalized)\n", nsV6_batch, nsV6_per);
+	printf("V7 rayAABB_x2_soa  (+pack): %.3f ns/batch(2)  |  %.3f ns/call (normalized)\n", nsV7_batch, nsV7_per);
 
 	int mismatchesV2 = 0, mismatchesV3 = 0, mismatchesV4 = 0, mismatchesV5 = 0;
+	int mismatchesV6 = 0, mismatchesV7 = 0;
 	for (int i = 0; i < samplesV5; i++) {
 		float v1 = resultsV1[i], v2 = resultsV2[i], v3 = resultsV3[i];
 		float v4 = (i < samplesV4) ? resultsV4[i] : resultsV4_ref[i];
@@ -126,6 +208,21 @@ int main() {
 	printf("Mismatches V4 vs ref: %d / %d\n", mismatchesV4, samplesV5);
 	printf("Mismatches V5 vs ref: %d / %d\n", mismatchesV5, samplesV5);
 
+	for (int i = 0; i < samplesV6; i++) {
+		float v6 = resultsV6[i], ref6 = resultsV6_ref[i];
+		int m6 = (ref6 == FLT_MAX) != (v6 == FLT_MAX);
+		if (!m6 && ref6 != FLT_MAX) m6 = fabsf(ref6 - v6) > 1e-5f * (fabsf(ref6) + 1.0f);
+		mismatchesV6 += m6;
+	}
+	for (int i = 0; i < samplesV7; i++) {
+		float v7 = resultsV7[i], ref7 = resultsV7_ref[i];
+		int m7 = (ref7 == FLT_MAX) != (v7 == FLT_MAX);
+		if (!m7 && ref7 != FLT_MAX) m7 = fabsf(ref7 - v7) > 1e-5f * (fabsf(ref7) + 1.0f);
+		mismatchesV7 += m7;
+	}
+	printf("Mismatches V6 vs ref: %d / %d\n", mismatchesV6, samplesV6);
+	printf("Mismatches V7 vs ref: %d / %d\n", mismatchesV7, samplesV7);
+
 	free(biasArr);
 	free(invRdArr);
 	free(mnArr);
@@ -137,5 +234,9 @@ int main() {
 	free(resultsV4_ref);
 	free(resultsV5);
 	free(resultsV5_ref);
+	free(resultsV6);
+	free(resultsV6_ref);
+	free(resultsV7);
+	free(resultsV7_ref);
 	return 0;
 }

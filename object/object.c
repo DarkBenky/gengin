@@ -362,7 +362,7 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 		BVHNode *node = &bvh->nodes[w.nodeIdx];
 		int *idx = bvh->triIndices + w.start;
 
-		// compute AABB of this set of triangles
+		// compute AABB of this set of triangles (needed for split axis selection)
 		float3 mn = {FLT_MAX, FLT_MAX, FLT_MAX};
 		float3 mx = {FLT_MIN, FLT_MIN, FLT_MIN};
 		for (int i = 0; i < w.count; i++) {
@@ -377,16 +377,11 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 				mx.z = MaxF32(mx.z, verts[v].z);
 			}
 		}
-		node->BBmin[0] = mn.x;
-		node->BBmin[1] = mn.y;
-		node->BBmin[2] = mn.z;
-		node->BBmax[0] = mx.x;
-		node->BBmax[1] = mx.y;
-		node->BBmax[2] = mx.z;
 
 		if (w.count <= 4) {
 			node->triStart = w.start;
 			node->triCount = w.count;
+			// soa[] unused for leaves — parent already stored our bounds
 			continue;
 		}
 
@@ -413,6 +408,50 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 		int mid = lo;
 		if (mid == 0 || mid == w.count) mid = w.count / 2; // degenerate fallback
 
+		// compute AABB of left partition and store in this node's SoA as child0
+		float3 mn0 = {FLT_MAX, FLT_MAX, FLT_MAX}, mx0 = {FLT_MIN, FLT_MIN, FLT_MIN};
+		for (int i = 0; i < mid; i++) {
+			int t = idx[i];
+			float3 verts[3] = {obj->v1[t], obj->v2[t], obj->v3[t]};
+			for (int v = 0; v < 3; v++) {
+				mn0.x = MinF32(mn0.x, verts[v].x);
+				mx0.x = MaxF32(mx0.x, verts[v].x);
+				mn0.y = MinF32(mn0.y, verts[v].y);
+				mx0.y = MaxF32(mx0.y, verts[v].y);
+				mn0.z = MinF32(mn0.z, verts[v].z);
+				mx0.z = MaxF32(mx0.z, verts[v].z);
+			}
+		}
+
+		// compute AABB of right partition and store as child1
+		float3 mn1 = {FLT_MAX, FLT_MAX, FLT_MAX}, mx1 = {FLT_MIN, FLT_MIN, FLT_MIN};
+		for (int i = mid; i < w.count; i++) {
+			int t = idx[i];
+			float3 verts[3] = {obj->v1[t], obj->v2[t], obj->v3[t]};
+			for (int v = 0; v < 3; v++) {
+				mn1.x = MinF32(mn1.x, verts[v].x);
+				mx1.x = MaxF32(mx1.x, verts[v].x);
+				mn1.y = MinF32(mn1.y, verts[v].y);
+				mx1.y = MaxF32(mx1.y, verts[v].y);
+				mn1.z = MinF32(mn1.z, verts[v].z);
+				mx1.z = MaxF32(mx1.z, verts[v].z);
+			}
+		}
+
+		// pack both children's bounds into SoA: per axis {mn0, mx0, mn1, mx1}
+		node->soa[0] = mn0.x;
+		node->soa[1] = mx0.x;
+		node->soa[2] = mn1.x;
+		node->soa[3] = mx1.x;
+		node->soa[4] = mn0.y;
+		node->soa[5] = mx0.y;
+		node->soa[6] = mn1.y;
+		node->soa[7] = mx1.y;
+		node->soa[8] = mn0.z;
+		node->soa[9] = mx0.z;
+		node->soa[10] = mn1.z;
+		node->soa[11] = mx1.z;
+
 		int leftIdx = bvh->nodeCount;
 		bvh->nodeCount += 2;
 		node->leftFirst = leftIdx;
@@ -422,6 +461,9 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 		stack[top++] = (WorkItem){leftIdx + 1, w.start + mid, w.count - mid};
 	}
 #undef TRI_CENTROID_AXIS
+	int nodeCount, triCount;
+	getBvhStats(bvh, &nodeCount, &triCount);
+	printf("BVH built with %d nodes %d triangles (%.2f%% overhead) %.2f average Triangles per node\n", nodeCount, triCount, 100.0f * nodeCount / triCount, (float)triCount / nodeCount);
 }
 
 void DestroyObjectBVH(BVH *bvh) {
@@ -431,6 +473,17 @@ void DestroyObjectBVH(BVH *bvh) {
 	free(bvh->triIndices);
 	bvh->triIndices = NULL;
 	bvh->nodeCount = 0;
+}
+
+void getBvhStats(const BVH *bvh, int *outNodeCount, int *outTriCount) {
+	if (!bvh || !outNodeCount || !outTriCount) return;
+	*outNodeCount = bvh->nodeCount;
+	*outTriCount = 0;
+	for (int i = 0; i < bvh->nodeCount; i++) {
+		if (bvh->nodes[i].triCount > 0) {
+			*outTriCount += bvh->nodes[i].triCount;
+		}
+	}
 }
 
 // Möller–Trumbore ray-triangle intersection
@@ -518,13 +571,13 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 				}
 			}
 		} else {
-			// test both children immediately — they're adjacent in the array (same cache line).
-			// push farther child first so LIFO pops nearer child first → bestT converges faster.
-			int li = node->leftFirst, ri = li + 1;
-			float tl = rayAABB_inv(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax);
-			float tr = rayAABB_inv(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax);
+			// test both children at once with SSE — bounds stored SoA in this node
+			float out[2];
+			rayAABB_inv_x2_soa(bias, invDir, node->soa, out);
+			float tl = out[0], tr = out[1];
 			if (tl >= bestT) tl = FLT_MAX;
 			if (tr >= bestT) tr = FLT_MAX;
+			int li = node->leftFirst, ri = li + 1;
 			if (tl <= tr) {
 				if (tr < FLT_MAX) stack[top++] = ri;
 				if (tl < FLT_MAX) stack[top++] = li;
@@ -575,9 +628,11 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 					return true;
 			}
 		} else {
-			int li = node->leftFirst, ri = li + 1;
-			if (rayAABB_inv(bias, invDir, bvh->nodes[li].BBmin, bvh->nodes[li].BBmax) < FLT_MAX) stack[top++] = li;
-			if (rayAABB_inv(bias, invDir, bvh->nodes[ri].BBmin, bvh->nodes[ri].BBmax) < FLT_MAX) stack[top++] = ri;
+			float out[2];
+			rayAABB_inv_x2_soa(bias, invDir, node->soa, out);
+			int li = node->leftFirst;
+			if (out[0] < FLT_MAX) stack[top++] = li;
+			if (out[1] < FLT_MAX) stack[top++] = li + 1;
 		}
 	}
 	return false;
@@ -649,7 +704,6 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
 				stack[top++] = 0;
 				while (top > 0) {
 					const BVHNode *node = &obj->bvh.nodes[stack[--top]];
-					if (rayAABB_inv(bias, invDir, node->BBmin, node->BBmax) >= bestT) continue;
 					if (node->triCount > 0) {
 						for (int i = 0; i < node->triCount; i++) {
 							int t = obj->bvh.triIndices[node->triStart + i];
@@ -660,8 +714,11 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
 							}
 						}
 					} else {
-						stack[top++] = node->leftFirst;
-						stack[top++] = node->leftFirst + 1;
+						float out[2];
+						rayAABB_inv_x2_soa(bias, invDir, node->soa, out);
+						int li = node->leftFirst;
+						if (out[0] < bestT) stack[top++] = li;
+						if (out[1] < bestT) stack[top++] = li + 1;
 					}
 				}
 
