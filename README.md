@@ -1,5 +1,6 @@
 ## Tasks
 
+- [ ] Wire frame rendering
 - [ ] Crete shader that will simulate hot air fluctuations for jet engine or missiles
 - [ ] Create optimized version of rayAABB_inv
     - [ ] use optimized version processing 8 BoundingBoxes in same time

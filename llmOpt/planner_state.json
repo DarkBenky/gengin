@@ -2,98 +2,128 @@
   "tasks": [
     {
       "id": 1,
-      "text": "Optimize rayAABB_inv - use SIMD or precompute inv direction to reduce division overhead",
-      "status": "in_progress"
+      "text": "Profile and optimize IntersectBVH - the top hotspot at 42.3% inclusive",
+      "status": "todo"
     },
     {
       "id": 2,
-      "text": "Optimize rayTriangle - use M\u00f6ller\u2013Trumbore with SSE/AVX intrinsics",
+      "text": "Optimize IntersectBVH traversal: Reduce branch mispredictions by reordering stack push to put closer child first more efficiently",
       "status": "todo"
     },
     {
       "id": 3,
-      "text": "Optimize IntersectBVH - reduce branch mispredictions, prefetch nodes",
+      "text": "Optimize rayTriangle: Use SoA triangle data layout or precompute edge vectors to reduce memory traffic in leaf intersection",
       "status": "todo"
     },
     {
       "id": 4,
-      "text": "Change rayAABB_inv signature to take const float3* instead of const float* mn/mx, update all call sites to cast arrays to float3*",
+      "text": "Reduce stack pointer arithmetic in BVH traversal: Use iterative traversal with less push/pop overhead",
       "status": "todo"
     },
     {
       "id": 5,
-      "text": "Create an SSE version of rayAABB_inv that processes 2 BVH nodes at once (since we always test both children), using _mm_fmsub_ps and _mm_max_ps/_mm_min_ps.",
-      "status": "todo"
+      "text": "Precompute edge vectors in triangle data: Replace (v1,v2,v3) storage with (v0,e1,e2) to eliminate 3\u00d73 subtractions per rayTriangle call, saving ~19% exclusive hotspot cost",
+      "status": "done"
     },
     {
       "id": 6,
-      "text": "Replace rayAABB_inv inline in object.h with SSE intrinsics version (based on V5 or V2 from tests/rayAABB_inv.h) to reduce the 28.6% hotspot overhead.",
-      "status": "todo"
+      "text": "Apply edge-precomputation: 1) Change Object struct 2) Update rayTriangle 3) Update all allocation/destruction/creation code 4) Update UV calculation functions",
+      "status": "done"
     },
     {
       "id": 7,
-      "text": "Replace the scalar rayAABB_inv in object.h with an SSE version that processes 2 nodes at once using _mm_fmsub_ps and _mm_max_ps/_mm_min_ps, and update all call sites to use the new dual-node function.",
-      "status": "todo"
+      "text": "Fix load/loadObj.c: store v0/e1/e2 instead of v1/v2/v3 (precompute edges) - 3 errors",
+      "status": "done"
     },
     {
       "id": 8,
-      "text": "Replace scalar rayAABB_inv with SSE intrinsics version - single node, same signature, SSE loads + SSE arithmetic + scalar reduction.",
-      "status": "todo"
+      "text": "Fix object/scene.c: use v0/e1/e2 instead of v1/v2/v3 - 6 errors",
+      "status": "done"
     },
     {
       "id": 9,
-      "text": "Add SSE dual-node rayAABB_inv_x2 to object.h and update IntersectBVH/IntersectBVH_Shadow call sites",
+      "text": "Fix render/cpu/ray.c: use v0/e1/e2 with precomputed edge reconstruction where needed - 6 errors",
+      "status": "done"
+    },
+    {
+      "id": 10,
+      "text": "Optimize IntersectBVH traversal: reorder stack push to put closer child first to reduce BVH traversal steps and branch mispredictions",
+      "status": "todo"
+    },
+    {
+      "id": 11,
+      "text": "Optimize IntersectBVH_Shadow traversal: apply same closer-child-first optimization for shadow rays",
       "status": "todo"
     }
   ],
   "notes": [
     {
       "id": 1,
-      "text": "Baseline: avg_ms=8.871, median_ms=8.759, 1124 frames in 10s. Top hotspots: rayAABB_inv (28.6% exclusive), rayTriangle (13.6%), IntersectBVH (15% exclusive), sampleFace (4.2%), RayBoxItersect (2.9%)"
+      "text": "Baseline bench: avg 11.006ms, median 10.467ms, p99 14.904ms at 1080x720. Top hotspots: IntersectBVH (42.3%), rayTriangle (19.3%), rayAABB_inv (9.0%), rayCollision (8.5%), SampleEmission (7.1%), rayAABB_inv_x2_soa (6.6%), IntersectBVH_Shadow (5.7%), sampleFace (5.4%), RayBoxItersect (4.8%), RayCast (4.5%)"
     },
     {
       "id": 2,
-      "text": "rayAABB_inv takes const float* for BBmin/BBmax from BVHNode. BVHNode stores BBmin/BBmax as float[3], but converting to float3* is safe since float3 has float x,y,z at same offsets. This lets compiler use wider loads and enables SIMD auto-vectorization. Currently 3 separate scalar loads per axis, can be 1 SSE load per axis."
+      "text": "Need flame graph data for line-level annotation. Running makeFlame() to get perf.data."
     },
     {
       "id": 3,
-      "text": "rayAABB_inv signature change to const float3* regressed because function body still used array indexing mn[0],mn[1],mn[2] treating float3* as array of float3. Need to use ->x, ->y, ->z access for the float3 pointer and change the logic to match."
+      "text": "Analyzed perf data: IntersectBVH 41.7% inclusive, rayTriangle 19.2% exclusive (inlined inside IntersectBVH), rayAABB_inv 9.0%, rayAABB_inv_x2_soa 6.8%, IntersectBVH_Shadow 5.9%. Key insight: rayTriangle is the dominant leaf cost at 19.2%."
     },
     {
       "id": 4,
-      "text": "Plan: change BVHNode to use float3, change rayAABB_inv to take const float3*, use ->x,->y,->z access. Update call sites in object.c and ray.c. This should reduce memory loads and enable auto-vectorization."
+      "text": "The BVH traversal uses a stack-based approach with push/pop. The stack operations and bounds checking are in rayAABB_inv_x2_soa (6.8%). The triangle intersection is in rayTriangle (19.2%)."
     },
     {
       "id": 5,
-      "text": "After restoreAll: The BVHNode struct is 32 bytes (2 per cache line) which is optimal. Changing to float3 would waste space. Need a different approach: keep BVHNode as-is, but optimize rayAABB_inv function body itself using fmaf() or auto-vectorization hints, or precompute more at the call site."
+      "text": "Starting optimization: Precompute and store triangle edges (v0, e1, e2) instead of (v1, v2, v3) to save 3 subtractions and improve cache locality in rayTriangle. This directly targets 19.2% exclusive cost."
     },
     {
       "id": 6,
-      "text": "Looking at rayAABB_inv: it takes const float* mn, mx (pointers to float[3] in BVHNode). The loads from memory are the bottleneck. Option 1: keep the function as-is but use __builtin_assume_aligned hints. Option 2: Keep as const float3* in the function signature but keep BVHNode as float[3], cast at call site (this only changes the function's internal codegen, not the memory layout). Option 3: Use SSE/AVX directly (already have test code proving it works)."
+      "text": "Planning the edge-precomputation optimization: Changing Object struct to store v0, e1, e2 instead of v1, v2, v3. This affects: object.h (struct), object.c (rayTriangle, IntersectBVH, CreateObjectBVH, etc.), load/loadObj.c (LoadObj), CreateCube, Object_Destroy, CalculateFaceEmissions, sampleFace usage. Will add new float3* arrays: v0, e1, e2 replacing v1, v2, v3."
     },
     {
       "id": 7,
-      "text": "Found tests/rayAABB_inv.h with SSE/AVX variants already implemented (V2-V5). The render uses the scalar version in object.h. Plan: replace the inline scalar rayAABB_inv with the SSE version from the test file that processes one node at a time using SSE intrinsics. This should reduce loads and enable SIMD."
+      "text": "Beginning edge-precomputation optimization. Changing Object struct: store v0, e1, e2 instead of v1, v2, v3. This eliminates 3x3=9 subtractions per rayTriangle call (19.2% of total time). Also need to recompute v1=v0+e1 and v2=v0+e2 for UV calculation functions."
     },
     {
       "id": 8,
-      "text": "Both object.c and render/cpu/ray.c call rayAABB_inv via the inline in object.h. The render/cpu/ray.c has its own IntersectBVH that may also call it. Need to check both."
+      "text": "The codebase is in a partially-converted state: object.c uses v0/e1/e2 (CreateCube, rayTriangle, IntersectBVH, etc.) but object.h still declares v1/v2/v3, and render.c still references obj->v1/v2/v3. The struct needs to be changed to v0/e1/e2, and render.c needs updating to reconstruct v1=v0+e1, v2=v0+e2 from the precomputed edges. Also need to add uv handling in render.c."
     },
     {
       "id": 9,
-      "text": "Plan: Create SSE-optimized dual-node rayAABB_inv that processes 2 BVH children at once. Since sibling nodes are adjacent in memory, we can load all 12 floats (6 from each node) with aligned SSE loads and compute both tmin values in parallel. This reduces the loop overhead and enables SIMD execution for the 28.6% hotspot."
+      "text": "Applied object.h struct change: v1/v2/v3 -> v0/e1/e2. Now need to update render.c."
     },
     {
       "id": 10,
-      "text": "Restored all files. Now implementing correct SSE dual-node rayAABB_inv_x2. The function will process 2 adjacent BVH nodes simultaneously, loading 12 floats total with _mm_loadu_ps, computing tmin/tmax for both nodes in parallel."
+      "text": "Build failed: load/loadObj.c, object/scene.c, and render/cpu/ray.c still reference old v1/v2/v3. Need to read these files and convert them to use v0/e1/e2."
     },
     {
       "id": 11,
-      "text": "Plan: Replace scalar rayAABB_inv with SSE version that loads 4 floats per load (safe, within BVHNode struct), computes 3-axis t0/t1/tmin/tmax with SSE, stores to temps for scalar reduction. Keeps signature intact."
+      "text": "Reading load/loadObj.c lines around 90-100 to understand vertex creation pattern"
     },
     {
       "id": 12,
-      "text": "Plan: Add SSE dual-node rayAABB_inv_x2. Uses _mm_loadu_ps to load 2 adjacent BVHNode's BB data (8 floats), shuffles into SoA format with _mm_unpacklo/hi_ps + _mm_movelh/movehl_ps, computes tmin/tmax for both nodes in parallel with _mm_fmsub_ps, _mm_max_ps, _mm_min_ps. Updates IntersectBVH/IntersectBVH_Shadow to call x2. Keep scalar version for non-critical use."
+      "text": "Build succeeded after applying v0/e1/e2 precomputation across all files. Running benchmark to measure performance impact."
+    },
+    {
+      "id": 13,
+      "text": "Edge precomputation completed with +1.7% avg, +2.4% median improvement. Next target: BVH traversal optimization - looking at stack-based traversal in IntersectBVH (still ~40% of time)."
+    },
+    {
+      "id": 14,
+      "text": "Need to read the full IntersectBVH function in object.c to understand the stack-based traversal pattern and identify optimization opportunities. Also need to check if closer-child-first ordering is applied."
+    },
+    {
+      "id": 15,
+      "text": "Looking at IntersectBVH function in object.c to understand stack traversal pattern and plan closer-child-first optimization"
+    },
+    {
+      "id": 16,
+      "text": "The IntersectBVH and IntersectBVH_Shadow both use a stack-based traversal. Currently they push children regardless of order. The closer-child-first heuristic pushes the nearer child last so it's popped first, reducing traversal steps. Need to read the full functions."
+    },
+    {
+      "id": 17,
+      "text": "IntersectBVH (primary) already has closer-child-first ordering at lines 584-590. IntersectBVH_Shadow (lines 636-638) does NOT \u2014 it pushes children in fixed order. Adding distance-based ordering there should reduce traversal depth for shadow rays, targeting the 5.9% inclusive cost."
     }
   ]
 }
