@@ -226,12 +226,15 @@ def buildToolMap(gf_module, planner_module, main_module=None):
     if main_module is not None:
         m = main_module
         tools.update({
-            "buildProject":  m.buildProject,
-            "makeBench":     m.makeBench,
-            "makeFlame":     m.makeFlame,
-            "getTree":       m.getTree,
-            "getTodos":      m.getTodos,
-            "createPR":      m.createPR,
+            "buildProject":    m.buildProject,
+            "makeBench":       m.makeBench,
+            "makeFlame":       m.makeFlame,
+            "getTree":         m.getTree,
+            "getTodos":        m.getTodos,
+            "createPR":        m.createPR,
+            "createFuncBench": m.createFuncBench,
+            "runFuncBench":    m.runFuncBench,
+            "deleteFuncBench": m.deleteFuncBench,
         })
 
     return tools

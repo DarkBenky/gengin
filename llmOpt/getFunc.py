@@ -1133,6 +1133,19 @@ _API = [
         ("createPR(title, body, branch, commit_msg=None)",
          "Commit all changes, push to branch, open a GitHub PR via gh CLI. body should describe what changed and why. Returns the PR URL."),
     ]),
+    ("Micro-Benchmark Sandbox  [main.py]", [
+        ("createFuncBench(func_name, header_code, impl_code)",
+         "Create bench/<func_name>.h (header_code) and bench/<func_name>.c (impl_code). "
+         "impl_code must #include \"<func_name>.h\" and \"timings.h\", implement the variants, "
+         "and contain a main() that times each variant with clock_gettime, calls "
+         "ComputePerformanceMetrics(), prints results, and validates correctness. "
+         "No OpenCL/minifb allowed — only -lm."),
+        ("runFuncBench(func_name)",
+         "Build and run bench/<func_name>.c (linked with tests/timings.c). "
+         "Returns stdout with timing and validation output. Use before touching main codebase."),
+        ("deleteFuncBench(func_name)",
+         "Remove bench/<func_name>.h, bench/<func_name>.c, and the compiled binary."),
+    ]),
     ("Planner  [planner.py]", [
         ("addTask(text)",
          "Add a task with status 'todo'. Returns assigned task id."),
