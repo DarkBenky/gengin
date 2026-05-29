@@ -244,7 +244,73 @@ def makeFlame():
     })
     return data
 
-def convertContextToXml():
+
+BENCH_FUNC_DIR = os.path.join(PROJECT_DIR, "bench")
+
+def createFuncBench(func_name: str, header_code: str, impl_code: str):
+    """
+    Create bench/<func_name>.h and bench/<func_name>.c so the model can compile
+    and time a standalone micro-benchmark with `runFuncBench(func_name)`.
+
+    header_code  - full content of the .h file (guards, typedefs, declarations).
+    impl_code    - full content of the .c file; must contain a main() that uses
+                   ComputePerformanceMetrics() from tests/timings.h for timing and
+                   prints results to stdout.
+    """
+    os.makedirs(BENCH_FUNC_DIR, exist_ok=True)
+    h_path = os.path.join(BENCH_FUNC_DIR, f"{func_name}.h")
+    c_path = os.path.join(BENCH_FUNC_DIR, f"{func_name}.c")
+    with open(h_path, "w") as fh:
+        fh.write(header_code)
+    with open(c_path, "w") as fh:
+        fh.write(impl_code)
+    msg = f"Created bench/{func_name}.h and bench/{func_name}.c"
+    CONTEXT.append({
+        "type": "tool_use",
+        "tool": "createFuncBench",
+        "input": func_name,
+        "output": msg,
+    })
+    return msg
+
+
+def runFuncBench(func_name: str):
+    """
+    Build and run the micro-benchmark for func_name via `make benchFunc <func_name>`.
+    Returns the stdout output (timing results and validation).
+    """
+    try:
+        res = run(["make", "benchFunc", func_name], cwd=PROJECT_DIR)
+        output = res.stdout
+    except RuntimeError as e:
+        output = str(e)
+    CONTEXT.append({
+        "type": "tool_use",
+        "tool": "runFuncBench",
+        "input": func_name,
+        "output": output,
+    })
+    return output
+
+
+def deleteFuncBench(func_name: str):
+    """Remove bench/<func_name>.h, bench/<func_name>.c and the compiled binary."""
+    removed = []
+    for ext in (".h", ".c", ""):
+        path = os.path.join(BENCH_FUNC_DIR, f"{func_name}{ext}")
+        if os.path.exists(path):
+            os.remove(path)
+            removed.append(f"bench/{func_name}{ext}")
+    msg = f"Removed: {', '.join(removed)}" if removed else f"No files found for bench/{func_name}"
+    CONTEXT.append({
+        "type": "tool_use",
+        "tool": "deleteFuncBench",
+        "input": func_name,
+        "output": msg,
+    })
+    return msg
+
+
     def _esc(v):
         return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     xml = "<context>\n"
@@ -640,6 +706,34 @@ may be acceptable; >= 100.0 = significant change, investigate before submitting.
 for any floating-point reordering, SIMD shuffles, or precision changes even when the \
 image is visually identical. Do NOT treat a hash mismatch as a correctness failure. \
 Use image_mse to judge correctness.
+
+== MICRO-BENCHMARK SANDBOX ==
+When you want to test a hypothesis about an algorithm or implementation approach \
+BEFORE applying it to the main codebase, use the micro-benchmark sandbox:
+
+1. createFuncBench(func_name, header_code, impl_code)
+   Creates bench/<func_name>.h and bench/<func_name>.c.
+   - header_code: #ifndef guard, any typedefs/structs needed, and function declarations.
+   - impl_code:   full .c file that #includes "<func_name>.h" and "timings.h", implements
+     every variant you want to compare, and contains a main() that:
+       a. Runs a warm-up pass.
+       b. Times each variant over at least 20 iterations using clock_gettime(CLOCK_MONOTONIC).
+       c. Calls ComputePerformanceMetrics(timeTook, N) and prints avg/median/p99 for each.
+       d. Validates correctness (compare outputs of baseline vs optimised variant).
+   The file may #include project headers by path if needed (e.g. "../render/render.h"),
+   but must NOT depend on OpenCL or minifb — keep it self-contained with -lm only.
+
+2. runFuncBench(func_name)
+   Compiles bench/<func_name>.c (linked with tests/timings.c and -lm) and runs it.
+   Returns the full stdout output with your timing and correctness results.
+   Use this to validate ideas cheaply before touching the main source.
+
+3. deleteFuncBench(func_name)
+   Removes the bench files and binary when you are done.
+
+WORKFLOW for hypothesis testing:
+  createFuncBench → runFuncBench → read results → decide → apply to main codebase (or discard)
+  Always call addNote() with the measured numbers before deleting the bench files.
 {codebase_context_section}"""
 
 # TODO: add api where model can execute some code in a sandbox

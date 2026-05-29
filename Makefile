@@ -31,8 +31,14 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC     = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train, $(MAKECMDGOALS))
-_RUN_TESTS    = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
+_SPECIFIC         = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train benchFunc, $(MAKECMDGOALS))
+_RUN_TESTS        = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
+
+BENCH_FUNC_DIR    = bench
+BENCH_FUNC_SRCS   = $(wildcard $(BENCH_FUNC_DIR)/*.c)
+BENCH_FUNC_BINS   = $(patsubst $(BENCH_FUNC_DIR)/%.c, $(BENCH_FUNC_DIR)/%, $(BENCH_FUNC_SRCS))
+_BENCH_FUNC_SPECIFIC = $(filter-out test all clean run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train benchFunc, $(MAKECMDGOALS))
+_RUN_BENCH_FUNCS  = $(if $(_BENCH_FUNC_SPECIFIC), $(addprefix $(BENCH_FUNC_DIR)/, $(_BENCH_FUNC_SPECIFIC)))
 
 EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
 GAME_SERVER_SRC    = server/gameServer.c server/server.c object/format.c
@@ -41,7 +47,7 @@ GAME_CLIENT_SRC    = client/gameClient.c client/client.c object/format.c object/
 HEX_DUMP_SRC       = hexDump/hexDump.c
 TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c client/client.c util/threadPool.c
 
-.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train $(if $(_SPECIFIC), $(_SPECIFIC))
+.PHONY: all clean run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train benchFunc $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
 
 all: $(TARGET)
 
@@ -107,6 +113,25 @@ $(_SPECIFIC):
 	@:
 endif
 
+# Build rule for any micro-benchmark binary under bench/
+$(BENCH_FUNC_DIR)/%: $(BENCH_FUNC_DIR)/%.c $(TESTS_DIR)/timings.c
+	@mkdir -p $(BENCH_FUNC_DIR)
+	$(CC) $(CFLAGS_BASE) -I$(BENCH_FUNC_DIR) -I$(TESTS_DIR) -o $@ $^ $(LDFLAGS) -lm
+
+# make benchFunc <funcName>  →  build & run bench/<funcName>
+benchFunc: $(_RUN_BENCH_FUNCS)
+	@if [ -z "$(_BENCH_FUNC_SPECIFIC)" ]; then \
+		echo "Usage: make benchFunc <funcName>  (file must exist as bench/<funcName>.c)"; \
+	else \
+		for t in $(_RUN_BENCH_FUNCS); do \
+			echo "========================================"; \
+			echo "Running micro-benchmark: $$t"; \
+			echo "========================================"; \
+			$$t 2>&1; \
+		done; \
+	fi
+
+
 pgo:
 	$(CC) $(CFLAGS_BASE) -fno-lto -fprofile-generate -DPGO_MAX_FRAMES=2048 -o $(TARGET)_pgo $(SRC) -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
 	./$(TARGET)_pgo
@@ -142,3 +167,4 @@ perf-report:
 
 clean:
 	rm -f $(TARGET) perf.data flamegraph.svg callgraph.svg $(TEST_BINS) $(TARGET)_bench $(TARGET)_bench_unopt bench_results.json
+	rm -f $(BENCH_FUNC_BINS)
