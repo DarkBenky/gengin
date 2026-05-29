@@ -386,6 +386,151 @@ def removeDoublesFromContext():
             new_context.append(entry)
     CONTEXT[:] = list(reversed(new_context))
 
+CODEBASE_CONTEXT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codebase_context.md")
+
+RESEARCH_SYSTEM_PROMPT = """\
+You are an expert C software engineer performing a thorough codebase research pass \
+before an optimization session begins. Your goal is to build a comprehensive, \
+persistent knowledge base about this engine's source code so future optimization \
+iterations start with full context.
+
+== YOUR TASK ==
+Explore the codebase systematically and document:
+1. The overall architecture and key subsystems (files, modules, their responsibilities).
+2. Every performance-critical function: its location, what it does, why it is likely slow \
+(algorithmic complexity, memory access patterns, branching, synchronization, GPU/CPU \
+boundary crossings, etc.).
+3. Important data structures and how they flow between hot functions.
+4. Known TODOs, existing comments about performance, and obvious low-hanging fruit.
+5. The call graph from the main render/compute loop down to leaf hot functions.
+
+== WORKFLOW ==
+- Use listFunctions() first to get a complete function inventory.
+- Use showContext(func, depth=2) or readSourceFile(rel_path) to read important files.
+- Use hotAnnotateFile(rel_path) or hotAnnotateFunc(func) once profiling data is available.
+- Use grepSource(pattern) to find TODOs, FIXME, or performance comments.
+- Use getCallers(func) to trace the call graph for hot functions.
+- When you have gathered enough information, call saveCodebaseContext(report) with your \
+full structured Markdown report. This ends the research phase.
+
+== OUTPUT FORMAT ==
+The report passed to saveCodebaseContext() must be a Markdown document with these sections:
+# Codebase Architecture
+## Key Files and Modules
+## Critical Data Structures
+# Performance-Critical Functions
+## <FunctionName> (<file>:<approx_line>)
+  - What it does
+  - Why it is slow / what to look at
+  - Callers / call graph position
+# Known TODOs and Low-Hanging Fruit
+# Recommended Optimization Order
+
+== CONSTRAINTS ==
+- Do NOT apply any code changes. Only use read/exploration tools.
+- Call apiHelp() if you are unsure which tools are available.
+- When your research is complete, call saveCodebaseContext(report) EXACTLY ONCE.
+"""
+
+RESEARCH_MAX_ITERATIONS = 30  # guard against runaway research loops
+
+RESEARCH_CONTEXT: list = []
+
+
+def saveCodebaseContext(report: str, context=None):
+    """Write the model's codebase research report to a persistent Markdown file."""
+    with open(CODEBASE_CONTEXT_FILE, "w") as fh:
+        fh.write(report)
+    msg = f"Codebase context saved to {CODEBASE_CONTEXT_FILE} ({len(report)} chars)"
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "saveCodebaseContext",
+                        "input": f"{len(report)} chars", "output": msg})
+    print(f"[research] {msg}")
+    return msg
+
+
+def loadCodebaseContext() -> str | None:
+    """Load the persisted codebase research report, or return None if absent."""
+    if not os.path.exists(CODEBASE_CONTEXT_FILE):
+        return None
+    with open(CODEBASE_CONTEXT_FILE) as fh:
+        return fh.read()
+
+
+def runCodebaseResearch():
+    """
+    Run an agentic research loop where the model explores the codebase and
+    produces a persistent codebase_context.md knowledge base file.
+    """
+    global RESEARCH_CONTEXT
+    RESEARCH_CONTEXT = []
+
+    # Seed with exploration data
+    getTree()
+    gf.listFunctions(context=RESEARCH_CONTEXT)
+    gf.apiHelp(context=RESEARCH_CONTEXT)
+
+    # Exploration-only tool map (no editing, no build/bench)
+    research_tool_map = executor.buildToolMap(gf, planner)
+    research_tool_map["saveCodebaseContext"] = lambda report, context=None: saveCodebaseContext(report, context=context)
+    # Remove any editing or destructive tools from the research map
+    for _tool in ("searchReplace", "searchReplaceMulti", "applyChange", "replaceLines",
+                  "insertLines", "deleteLines", "applyPatch", "restoreAll", "restoreFile",
+                  "restoreFunction"):
+        research_tool_map.pop(_tool, None)
+
+    print("[research] Starting codebase research phase …")
+    for iteration in range(1, RESEARCH_MAX_ITERATIONS + 1):
+        # Hard-trim research context if it grows too large (keep most recent 2/3)
+        if _estimateTokens(RESEARCH_CONTEXT) > CONTEXT_MAX_TOKENS * CONTEXT_COMPRESS_AT:
+            keep = max(5, len(RESEARCH_CONTEXT) * 2 // 3)
+            del RESEARCH_CONTEXT[:-keep]
+            print(f"[research] trimmed context, kept last {keep} entries")
+
+        # Build XML from RESEARCH_CONTEXT using the same escaper as the main loop
+        def _esc(v):
+            return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        xml_research = "<context>\n"
+        for entry in RESEARCH_CONTEXT:
+            xml_research += "  <entry>\n"
+            for k, v in entry.items():
+                xml_research += f"    <{k}>{_esc(v)}</{k}>\n"
+            xml_research += "  </entry>\n"
+        xml_research += "</context>"
+
+        prompt = RESEARCH_SYSTEM_PROMPT + "\n\nContext:\n" + xml_research
+        print(f"[research] iteration {iteration} (context ~{len(xml_research)//4} tokens)")
+
+        try:
+            response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+        except Exception as e:
+            print(f"[research] model error: {e}, retrying …")
+            continue
+
+        if response is None:
+            print("[research] model returned None, retrying …")
+            continue
+
+        response_clean = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+        RESEARCH_CONTEXT.append({
+            "type": "model_response",
+            "iteration": iteration,
+            "output": response_clean,
+        })
+        print(f"[research] model responded ({len(response_clean)} chars)")
+
+        results = executor.executeAll(response, research_tool_map, context=RESEARCH_CONTEXT)
+
+        # Stop as soon as saveCodebaseContext was successfully called
+        for r in results:
+            if r["tool"] == "saveCodebaseContext" and r["error"] is None:
+                print("[research] Research phase complete.")
+                return
+
+    print(f"[research] WARNING: reached max iterations ({RESEARCH_MAX_ITERATIONS}) without "
+          "saveCodebaseContext being called. Partial results (if any) may exist.")
+
+
 PLAN_PROMPT = """\
 You are an expert C software engineer reviewing your own optimization session. \
 Your ONLY task right now is to think deeply and produce a structured plan. \
@@ -486,14 +631,45 @@ may be acceptable; >= 100.0 = significant change, investigate before submitting.
 for any floating-point reordering, SIMD shuffles, or precision changes even when the \
 image is visually identical. Do NOT treat a hash mismatch as a correctness failure. \
 Use image_mse to judge correctness.
-"""
+{codebase_context_section}"""
 
 # TODO: add api where model can execute some code in a sandbox
 
+def _buildSystemPrompt():
+    """Return SYSTEM_PROMPT with the persisted codebase context section injected."""
+    ctx = loadCodebaseContext()
+    if ctx:
+        section = (
+            "\n\n== CODEBASE KNOWLEDGE BASE ==\n"
+            "The following pre-built research report describes this codebase's "
+            "architecture and known performance hotspots. Use it as your primary "
+            "reference before reading source files.\n\n"
+            + ctx
+        )
+    else:
+        section = ""
+    return SYSTEM_PROMPT.format(codebase_context_section=section)
+
+
 if __name__ == "__main__":
+    import argparse
+    _parser = argparse.ArgumentParser(description="llmOpt agentic optimization loop")
+    _parser.add_argument(
+        "--research", action="store_true",
+        help="Run the codebase research phase and save codebase_context.md, then exit."
+    )
+    _args = _parser.parse_args()
+
     ui.start()
     git_pull_project()
     gf.init()
+
+    if _args.research:
+        print("[main] Running codebase research phase …")
+        runCodebaseResearch()
+        print(f"[main] Research complete. Context saved to {CODEBASE_CONTEXT_FILE}")
+        sys.exit(0)
+
     planner.resetBoard()
 
     getTree()
@@ -503,6 +679,18 @@ if __name__ == "__main__":
     flame = makeFlame()
     gf.listFunctions(context=CONTEXT)
     gf.apiHelp(context=CONTEXT)
+
+    _SYSTEM_PROMPT = _buildSystemPrompt()
+    codebase_ctx = loadCodebaseContext()
+    if codebase_ctx:
+        print(f"[main] Loaded codebase context ({len(codebase_ctx)} chars) from {CODEBASE_CONTEXT_FILE}")
+        CONTEXT.insert(0, {
+            "type": "codebase_knowledge",
+            "tool": "loadCodebaseContext",
+            "output": codebase_ctx,
+        })
+    else:
+        print(f"[main] No codebase_context.md found. Run with --research to generate it.")
 
     TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
     iteration = 0
@@ -524,7 +712,7 @@ if __name__ == "__main__":
         ui.sync_context(CONTEXT)
         board = planner.showBoard(returnString=True)
         ui.sync_board(board)
-        prompt = SYSTEM_PROMPT + "\n\n== CURRENT BOARD ==\n" + board + "\n\n" + "Context:\n" + xmlContext
+        prompt = _SYSTEM_PROMPT + "\n\n== CURRENT BOARD ==\n" + board + "\n\n" + "Context:\n" + xmlContext
         print(f"Prompt token count: {tokenCount}")
         ui.set_status("waiting_model")
         steer = ui.pop_steer()
