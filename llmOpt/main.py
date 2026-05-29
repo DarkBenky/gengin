@@ -42,8 +42,8 @@ CONTEXT = []
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
 
-CONTEXT_MAX_TOKENS = 48_000
-CONTEXT_COMPRESS_AT = 0.75  # trigger compression when > 75% full
+CONTEXT_MAX_TOKENS = 128_000
+CONTEXT_COMPRESS_AT = 0.85  # trigger compression when > 85% full
 
 def run(cmd, **kwargs):
     result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
@@ -311,6 +311,7 @@ def deleteFuncBench(func_name: str):
     return msg
 
 
+def convertContextToXml():
     def _esc(v):
         return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     xml = "<context>\n"
@@ -323,8 +324,12 @@ def deleteFuncBench(func_name: str):
     tokenCount = len(xml) // 4
     return xml, tokenCount
 
+
 def _estimateTokens(obj) -> int:
-    return len(json.dumps(obj)) // 4
+    # JSON serialization underestimates vs the XML we actually send.
+    # XML tags and escaping add ~25-30% overhead over raw JSON.
+    json_len = len(json.dumps(obj))
+    return int(json_len * 1.3) // 4
 
 
 def compressContext():
@@ -376,7 +381,7 @@ def compressContext():
         print(f"[compressContext] summarization failed: {e}")
 
     board = planner.showBoard(returnString=True)
-    keep = max(5, len(CONTEXT) // 3)
+    keep = max(8, len(CONTEXT) * 2 // 3)
     del CONTEXT[:-keep]
     CONTEXT.insert(0, {
         "type": "context_summary",
@@ -455,7 +460,7 @@ def removeDoublesFromContext():
 CODEBASE_CONTEXT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codebase_context.md")
 
 RESEARCH_MODEL = "deepseek/deepseek-v4-flash"
-RESEARCH_PROVIDER = "deepinfra/fp4"
+RESEARCH_PROVIDER = "baidu/fp8"
 MIN_RESEARCH_CONTEXT_ENTRIES = 5
 
 # Tools that must be excluded from the research-phase tool map (read-only mode).
@@ -481,32 +486,46 @@ boundary crossings, etc.).
 4. Known TODOs, existing comments about performance, and obvious low-hanging fruit.
 5. The call graph from the main render/compute loop down to leaf hot functions.
 
-== WORKFLOW ==
-- Use listFunctions() first to get a complete function inventory.
-- Use showContext(func, depth=2) or readSourceFile(rel_path) to read important files.
-- Use hotAnnotateFile(rel_path) or hotAnnotateFunc(func) once profiling data is available.
-- Use grepSource(pattern) to find TODOs, FIXME, or performance comments.
-- Use getCallers(func) to trace the call graph for hot functions.
-- When you have gathered enough information, call saveCodebaseContext(report) with your \
-full structured Markdown report. This ends the research phase.
+== HOW TO CALL TOOLS ==
+You MUST call tools by emitting fenced JSON blocks. Every response that wants to \
+take action MUST contain at least one tool block:
 
-== OUTPUT FORMAT ==
-The report passed to saveCodebaseContext() must be a Markdown document with these sections:
-# Codebase Architecture
-## Key Files and Modules
-## Critical Data Structures
-# Performance-Critical Functions
-## <FunctionName> (<file>:<approx_line>)
-  - What it does
-  - Why it is slow / what to look at
-  - Callers / call graph position
-# Known TODOs and Low-Hanging Fruit
-# Recommended Optimization Order
+```json
+{"tool": "listFunctions", "args": {}}
+```
+
+```json
+{"tool": "showContext", "args": {"func": "renderFrame", "depth": 2}}
+```
+
+```json
+{"tool": "saveCodebaseContext", "args": {"report": "# Codebase Architecture\\n## Key Files and Modules\\n..."}}
+```
+
+Do NOT just write prose about what you plan to do — actually emit the JSON tool \
+blocks to call the tools. Your response can contain prose + tool blocks together.
+
+== WORKFLOW ==
+1. Start with listFunctions() to get a complete function inventory.
+2. For key files, call readSourceFile(rel_path) or showContext(func, depth=2).
+3. If profiling data is available, call hotAnnotateFile(rel_path) or hotAnnotateFunc(func).
+4. Call grepSource(pattern) to find TODOs, FIXME, or performance comments.
+5. Call getCallers(func) to trace the call graph for hot functions.
+6. After gathering enough information, call saveCodebaseContext(report) with your \
+full structured Markdown report. This MUST be the last tool call — it ends the phase.
+
+== saveCodebaseContext(report) ==
+Call this with a single "report" arg containing your full Markdown report:
+```json
+{"tool": "saveCodebaseContext", "args": {"report": "# Codebase Architecture\\n\\n## Key Files and Modules\\n- render/render.c: main render loop...\\n\\n## Critical Data Structures\\n...\\n\\n# Performance-Critical Functions\\n\\n## renderFrame (render/render.c)\\n- What it does: ...\\n- Why it is slow: ...\\n- Callers: ...\\n\\n# Known TODOs and Low-Hanging Fruit\\n...\\n\\n# Recommended Optimization Order\\n1. ...\\n2. ..."}}
+```
 
 == CONSTRAINTS ==
 - Do NOT apply any code changes. Only use read/exploration tools.
 - Call apiHelp() if you are unsure which tools are available.
 - When your research is complete, call saveCodebaseContext(report) EXACTLY ONCE.
+- If you don't yet have enough information, call more exploration tools.
+- The iteration count tells you how many turns remain — plan accordingly.
 """
 
 RESEARCH_MAX_ITERATIONS = 30  # guard against runaway research loops
@@ -555,10 +574,12 @@ def runCodebaseResearch():
         research_tool_map.pop(_tool, None)
 
     print("[research] Starting codebase research phase …")
+    last_response_was_prose_only = 0
     for iteration in range(1, RESEARCH_MAX_ITERATIONS + 1):
+        remaining = RESEARCH_MAX_ITERATIONS - iteration
         # Hard-trim research context if it grows too large (keep most recent 2/3)
         if _estimateTokens(RESEARCH_CONTEXT) > CONTEXT_MAX_TOKENS * CONTEXT_COMPRESS_AT:
-            keep = max(MIN_RESEARCH_CONTEXT_ENTRIES, len(RESEARCH_CONTEXT) * 2 // 3)
+            keep = max(MIN_RESEARCH_CONTEXT_ENTRIES + 5, len(RESEARCH_CONTEXT) * 3 // 4)
             del RESEARCH_CONTEXT[:-keep]
             print(f"[research] trimmed context, kept last {keep} entries")
 
@@ -573,8 +594,43 @@ def runCodebaseResearch():
             xml_research += "  </entry>\n"
         xml_research += "</context>"
 
-        prompt = RESEARCH_SYSTEM_PROMPT + "\n\nContext:\n" + xml_research
-        print(f"[research] iteration {iteration} (context ~{len(xml_research)//4} tokens)")
+        # Build urgency hint
+        urgency = ""
+        if remaining <= 0:
+            urgency = (
+                "\n\n*** THIS IS YOUR LAST ITERATION. You MUST call saveCodebaseContext(report) "
+                "NOW with whatever information you have gathered. Do NOT call any other tools. "
+                "Failure to call saveCodebaseContext() means ALL your research is lost. ***"
+            )
+        elif remaining <= 3:
+            urgency = (
+                f"\n\n*** Only {remaining} iterations remaining. You MUST call "
+                "saveCodebaseContext(report) very soon. If you already have enough information "
+                "about the codebase, call saveCodebaseContext() now. ***"
+            )
+        elif remaining <= 7:
+            urgency = (
+                f"\n\n({remaining} iterations remaining. Make sure you are gathering enough "
+                "information to write a complete report before you run out of turns.)"
+            )
+
+        # Nudge if model produced prose-only responses multiple times in a row
+        prose_nudge = ""
+        if last_response_was_prose_only >= 2:
+            prose_nudge = (
+                "\n\n*** Your last responses had NO tool calls. You MUST emit JSON tool blocks "
+                "to call tools. Example: ```json\n{\"tool\": \"readSourceFile\", \"args\": {\"rel_path\": \"render/render.c\"}}\n```\n"
+                "Do not just describe what you would do — actually call the tools. ***"
+            )
+
+        prompt = (
+            RESEARCH_SYSTEM_PROMPT
+            + f"\n\nIteration {iteration}/{RESEARCH_MAX_ITERATIONS} ({remaining} remaining)"
+            + urgency
+            + prose_nudge
+            + "\n\nContext:\n" + xml_research
+        )
+        print(f"[research] iteration {iteration}/{RESEARCH_MAX_ITERATIONS} (context ~{len(xml_research)//4} tokens, {remaining} remaining)")
 
         try:
             response = model.getResponse(prompt, model=RESEARCH_MODEL, provider=RESEARCH_PROVIDER)
@@ -595,6 +651,11 @@ def runCodebaseResearch():
         print(f"[research] model responded ({len(response_clean)} chars)")
 
         results = executor.executeAll(response, research_tool_map, context=RESEARCH_CONTEXT)
+        if results:
+            last_response_was_prose_only = 0
+        else:
+            last_response_was_prose_only += 1
+            print(f"[research] no tool calls in response ({last_response_was_prose_only} consecutive prose-only responses)")
 
         # Stop as soon as saveCodebaseContext was successfully called
         for r in results:
@@ -614,15 +675,20 @@ Do NOT call any tools. Do NOT write any code. Do NOT emit any JSON tool blocks.
 Review everything in the context — flame graph data, bench results, code you have \
 already read, notes on the board, completed changes, regressions — and answer:
 
-1. What have I already tried and what were the results?
+1. What have I already tried and what were the results? (be specific: function names, \
+   measured numbers from bench results)
 2. What are the current top hotspots that are NOT yet addressed?
 3. What is the single most impactful change I should try next, and why?
 4. What do I need to read or profile first before I can safely make that change?
 5. Are there any risks or constraints I should keep in mind?
+6. Is there anything I have been stubbornly repeating that is not working? Be honest.
+
+After your analysis, call addNote() with a summary of this plan (use [PLAN] prefix), \
+then call addTask() for each concrete next step. Then resume normal tool-calling \
+with the SYSTEM_PROMPT workflow.
 
 Reply in plain prose. Be specific: name functions, file paths, and measured numbers \
-from the context where relevant. This plan will be injected into the context so your \
-future self can act on it directly.
+from the context where relevant.
 """
 
 SYSTEM_PROMPT = """\
@@ -631,6 +697,9 @@ codebase and iteratively improve its performance. You work in a loop:
 
   profile -> identify hotspot -> read code -> propose change \
 -> apply -> build -> bench -> compare -> repeat
+
+The session header shows your current iteration, iterations since last successful \
+change, and whether you have uncommitted modifications. Use this to gauge progress.
 
 == CALLING TOOLS ==
 To call a tool, emit one or more fenced JSON blocks anywhere in your response.
@@ -641,11 +710,7 @@ Every block must be valid JSON with "tool" (string) and "args" (object) fields:
 ```
 
 ```json
-{"tool": "replaceLines", "args": {"rel_path": "render/render.c", "start": 42, "end": 55, "new_text": "int foo() {\n    return 1;\n}"}}
-```
-
-```json
-{"tool": "getDiff", "args": {}}
+{"tool": "searchReplace", "args": {"rel_path": "render/render.c", "old_text": "...", "new_text": "..."}}
 ```
 
 Multiple blocks in one response are executed in order. Omitting "args" is also \
@@ -653,30 +718,28 @@ accepted and treated as an empty object. Every tool result is appended to the \
 context so you can see it in the next turn. Use apiHelp() (already in context) to \
 list all available tools and their exact argument names.
 
-== WORKFLOW ==
+== WORKFLOW (follow this order strictly) ==
 1. Read the flame graph and bench results already in the context.
-2. Use listFunctions() to get an overview of the codebase.
+2. Use showBoard() to review your current task list and notes.
 3. Pick the top hotspot. Use hotAnnotateFunc(func) to see exactly which lines are \
 hot, or showContext(func, depth=2) / showSrcPair(path) to read the relevant code.
 4. BEFORE writing any code, record your findings: \
 call addNote() with the hotspot name and why it is slow, \
 call addTask() for each concrete change you plan to make. \
-This is mandatory — do not skip it.
+This is mandatory — do NOT skip this step.
 5. Apply your change with one of the editing tools:\
-\n   - searchReplace(rel_path, old_text, new_text)  — preferred, no line numbers needed\
-\n   - searchReplaceMulti(rel_path, [{"old":...,"new":...},...])  — multiple edits in one call\
-\n   - insertLines(rel_path, after_line, new_text)  — add code without touching existing lines (after_line=0 to prepend)\
-\n   - deleteLines(rel_path, start, end)  — remove lines cleanly\
-\n   - applyChange(func_name, new_definition)  — replace a whole named function\
-\n   Multiple independent \
-regions can be batched with applyPatch().
+\n   - searchReplace(rel_path, old_text, new_text) — preferred, no line numbers needed\
+\n   - searchReplaceMulti(rel_path, [{"old":...,"new":...},...]) — multiple edits in one call\
+\n   - insertLines(rel_path, after_line, new_text) — add code without touching existing lines\
+\n   - deleteLines(rel_path, start, end) — remove lines cleanly\
+\n   - applyChange(func_name, new_definition) — replace a whole named function
 6. Call buildProject(). If it fails, read the error, fix the code, rebuild. \
 Record the error summary with addNote().
 7. Call makeBench() and compare against the baseline in context. \
 Record the result with addNote(). If performance regressed, call restoreAll() \
 and add a note explaining what failed.
-8. When a change is solid, call createPR() with a clear title and body, \
-then call markTaskDone() for the completed tasks.
+8. When a change is solid (measurable improvement, no visual regression), call \
+createPR() with a clear title and body, then call markTaskDone() for the completed tasks.
 9. Call showBoard() to review remaining tasks and continue with the next hotspot.
 
 == NOTE-TAKING RULES ==
@@ -686,6 +749,33 @@ then call markTaskDone() for the completed tasks.
 - Notes and tasks survive context compression — they are your long-term memory.
   Anything not written to the board WILL be forgotten when context is trimmed.
 - Use showBoard() at the start of each iteration to recall your plan.
+
+== WHEN TO USE THE MICRO-BENCHMARK SANDBOX ==
+Use createFuncBench + runFuncBench + deleteFuncBench when:
+- You are unsure whether an algorithmic change will actually be faster.
+- You want to compare multiple implementation approaches before touching main code.
+- The change is in a self-contained math/algorithm function.
+Do NOT use the sandbox when:
+- The change requires OpenCL, minifb, or other project-specific infrastructure.
+- You already know the change will help and it's simple to apply directly.
+- You are modifying control flow or data layout that only makes sense in context.
+
+== ANTI-PATTERNS: Things you MUST NOT do ==
+1. DO NOT read the same source file more than twice without making a change.
+   If you keep re-reading, you are stuck — call addNote() and move on.
+2. DO NOT call buildProject() + makeBench() without having changed any code.
+   This wastes time and provides no new information.
+3. DO NOT apply a change, then immediately restoreAll() and re-apply the same change.
+   If a change regresses, document why and try a different approach.
+4. DO NOT make many small formatting-only changes in sequence — batch them.
+5. DO NOT propose changes without first reading the relevant source code.
+   Guessing what a function does from its name will produce broken code.
+6. DO NOT ignore build errors. If buildProject() fails, fix the error immediately.
+7. DO NOT skip the micro-benchmark sandbox for risky algorithmic changes.
+   Test your hypothesis cheaply before touching the main codebase.
+8. DO NOT keep calling the same exploration tool over and over. If you have enough \
+   information to make a change, make the change. If you don't, write down what you \
+   need with addNote() and move to a different hotspot.
 
 == CONSTRAINTS ==
 - Only call tools that are listed in apiHelp(). Anything else will be rejected.
@@ -732,7 +822,7 @@ BEFORE applying it to the main codebase, use the micro-benchmark sandbox:
    Removes the bench files and binary when you are done.
 
 WORKFLOW for hypothesis testing:
-  createFuncBench → runFuncBench → read results → decide → apply to main codebase (or discard)
+  createFuncBench -> runFuncBench -> read results -> decide -> apply to main codebase (or discard)
   Always call addNote() with the measured numbers before deleting the bench files.
 {codebase_context_section}"""
 
@@ -796,7 +886,13 @@ if __name__ == "__main__":
 
     TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
     iteration = 0
-    _recent_calls = []  # (tool, args_str) tuples for loop detection
+    _recent_calls = []          # (tool, args_str) tuples for loop detection
+    _recent_tool_names = []     # tool names only, for broader pattern detection
+    _consecutive_prose_only = 0 # count of responses with no tool calls
+    _last_pr_iteration = 0      # iteration when last PR was created
+    _last_build_bench_iteration = 0  # iteration when build+bench last succeeded
+    _plan_at_iteration = random.randint(5, 8)  # next planning iteration
+
     while True:
         iteration += 1
         ui.set_iteration(iteration)
@@ -808,35 +904,91 @@ if __name__ == "__main__":
         if nudge:
             CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
             _recent_calls.clear()
+            _recent_tool_names.clear()
             print(f"[nudge] {nudge}")
+
         xmlContext, tokenCount = convertContextToXml()
         ui.set_token_count(tokenCount)
         ui.sync_context(CONTEXT)
         board = planner.showBoard(returnString=True)
         ui.sync_board(board)
-        prompt = _SYSTEM_PROMPT + "\n\n== CURRENT BOARD ==\n" + board + "\n\n" + "Context:\n" + xmlContext
-        print(f"Prompt token count: {tokenCount}")
+
+        # Build session state header
+        iters_since_pr = iteration - _last_pr_iteration if _last_pr_iteration else iteration
+        iters_since_bench = iteration - _last_build_bench_iteration if _last_build_bench_iteration else iteration
+        diff = gf.getDiff(returnString=True, code_only=True)
+        has_changes = bool(diff and diff.strip())
+        session_header = (
+            f"== SESSION STATE ==\n"
+            f"Total iterations: {iteration}\n"
+            f"Iterations since last PR: {iters_since_pr}\n"
+            f"Iterations since last successful build+bench: {iters_since_bench}\n"
+            f"Uncommitted changes: {'YES -- call getDiff() to review' if has_changes else 'none'}\n"
+        )
+
+        # Staleness warning
+        staleness_warning = ""
+        if iters_since_bench > 15:
+            staleness_warning = (
+                f"\n*** WARNING: {iters_since_bench} iterations without a successful "
+                "build+bench cycle. You may be stuck in analysis paralysis. "
+                "If you have a change ready, apply it now with searchReplace() and call buildProject(). "
+                "If not, pick the simplest possible improvement and try it. ***"
+            )
+        elif iters_since_bench > 8:
+            staleness_warning = (
+                f"\n(Note: {iters_since_bench} iterations since last build+bench. "
+                "Consider making a concrete change soon.)"
+            )
+
+        # Prose-only nudge
+        prose_nudge = ""
+        if _consecutive_prose_only >= 2:
+            prose_nudge = (
+                "\n*** Your last responses had NO tool calls. You MUST emit JSON tool blocks "
+                "to take action. Example:\n"
+                "```json\n{\"tool\": \"showContext\", \"args\": {\"func\": \"renderFrame\", \"depth\": 2}}\n```\n"
+                "Do not just describe what you would do -- actually call the tools. ***"
+            )
+
+        # Decide whether this is a planning iteration
+        is_plan_iteration = (iteration >= _plan_at_iteration and iters_since_pr >= 5)
+        if is_plan_iteration:
+            _plan_at_iteration = iteration + random.randint(5, 8)
+
+        if is_plan_iteration:
+            prompt = (
+                PLAN_PROMPT
+                + "\n\n" + session_header
+                + "\n\n== CURRENT BOARD ==\n" + board
+                + "\n\nContext:\n" + xmlContext
+            )
+            print(f"[plan] Iteration {iteration}: injecting planning step (next plan at {_plan_at_iteration})")
+        else:
+            prompt = (
+                _SYSTEM_PROMPT
+                + "\n\n" + session_header
+                + staleness_warning
+                + prose_nudge
+                + "\n== CURRENT BOARD ==\n" + board
+                + "\n\nContext:\n" + xmlContext
+            )
+            print(f"Iteration {iteration}: token count ~{tokenCount}")
+
         ui.set_status("waiting_model")
         steer = ui.pop_steer()
-        is_plan_iteration = False
         _cleared = [False]
         def _on_token(delta):
             if not _cleared[0]:
                 ui.clear_stream()
                 _cleared[0] = True
             ui.push_token(delta)
+
         try:
-            # if random.random() > 0.85:
-            #     response = model.getResponse(prompt, model="deepseek/deepseek-v4-pro", provider="deepseek")
-            # elif random.random() < 0.35:
-            response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
-            # elif random.random() < 0.1:
-            #     is_plan_iteration = True
-            #     plan_prompt = PLAN_PROMPT + "\n\nContext:\n" + xmlContext
-            #     response = model.getResponseQwen3_6(plan_prompt, mode="general")
-            # else:
-            # mode = random.choices(["coding", "general", "instruct"], weights=[0.5, 0.2, 0.3])[0]
-            # response = model.getResponseQwen3_6(prompt, mode=mode, on_token=_on_token, system_prompt=steer or None)
+            if is_plan_iteration:
+                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="baidu/fp8")
+            else:
+                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="baidu/fp8")
         except Exception as e:
             CONTEXT.append({
                 "type": "model_response",
@@ -844,8 +996,7 @@ if __name__ == "__main__":
                 "output": f"Error getting model response: {e} try again in the next iteration."
             })
             continue
-        # response = model.getResponseOllama(prompt, model="gemma4:e4b")
-        # response = model.getResponse(prompt, model="tencent/hy3-preview", provider="siliconflow")
+
         ui.set_last_response(response)
         print("Model response:", response)
         if response is None:
@@ -855,6 +1006,7 @@ if __name__ == "__main__":
                 "output": "Error: model returned no response, try again in the next iteration."
             })
             continue
+
         response_for_context = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
         entry_type = "planning" if is_plan_iteration else "model_response"
         CONTEXT.append({
@@ -863,19 +1015,39 @@ if __name__ == "__main__":
             "output": response_for_context
         })
         ui.set_status("running")
-        if is_plan_iteration:
-            ui.sync_context(CONTEXT)
-            ui.sync_diff(gf.getDiff(returnString=True, code_only=True))
-            continue
+
         results = executor.executeAll(response, TOOL_MAP, context=CONTEXT)
+
+        # Track tool usage patterns
         for r in results:
             ui.log_tool_result(r["tool"], r["error"])
+            tool_name = r["tool"]
+            _recent_tool_names.append(tool_name)
+            args_str = str(sorted((r.get("args") or {}).items()) if isinstance(r.get("args"), dict) else "")
+            _recent_calls.append((tool_name, args_str))
+            # Track build+bench success
+            if tool_name == "makeBench" and r["error"] is None:
+                _last_build_bench_iteration = iteration
+            if tool_name == "buildProject" and r["error"] is None:
+                pass  # bench must also succeed to count
+            if tool_name == "createPR" and r["error"] is None:
+                _last_pr_iteration = iteration
+                _plan_at_iteration = iteration + 3  # plan soon after a PR
 
-        # loop detection: same tool+args 4 times in a row
-        for r in results:
-            sig = (r["tool"], str(sorted((r.get("args") or {}).items()) if isinstance(r.get("args"), dict) else ""))
-            _recent_calls.append(sig)
         _recent_calls = _recent_calls[-12:]
+        _recent_tool_names = _recent_tool_names[-20:]
+
+        # Track prose-only responses
+        if results:
+            _consecutive_prose_only = 0
+        else:
+            _consecutive_prose_only += 1
+            if _consecutive_prose_only >= 3:
+                print(f"[stall] {_consecutive_prose_only} consecutive prose-only responses")
+
+        # --- LOOP DETECTION ---
+
+        # Pattern 1: same tool+args 4 times in a row
         if len(_recent_calls) >= 4 and len(set(_recent_calls[-4:])) == 1:
             loop_tool = _recent_calls[-1][0]
             nudge = (
@@ -888,7 +1060,42 @@ if __name__ == "__main__":
             )
             CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
             _recent_calls.clear()
+            _recent_tool_names.clear()
             print(f"[loop-detect] injected nudge for repeated '{loop_tool}'")
+
+        # Pattern 2: readSourceFile or showContext called 5+ times in last 8 without any edit
+        if len(_recent_tool_names) >= 8:
+            recent_8 = _recent_tool_names[-8:]
+            read_count = sum(1 for t in recent_8 if t in ("readSourceFile", "showContext", "showSrc", "showSrcPair"))
+            edit_count = sum(1 for t in recent_8 if t in ("searchReplace", "searchReplaceMulti", "applyChange",
+                                                           "insertLines", "deleteLines", "applyPatch"))
+            if read_count >= 5 and edit_count == 0:
+                nudge = (
+                    "[AUTO-NUDGE] You have read source files 5+ times in recent iterations "
+                    "without making any changes. You are over-researching. "
+                    "Pick ONE hotspot, propose ONE concrete change with searchReplace(), "
+                    "apply it, and call buildProject(). You can always restoreAll() if it fails."
+                )
+                CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
+                _recent_tool_names.clear()
+                print("[loop-detect] injected nudge for over-reading without editing")
+
+        # Pattern 3: buildProject or makeBench called 4+ times without edits in between
+        if len(_recent_tool_names) >= 6:
+            recent_6 = _recent_tool_names[-6:]
+            build_bench_count = sum(1 for t in recent_6 if t in ("buildProject", "makeBench"))
+            edit_count_6 = sum(1 for t in recent_6 if t in ("searchReplace", "searchReplaceMulti", "applyChange",
+                                                              "insertLines", "deleteLines", "applyPatch"))
+            if build_bench_count >= 4 and edit_count_6 == 0:
+                nudge = (
+                    "[AUTO-NUDGE] You have called buildProject/makeBench multiple times "
+                    "without applying any code changes. This wastes time. "
+                    "If you are trying to understand the baseline, look at the bench results "
+                    "already in context. If you want to make a change, use searchReplace()."
+                )
+                CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
+                _recent_tool_names.clear()
+                print("[loop-detect] injected nudge for build/bench without edits")
 
         ui.sync_context(CONTEXT)
         ui.sync_diff(gf.getDiff(returnString=True, code_only=True))

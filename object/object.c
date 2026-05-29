@@ -462,8 +462,8 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 	}
 #undef TRI_CENTROID_AXIS
 	int nodeCount, triCount;
-	getBvhStats(bvh, &nodeCount, &triCount);
-	printf("BVH built with %d nodes %d triangles (%.2f%% overhead) %.2f average Triangles per node\n", nodeCount, triCount, 100.0f * nodeCount / triCount, (float)triCount / nodeCount);
+	// getBvhStats(bvh, &nodeCount, &triCount);
+	// printf("BVH built with %d nodes %d triangles (%.2f%% overhead) %.2f average Triangles per node\n", nodeCount, triCount, 100.0f * nodeCount / triCount, (float)triCount / nodeCount);
 }
 
 void DestroyObjectBVH(BVH *bvh) {

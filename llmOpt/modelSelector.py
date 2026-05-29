@@ -15,13 +15,35 @@ def _load_env(path: str):
 _load_env(os.path.join(os.path.dirname(__file__), ".env"))
 API_KEY = os.getenv("KEY")
 
-def getResponse(prompt:str, model:str, provider:str) -> str:
+def getResponse(
+    prompt: str,
+    model: str,
+    provider: str,
+    reasoning_effort: str | None = "xhigh",
+) -> str:
+    """
+    Send a chat request through OpenRouter.
+
+    reasoning_effort controls thinking mode depth:
+      "xhigh" = max thinking (best for complex code optimization tasks)
+      "high"  = high thinking
+      "medium"/"low" = mapped to "high"
+      None    = disable thinking (model default)
+    """
+    from openrouter import components
+
     client = OpenRouter(api_key=API_KEY)
-    res = client.chat.send(
-        messages=[{"role": "user", "content": prompt}],
-        model=model,
-        provider={"order": [provider]} if provider else None,
-    )
+    kwargs = {
+        "messages": [{"role": "user", "content": prompt}],
+        "model": model,
+        "provider": {"order": [provider]} if provider else None,
+    }
+    if reasoning_effort is not None:
+        kwargs["reasoning"] = components.Reasoning(effort=reasoning_effort)
+
+    res = client.chat.send(**kwargs)
+    # reasoning_content is intentionally discarded — we use single-turn,
+    # so the chain-of-thought does not need to be preserved for context.
     return res.choices[0].message.content
 
 def getResponseOllama(prompt: str, model: str) -> str:
