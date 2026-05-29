@@ -841,7 +841,7 @@ def _buildSystemPrompt():
         )
     else:
         section = ""
-    return SYSTEM_PROMPT.format(codebase_context_section=section), ctx
+    return SYSTEM_PROMPT.replace("{codebase_context_section}", section), ctx
 
 
 if __name__ == "__main__":
