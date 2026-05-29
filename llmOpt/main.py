@@ -388,6 +388,17 @@ def removeDoublesFromContext():
 
 CODEBASE_CONTEXT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codebase_context.md")
 
+RESEARCH_MODEL = "deepseek/deepseek-v4-flash"
+RESEARCH_PROVIDER = "deepinfra/fp4"
+MIN_RESEARCH_CONTEXT_ENTRIES = 5
+
+# Tools that must be excluded from the research-phase tool map (read-only mode).
+EDITING_TOOLS = frozenset({
+    "searchReplace", "searchReplaceMulti", "applyChange", "replaceLines",
+    "insertLines", "deleteLines", "applyPatch", "restoreAll", "restoreFile",
+    "restoreFunction",
+})
+
 RESEARCH_SYSTEM_PROMPT = """\
 You are an expert C software engineer performing a thorough codebase research pass \
 before an optimization session begins. Your goal is to build a comprehensive, \
@@ -473,17 +484,15 @@ def runCodebaseResearch():
     # Exploration-only tool map (no editing, no build/bench)
     research_tool_map = executor.buildToolMap(gf, planner)
     research_tool_map["saveCodebaseContext"] = lambda report, context=None: saveCodebaseContext(report, context=context)
-    # Remove any editing or destructive tools from the research map
-    for _tool in ("searchReplace", "searchReplaceMulti", "applyChange", "replaceLines",
-                  "insertLines", "deleteLines", "applyPatch", "restoreAll", "restoreFile",
-                  "restoreFunction"):
+    # Remove editing/destructive tools so the research pass is read-only
+    for _tool in EDITING_TOOLS:
         research_tool_map.pop(_tool, None)
 
     print("[research] Starting codebase research phase …")
     for iteration in range(1, RESEARCH_MAX_ITERATIONS + 1):
         # Hard-trim research context if it grows too large (keep most recent 2/3)
         if _estimateTokens(RESEARCH_CONTEXT) > CONTEXT_MAX_TOKENS * CONTEXT_COMPRESS_AT:
-            keep = max(5, len(RESEARCH_CONTEXT) * 2 // 3)
+            keep = max(MIN_RESEARCH_CONTEXT_ENTRIES, len(RESEARCH_CONTEXT) * 2 // 3)
             del RESEARCH_CONTEXT[:-keep]
             print(f"[research] trimmed context, kept last {keep} entries")
 
@@ -502,7 +511,7 @@ def runCodebaseResearch():
         print(f"[research] iteration {iteration} (context ~{len(xml_research)//4} tokens)")
 
         try:
-            response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+            response = model.getResponse(prompt, model=RESEARCH_MODEL, provider=RESEARCH_PROVIDER)
         except Exception as e:
             print(f"[research] model error: {e}, retrying …")
             continue
@@ -636,7 +645,7 @@ Use image_mse to judge correctness.
 # TODO: add api where model can execute some code in a sandbox
 
 def _buildSystemPrompt():
-    """Return SYSTEM_PROMPT with the persisted codebase context section injected."""
+    """Return (prompt_str, codebase_ctx_or_None) with the codebase context section injected."""
     ctx = loadCodebaseContext()
     if ctx:
         section = (
@@ -648,7 +657,7 @@ def _buildSystemPrompt():
         )
     else:
         section = ""
-    return SYSTEM_PROMPT.format(codebase_context_section=section)
+    return SYSTEM_PROMPT.format(codebase_context_section=section), ctx
 
 
 if __name__ == "__main__":
@@ -680,8 +689,7 @@ if __name__ == "__main__":
     gf.listFunctions(context=CONTEXT)
     gf.apiHelp(context=CONTEXT)
 
-    _SYSTEM_PROMPT = _buildSystemPrompt()
-    codebase_ctx = loadCodebaseContext()
+    _SYSTEM_PROMPT, codebase_ctx = _buildSystemPrompt()
     if codebase_ctx:
         print(f"[main] Loaded codebase context ({len(codebase_ctx)} chars) from {CODEBASE_CONTEXT_FILE}")
         CONTEXT.insert(0, {
