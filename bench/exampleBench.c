@@ -22,7 +22,7 @@ uint64_t sumBaseline(const int *arr, int n) {
     return s;
 }
 
-uint64_t sumOptimised(const int *arr, int n) {
+uint64_t sumOptimized(const int *arr, int n) {
     uint64_t s0 = 0, s1 = 0, s2 = 0, s3 = 0;
     int i = 0;
     for (; i + 3 < n; i += 4) {
@@ -47,7 +47,7 @@ int main(void) {
 
     /* warm-up */
     for (int i = 0; i < 3; i++) sink += sumBaseline(arr, ARRAY_LEN);
-    for (int i = 0; i < 3; i++) sink += sumOptimised(arr, ARRAY_LEN);
+    for (int i = 0; i < 3; i++) sink += sumOptimized(arr, ARRAY_LEN);
 
     /* time baseline */
     for (int s = 0; s < SAMPLES; s++) {
@@ -59,11 +59,11 @@ int main(void) {
                          + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
     }
 
-    /* time optimised */
+    /* time optimized */
     for (int s = 0; s < SAMPLES; s++) {
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
-        sink += sumOptimised(arr, ARRAY_LEN);
+        sink += sumOptimized(arr, ARRAY_LEN);
         clock_gettime(CLOCK_MONOTONIC, &t1);
         timesOpt[s] = (float)(t1.tv_sec - t0.tv_sec)
                     + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
@@ -75,7 +75,7 @@ int main(void) {
     printf("=== exampleBench: array sum over %d ints, %d samples ===\n", ARRAY_LEN, SAMPLES);
     printf("Baseline  avg=%.3fms  median=%.3fms  p99=%.3fms\n",
            mb.averageTime * 1e3f, mb.medianTime * 1e3f, mb.p99Time * 1e3f);
-    printf("Optimised avg=%.3fms  median=%.3fms  p99=%.3fms\n",
+    printf("Optimized avg=%.3fms  median=%.3fms  p99=%.3fms\n",
            mo.averageTime * 1e3f, mo.medianTime * 1e3f, mo.p99Time * 1e3f);
 
     if (mb.medianTime > 0)
@@ -83,9 +83,9 @@ int main(void) {
 
     /* correctness check */
     uint64_t r1 = sumBaseline(arr, ARRAY_LEN);
-    uint64_t r2 = sumOptimised(arr, ARRAY_LEN);
+    uint64_t r2 = sumOptimized(arr, ARRAY_LEN);
     if (r1 != r2) {
-        printf("CORRECTNESS FAIL: baseline=%llu optimised=%llu\n",
+        printf("CORRECTNESS FAIL: baseline=%llu optimized=%llu\n",
                (unsigned long long)r1, (unsigned long long)r2);
         free(arr);
         return 1;

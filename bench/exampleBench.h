@@ -6,7 +6,7 @@
 /* Baseline: naive loop sum */
 uint64_t sumBaseline(const int *arr, int n);
 
-/* Optimised: loop unrolled by 4 */
-uint64_t sumOptimised(const int *arr, int n);
+/* Optimized: loop unrolled by 4 */
+uint64_t sumOptimized(const int *arr, int n);
 
 #endif
