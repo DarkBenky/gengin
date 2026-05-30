@@ -486,7 +486,8 @@ void getBvhStats(const BVH *bvh, int *outNodeCount, int *outTriCount) {
 	}
 }
 
-// Möller–Trumbore ray-triangle intersection
+// Divisionless-early-out Möller–Trumbore ray-triangle intersection.
+// Avoids expensive 1/a division until after u/v early-out checks pass.
 static bool rayTriangle(float3 ro, float3 rd,
 						float3 v0, float3 v1, float3 v2, float *tOut) {
 	const float eps = 1e-7f;
@@ -495,14 +496,27 @@ static bool rayTriangle(float3 ro, float3 rd,
 	float3 h = {rd.y * e2.z - rd.z * e2.y, rd.z * e2.x - rd.x * e2.z, rd.x * e2.y - rd.y * e2.x};
 	float a = e1.x * h.x + e1.y * h.y + e1.z * h.z;
 	if (fabsf(a) < eps) return false;
-	float f = 1.0f / a;
+
 	float3 s = {ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
-	float u = f * (s.x * h.x + s.y * h.y + s.z * h.z);
-	if (u < 0.0f || u > 1.0f) return false;
+	float u_num = s.x * h.x + s.y * h.y + s.z * h.z;
+	// u = u_num/a must be in [0,1]. Reject on sign mismatch or |u_num| > |a|.
+	if (a > 0.0f) {
+		if (u_num < 0.0f || u_num > a) return false;
+	} else {
+		if (u_num > 0.0f || u_num < a) return false;
+	}
+
 	float3 q = {s.y * e1.z - s.z * e1.y, s.z * e1.x - s.x * e1.z, s.x * e1.y - s.y * e1.x};
-	float v = f * (rd.x * q.x + rd.y * q.y + rd.z * q.z);
-	if (v < 0.0f || u + v > 1.0f) return false;
-	float t = f * (e2.x * q.x + e2.y * q.y + e2.z * q.z);
+	float v_num = rd.x * q.x + rd.y * q.y + rd.z * q.z;
+	// v = v_num/a must be >= 0 and u+v <= 1.
+	if (a > 0.0f) {
+		if (v_num < 0.0f || u_num + v_num > a) return false;
+	} else {
+		if (v_num > 0.0f || u_num + v_num < a) return false;
+	}
+
+	// Confirmed hit – compute t with the one required division.
+	float t = (e2.x * q.x + e2.y * q.y + e2.z * q.z) / a;
 	if (t < eps) return false;
 	*tOut = t;
 	return true;
