@@ -1146,6 +1146,15 @@ _API = [
         ("deleteFuncBench(func_name)",
          "Remove bench/<func_name>.h, bench/<func_name>.c, and the compiled binary."),
     ]),
+    ("Knowledge Persistence  [main.py]", [
+        ("syncPlannerToCodebaseContext()",
+         "Ask the model to distill planner notes/tasks into HIGH-LEVEL insights "
+         "(architectural findings, confirmed wins, remaining hotspots, techniques "
+         "to try/avoid) and inject them into codebase_context.md. Clears processed "
+         "planner notes. Call this before shutting down or after major milestones "
+         "so insights survive across runs. NEVER stores rejected code — only "
+         "high-level lessons."),
+    ]),
     ("Planner  [planner.py]", [
         ("addTask(text)",
          "Add a task with status 'todo'. Returns assigned task id."),

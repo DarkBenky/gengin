@@ -235,6 +235,7 @@ def buildToolMap(gf_module, planner_module, main_module=None):
             "createFuncBench": m.createFuncBench,
             "runFuncBench":    m.runFuncBench,
             "deleteFuncBench": m.deleteFuncBench,
+            "syncPlannerToCodebaseContext": m.syncPlannerToCodebaseContext,
         })
 
     return tools

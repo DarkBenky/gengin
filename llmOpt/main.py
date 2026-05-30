@@ -41,6 +41,7 @@ CONTEXT = []
 
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
+PINNED_HOTSPOTS = ""  # top hot functions + baseline, survives context trimming
 
 CONTEXT_MAX_TOKENS = 128_000
 CONTEXT_COMPRESS_AT = 0.85  # trigger compression when > 85% full
@@ -100,6 +101,31 @@ def getTodos(path: str = "."):
 
 def buildProject():
     _res = run(["make", "clean"], cwd=PROJECT_DIR)
+
+    # Fast syntax check on changed .c files — catches 90% of errors
+    # in <1 second vs a full 30-second build cycle.
+    changed = subprocess.run(
+        ["git", "diff", "--name-only"],
+        capture_output=True, text=True, cwd=PROJECT_DIR
+    )
+    changed_c = [f for f in changed.stdout.strip().split("\n") if f.endswith(".c")]
+    if changed_c:
+        try:
+            run(
+                ["gcc", "-fsyntax-only", "-I.", "-Iobject", "-I/usr/local/include"]
+                + changed_c,
+                cwd=PROJECT_DIR,
+            )
+        except RuntimeError:
+            # Syntax error — report and stop early, don't waste time on make
+            CONTEXT.append({
+                "type": "tool_use",
+                "tool": "buildProject",
+                "input": None,
+                "output": "SYNTAX CHECK FAILED — fix errors above before rebuilding.",
+            })
+            raise
+
     res = run(["make"], cwd=PROJECT_DIR)
     CONTEXT.append({
         "type": "tool_use",
@@ -223,6 +249,37 @@ def makeBench():
     bench_results = {k: v for k, v in bench_results_raw.items()
                      if k not in ("frame_images", "frame_hashes")}
     summary = _benchSummary(bench_results_raw, BASELINE_RESULTS)
+
+    # Auto-restore on significant visual regression (safety net).
+    # Only fires when there IS a baseline to compare against (not the init run).
+    if BASELINE_RESULTS is not None:
+        base_imgs = BASELINE_RESULTS.get("frame_images") or []
+        curr_imgs = bench_results_raw.get("frame_images") or []
+        mse_values = []
+        for b64_b, b64_c in zip(base_imgs, curr_imgs):
+            if not b64_b or not b64_c:
+                continue
+            try:
+                raw_b = base64.b64decode(b64_b)
+                raw_c = base64.b64decode(b64_c)
+                n = min(len(raw_b), len(raw_c))
+                if n == 0:
+                    continue
+                step = 64
+                mse = sum((raw_b[i] - raw_c[i]) ** 2 for i in range(0, n, step)) / (n // step)
+                mse_values.append(mse)
+            except Exception:
+                pass
+        if mse_values and (max(mse_values) >= 50.0 or (sum(mse_values) / len(mse_values)) >= 30.0):
+            gf.restoreAll()
+            summary += (
+                "\n\n*** AUTO-RESTORED: Significant visual regression detected "
+                f"(max MSE={max(mse_values):.1f}). All changes have been reverted. "
+                "The previous change likely broke rendering. Read the code more "
+                "carefully before re-applying. ***"
+            )
+            planner.addNote(f"[AUTO-RESTORE] Visual regression (max MSE={max(mse_values):.1f}) — changes reverted.")
+
     record = {
         "type": "tool_use",
         "tool": "makeBench",
@@ -234,8 +291,19 @@ def makeBench():
     return last_stdout, bench_results_raw
 
 def makeFlame():
+    global PINNED_HOTSPOTS
     run(["make", "flame"], cwd=PROJECT_DIR)
     data = perfLib.getPerfData(cwd=PROJECT_DIR)
+    # Refresh pinned hotspots so the model sees the latest profile
+    if data and data.get("hot_functions"):
+        top5 = data["hot_functions"][:5]
+        PINNED_HOTSPOTS = (
+            "Top hotspots (always visible):\n" +
+            "\n".join(
+                f"  {h['fn']:40s}  incl={h['inclusive_pct']:5.1f}%  excl={h['exclusive_pct']:5.1f}%"
+                for h in top5
+            )
+        )
     CONTEXT.append({
         "type": "tool_use",
         "tool": "makeFlame",
@@ -380,6 +448,9 @@ def compressContext():
     except Exception as e:
         print(f"[compressContext] summarization failed: {e}")
 
+    # Persist high-level insights to codebase_context.md before trimming
+    syncPlannerToCodebaseContext()
+
     board = planner.showBoard(returnString=True)
     keep = max(8, len(CONTEXT) * 2 // 3)
     del CONTEXT[:-keep]
@@ -446,6 +517,9 @@ def createPR(title, body, branch, commit_msg=None):
     ui.set_pr_url(url)
     print(f"PR created: {url}")
 
+    # Checkpoint: persist planner insights to codebase_context.md
+    syncPlannerToCodebaseContext()
+
 def removeDoublesFromContext():
     # keep newest entry for each (type, tool, input) key
     seen = set()
@@ -458,6 +532,122 @@ def removeDoublesFromContext():
     CONTEXT[:] = list(reversed(new_context))
 
 CODEBASE_CONTEXT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codebase_context.md")
+PLANNER_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "planner_state.json")
+
+
+def syncPlannerToCodebaseContext():
+    """
+    Ask the model to distill the planner's accumulated notes and tasks into
+    high-level insights, then inject them into codebase_context.md so
+    knowledge survives across runs. Only architectural findings, confirmed
+    wins, and remaining priorities are kept — rejected approaches and transient
+    debugging notes are filtered out.
+
+    Can be called by the model as a tool, or automatically at checkpoints.
+    """
+    import datetime
+
+    # Load planner state
+    if not os.path.exists(PLANNER_STATE_FILE):
+        return "No planner state file found — nothing to sync."
+
+    with open(PLANNER_STATE_FILE) as fh:
+        state = json.load(fh)
+
+    notes = state.get("notes", [])
+    tasks = state.get("tasks", [])
+
+    if not notes and not tasks:
+        return "Planner has no notes or tasks — nothing to sync."
+
+    # Build a compact representation for the model to summarize
+    notes_text = "\n".join(f"  [{n['id']}] {n['text']}" for n in notes)
+    tasks_text = "\n".join(
+        f"  [{t['status']}] #{t['id']} {t['text']}" for t in tasks
+    )
+
+    summarize_prompt = (
+        "You are reviewing the accumulated notes and tasks from a C engine "
+        "performance optimization session. Your job is to distill this into "
+        "HIGH-LEVEL insights suitable for injecting into a codebase knowledge "
+        "base (codebase_context.md).\n\n"
+        "FILTERING RULES:\n"
+        "- INCLUDE: architectural findings, confirmed performance wins with "
+        "measured numbers, remaining high-priority hotspots, lessons about what "
+        "techniques work or don't work for this specific codebase.\n"
+        "- EXCLUDE: exact code snippets, rejected implementations, transient "
+        "debugging notes, tool call logs, temporary measurements.\n"
+        "- Be concise. Each insight should be 1-2 sentences.\n\n"
+        "PLANNER NOTES:\n" + (notes_text or "(none)") + "\n\n"
+        "PLANNER TASKS:\n" + (tasks_text or "(none)") + "\n\n"
+        "Reply with ONLY a valid JSON object (no prose, no markdown fences):\n"
+        "{\n"
+        '  "summary": "1-2 sentence overview of what was accomplished this session",\n'
+        '  "confirmed_wins": ["function: technique -> measured improvement"],\n'
+        '  "architectural_insights": ["important findings about this codebase"],\n'
+        '  "remaining_hotspots": ["functions still needing optimization, in priority order"],\n'
+        '  "techniques_to_try": ["approaches worth attempting next"],\n'
+        '  "techniques_to_avoid": ["approaches that did not work and why"]\n'
+        "}"
+    )
+
+    try:
+        raw = model.getResponse(summarize_prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            return f"Model response had no JSON: {raw[:200]}"
+        data = json.loads(m.group(0))
+    except Exception as e:
+        return f"Summarization failed: {e}"
+
+    # Build the section to inject
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = [
+        f"\n\n---\n\n## Session Insights ({timestamp})\n",
+    ]
+    if data.get("summary"):
+        lines.append(f"**Summary**: {data['summary']}\n")
+
+    sections = [
+        ("Confirmed Wins", "confirmed_wins"),
+        ("Architectural Insights", "architectural_insights"),
+        ("Remaining Hotspots", "remaining_hotspots"),
+        ("Techniques to Try", "techniques_to_try"),
+        ("Techniques to Avoid", "techniques_to_avoid"),
+    ]
+    for heading, key in sections:
+        items = data.get(key, [])
+        if items:
+            lines.append(f"### {heading}")
+            for item in items:
+                lines.append(f"  - {item}")
+            lines.append("")
+
+    section_text = "\n".join(lines)
+
+    # Load existing codebase context
+    if os.path.exists(CODEBASE_CONTEXT_FILE):
+        with open(CODEBASE_CONTEXT_FILE) as fh:
+            existing = fh.read()
+    else:
+        existing = ""
+
+    # Replace old Session Insights section if present, otherwise append
+    marker = "\n\n---\n\n## Session Insights"
+    if marker in existing:
+        # Keep everything before the first session insights marker
+        existing = existing[:existing.index(marker)].rstrip()
+
+    with open(CODEBASE_CONTEXT_FILE, "w") as fh:
+        fh.write(existing.rstrip() + section_text)
+
+    # Clear the notes that have been distilled (keep tasks)
+    state["notes"] = []
+    with open(PLANNER_STATE_FILE, "w") as fh:
+        json.dump(state, fh, indent=2)
+
+    return f"Synced {len(notes)} note(s) and {len(tasks)} task(s) into {CODEBASE_CONTEXT_FILE}. Planner notes cleared."
 
 RESEARCH_MODEL = "deepseek/deepseek-v4-flash"
 RESEARCH_PROVIDER = "baidu/fp8"
@@ -863,6 +1053,10 @@ if __name__ == "__main__":
         print(f"[main] Research complete. Context saved to {CODEBASE_CONTEXT_FILE}")
         sys.exit(0)
 
+    # Sync any leftover planner notes from the previous run into
+    # codebase_context.md before wiping the board for a fresh session.
+    syncPlannerToCodebaseContext()
+
     planner.resetBoard()
 
     getTree()
@@ -870,6 +1064,19 @@ if __name__ == "__main__":
     buildProject()
     _ , BASELINE_RESULTS = makeBench()
     flame = makeFlame()
+
+    # Pin top 5 hotspots so the model always knows what to target,
+    # even after context compression trims the raw flame data.
+    if flame and flame.get("hot_functions"):
+        top5 = flame["hot_functions"][:5]
+        PINNED_HOTSPOTS = (
+            "Top hotspots (always visible):\n" +
+            "\n".join(
+                f"  {h['fn']:40s}  incl={h['inclusive_pct']:5.1f}%  excl={h['exclusive_pct']:5.1f}%"
+                for h in top5
+            )
+        )
+
     gf.listFunctions(context=CONTEXT)
     gf.apiHelp(context=CONTEXT)
 
@@ -924,6 +1131,7 @@ if __name__ == "__main__":
             f"Iterations since last PR: {iters_since_pr}\n"
             f"Iterations since last successful build+bench: {iters_since_bench}\n"
             f"Uncommitted changes: {'YES -- call getDiff() to review' if has_changes else 'none'}\n"
+            + (PINNED_HOTSPOTS + "\n" if PINNED_HOTSPOTS else "")
         )
 
         # Staleness warning
