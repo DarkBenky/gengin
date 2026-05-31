@@ -4,7 +4,7 @@
 #include <time.h>
 #include <stdio.h>
 
-#define SAMPLES 100000000
+#define SAMPLES 200000000
 
 int main() {
 	float3 *rayDir = malloc(SAMPLES * sizeof(float3));
@@ -198,3 +198,17 @@ int main() {
 	free(tOutNewV10);
 	return 0;
 }
+
+// TODO: use V10 insted of current implementation
+// Old rayTriangle: 18.899 ns/call
+// New rayTriangle: 21.062 ns/call
+// New V2 rayTriangle: 21.303 ns/call
+// New V3 rayTriangle: 18.561 ns/call
+// New V4 rayTriangle (scalar fields): 18.198 ns/call
+// New V5 rayTriangle (speculative q): 18.596 ns/call
+// New V6 rayTriangle (combined branch): 18.227 ns/call
+// New V7 rayTriangle (SSE): 19.777 ns/call
+// New V8 rayTriangle (early uNum): 18.546 ns/call
+// New V9 rayTriangle (branch hints): 19.348 ns/call
+// New V10 rayTriangle (FMA): 18.173 ns/call
+
