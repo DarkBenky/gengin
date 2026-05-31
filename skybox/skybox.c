@@ -85,8 +85,8 @@ static inline Color sampleFace(const uint32 *face, int w, int h, float u, float 
 	if (!face) return 0xFF101010u;
 	int x = (int)(u * (float)(w - 1) + 0.5f);
 	int y = (int)(v * (float)(h - 1) + 0.5f);
-	if (x < 0) x = 0; else if (x >= w) x = w - 1;
-	if (y < 0) y = 0; else if (y >= h) y = h - 1;
+	if ((unsigned)x >= (unsigned)w) x = (x < 0) ? 0 : w - 1;
+	if ((unsigned)y >= (unsigned)h) y = (y < 0) ? 0 : h - 1;
 	return face[y * w + x];
 }
 
