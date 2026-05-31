@@ -332,3 +332,31 @@ main loop
 ---
 
 This report captures the full architecture, all performance-critical paths, known TODOs, and a prioritized optimization plan. The largest gains will come from SIMD-ifying the per-pixel object AABB loop and reducing memory bandwidth from the many per-pixel buffer writes.
+
+---
+
+## Session Insights (2026-05-30 12:48)
+
+**Summary**: Applied divisionless early-out pattern to rayTriangle, achieving 2.0% improvement. Proceeding to apply similar pattern to rayAABB_inv and analyze IntersectBVH and sampleFace.
+
+### Confirmed Wins
+  - rayTriangle: divisionless early-out pattern -> 2.0% improvement
+
+### Architectural Insights
+  - Scatter/gather overhead renders AVX2 batched AABB ineffective; SIMD batching requires contiguous data.
+  - Divisionless early-out pattern is an effective micro-optimization for ray-primitive tests in this codebase.
+
+### Remaining Hotspots
+  - IntersectBVH (17.67%)
+  - rayAABB_inv (8.29%)
+  - rayAABB_inv_x2_soa (5.11%)
+  - sampleFace (3.89%)
+  - RayBoxItersect (3.65%)
+
+### Techniques to Try
+  - Apply divisionless early-out pattern to rayAABB_inv.
+  - Analyze and optimize IntersectBVH algorithm.
+  - Micro-optimize sampleFace for lower instruction count.
+
+### Techniques to Avoid
+  - AVX2 batched AABB for ray-primitive tests due to scatter/gather overhead.

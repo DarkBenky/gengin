@@ -1,16 +1,17 @@
 {
   "configurations": [
     {
-      "name": "linux-gcc-x64",
+      "name": "linux-clang-x64",
       "includePath": [
-        "${workspaceFolder}/**"
+        "${workspaceFolder}/**",
+        "/usr/local/include"
       ],
-      "compilerPath": "/usr/bin/gcc",
-      "cStandard": "${default}",
-      "cppStandard": "${default}",
-      "intelliSenseMode": "linux-gcc-x64",
+      "compilerPath": "/usr/bin/clang",
+      "cStandard": "c11",
+      "intelliSenseMode": "linux-clang-x64",
       "compilerArgs": [
-        ""
+        "-Iobject",
+        "-Isimulation"
       ]
     }
   ],

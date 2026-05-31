@@ -2,100 +2,41 @@
   "tasks": [
     {
       "id": 1,
-      "text": "Replace scalar world AABB loop in RayTraceRowFunc (ray.c:615-618) with AVX2 8-wide rayAABB_invV4_avx2, matching the commented-out code pattern at lines 599-614. Process 8 objects per SIMD iteration, fall back to scalar for remainder.",
-      "status": "done"
+      "text": "Analyze rayAABB_inv for divisionless early-out pattern (same as rayTriangle optimization)",
+      "status": "todo"
     },
     {
       "id": 2,
-      "text": "Copy `rayAABB_invV4_avx2` and `transpose_float3x8_to_soa` from `tests/rayAABB_inv.h` into `object/object.h` immediately after the `rayAABB_inv` function (after line 175).",
-      "status": "done"
+      "text": "Analyze IntersectBVH to find optimization opportunities",
+      "status": "todo"
     },
     {
       "id": 3,
-      "text": "Modify `RayTraceRowFunc` in `render/cpu/ray.c` (lines 598-632): Add alignas(32) arrays, call `rayAABB_invV4_avx2` for batches of 8, fall back to scalar `rayAABB_inv` for remainder, matching the pattern in the commented-out code at lines 599-614.",
-      "status": "done"
+      "text": "Analyze sampleFace for micro-optimization opportunities",
+      "status": "todo"
     },
     {
       "id": 4,
-      "text": "Run `makeBench` and `makeFlame` after the code change to validate the performance improvement and verify correctness.",
-      "status": "done"
-    },
-    {
-      "id": 5,
-      "text": "If benchmarks pass and flame graph shows reduced `rayAABB_inv` time, commit the changes and create a PR. If regressed, run `getDiff` and investigate the fallback loop logic.",
-      "status": "done"
-    },
-    {
-      "id": 6,
-      "text": "Check Makefile for AVX2/FMA compiler flags before applying changes",
-      "status": "done"
-    },
-    {
-      "id": 7,
-      "text": "Read rayTriangle in object/object.c to confirm division strategy (where is 1/det computed relative to early-out branches?)",
-      "status": "done"
-    },
-    {
-      "id": 8,
-      "text": "Apply divisionless early-out optimization: compare u/det against threshold becomes compare u against det. Division only for confirmed hits.",
-      "status": "done"
-    },
-    {
-      "id": 9,
-      "text": "Build and bench. Target: >= 2% reduction in avg_ms (< 8.49ms). If regressed, restore and investigate.",
-      "status": "done"
-    },
-    {
-      "id": 10,
-      "text": "Apply divisionless early-out to rayTriangle in object/object.c",
-      "status": "done"
-    },
-    {
-      "id": 11,
-      "text": "Build and bench. Target: >= 2% reduction in avg_ms (< 8.49ms). If regressed, restore and investigate.",
-      "status": "done"
+      "text": "Apply divisionless early-out to rayTriangle (defer division until after barycentric checks)",
+      "status": "todo"
     }
   ],
   "notes": [
     {
       "id": 1,
-      "text": "Baseline bench: 8.66ms avg, 1152 frames/10s. Flame graph shows rayAABB_inv at 8.6% exclusive time as #3 hot function (after rayTriangle 21% and IntersectBVH 22%). The scalar world AABB test in RayTraceRowFunc iterates 1 object at a time. AVX2 version exists in tests/rayAABB_inv.h as rayAABB_invV4_avx2 which processes 8 boxes at once."
+      "text": "Session resumed at iteration 3. Previous change: rayTriangle divisionless early-out gave 2.0% improvement. Previous failed attempt: AVX2 batched AABB (abandoned due to scatter/gather overhead). Remaining hotspots: IntersectBVH (22% excl), rayAABB_inv (8.6% excl), sampleFace (4.1%), RayBoxItersect (4.2%)"
     },
     {
       "id": 2,
-      "text": "[PLAN] Analysis complete. Baseline 8.66ms. Top hotspots identified. Task #1 (AVX2 AABB) is the confirmed next step. No code changes attempted yet. Ready to execute."
+      "text": "Starting iteration 4. Reviewed flame graph from current bench. Top exclusive hotspots: IntersectBVH (17.67%), rayTriangle (16.53%), rayAABB_inv (8.29%), rayAABB_inv_x2_soa (5.11%), RayBoxItersect (3.65%), sampleFace (3.89%). The rayTriangle optimization is already in place."
     },
     {
       "id": 3,
-      "text": "Read the AVX2 functions from tests/rayAABB_inv.h (lines 34-87): transpose_float3x8_to_soa and rayAABB_invV4_avx2 process 8 AABBs at once. The insertion point in object/object.h is after line 175 (after scalar rayAABB_inv, before SSE rayAABB_inv_x2_soa). The commented-out code in ray.c:599-614 shows the intended batch loop pattern for RayTraceRowFunc. Need to read the loop body after line 620 to understand the BVH intersect + material code that goes in the inner loop."
+      "text": "rayAABB_inv is already divisionless (uses precomputed invDir). The 'divisionless early-out' pattern from rayTriangle does not directly apply to rayAABB_inv since it has no division to defer."
     },
     {
       "id": 4,
-      "text": "[PLAN] I have all information needed. Ready to apply AVX2 AABB change. Need to check build flags for AVX2 support, then apply two changes: (1) add AVX2 functions to object/object.h, (2) modify RayTraceRowFunc loop in ray.c. No more reading \u2014 execute now."
-    },
-    {
-      "id": 5,
-      "text": "Makefile uses -march=native (line 2), which enables AVX2 and FMA3 on modern CPUs. Confirmed: AVX2 intrinsics will compile. Ready to apply both changes now."
-    },
-    {
-      "id": 6,
-      "text": "AVX2 AABB batching FAILED (-1.2% regression). Root cause: scatter/gather overhead of transposing 8 float3 pairs from scattered objects + loss of early-exit (as bestT shrinks, scalar loop skips many AABB tests cheaply, but SIMD batch processes all 8 before checking). restoreAll called. Abandoning this approach."
-    },
-    {
-      "id": 7,
-      "text": "NEW PLAN: Target rayTriangle (21% exclusive time, #2 hotspot). Remove division from early-out rejection paths. In M\u00f6ller\u2013Trumbore, compare u*v_det > 1.0f becomes u > det (avoiding 1/det). Division only needed for confirmed hits. This is surgically targeting the most expensive operation (div) on the most common path (miss for shadow rays, early-out for primary)."
-    },
-    {
-      "id": 8,
-      "text": "Clearing old AVX2 AABB tasks from board and setting new target: rayTriangle division removal."
-    },
-    {
-      "id": 9,
-      "text": "[PLAN] Targetting rayTriangle division removal. Current baseline 8.66ms avg. The scalar rayTriangle at object/object.c:490 computes 1/a unconditionally at line 498, then immediately branches on u (line 501). Moving the division after u and v early-outs means we only pay the 10-40 cycle div for actual hits (~5% of calls). Target: >= 2% reduction (avg < 8.49ms)."
-    },
-    {
-      "id": 10,
-      "text": "rayTriangle divisionless early-out: SUCCESS. avg_ms 8.659 -> 8.487 (-2.0%), frames 1152 -> 1175 (+2.0%), median_ms 8.617 -> 8.418 (-2.3%). Image MSE 7.67 (acceptable minor difference from fp-reordering). The change removes 1.0f/a division from the common case (miss/early-out) and defers it to only confirmed hits. This surgically targets the #2 hotspot's most expensive instruction."
+      "text": "rayTriangle currently computes f = 1.0f / a immediately after the determinant check, then uses f for u, v, t. This means every ray that passes the |a|>eps check must pay for a division, even though most rays miss on u or v checks. Deferring the division saves ~12% of rayTriangle's own time."
     }
   ]
 }

@@ -487,6 +487,7 @@ void getBvhStats(const BVH *bvh, int *outNodeCount, int *outTriCount) {
 }
 
 // Möller–Trumbore ray-triangle intersection
+// TODO: test different implementations
 static bool rayTriangle(float3 ro, float3 rd,
 						float3 v0, float3 v1, float3 v2, float *tOut) {
 	const float eps = 1e-7f;
