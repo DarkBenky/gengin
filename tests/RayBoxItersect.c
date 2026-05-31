@@ -76,3 +76,12 @@ int main() {
 	free(resultsV2);
 	free(resultsV4);
 }
+
+// TODO: use V4 insted of current implementation
+// Running: tests/RayBoxItersect
+// RayBoxItersectOld time: 33.867 ns per box
+// RayBoxItersectV2  time: 30.182 ns per box
+// RayBoxItersectV4  time: 17.644 ns per box
+// Speedup V2: 1.12x
+// Speedup V4: 1.92x
+// Hit rate -- old: 19.69%  V2: 19.66%  V4: 19.78%

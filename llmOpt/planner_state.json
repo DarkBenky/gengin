@@ -2,41 +2,28 @@
   "tasks": [
     {
       "id": 1,
-      "text": "Analyze rayAABB_inv for divisionless early-out pattern (same as rayTriangle optimization)",
+      "text": "Analyze sampleFace (3.8% excl) for micro-optimizations like divisionless early-out or branch reduction",
       "status": "todo"
     },
     {
       "id": 2,
-      "text": "Analyze IntersectBVH to find optimization opportunities",
+      "text": "Examine rayAABB_inv (9.0% excl) for possible scalar optimizations since AVX2 batching didn't help",
       "status": "todo"
     },
     {
       "id": 3,
-      "text": "Analyze sampleFace for micro-optimization opportunities",
-      "status": "todo"
-    },
-    {
-      "id": 4,
-      "text": "Apply divisionless early-out to rayTriangle (defer division until after barycentric checks)",
-      "status": "todo"
+      "text": "Read IntersectBVH (21.6% excl) code to identify algorithmic improvements",
+      "status": "in_progress"
     }
   ],
   "notes": [
     {
       "id": 1,
-      "text": "Session resumed at iteration 3. Previous change: rayTriangle divisionless early-out gave 2.0% improvement. Previous failed attempt: AVX2 batched AABB (abandoned due to scatter/gather overhead). Remaining hotspots: IntersectBVH (22% excl), rayAABB_inv (8.6% excl), sampleFace (4.1%), RayBoxItersect (4.2%)"
+      "text": "Starting new optimization iteration. Build successful at 8.57ms avg. Top hotspots: IntersectBVH 21.6%, rayTriangle 20.0%, rayAABB_inv 9.0%, rayAABB_inv_x2_soa 6.6%, sampleFace 3.8%, RayBoxItersect 4.0%. Session notes say AVX2 batched AABB not beneficial. Need to examine sampleFace and other hot functions for micro-optimizations."
     },
     {
       "id": 2,
-      "text": "Starting iteration 4. Reviewed flame graph from current bench. Top exclusive hotspots: IntersectBVH (17.67%), rayTriangle (16.53%), rayAABB_inv (8.29%), rayAABB_inv_x2_soa (5.11%), RayBoxItersect (3.65%), sampleFace (3.89%). The rayTriangle optimization is already in place."
-    },
-    {
-      "id": 3,
-      "text": "rayAABB_inv is already divisionless (uses precomputed invDir). The 'divisionless early-out' pattern from rayTriangle does not directly apply to rayAABB_inv since it has no division to defer."
-    },
-    {
-      "id": 4,
-      "text": "rayTriangle currently computes f = 1.0f / a immediately after the determinant check, then uses f for u, v, t. This means every ray that passes the |a|>eps check must pay for a division, even though most rays miss on u or v checks. Deferring the division saves ~12% of rayTriangle's own time."
+      "text": "sampleFace is a simple texture lookup: multiply u*(w-1)+0.5, int clamp, array access. At 3.8% excl it's hot but simple. Branches for clamping could be replaced with min/max. But let me first read the bigger hotspots IntersectBVH (21.6%) and rayAABB_inv (9.0%) since they dominate."
     }
   ]
 }
