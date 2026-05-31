@@ -604,14 +604,17 @@ static void RayTraceRowFunc(void *arg) {
 	float sz = rgt.z * aspect * fovScale;
 
 	float3 catchReflections[width]; // accumulate reflection contributions for the entire row, then write to framebuffer in one pass
+	// TODO: try if memset can be avoided
 	memset(catchReflections, 0, sizeof(float3) * width);
 	float3 catchReflection = {0.0f, 0.0f, 0.0f};
 
 	float3 catchEmissions[width]; // accumulate emission contributions for the entire row, then write to framebuffer in one pass
+	// TODO: try if memset can be avoided
 	memset(catchEmissions, 0, sizeof(float3) * width);
 	float3 catchEmission = {0.0f, 0.0f, 0.0f};
 
 	float3 catchShadow[width]; // accumulate shadow contributions for the entire row, then write to framebuffer in one pass
+	// TODO: try if memset can be avoided
 	memset(catchShadow, 0, sizeof(float3) * width);
 	float3 catchShadowValue = {0.0f, 0.0f, 0.0f};
 
