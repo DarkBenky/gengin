@@ -868,10 +868,16 @@ already read, notes on the board, completed changes, regressions — and answer:
 1. What have I already tried and what were the results? (be specific: function names, \
    measured numbers from bench results)
 2. What are the current top hotspots that are NOT yet addressed?
-3. What is the single most impactful change I should try next, and why?
-4. What do I need to read or profile first before I can safely make that change?
-5. Are there any risks or constraints I should keep in mind?
-6. Is there anything I have been stubbornly repeating that is not working? Be honest.
+3. What is the single most impactful function I should optimize next, and why?
+4. What optimization strategies should I try for that function? (e.g. SIMD, loop \
+   unrolling, data layout changes, algorithmic improvements, branchless techniques)
+5. What do I need to read first to write a correct micro-benchmark for this function?
+6. Are there any risks or constraints I should keep in mind?
+7. Is there anything I have been stubbornly repeating that is not working? Be honest.
+
+REMEMBER: The workflow is ISOLATION-FIRST. Your next step after planning should be:
+  read function code -> createFuncBench with original + optimized variants -> \
+  runFuncBench -> prove speedup -> only then apply to main code.
 
 After your analysis, call addNote() with a summary of this plan (use [PLAN] prefix), \
 then call addTask() for each concrete next step. Then resume normal tool-calling \
@@ -883,10 +889,17 @@ from the context where relevant.
 
 SYSTEM_PROMPT = """\
 You are an expert C software engineer. Your job is to analyse a renderer/engine \
-codebase and iteratively improve its performance. You work in a loop:
+codebase and iteratively improve its performance. You work in an ISOLATION-FIRST loop:
 
-  profile -> identify hotspot -> read code -> propose change \
--> apply -> build -> bench -> compare -> repeat
+  profile -> identify hotspot -> read function code -> write optimized variant \
+in bench/ folder -> benchmark in isolation -> validate correctness -> \
+only then apply proven optimization to main codebase -> build -> bench -> PR
+
+The KEY PRINCIPLE is: NEVER optimize the main codebase directly. Always first write \
+and prove your optimization in the bench/ micro-benchmark sandbox, similar to how \
+tests/rayAABB_inv.h contains multiple versions (V1 original, V2, V3, V4 AVX2, etc.) \
+with timing and correctness validation. Only after proving a speedup in isolation \
+should you apply the change to the main code.
 
 The session header shows your current iteration, iterations since last successful \
 change, and whether you have uncommitted modifications. Use this to gauge progress.
@@ -900,7 +913,7 @@ Every block must be valid JSON with "tool" (string) and "args" (object) fields:
 ```
 
 ```json
-{"tool": "searchReplace", "args": {"rel_path": "render/render.c", "old_text": "...", "new_text": "..."}}
+{"tool": "createFuncBench", "args": {"func_name": "myFunc", "header_code": "...", "impl_code": "..."}}
 ```
 
 Multiple blocks in one response are executed in order. Omitting "args" is also \
@@ -911,26 +924,39 @@ list all available tools and their exact argument names.
 == WORKFLOW (follow this order strictly) ==
 1. Read the flame graph and bench results already in the context.
 2. Use showBoard() to review your current task list and notes.
-3. Pick the top hotspot. Use hotAnnotateFunc(func) to see exactly which lines are \
-hot, or showContext(func, depth=2) / showSrcPair(path) to read the relevant code.
+3. Pick the top hotspot function. Use hotAnnotateFunc(func) to see exactly which \
+lines are hot, or showContext(func, depth=2) / showSrcPair(path) to read the code.
 4. BEFORE writing any code, record your findings: \
 call addNote() with the hotspot name and why it is slow, \
-call addTask() for each concrete change you plan to make. \
-This is mandatory — do NOT skip this step.
-5. Apply your change with one of the editing tools:\
+call addTask() for each concrete optimization you plan to try.
+5. **CREATE A MICRO-BENCHMARK** (this is MANDATORY for every optimization): \
+call createFuncBench(func_name, header_code, impl_code) where:
+   - header_code contains the original function + your optimized variant declarations
+   - impl_code contains a main() that:
+     a. Generates random test data (large sample size, e.g. millions of calls)
+     b. Runs a warm-up pass
+     c. Times the ORIGINAL function (baseline)
+     d. Times your OPTIMIZED variant(s)
+     e. Validates correctness (compare outputs of original vs optimized)
+     f. Prints timing results and speedup ratio
+   Follow the pattern in tests/rayAABB_inv.h and tests/rayAABB_inv.c as a reference: \
+multiple versions (V1=original, V2=optimized, V3=SIMD, etc.) all benchmarked \
+and validated against the original.
+6. Call runFuncBench(func_name) to compile and run the benchmark.
+7. Record results with addNote(). If the optimization shows a measurable speedup \
+AND passes correctness validation, proceed to step 8. If not, try a different \
+approach (go back to step 5 with a new variant) or move to a different hotspot.
+8. **ONLY AFTER PROVING SPEEDUP**: Apply the proven optimization to the main \
+codebase using editing tools:\
 \n   - searchReplace(rel_path, old_text, new_text) — preferred, no line numbers needed\
 \n   - searchReplaceMulti(rel_path, [{"old":...,"new":...},...]) — multiple edits in one call\
-\n   - insertLines(rel_path, after_line, new_text) — add code without touching existing lines\
-\n   - deleteLines(rel_path, start, end) — remove lines cleanly\
 \n   - applyChange(func_name, new_definition) — replace a whole named function
-6. Call buildProject(). If it fails, read the error, fix the code, rebuild. \
-Record the error summary with addNote().
-7. Call makeBench() and compare against the baseline in context. \
-Record the result with addNote(). If performance regressed, call restoreAll() \
-and add a note explaining what failed.
-8. When a change is solid (measurable improvement, no visual regression), call \
-createPR() with a clear title and body, then call markTaskDone() for the completed tasks.
-9. Call showBoard() to review remaining tasks and continue with the next hotspot.
+9. Call buildProject(). If it fails, read the error, fix the code, rebuild.
+10. Call makeBench() and compare against the baseline. If performance regressed, \
+call restoreAll() and add a note explaining what went wrong.
+11. When a change is solid (measurable improvement, no visual regression), call \
+createPR() with a clear title and body, then call markTaskDone().
+12. Call deleteFuncBench(func_name) to clean up, then continue with the next hotspot.
 
 == NOTE-TAKING RULES ==
 - ALWAYS call addNote() / addTask() BEFORE reading code or applying changes.
@@ -940,40 +966,61 @@ createPR() with a clear title and body, then call markTaskDone() for the complet
   Anything not written to the board WILL be forgotten when context is trimmed.
 - Use showBoard() at the start of each iteration to recall your plan.
 
-== WHEN TO USE THE MICRO-BENCHMARK SANDBOX ==
-Use createFuncBench + runFuncBench + deleteFuncBench when:
-- You are unsure whether an algorithmic change will actually be faster.
-- You want to compare multiple implementation approaches before touching main code.
-- The change is in a self-contained math/algorithm function.
-Do NOT use the sandbox when:
-- The change requires OpenCL, minifb, or other project-specific infrastructure.
-- You already know the change will help and it's simple to apply directly.
-- You are modifying control flow or data layout that only makes sense in context.
+== MICRO-BENCHMARK PATTERN (MANDATORY) ==
+Look at tests/rayAABB_inv.h and tests/rayAABB_inv.c for the gold standard example:
+- The .h file contains the ORIGINAL function + multiple optimized variants (V2, V3, V4, V5, V6, V7)
+- The .c file generates random test data, times every variant, compares results for correctness
+- Each variant explores a different optimization strategy (pass-by-value, FMA, SSE, AVX2, SoA layout)
+- Results print ns/call for each variant so you can see exactly which is fastest
+
+Your bench files should follow this SAME pattern:
+1. createFuncBench(func_name, header_code, impl_code)
+   Creates bench/<func_name>.h and bench/<func_name>.c.
+   - header_code: #ifndef guard, the ORIGINAL function copied verbatim, then your \
+optimized variant(s) with different names (e.g. funcV2, funcV3, funcV4_sse, etc.)
+   - impl_code: full .c file with main() that:
+     a. Allocates large arrays of random test data (millions of samples).
+     b. Runs warm-up passes for all variants.
+     c. Times each variant using clock_gettime(CLOCK_MONOTONIC).
+     d. Prints ns/call (or ms/call) for each variant.
+     e. Validates ALL optimized variants produce the same output as the original.
+     f. Reports mismatches if any.
+   The file may #include project headers by path if needed (e.g. "../render/render.h", \
+"../object/format.h"), but must NOT depend on OpenCL or minifb.
+
+2. runFuncBench(func_name)
+   Compiles bench/<func_name>.c (linked with tests/timings.c and -lm) and runs it.
+   Returns the full stdout output with your timing and correctness results.
+
+3. deleteFuncBench(func_name)
+   Removes the bench files and binary when you are done.
+
+== WHEN YOU MAY SKIP THE SANDBOX ==
+Only skip the micro-benchmark when:
+- The change requires OpenCL, minifb, or other project-specific infrastructure \
+that cannot be isolated.
+- The change is purely structural (data layout change that affects the whole pipeline).
+In these rare cases, apply directly and use makeBench() to validate.
 
 == ANTI-PATTERNS: Things you MUST NOT do ==
-1. DO NOT read the same source file more than twice without making a change.
+1. DO NOT apply optimizations directly to the main codebase without first proving \
+   them in a micro-benchmark. This is the #1 rule.
+2. DO NOT read the same source file more than twice without making a change.
    If you keep re-reading, you are stuck — call addNote() and move on.
-2. DO NOT call buildProject() + makeBench() without having changed any code.
-   This wastes time and provides no new information.
-3. DO NOT apply a change, then immediately restoreAll() and re-apply the same change.
+3. DO NOT call buildProject() + makeBench() without having changed any code.
+4. DO NOT apply a change, then immediately restoreAll() and re-apply the same change.
    If a change regresses, document why and try a different approach.
-4. DO NOT make many small formatting-only changes in sequence — batch them.
 5. DO NOT propose changes without first reading the relevant source code.
-   Guessing what a function does from its name will produce broken code.
 6. DO NOT ignore build errors. If buildProject() fails, fix the error immediately.
-7. DO NOT skip the micro-benchmark sandbox for risky algorithmic changes.
-   Test your hypothesis cheaply before touching the main codebase.
-8. DO NOT keep calling the same exploration tool over and over. If you have enough \
-   information to make a change, make the change. If you don't, write down what you \
-   need with addNote() and move to a different hotspot.
+7. DO NOT keep calling the same exploration tool over and over.
 
 == CONSTRAINTS ==
 - Only call tools that are listed in apiHelp(). Anything else will be rejected.
 - File paths must be relative to the project root. Never use ".." to escape it.
 - Do not break the public API (function signatures visible in headers) without \
 explicit instruction.
-- Always build and bench after every change before moving on.
-- If you are unsure whether a change is safe, read more code first.
+- Always build and bench after applying a proven optimization to main code.
+- If you are unsure whether a change is safe, benchmark it in isolation first.
 - Keep changes focused and minimal — one logical improvement per PR.
 
 == VISUAL CORRECTNESS ==
@@ -986,34 +1033,6 @@ may be acceptable; >= 100.0 = significant change, investigate before submitting.
 for any floating-point reordering, SIMD shuffles, or precision changes even when the \
 image is visually identical. Do NOT treat a hash mismatch as a correctness failure. \
 Use image_mse to judge correctness.
-
-== MICRO-BENCHMARK SANDBOX ==
-When you want to test a hypothesis about an algorithm or implementation approach \
-BEFORE applying it to the main codebase, use the micro-benchmark sandbox:
-
-1. createFuncBench(func_name, header_code, impl_code)
-   Creates bench/<func_name>.h and bench/<func_name>.c.
-   - header_code: #ifndef guard, any typedefs/structs needed, and function declarations.
-   - impl_code:   full .c file that #includes "<func_name>.h" and "timings.h", implements
-     every variant you want to compare, and contains a main() that:
-       a. Runs a warm-up pass.
-       b. Times each variant over at least 20 iterations using clock_gettime(CLOCK_MONOTONIC).
-       c. Calls ComputePerformanceMetrics(timeTook, N) and prints avg/median/p99 for each.
-       d. Validates correctness (compare outputs of baseline vs optimised variant).
-   The file may #include project headers by path if needed (e.g. "../render/render.h"),
-   but must NOT depend on OpenCL or minifb — keep it self-contained with -lm only.
-
-2. runFuncBench(func_name)
-   Compiles bench/<func_name>.c (linked with tests/timings.c and -lm) and runs it.
-   Returns the full stdout output with your timing and correctness results.
-   Use this to validate ideas cheaply before touching the main source.
-
-3. deleteFuncBench(func_name)
-   Removes the bench files and binary when you are done.
-
-WORKFLOW for hypothesis testing:
-  createFuncBench -> runFuncBench -> read results -> decide -> apply to main codebase (or discard)
-  Always call addNote() with the measured numbers before deleting the bench files.
 {codebase_context_section}"""
 
 # TODO: add api where model can execute some code in a sandbox
@@ -1281,8 +1300,9 @@ if __name__ == "__main__":
                 nudge = (
                     "[AUTO-NUDGE] You have read source files 5+ times in recent iterations "
                     "without making any changes. You are over-researching. "
-                    "Pick ONE hotspot, propose ONE concrete change with searchReplace(), "
-                    "apply it, and call buildProject(). You can always restoreAll() if it fails."
+                    "Pick ONE hotspot function and call createFuncBench() to write a "
+                    "micro-benchmark with the original + your optimized variant. "
+                    "Prove the optimization works, then apply to main code."
                 )
                 CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
                 _recent_tool_names.clear()
@@ -1304,6 +1324,27 @@ if __name__ == "__main__":
                 CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
                 _recent_tool_names.clear()
                 print("[loop-detect] injected nudge for build/bench without edits")
+
+        # Pattern 4: editing main code without first using createFuncBench/runFuncBench
+        if len(_recent_tool_names) >= 3:
+            recent_all = _recent_tool_names[-10:]
+            edit_tools = EDITING_TOOLS
+            bench_tools = ("createFuncBench", "runFuncBench")
+            has_edit = any(t in edit_tools for t in recent_all[-3:])
+            has_bench = any(t in bench_tools for t in recent_all[-10:])
+            if has_edit and not has_bench:
+                nudge = (
+                    "[AUTO-NUDGE] You are editing the main codebase WITHOUT first proving "
+                    "your optimization in a micro-benchmark. The workflow is ISOLATION-FIRST:\n"
+                    "1. Read the hot function code\n"
+                    "2. createFuncBench() with original + optimized variants\n"
+                    "3. runFuncBench() to prove speedup and correctness\n"
+                    "4. Only THEN apply to main code with searchReplace()\n"
+                    "If you already ran a bench and it was trimmed from context, call addNote() "
+                    "to record the result and proceed. Otherwise, use createFuncBench() first."
+                )
+                CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
+                print("[loop-detect] injected nudge for editing without bench-first")
 
         ui.sync_context(CONTEXT)
         ui.sync_diff(gf.getDiff(returnString=True, code_only=True))
