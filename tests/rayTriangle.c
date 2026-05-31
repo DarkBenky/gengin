@@ -199,7 +199,7 @@ int main() {
 	return 0;
 }
 
-// TODO: use V10 insted of current implementation
+// TODO: use V10 insted of current implementation extra 4% speedup
 // Old rayTriangle: 18.899 ns/call
 // New rayTriangle: 21.062 ns/call
 // New V2 rayTriangle: 21.303 ns/call

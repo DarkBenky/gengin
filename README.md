@@ -2,10 +2,20 @@
 
 - [ ] Wire frame rendering
 - [ ] Crete shader that will simulate hot air fluctuations for jet engine or missiles
-- [ ] Create optimized version of rayAABB_inv
-    - [ ] use optimized version processing 8 BoundingBoxes in same time
-- [ ] Create Optimizes RayCast, SampleEmission, SampleFace, IntersectBVH
 
+- [ ] Create Optimizes versions of this functions
+    - [ ] RayCast
+        - [ ] **low** opportunity just 0.11% of run time
+    - [ ] SampleEmission
+        - [ ] **medium/high** opportunity just 1.46% of run time
+    - [ ] SampleFace
+        - [ ] **notSure** inlined function need to experiment
+    - [ ] SampleSkybox
+        - [ ] **medium** opportunity just 1.16% of run time
+    - [ ] IntersectBVH
+        - [ ] **high/max** opportunity just 17.77% of run time
+    - [ ] IntersectBVH_Shadow
+        - [ ] **medium/high** opportunity just 1.92% of run time
 - [ ] better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 
 - [ ] train model against moving target
@@ -71,6 +81,12 @@
     - [X] add new high quality models
     - [X] test if models are loaded successfully
         - [NotImplemented] use normals for ray tracer handle coloring on gpu
+
+- [X] Create optimized version of rayAABB_inv
+    - [NotImplemented] use optimized version processing 8 BoundingBoxes in same time
+        - [X] We used rayAABB_inv_x2_soa
+
+- [X] Implement optimized version of RayBoxIntersectV4
 
 - [X] create python llm optimization routine
 

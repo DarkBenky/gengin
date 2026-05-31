@@ -11,6 +11,11 @@
 #include "material/material.h"
 #include "../render/gpu/format.h"
 
+typedef struct {
+    float tMin[4];
+    float tMax[4];
+} RayBoxResult4;
+
 typedef enum VolumeType {
 	VOLUME_NONE,
 	VOLUME_CLOUD, // for rendering of cloads
@@ -131,6 +136,7 @@ void Object_Destroy(Object *obj);
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
 void Object_UpdateWorldBounds(Object *obj);
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax);
+RayBoxResult4 RayBoxIntersectV4(const Object *obj0, const Object *obj1,const Object *obj2, const Object *obj3,float3 rayOrigin, float3 rayDir);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward);

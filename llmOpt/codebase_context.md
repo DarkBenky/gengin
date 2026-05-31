@@ -193,29 +193,28 @@ main()  [main.c]
 
 ---
 
-## Session Insights (2026-05-31 23:12)
+## Session Insights (2026-06-01 00:08)
 
-**Summary**: Applied divisionless early-out to rayTriangle, yielding 2.0% overall improvement, and identified key remaining hotspots for future optimization.
+**Summary**: Optimized sampleFace with unsigned clamping branch reduction achieving 1.16x micro-benchmark speedup, though frame-level impact was muted (~4% of frame). Began targeting IntersectBVH and rayTriangle for further improvements, noting that AVX2 batching for AABB was not beneficial.
 
 ### Confirmed Wins
-  - rayTriangle: divisionless early-out -> 2.0% overall improvement
+  - sampleFace: unsigned clamping branch reduction -> 1.16x micro-benchmark speedup (negligible frame-level impact due to small share of frame time)
 
 ### Architectural Insights
-  - Divisionless early-out pattern effective for rayTriangle but not directly applicable to rayAABB_inv because it already uses precomputed inverse directions.
-  - AVX2 batched AABB traversal not beneficial due to scatter/gather overhead.
-  - Hotspots are concentrated in IntersectBVH, rayAABB_inv, sampleFace, and related functions.
+  - IntersectBVH is the dominant hotspot (36.5% incl), indicating that algorithmic or micro-optimizations in ray-scene intersection will yield the most frame-time reduction.
+  - AVX2 batched AABB traversal did not improve performance, suggesting the current bottleneck is not compute-bound in that path but may be memory- or divergence-limited.
 
 ### Remaining Hotspots
-  - IntersectBVH (17.67% excl)
-  - rayAABB_inv (8.29% excl)
-  - rayAABB_inv_x2_soa (5.11% excl)
-  - sampleFace (3.89% excl)
-  - RayBoxItersect (3.65% excl)
+  - IntersectBVH (36.52% incl, 17.77% excl)
+  - rayTriangle (16.74% excl)
+  - rayAABB_inv (9.0% excl)
+  - rayAABB_inv_x2_soa (6.6% excl)
+  - sampleFace (3.8% excl, now improved but still hot)
 
 ### Techniques to Try
-  - Analyze IntersectBVH for algorithmic or memory layout improvements.
-  - Evaluate sampleFace for divisionless early-out or other micro-optimizations.
-  - Consider alternative BVH traversal strategies or SIMD usage beyond AVX2 batched AABB.
+  - Benchmark rayTriangle variants (divisionless early-out, scalar fields, FMA, SSE) to replace current scalar Möller-Trumbore.
+  - Examine rayAABB_inv for scalar micro-optimizations (e.g., strength reduction, better instruction scheduling).
+  - Consider algorithmic changes in IntersectBVH to prune bounding volume hierarchy traversal.
 
 ### Techniques to Avoid
-  - AVX2 batched AABB traversal due to scatter/gather overhead negating performance gains.
+  - AVX2 batching for AABB intersections did not show benefit, likely due to memory latency or branch divergence outweighing vector compute gains.

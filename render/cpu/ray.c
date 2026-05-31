@@ -343,17 +343,42 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 	if (hitTriIdx) *hitTriIdx = -1;
 	if (hitPos) *hitPos = (float3){0.0f, 0.0f, 0.0f};
 
-	// Fast shadow path: return as soon as any object is hit
+	// Fast shadow path (scalar, kept for reference)
+	// if (!hitTriIdx && !hitPos) {
+	// 	for (int i = 0; i < objectCount; i++) {
+	// 		if (i == excludeObj) continue;
+	// 		float bboxMin, bboxMax;
+	// 		RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
+	// 		if (bboxMin >= bboxMax) continue;
+	// 		if (IntersectBVH_Shadow(&objects[i], &objects[i].bvh, rayOrigin, rayDir)) {
+	// 			*hitObjIdx = i;
+	// 			return;
+	// 		}
+	// 	}
+	// 	return;
+	// }
+
+	// Vectorized shadow path: 4 bbox checks per call, return on first hit
 	if (!hitTriIdx && !hitPos) {
-		for (int i = 0; i < objectCount; i++) {
-			if (i == excludeObj) continue;
-			float bboxMin, bboxMax;
-			// TODO: replace with RayBoxIntersectV4 to use vectorization
-			RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
-			if (bboxMin >= bboxMax) continue;
-			if (IntersectBVH_Shadow(&objects[i], &objects[i].bvh, rayOrigin, rayDir)) {
-				*hitObjIdx = i;
-				return;
+		for (int i = 0; i < objectCount; i += 4) {
+			int n = objectCount - i;
+			if (n > 4) n = 4;
+
+			RayBoxResult4 res = RayBoxIntersectV4(
+				&objects[i],
+				&objects[i + (n > 1 ? 1 : 0)],
+				&objects[i + (n > 2 ? 2 : 0)],
+				&objects[i + (n > 3 ? 3 : 0)],
+				rayOrigin, rayDir);
+
+			for (int j = 0; j < n; j++) {
+				int idx = i + j;
+				if (idx == excludeObj) continue;
+				if (res.tMin[j] >= res.tMax[j]) continue;
+				if (IntersectBVH_Shadow(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir)) {
+					*hitObjIdx = idx;
+					return;
+				}
 			}
 		}
 		return;
@@ -361,26 +386,59 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 
 	float bestT = DEPTH_FAR;
 
-	for (int i = 0; i < objectCount; i++) {
-		if (i == excludeObj) continue;
-		// reject with world AABB first — cheap
-		float bboxMin, bboxMax;
-		// TODO: replace with RayBoxIntersectV4 to use vectorization
-		RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
-		if (bboxMin >= bboxMax || bboxMin >= bestT) continue;
+	// Old scalar version
+	// for (int i = 0; i < objectCount; i++) {
+	// 	if (i == excludeObj) continue;
+	// 	// reject with world AABB first — cheap
+	// 	float bboxMin, bboxMax;
+	// 	// TODO: replace with RayBoxIntersectV4 to use vectorization
+	// 	RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
+	// 	if (bboxMin >= bboxMax || bboxMin >= bestT) continue;
 
-		int triIdx = -1;
-		float3 hitPosLocal;
-		IntersectBVH(&objects[i], &objects[i].bvh, rayOrigin, rayDir, &triIdx, &hitPosLocal);
-		if (triIdx < 0) continue;
+	// 	int triIdx = -1;
+	// 	float3 hitPosLocal;
+	// 	IntersectBVH(&objects[i], &objects[i].bvh, rayOrigin, rayDir, &triIdx, &hitPosLocal);
+	// 	if (triIdx < 0) continue;
 
-		float3 dv = {hitPosLocal.x - rayOrigin.x, hitPosLocal.y - rayOrigin.y, hitPosLocal.z - rayOrigin.z};
-		float t = dv.x * rayDir.x + dv.y * rayDir.y + dv.z * rayDir.z;
-		if (t > 0.0f && t < bestT) {
-			bestT = t;
-			*hitObjIdx = i;
-			if (hitTriIdx) *hitTriIdx = triIdx;
-			if (hitPos) *hitPos = hitPosLocal;
+	// 	float3 dv = {hitPosLocal.x - rayOrigin.x, hitPosLocal.y - rayOrigin.y, hitPosLocal.z - rayOrigin.z};
+	// 	float t = dv.x * rayDir.x + dv.y * rayDir.y + dv.z * rayDir.z;
+	// 	if (t > 0.0f && t < bestT) {
+	// 		bestT = t;
+	// 		*hitObjIdx = i;
+	// 		if (hitTriIdx) *hitTriIdx = triIdx;
+	// 		if (hitPos) *hitPos = hitPosLocal;
+	// 	}
+	// }
+
+	for (int i = 0; i < objectCount; i += 4) {
+		int n = objectCount - i;
+		if (n > 4) n = 4;
+
+		RayBoxResult4 res = RayBoxIntersectV4(
+			&objects[i],
+			&objects[i + (n > 1 ? 1 : 0)],
+			&objects[i + (n > 2 ? 2 : 0)],
+			&objects[i + (n > 3 ? 3 : 0)],
+			rayOrigin, rayDir);
+
+		for (int j = 0; j < n; j++) {
+			int idx = i + j;
+			if (idx == excludeObj) continue;
+			if (res.tMin[j] >= res.tMax[j] || res.tMin[j] >= bestT) continue;
+
+			int triIdx = -1;
+			float3 hitPosLocal;
+			IntersectBVH(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir, &triIdx, &hitPosLocal);
+			if (triIdx < 0) continue;
+
+			float3 dv = {hitPosLocal.x - rayOrigin.x, hitPosLocal.y - rayOrigin.y, hitPosLocal.z - rayOrigin.z};
+			float t = dv.x * rayDir.x + dv.y * rayDir.y + dv.z * rayDir.z;
+			if (t > 0.0f && t < bestT) {
+				bestT = t;
+				*hitObjIdx = idx;
+				if (hitTriIdx) *hitTriIdx = triIdx;
+				if (hitPos) *hitPos = hitPosLocal;
+			}
 		}
 	}
 }

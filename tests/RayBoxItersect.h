@@ -60,10 +60,7 @@ typedef struct {
     float tMin1, tMax1;
 } RayBoxResult2;
 
-typedef struct {
-    float tMin[4];
-    float tMax[4];
-} RayBoxResult4;
+
 
 // TODO: RayBoxIntersectV2 processing 2 boxes at once with SSE, returns both results in one struct
 static inline RayBoxResult2 RayBoxIntersectV2(
@@ -121,6 +118,11 @@ static inline RayBoxResult2 RayBoxIntersectV2(
 
     return res;
 }
+
+typedef struct {
+    float tMin[4];
+    float tMax[4];
+} RayBoxResult4;
 
 // TODO: RayBoxIntersectV4 with AVX2 processing 4 boxes at once
 static inline RayBoxResult4 RayBoxIntersectV4(
