@@ -17,7 +17,7 @@
     - [ ] IntersectBVH_Shadow
         - [ ] **medium/high** opportunity just 1.92% of run time
     - [ ] hdrToLDR
-     - [ ] **low/median** opportunity just 0.52% of run time
+        - [ ] **low/median** opportunity just 0.52% of run time
 - [ ] better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 
 - [ ] train model against moving target
