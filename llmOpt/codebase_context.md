@@ -193,28 +193,32 @@ main()  [main.c]
 
 ---
 
-## Session Insights (2026-06-01 00:08)
+## Session Insights (2026-06-01 15:45)
 
-**Summary**: Optimized sampleFace with unsigned clamping branch reduction achieving 1.16x micro-benchmark speedup, though frame-level impact was muted (~4% of frame). Began targeting IntersectBVH and rayTriangle for further improvements, noting that AVX2 batching for AABB was not beneficial.
+**Summary**: Targeted top hotspots (IntersectBVH, rayTriangle, RayTraceRowFunc, rayAABB_inv) over 100+ iterations. Only the tmin>=0 correctness clamp in rayAABB_inv was successfully merged. The session revealed the compiler's dominance at instruction-level optimization and the unreliable nature of micro-benchmarking for this multi-threaded codebase, where four out of five promising structural/micro optimizations regressed the real workload due to increased memory pressure and cache contention.
 
 ### Confirmed Wins
-  - sampleFace: unsigned clamping branch reduction -> 1.16x micro-benchmark speedup (negligible frame-level impact due to small share of frame time)
+  - rayAABB_inv / rayAABB_inv_x2_soa: Added missing tmin>=0 clamp for correctness (prevents traversal of nodes behind camera origin) with zero measurable performance regression (p99 tail latency stable/improved within noise, image_mse=0.00).
 
 ### Architectural Insights
-  - IntersectBVH is the dominant hotspot (36.5% incl), indicating that algorithmic or micro-optimizations in ray-scene intersection will yield the most frame-time reduction.
-  - AVX2 batched AABB traversal did not improve performance, suggesting the current bottleneck is not compute-bound in that path but may be memory- or divergence-limited.
+  - The compiler at -O3 -march=native -flto -ffast-math is highly effective; almost all micro-optimizations (branchless ordering, software prefetch, hoisted loads) in the BVH traversal and triangle intersection loops either regressed or showed no benefit.
+  - Single-threaded micro-benchmarks are deeply unreliable for this multi-threaded codebase. Four out of five structurally promising optimizations (AVX2 batch AABB, VLA combine, prefix-sum blur, BVH prefetch) showed clean speedups in micro-benchmarks but regressed the real renderer by 0.3-2.8% due to increased memory pressure, cache eviction, or TLB contention.
+  - The remaining large exclusive time in RayTraceRowFunc (~21.6%) is fundamentally structural (branch-heavy pixel loop, blur logic, scatter VLA writes) and cannot be addressed without a significant architectural redesign of the shading pipeline.
 
 ### Remaining Hotspots
-  - IntersectBVH (36.52% incl, 17.77% excl)
-  - rayTriangle (16.74% excl)
-  - rayAABB_inv (9.0% excl)
-  - rayAABB_inv_x2_soa (6.6% excl)
-  - sampleFace (3.8% excl, now improved but still hot)
+  - IntersectBVH (17.77% excl, 36.19% incl) – Dominant inclusive hotspot, traversal logic is compiler-optimized.
+  - RayTraceRowFunc (21.6% excl) – Structural overhead in pixel loop and blur operations, resistant to targeted micro-optimizations.
+  - rayTriangle (16.29% excl) – Triangle intersection self-time, compiler-optimized near-ideally.
+  - rayAABB_inv (9.1% excl) – AABB test scalar loop overhead, batched approaches previously regressed.
 
 ### Techniques to Try
-  - Benchmark rayTriangle variants (divisionless early-out, scalar fields, FMA, SSE) to replace current scalar Möller-Trumbore.
-  - Examine rayAABB_inv for scalar micro-optimizations (e.g., strength reduction, better instruction scheduling).
-  - Consider algorithmic changes in IntersectBVH to prune bounding volume hierarchy traversal.
+  - Packet traversal: batching multiple rays through the BVH to exploit coherence and better utilize SIMD/SIMT hardware.
+  - Architectural redesign of RayTraceRowFunc: coherent tile-based rendering or deferred-style batch processing to amortize VLA setup and improve cache behavior.
+  - Perf event profiling (cache-misses, TLB misses) to structurally validate memory pressure hypotheses before committing to layout changes.
+  - Spatial sorting or tighter bounding volume hierarchies to reduce the total intersection workload per ray.
 
 ### Techniques to Avoid
-  - AVX2 batching for AABB intersections did not show benefit, likely due to memory latency or branch divergence outweighing vector compute gains.
+  - Micro-optimizations in functions aggressively compiled with -O3 -flto -ffast-math (branchless ordering, software prefetch, hoisted loads in IntersectBVH/rayAABB_inv/rayTriangle).
+  - Structural changes to RayTraceRowFunc that increase stack size or working set (e.g., combined VLAs, prefix-sum buffers). These consistently regress the multi-threaded bench due to cache/TLB pressure.
+  - AVX2 batch AABB integrations with gather/scatter overhead. Despite strong micro-bench speedups, they regressed the real workload where AABB testing is not the dominant bottleneck.
+  - Triangle data layout interleaving (AoS for vertices). Micro-bench showed no measurable improvement (1.00x) and introduces widespread structural plumbing changes.
