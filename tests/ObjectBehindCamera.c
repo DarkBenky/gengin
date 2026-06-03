@@ -1,3 +1,5 @@
+// NO LONGER USED
+
 #include "ObjectBehindCamera.h"
 
 #define SAMPLES 100000
