@@ -1,5 +1,7 @@
 ## Tasks
 
+- [ ] atmosphere rendering on gpu
+    - [ ] optimized sky box rendering with SDF
 - [ ] test idea of pre pas gpu bbox itersection
     - [ ] we uplod objects bbox and object index and trace rays against them we store per pixel object index if no hit we can set it to -1 then in cpu side we first check the stored index if not hit in bvh we continue normaly
     - [ ] GPU - per pixel bBox check -> store hit object index -> CPU - BVH travers for this object -> if no hit continue with normal traverse       

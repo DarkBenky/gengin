@@ -34,10 +34,10 @@ static float sampleDensity(
         w);
 }
 
-static float shadowMarch(
+static float3 shadowMarch(
     __global const float *buf,
     float3 pos, float3 toLight,
-    float shadowDist, float shadowExtinction)
+    float shadowDist, float3 shadowExtinction)
 {
     float acc = 0.0f;
     float stepSize = shadowDist / SHADOW_STEPS;
@@ -132,11 +132,11 @@ __kernel void renderClouds(
     // material
     float3 baseColor,
     // tunable params
-    float extinctionScale,
-    float shadowExtinction,
+    float3 extinctionScale,
+    float3 shadowExtinction,
     float scatterG,
     float shadowDist,
-    float ambientLight,
+    float3 ambientLight,
     // output
     __global float4 *output,
     int samplesPerPixel,
@@ -197,7 +197,7 @@ __kernel void renderClouds(
     // cosTheta between view direction and toward-light: positive = forward scatter (viewer on same side as light)
     float cosTheta   = -dot(rayDir, toLight);
     float phase      = min(henyeyGreenstein(cosTheta, scatterG), 4.0f);
-    float transmittance = 1.0f;
+    float3 transmittance = (float3)(1.0f, 1.0f, 1.0f);
     float3 scattered = (float3)(0.0f, 0.0f, 0.0f);
 
     for (int i = 0; i < CLOUD_STEPS; i++) {
@@ -208,20 +208,21 @@ __kernel void renderClouds(
         float dens = sampleDensity(buf, uvw);
         if (dens < 0.005f) continue;
 
-        float extinction        = dens * extinctionScale;
-        float sampleTransmit    = exp(-extinction * stepSize);
-        float shadowLight = fmax(ambientLight, shadowMarch(buf, localPos, localLight, shadowDist, shadowExtinction));
+        float3 extinction     = dens * extinctionScale;
+        float3 sampleTransmit = exp(-extinction * stepSize);
+        float3 shadowLight    = fmax(ambientLight, shadowMarch(buf, localPos, localLight, shadowDist, shadowExtinction));
 
         // Energy-conserving single-scatter integral
         float3 luminance = baseColor * (shadowLight * phase);
         scattered += luminance * transmittance * (1.0f - sampleTransmit) / extinction;
 
         transmittance *= sampleTransmit;
-        if (transmittance < 0.005f) break;
+        if (all(transmittance < (float3)(0.005f))) break;
     }
 
-    // store transmittance in .w so composite can do: background * transmittance + scattered
-    output[idx] = (float4)(scattered.x, scattered.y, scattered.z, transmittance);
+    // store luminance transmittance in .w for compositing; background * T + scattered per channel
+    float lumT = dot(transmittance, (float3)(0.2126f, 0.7152f, 0.0722f));
+    output[idx] = (float4)(scattered.x, scattered.y, scattered.z, lumT);
 }
 
 // Screen-space radial march from each pixel toward the sun.

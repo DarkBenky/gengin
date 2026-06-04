@@ -47,3 +47,7 @@ void planeSetRudder01(Plane *plane, float v);
 void planeSetFlap01(Plane *plane, float v);
 
 void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection);
+
+// Compute Euler angles (Rx->Ry->Rz order) for a +X-nose 3D model
+// from the plane's forward direction and bank angle.
+float3 planeGetEulerAngles(const Plane *plane);

@@ -25,11 +25,11 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 
 typedef struct {
 	float3 baseColor;
-	float extinctionScale;	// optical density for opacity (try 10-30)
-	float shadowExtinction; // extinction used only in shadow march — keep low (0.5-3) for visible lit clouds
+	float3 extinctionScale;	// optical density per channel (try 10-30)
+	float3 shadowExtinction; // per-channel extinction in shadow march — keep low (0.5-3)
 	float scatterG;			// Henyey-Greenstein asymmetry (-1..1, 0=isotropic)
 	float shadowDist;		// shadow march distance in local space
-	float ambientLight;		// minimum light level on shadow side (0=hard, 0.3=soft)
+	float3 ambientLight;		// minimum light level on shadow side, can be colored
 	// god rays — set godRays=1 to enable, sunScreenPos computed automatically from cam->lightDir
 	int godRays;
 	float3 godRayColor;	   // additive tint, e.g. (1, 0.95, 0.8)

@@ -65,11 +65,11 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 	clSetKernelArg(k, a++, sizeof(int), &cam->screenHeight);
 	clSetKernelArg(k, a++, sizeof(float3), &cam->lightDir);
 	clSetKernelArg(k, a++, sizeof(float3), &params.baseColor);
-	clSetKernelArg(k, a++, sizeof(float), &params.extinctionScale);
-	clSetKernelArg(k, a++, sizeof(float), &params.shadowExtinction);
+	clSetKernelArg(k, a++, sizeof(float3), &params.extinctionScale);
+	clSetKernelArg(k, a++, sizeof(float3), &params.shadowExtinction);
 	clSetKernelArg(k, a++, sizeof(float), &params.scatterG);
 	clSetKernelArg(k, a++, sizeof(float), &params.shadowDist);
-	clSetKernelArg(k, a++, sizeof(float), &params.ambientLight);
+	clSetKernelArg(k, a++, sizeof(float3), &params.ambientLight);
 	int samplesPerPixel = 1;
 	clSetKernelArg(k, a++, sizeof(cl_mem), &cr->outputBlurBuf.buf);
 	clSetKernelArg(k, a++, sizeof(int), &samplesPerPixel);

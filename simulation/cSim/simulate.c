@@ -12,13 +12,10 @@
 #define I_YAW 90000.0f
 
 // Aerodynamic damping coefficients (N*m per rad/s).
-// Model airframe rotational resistance proportional to angular velocity (Clp, Cmq, Cnr derivatives).
-// Values derived from equilibrium roll rate: at cruise q=17821 (220m/s, 5000m), max aileron torque
-// ~306kN*m must give ~45 deg/s (0.78 rad/s) → DAMP_ROLL = torque / (rate * dampScale) ≈ 80000.
-// Gives decay times: ~0.4s roll, ~0.6s pitch, ~0.9s yaw at cruise speed.
-#define DAMP_ROLL 80000.0f
-#define DAMP_PITCH 130000.0f
-#define DAMP_YAW 100000.0f
+// Scaled for arcade-responsive handling while still providing natural airframe stability.
+#define DAMP_ROLL 35000.0f
+#define DAMP_PITCH 55000.0f
+#define DAMP_YAW 45000.0f
 
 // Lever arms (m) from CG to surface aerodynamic center.
 #define LEVER_AILERON 5.0f
@@ -26,17 +23,17 @@
 #define LEVER_RUDDER 7.0f
 
 // Wing-leveling stability coefficient (N*m). Multiplied by sin(bankAngle) to
-// produce a restoring roll torque, modelling the combined dihedral effect and
-// pendular stability (CG below wing aerodynamic center).
-#define BANK_RESTORE_COEFF 80000.0f
+// produce a restoring roll torque. Reduced for arcade feel — the plane will
+// hold a bank angle rather than snapping back to level.
+#define BANK_RESTORE_COEFF 15000.0f
 
 // Dihedral coupling: roll torque per (rad * q * m^2) from sideslip.
-// Models the tendency of a swept/dihedral wing to roll into a sideslip.
-#define DIHEDRAL_EFFECT_COEFF 0.1f
+// Reduced for arcade handling; still provides gentle roll-into-sideslip.
+#define DIHEDRAL_EFFECT_COEFF 0.03f
 
 // Weathervane stability: yaw torque per (rad * q) from sideslip.
-// Represents the combined fin + fuselage directional stability derivative (Cnβ).
-#define WEATHERVANE_COEFF 6.0f
+// Reduced so the nose doesn't snap into the airstream instantly.
+#define WEATHERVANE_COEFF 2.0f
 
 // Adverse yaw scaling: multiplies aileron drag to produce differential yaw torque.
 #define ADVERSE_YAW_FACTOR 4.0f
@@ -341,11 +338,12 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float mach = speed / (speedOfSound + 1e-6f);
 	float q = 0.5f * airDensity * speed * speed;
 
-	float controlScale = fminf(1.0f, q / 5000.0f);
-	// Separate uncapped scale for damping so it keeps growing with speed.
-	// This prevents the instability where control forces grow with q^2 but
-	// damping stays constant once controlScale hits its 1.0 cap.
-	float dampScale = q / 5000.0f;
+	float controlScale = fminf(1.0f, q / 3500.0f);
+	// Damping scales with q like control forces, but capped to prevent
+	// high-speed sluggishness where damping grows unbounded while controlScale
+	// saturates at 1.0. A 2.5x cap keeps the ratio control:damping reasonable
+	// at high speed without introducing instability.
+	float dampScale = fminf(q / 3500.0f, 2.5f);
 
 	// Resolve current surface deflections once — needed across multiple torque terms.
 	float ailDefl = 0.0f, elevDefl = 0.0f, rudDefl = 0.0f;
@@ -376,19 +374,18 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 
 	// Pitch: elevator + tail AoA restoring moment.
 	float pitchTorque = -elevDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEVATOR * controlScale;
-	pitchTorque -= aoa_rad * q * 8.0f * controlScale;
+	pitchTorque -= aoa_rad * q * 2.5f * controlScale;
 
 	// Yaw: rudder + weathervane stability + adverse yaw from aileron differential drag.
 	float yawTorque = rudDefl * q * plane->rudder.surfaceArea * plane->rudder.liftCoefficient * LEVER_RUDDER * controlScale;
 	yawTorque += sideslip_rad * q * WEATHERVANE_COEFF * controlScale;
 	yawTorque -= ailDefl * q * plane->rightAileron.surfaceArea * plane->rightAileron.dragCoefficient * LEVER_AILERON * ADVERSE_YAW_FACTOR * controlScale;
 
-	// Engine gyroscopic precession: spinning turbine resists attitude changes.
-	// Pitching creates yaw, yawing creates pitch (CW engine from pilot view).
-	// Reduced from 6000 to avoid excessive cross-coupling that destabilises the model.
-	float H_engine = 1500.0f * plane->currentTrustPercentage;
-	pitchTorque -= plane->yawRate * H_engine;
-	yawTorque += plane->pitchRate * H_engine;
+	// Engine gyroscopic precession disabled for arcade handling.
+	// Pitch/yaw coupling feels like unwanted "extra rotation" during pure pitch input.
+	// float H_engine = 1500.0f * plane->currentTrustPercentage;
+	// pitchTorque -= plane->yawRate * H_engine;
+	// yawTorque += plane->pitchRate * H_engine;
 
 	// Aerodynamic damping opposes rotation. Uses uncapped dampScale so damping
 	// keeps growing with airspeed — matching the physical q-dependence of the
@@ -490,4 +487,45 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	plane->rotation.y = atan2f(plane->forward.x, plane->forward.z);
 	plane->rotation.x = asinf(-fmaxf(-1.0f, fminf(1.0f, plane->forward.y)));
 	plane->rotation.z = plane->bankAngle;
+}
+
+// Compute Euler angles for the renderer's Rx->Ry->Rz convention.
+// The 3D model has its nose along +X in local space; the plane's forward
+// and banked-up vectors define the desired world-space orientation.
+// Returns the (rx, ry, rz) triplet that satisfies:
+//   model +X -> world forward
+//   model +Y -> world banked-up
+float3 planeGetEulerAngles(const Plane *plane) {
+	float3 fwd = f3Norm(plane->forward);
+
+	// Build reference frame from forward direction
+	float3 ref = (fabsf(fwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f}
+										: (float3){1.0f, 0.0f, 0.0f, 0.0f};
+	float3 right = f3Norm(f3Cross(ref, fwd));
+	float3 up = f3Cross(fwd, right);
+
+	// Apply bank rotation
+	float cb = cosf(plane->bankAngle);
+	float sb = sinf(plane->bankAngle);
+	float3 bankedUp = f3Add(f3Scale(up, cb), f3Scale(right, sb));
+
+	float fx = fwd.x, fy = fwd.y, fz = fwd.z;
+	float ux = bankedUp.x, uy = bankedUp.y;
+	float horizLen = sqrtf(fx * fx + fy * fy); // projection onto XY plane = cos(ry)
+
+	float3 euler;
+	if (horizLen > 1e-10f) {
+		// General case: cos(ry) far from zero
+		euler.y = atan2f(-fz, horizLen);
+		euler.z = atan2f(fy, fx);
+		euler.x = atan2f(-(fx * ux + fy * uy) / fz, fx * uy - fy * ux);
+	} else {
+		// Gimbal lock: forward is purely +Z or -Z.
+		// Use limit values continuous with the general case as fy->0.
+		euler.y = (fz > 0.0f) ? -(float)(M_PI / 2.0) : (float)(M_PI / 2.0);
+		euler.x = -(float)(M_PI / 2.0);
+		euler.z = atan2f(-ux, uy) - euler.x;
+	}
+
+	return euler;
 }

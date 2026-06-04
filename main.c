@@ -35,24 +35,20 @@
 // update render object to sim object and move camera to follow the plane
 void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input *input, struct mfb_window *window) {
 	float3 forward;
-	updatePlane(simPlane, 1.0f / 1024.0f, &forward);
+	updatePlane(simPlane, 1.0f / 60.0f, &forward);
 	printf("Sim plane position: (%.2f, %.2f, %.2f), speed: %.2f m/s\n", simPlane->position.x, simPlane->position.y, simPlane->position.z, simPlane->currentSpeed);
 
 	renderObj->position = simPlane->position;
-	renderObj->rotation = simPlane->rotation;
+	renderObj->rotation = planeGetEulerAngles(simPlane);
 	Object_UpdateWorldBounds(renderObj);
 
+	// Chase camera: behind and above the plane, looking ahead of the nose
 	float3 planeFwd = Float3_Normalize(simPlane->forward);
-	// compute plane's banked up vector (ref x fwd = right, fwd x right = up)
-	float3 worldRef = (fabsf(planeFwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	float3 planeRight = Float3_Normalize(Float3_Cross(worldRef, planeFwd));
-	float3 planeUp = Float3_Cross(planeFwd, planeRight);
-	float bank = simPlane->bankAngle;
-	float3 bankedUp = Float3_Add(Float3_Scale(planeUp, cosf(bank)), Float3_Scale(planeRight, sinf(bank)));
-
-	float3 camOffset = Float3_Add(Float3_Scale(planeFwd, -12.0f), Float3_Scale(bankedUp, 3.0f));
+	float3 planeUp  = planeGetUpVector(simPlane);
+	float3 camTarget = Float3_Add(simPlane->position, Float3_Scale(planeFwd, 50.0f));
+	float3 camOffset = Float3_Add(Float3_Scale(planeFwd, -25.0f), Float3_Scale(planeUp, 5.0f));
 	camera->position = Float3_Add(simPlane->position, camOffset);
-	camera->forward = Float3_Normalize(Float3_Sub(simPlane->position, camera->position));
+	camera->forward = Float3_Normalize(Float3_Sub(camTarget, camera->position));
 
 	Input_Poll(input, window);
 	float AileronPct = planeGetAileronPct(simPlane);
@@ -289,11 +285,11 @@ int main() {
 		// SSRPostProcess(&camera, threadPool, ssrTasks, 4);
 		CloudRenderer_Render(&cloudRenderer, &cloudVol, &camera, (CloudParams){
 																	 .baseColor = {1.0f, 1.0f, 1.0f, 0.0f},
-																	 .extinctionScale = 11.0f,	// high = thick opaque cloud
-																	 .shadowExtinction = 0.03f, // low = less internal darkening
+																	 .extinctionScale = {10.5f, 11.0f, 12.5f, 0.0f}, // blue scatters more (Mie tinge)
+																	 .shadowExtinction = {0.025f, 0.030f, 0.040f, 0.0f},
 																	 .scatterG = 0.1f,
 																	 .shadowDist = 1.0f,
-																	 .ambientLight = 0.8f, // high = shadowed parts stay bright white
+																	 .ambientLight = {0.55f, 0.65f, 0.90f, 0.0f}, // sky-blue fill on shadow side
 																	 .godRays = 1,
 																	 .godRayColor = {1.0f, 0.95f, 0.8f, 0.0f},
 																	 .godRayIntensity = 0.6f,
