@@ -177,6 +177,7 @@ static inline float rayAABB_inv(float3 bias, float3 invRd, const float *mn, cons
 	float tz0 = mn[2] * invRd.z - bias.z, tz1 = mx[2] * invRd.z - bias.z;
 	float tmin = fmaxf(fmaxf(fminf(tx0, tx1), fminf(ty0, ty1)), fminf(tz0, tz1));
 	float tmax = fminf(fminf(fmaxf(tx0, tx1), fmaxf(ty0, ty1)), fmaxf(tz0, tz1));
+	tmin = fmaxf(tmin, 0.0f);
 	return tmax < tmin ? FLT_MAX : tmin;
 }
 
@@ -192,6 +193,7 @@ static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *so
 	__m128 tz_sw = _mm_shuffle_ps(tz, tz, _MM_SHUFFLE(2, 3, 0, 1));
 	__m128 tmin = _mm_max_ps(_mm_max_ps(_mm_min_ps(tx, tx_sw), _mm_min_ps(ty, ty_sw)), _mm_min_ps(tz, tz_sw));
 	__m128 tmax = _mm_min_ps(_mm_min_ps(_mm_max_ps(tx, tx_sw), _mm_max_ps(ty, ty_sw)), _mm_max_ps(tz, tz_sw));
+	tmin = _mm_max_ps(tmin, _mm_setzero_ps());
 	__m128 result = _mm_blendv_ps(tmin, _mm_set1_ps(FLT_MAX), _mm_cmplt_ps(tmax, tmin));
 	out[0] = _mm_cvtss_f32(result);
 	out[1] = _mm_cvtss_f32(_mm_shuffle_ps(result, result, _MM_SHUFFLE(2, 2, 2, 2)));
