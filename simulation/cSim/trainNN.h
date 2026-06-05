@@ -68,13 +68,13 @@ float calculateMutationRate(float startRate, float endRate, int currentEpoch, in
 	return startRate * powf(endRate / startRate, t);
 }
 
-void generatePath(ModelTrainer *p, Plane plane, float minDistance, float maxDistance, int IterationCount) {
+void generatePath(ModelTrainer *p, Plane plane, float minDistance, float maxDistance, int IterationCount, float maxDivergenceDegrees) {
 	p->startPosition = plane.position;
 	p->prevPosition = plane.position;
 	p->iterationCount = IterationCount;
 	p->currentIteration = 0;
 
-	float maxDivergenceAngleRadians = 45.0f * (M_PI / 180.0f);
+	float maxDivergenceAngleRadians = maxDivergenceDegrees * (M_PI / 180.0f);
 	float randomAngle = ((float)rand() / RAND_MAX) * maxDivergenceAngleRadians - (maxDivergenceAngleRadians / 2.0f);
 
 	// project forward onto horizontal plane so target is never behind or above/below a cliff
@@ -208,7 +208,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	// generate a new path on the very first epoch, when at least one elite model reached the target
 	// last epoch, or when the target has gone 100 epochs unreached (likely unreachable — pick a fresh one)
 	if (p->currentEpoch == 0 || p->eliteReachedTarget > 0 || p->epochsSinceLastTarget >= 100) {
-		generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount);
+		generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount, 45.0f);
 		p->epochsSinceLastTarget = 0;
 	}
 	printf("Target position: x: %f, y: %f, z: %f | Plane position: x: %f, y: %f, z: %f\n",
