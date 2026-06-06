@@ -296,6 +296,7 @@ static inline float3 RandomHemisphereDirectionWithMaterial(float3 normal, float3
 	return Float3_Normalize(Float3_Lerp(randomDir, perfectReflect, specularWeight));
 }
 
+// NOTE : not used in main render loop
 static void SkyBoxTaskFunc(void *arg) {
 	SkyBoxTask *task = arg;
 	int row = task->row;
@@ -307,7 +308,7 @@ static void SkyBoxTaskFunc(void *arg) {
 		if (camera->depthBuffer[idx] >= DEPTH_FAR) {
 			// No geometry — fill with sky using primary ray direction
 			float3 rayDir = ComputeRayDirection(camera, x, row);
-			// TODO: can be vectorized by sampling color for multiple pixels at once
+			// NOTE : not used in main render loop
 			camera->framebuffer[idx] = SampleSkybox(skybox, rayDir);
 			continue;
 		}
@@ -326,6 +327,7 @@ static void SkyBoxTaskFunc(void *arg) {
 	}
 }
 
+// NOTE: Not used in main render loop
 void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, SkyBoxTaskQueue *taskQueue) {
 	if (!skybox || !camera || !threadPool || !taskQueue) return;
 	for (int row = 0; row < camera->screenHeight; row++) {
@@ -391,7 +393,6 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 	// 	if (i == excludeObj) continue;
 	// 	// reject with world AABB first — cheap
 	// 	float bboxMin, bboxMax;
-	// 	// TODO: replace with RayBoxIntersectV4 to use vectorization
 	// 	RayBoxItersect(&objects[i], rayOrigin, rayDir, &bboxMin, &bboxMax);
 	// 	if (bboxMin >= bboxMax || bboxMin >= bestT) continue;
 
@@ -604,17 +605,17 @@ static void RayTraceRowFunc(void *arg) {
 	float sz = rgt.z * aspect * fovScale;
 
 	float3 catchReflections[width]; // accumulate reflection contributions for the entire row, then write to framebuffer in one pass
-	// TODO: try if memset can be avoided
+	// NOTE: can not be removed frame hashes changed
 	memset(catchReflections, 0, sizeof(float3) * width);
 	float3 catchReflection = {0.0f, 0.0f, 0.0f};
 
 	float3 catchEmissions[width]; // accumulate emission contributions for the entire row, then write to framebuffer in one pass
-	// TODO: try if memset can be avoided
+	// NOTE: can not be removed frame hashes changed
 	memset(catchEmissions, 0, sizeof(float3) * width);
 	float3 catchEmission = {0.0f, 0.0f, 0.0f};
 
 	float3 catchShadow[width]; // accumulate shadow contributions for the entire row, then write to framebuffer in one pass
-	// TODO: try if memset can be avoided
+	// NOTE: can not be removed frame hashes changed
 	memset(catchShadow, 0, sizeof(float3) * width);
 	float3 catchShadowValue = {0.0f, 0.0f, 0.0f};
 
@@ -656,7 +657,6 @@ static void RayTraceRowFunc(void *arg) {
 
 		const int *passIdx = task->frustumPassIndices;
 		const int passCount = task->frustumPassCount;
-		// TODO: Use SIMD test against 8 boundingBoxes at once
 		// int ci = 0;
 		// for (; ci + 8 <= passCount; ci += 8) {
 		// 	float3 mn8[8], mx8[8];

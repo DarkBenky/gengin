@@ -1,5 +1,36 @@
 ========================================
-Running: tests/testRay
+Running: tests/SampleSkyBox
 ========================================
-Error: Failed to read colorMap.
-Error: Failed to load textures from file.
+Skybox: cannot open ../skybox/front.jpg
+Skybox: cannot open ../skybox/back.jpg
+Skybox: cannot open ../skybox/left.jpg
+Skybox: cannot open ../skybox/right.jpg
+Skybox: cannot open ../skybox/top.jpg
+Skybox: cannot open ../skybox/bottom.jpg
+========================================
+Old Method Performance:
+Average Time: 34.45 ns
+Median Time:  30.00 ns
+Min Time:     19.00 ns
+Max Time:     30609.00 ns
+Variance:     13484.98
+99th Pct:     50.00 ns
+========================================
+AVX Method Performance:
+Average Time: 26.12 ns
+Median Time:  20.00 ns
+Min Time:     10.00 ns
+Max Time:     14490.00 ns
+Variance:     5515.70
+99th Pct:     30.00 ns
+========================================
+AVX8 Method Performance:
+Average Time (per sample): 7.75 ns
+Median Time (per sample):  6.25 ns
+Min Time (per sample):     3.75 ns
+Max Time (per sample):     510.00 ns
+Variance (per sample):     251.97
+99th Pct (per sample):     8.75 ns
+========================================
+Total mismatches AVX: 0 out of 100000
+Total mismatches AVX8: 0 out of 100000

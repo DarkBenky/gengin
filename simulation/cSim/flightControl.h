@@ -1,4 +1,4 @@
-// hand made algo to find good surface control to target point in 3d space
+// TODO: hand made algo to find good surface control to target point in 3d space
 // using iterative approaches where we try to minimize the loss based on this
 // 1. try to apply roll so the top of the plane will be facing the target
 // 2. apply this algo to pitch

@@ -124,7 +124,6 @@ typedef struct {
     float tMax[4];
 } RayBoxResult4;
 
-// TODO: RayBoxIntersectV4 with AVX2 processing 4 boxes at once
 static inline RayBoxResult4 RayBoxIntersectV4(
     const Object *obj0, const Object *obj1,
     const Object *obj2, const Object *obj3,
