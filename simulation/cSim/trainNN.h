@@ -20,14 +20,13 @@ typedef struct {
 	float bankRate;			// rad/s / 3                                           [-1..1 approx]
 	float pitchRate;		// rad/s / 3                                           [-1..1 approx]
 	float speed;			// currentSpeed / 500                                  [ 0..1 approx]
-	float Throttle;			// 0.0 to 1.0
-	float Aileron;			// 0.0 to 1.0
-	float Elevator;			// 0.0 to 1.0
-	float Rudder;			// 0.0 to 1.0
+	float yawRate;			// rad/s / 3                                           [-1..1 approx]
+	float Aileron;			// -1.0 to 1.0 (matches output range)
+	float Elevator;			// -1.0 to 1.0
+	float Rudder;			// -1.0 to 1.0
 } ModelInput;
 
 typedef struct {
-	float Throttle; // 0.0 to 1.0 (mapped from tanh via (out+1)/2)
 	float Aileron;	// -1.0 to 1.0
 	float Elevator; // -1.0 to 1.0
 	float Rudder;	// -1.0 to 1.0
@@ -53,7 +52,9 @@ typedef struct {
 	int currentEpoch;
 	Client client;			// for sending training data to python for visualization
 	int eliteReachedTarget; // count of elite models that reached target this epoch
+	int totalReachedTarget; // count of all models that reached target this epoch
 	int epochsSinceLastTarget;
+	float maxAngleDeg;      // current MaxDivergenceDegrees for this epoch
 	Model backpropModel; // trained on the inputs and outputs models
 	Optimizer opt;
 	float lastBackpropLoss;
@@ -108,6 +109,8 @@ void initModelTrainer(ModelTrainer *p, int numModels, int epochs, int iterationC
 	Client c = {.host = "127.0.0.1", .port = port};
 	p->client = c;
 	p->eliteReachedTarget = 0;
+	p->totalReachedTarget = 0;
+	p->maxAngleDeg = 0.0f;
 
 	p->models = (Model *)malloc(sizeof(Model) * numModels);
 	p->losses = (float *)malloc(sizeof(float) * numModels);
@@ -161,17 +164,20 @@ typedef struct {
 	float startPosition[3];
 	float targetPosition[3];
 	float backpropLoss;
+	float maxAngleDeg;
 	// wire layout after this header:
-	//   float[modelCount]                   losses
-	//   float3[modelCount * iterationCount] paths
-	//   float3[modelCount * iterationCount] epochLosses (x=totalLoss, y=distanceToTarget, z=controlEffortLoss)
+	//   float[modelCount]                        losses
+	//   float3[modelCount * iterationCount]      paths
+	//   float3[modelCount * iterationCount]      epochLosses (x=totalLoss, y=distanceToTarget, z=controlEffortLoss)
+	//   ModelOutput[modelCount * iterationCount] outputs (Aileron, Elevator, Rudder)
 } trainingStats;
 
 trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 	int lossSize = sizeof(float) * p->numModels;
 	int pathsSize = sizeof(float3) * p->numModels * p->iterationCount;
 	int epochLossesSize = sizeof(float3) * p->numModels * p->iterationCount;
-	trainingStats *stats = (trainingStats *)malloc(sizeof(trainingStats) + lossSize + pathsSize + epochLossesSize);
+	int outputsSize = sizeof(ModelOutput) * p->numModels * p->iterationCount;
+	trainingStats *stats = (trainingStats *)malloc(sizeof(trainingStats) + lossSize + pathsSize + epochLossesSize + outputsSize);
 	stats->modelCount = p->numModels;
 	stats->iterationCount = p->iterationCount;
 	stats->startPosition[0] = p->startPosition.x;
@@ -181,20 +187,25 @@ trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 	stats->targetPosition[1] = p->targetPosition.y;
 	stats->targetPosition[2] = p->targetPosition.z;
 	stats->backpropLoss = p->backpropLossEMA;
+	stats->maxAngleDeg = p->maxAngleDeg;
 	uint8_t *base = (uint8_t *)(stats + 1);
 	memcpy(base, p->losses, lossSize);
 	memcpy(base + lossSize, p->paths, pathsSize);
 	memcpy(base + lossSize + pathsSize, p->epochLosses, epochLossesSize);
-	*size = sizeof(trainingStats) + lossSize + pathsSize + epochLossesSize;
+	memcpy(base + lossSize + pathsSize + epochLossesSize, p->outputs, outputsSize);
+	*size = sizeof(trainingStats) + lossSize + pathsSize + epochLossesSize + outputsSize;
 	return stats;
 }
 
 #define ACCEPTABLE_DISTANCE_TO_TARGET 250.0f
 #define BACKPROP_EMA_ALPHA 0.05f
 void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDivergenceDegrees) {
+	p->maxAngleDeg = MaxDivergenceDegrees;
 	float3 startPos = plane->position;
 	float3 modelOrientation = plane->forward;
-	float3 startVel = plane->velocity;
+	// always reset to Mach 1 so each epoch starts at a consistent speed regardless of previous state
+	float startSpeed = 340.0f;
+	float3 startVel = Float3_Scale(modelOrientation, startSpeed);
 	float startBankAngle = plane->bankAngle;
 	float startBankRate = plane->bankRate;
 	float startPitchRate = plane->pitchRate;
@@ -204,17 +215,18 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 	// target 20-60% of the distance the plane can cruise in the allotted steps,
 	// so the plane has enough time to reach it but also isn't trivially close.
 	float simTime = p->iterationCount * (1.0f / 24.0f);
-	float cruiseRange = simTime * 250.0f;
+	float cruiseRange = simTime * 340.0f;
 	// generate a new path on the very first epoch, when at least one elite model reached the target
 	// last epoch, or when the target has gone 100 epochs unreached (likely unreachable — pick a fresh one)
 	if (p->currentEpoch == 0 || p->eliteReachedTarget > 0 || p->epochsSinceLastTarget >= 100) {
-		generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount, MaxDivergenceDegrees);
+		generatePath(p, *plane, cruiseRange * 0.05f, cruiseRange * 0.15f, p->iterationCount, MaxDivergenceDegrees);
 		p->epochsSinceLastTarget = 0;
 	}
 	printf("Target position: x: %f, y: %f, z: %f | Plane position: x: %f, y: %f, z: %f\n",
 		   p->targetPosition.x, p->targetPosition.y, p->targetPosition.z,
 		   startPos.x, startPos.y, startPos.z);
 	p->eliteReachedTarget = 0;
+	p->totalReachedTarget = 0;
 	float initialDist = Float3_Length(Float3_Sub(startPos, p->targetPosition));
 	if (initialDist < 1.0f) initialDist = 1.0f;
 
@@ -231,6 +243,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 		plane->position = startPos;
 		plane->forward = modelOrientation;
 		plane->velocity = startVel;
+		plane->currentSpeed = startSpeed;
 		plane->bankAngle = startBankAngle;
 		plane->bankRate = startBankRate;
 		plane->pitchRate = startPitchRate;
@@ -254,17 +267,16 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 				.bankRate = plane->bankRate / 3.0f,
 				.pitchRate = plane->pitchRate / 3.0f,
 				.speed = plane->currentSpeed / 500.0f,
-				.Throttle = planeGetThrottle01(plane),
-				.Aileron = planeGetAileron01(plane),
-				.Elevator = planeGetElevator01(plane),
-				.Rudder = planeGetRudder01(plane)};
+				.yawRate = plane->yawRate / 3.0f,
+				.Aileron = planeGetAileronNorm(plane),
+				.Elevator = planeGetElevatorNorm(plane),
+				.Rudder = planeGetRudderNorm(plane)};
 			ModelOutput output;
 			Forward(&p->models[modelIdx], (float *)&input, (float *)&output);
-			// tanh output: surfaces in [-1,1], throttle mapped from [-1,1] to [0,1]
 			planeSetAileron(plane, output.Aileron);
 			planeSetElevator(plane, output.Elevator);
 			planeSetRudder(plane, output.Rudder);
-			planeSetThrottle(plane, (output.Throttle + 1.0f) * 0.5f);
+			planeSetThrottle(plane, 1.0f); // full afterburner always
 			float3 newForward;
 			updatePlane(plane, 1.0f / 24.0f, &newForward);
 
@@ -278,8 +290,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 
 			float distanceToTarget = Float3_Length(Float3_Sub(plane->position, p->targetPosition));
 			if (distanceToTarget < ACCEPTABLE_DISTANCE_TO_TARGET) {
-				printf("Model: %d reached target\n", modelIdx);
-				// only count elite models (already sorted from last epoch) to avoid noise from lucky randoms
+				printf("Model: %d reached target\n", modelIdx);					p->totalReachedTarget++;				// only count elite models (already sorted from last epoch) to avoid noise from lucky randoms
 				if (isElite[modelIdx])
 					p->eliteReachedTarget++;
 				// write the arrival position into this slot so visualization doesn't show a stale value
@@ -298,7 +309,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 				break;
 			}
 
-			float controlEffortLoss = (output.Throttle * output.Throttle) + (output.Aileron * output.Aileron) + (output.Elevator * output.Elevator) + (output.Rudder * output.Rudder);
+			float controlEffortLoss = (output.Aileron * output.Aileron) + (output.Elevator * output.Elevator) + (output.Rudder * output.Rudder);
 			// reward velocity component toward target — encourages reaching the target quickly
 			float speedTowardTarget = fmaxf(0.0f, Float3_Dot(plane->velocity, input.toTargetDir));
 			// normalize by initial distance so losses are comparable across epochs regardless of target distance
@@ -379,7 +390,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 			int idx = modelIdx * p->iterationCount + step;
 			ModelOutput *out = &p->outputs[idx];
 			// skip zero-padded tail (steps past where the model reached the target)
-			if (p->actionLosses[idx] == 0.0f && out->Throttle == 0.0f && out->Aileron == 0.0f)
+			if (p->actionLosses[idx] == 0.0f && out->Aileron == 0.0f && out->Elevator == 0.0f)
 				continue;
 			sampleIndices[sampleCount++] = idx;
 		}

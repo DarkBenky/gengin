@@ -17,7 +17,7 @@ void epochTask(void *args) {
 	epoch(((FunctionArgs *)args)->trainer, ((FunctionArgs *)args)->plane, ((FunctionArgs *)args)->currentTop10PercentLoss, *(((FunctionArgs *)args)->MaxDivergenceDegrees));
 }
 
-#define NUM_THREADS 28
+#define NUM_THREADS 4
 
 int main() {
 	ModelTrainer trainers[NUM_THREADS];
@@ -32,7 +32,7 @@ int main() {
 	// init trainers and planes
 	for (int i = 0; i < NUM_THREADS; i++) {
 		initModelTrainer(&trainers[i], ModelCount, epochs, iterationCount, 0.01f, 0.0005f, 4, 64, port + i);
-		if (loadPlaneBin(&planes[i], "simulation/simModels/" MODEL_NAME ".bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 250.0f, 1.0f) != 0) {
+		if (loadPlaneBin(&planes[i], "simulation/simModels/" MODEL_NAME ".bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 340.0f, 1.0f) != 0) {
 			printf("Failed to load model: simulation/simModels/" MODEL_NAME ".bin\n");
 			return 1;
 		}
@@ -42,8 +42,17 @@ int main() {
 	ThreadPool *pool = poolCreate(NUM_THREADS, NUM_THREADS);
 
 	// load the best model if it exists
+	uint32 expectedInputSize = (uint32)(sizeof(ModelInput) / sizeof(float));
+	uint32 expectedOutputSize = (uint32)(sizeof(ModelOutput) / sizeof(float));
+
 	Model seedModel = {0};
 	int hasSeed = LoadModel(&seedModel, "simulation/best_backprop_model_" MODEL_NAME "_baseline.bin") == 0;
+	if (hasSeed && (seedModel.inputSize != expectedInputSize || seedModel.outputSize != expectedOutputSize)) {
+		printf("Skipping seed model — incompatible shape (%u in/%u out, expected %u/%u)\n",
+			   seedModel.inputSize, seedModel.outputSize, expectedInputSize, expectedOutputSize);
+		FreeModel(&seedModel);
+		hasSeed = 0;
+	}
 	if (hasSeed) {
 		printf("Loaded existing best model — seeding all trainers\n");
 		for (int i = 0; i < NUM_THREADS; i++)
@@ -54,6 +63,12 @@ int main() {
 	// load best backprop model if it exists
 	Model seedBackpropModel = {0};
 	int hasBackpropSeed = LoadModel(&seedBackpropModel, "simulation/best_backprop_model_" MODEL_NAME ".bin") == 0;
+	if (hasBackpropSeed && (seedBackpropModel.inputSize != expectedInputSize || seedBackpropModel.outputSize != expectedOutputSize)) {
+		printf("Skipping backprop seed model — incompatible shape (%u in/%u out, expected %u/%u)\n",
+			   seedBackpropModel.inputSize, seedBackpropModel.outputSize, expectedInputSize, expectedOutputSize);
+		FreeModel(&seedBackpropModel);
+		hasBackpropSeed = 0;
+	}
 	if (hasBackpropSeed) {
 		printf("Loaded existing best backprop model — seeding all trainers\n");
 		for (int i = 0; i < NUM_THREADS; i++)
@@ -63,7 +78,10 @@ int main() {
 
 	float globalBestLoss = MAX_FLOAT;
 	float globalBestBackpropLoss = MAX_FLOAT;
-	float MaxDivergenceDegrees = 270.0f; // max angle from forward direction for target generation, in degrees (360 would be anywhere around the plane)
+	float MaxDivergenceDegrees = 30.0f;   // start narrow; grows as models succeed
+	const float MaxDivergenceDegreesLimit = 270.0f;
+	const float DivergenceStepDegrees = 0.1f;
+	const float TargetReachThreshold = 0.05f; // fraction of total models that must reach target to advance
 
 	int crossMutateInterval = 10; // epochs
 	int crossMutateCount = 50;	  // bottom N models replaced per trainer per migration
@@ -77,6 +95,19 @@ int main() {
 			poolAdd(pool, epochTask, &args[i]);
 		}
 		poolWait(pool);
+
+		// curriculum: widen spawn angle when enough models are reaching the target
+		int totalReached = 0;
+		for (int i = 0; i < NUM_THREADS; i++)
+			totalReached += trainers[i].totalReachedTarget;
+		int totalModels = NUM_THREADS * ModelCount;
+		if ((float)totalReached / (float)totalModels >= TargetReachThreshold) {
+			MaxDivergenceDegrees += DivergenceStepDegrees;
+			if (MaxDivergenceDegrees > MaxDivergenceDegreesLimit)
+				MaxDivergenceDegrees = MaxDivergenceDegreesLimit;
+			printf("Angle widened to %.1f deg (%d/%d models reached target)\n",
+				   MaxDivergenceDegrees, totalReached, totalModels);
+		}
 
 		for (int i = 0; i < NUM_THREADS; i++) {
 			if (trainers[i].epochsSinceLastTarget == 1) {
