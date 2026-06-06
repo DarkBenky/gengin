@@ -10,10 +10,11 @@ typedef struct {
 	ModelTrainer *trainer;
 	Plane *plane;
 	float *currentTop10PercentLoss;
+	float *MaxDivergenceDegrees;
 } FunctionArgs;
 
 void epochTask(void *args) {
-	epoch(((FunctionArgs *)args)->trainer, ((FunctionArgs *)args)->plane, ((FunctionArgs *)args)->currentTop10PercentLoss);
+	epoch(((FunctionArgs *)args)->trainer, ((FunctionArgs *)args)->plane, ((FunctionArgs *)args)->currentTop10PercentLoss, *(((FunctionArgs *)args)->MaxDivergenceDegrees));
 }
 
 #define NUM_THREADS 28
@@ -31,8 +32,8 @@ int main() {
 	// init trainers and planes
 	for (int i = 0; i < NUM_THREADS; i++) {
 		initModelTrainer(&trainers[i], ModelCount, epochs, iterationCount, 0.01f, 0.0005f, 4, 64, port + i);
-		if (loadPlaneBin(&planes[i], "simulation/simModels/" MODEL_NAME ".bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 250.0f, 1.0f) != 0) {
-			printf("Failed to load model: simulation/simModels/" MODEL_NAME ".bin\n");
+		if (loadPlaneBin(&planes[i], "simulation/simModels/" MODEL_NAME "_baseline.bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 250.0f, 1.0f) != 0) {
+			printf("Failed to load model: simulation/simModels/" MODEL_NAME "_baseline.bin\n");
 			return 1;
 		}
 		top10PercentLosses[i] = MAX_FLOAT;
@@ -62,6 +63,7 @@ int main() {
 
 	float globalBestLoss = MAX_FLOAT;
 	float globalBestBackpropLoss = MAX_FLOAT;
+	float MaxDivergenceDegrees = 270.0f; // max angle from forward direction for target generation, in degrees (360 would be anywhere around the plane)
 
 	int crossMutateInterval = 10; // epochs
 	int crossMutateCount = 50;	  // bottom N models replaced per trainer per migration
@@ -71,6 +73,7 @@ int main() {
 			args[i].trainer = &trainers[i];
 			args[i].plane = &planes[i];
 			args[i].currentTop10PercentLoss = &top10PercentLosses[i];
+			args[i].MaxDivergenceDegrees = &MaxDivergenceDegrees;
 			poolAdd(pool, epochTask, &args[i]);
 		}
 		poolWait(pool);

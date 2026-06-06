@@ -191,7 +191,7 @@ trainingStats *serializeTrainStats(ModelTrainer *p, int *size) {
 
 #define ACCEPTABLE_DISTANCE_TO_TARGET 250.0f
 #define BACKPROP_EMA_ALPHA 0.05f
-void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
+void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDivergenceDegrees) {
 	float3 startPos = plane->position;
 	float3 modelOrientation = plane->forward;
 	float3 startVel = plane->velocity;
@@ -208,7 +208,7 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss) {
 	// generate a new path on the very first epoch, when at least one elite model reached the target
 	// last epoch, or when the target has gone 100 epochs unreached (likely unreachable — pick a fresh one)
 	if (p->currentEpoch == 0 || p->eliteReachedTarget > 0 || p->epochsSinceLastTarget >= 100) {
-		generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount, 45.0f);
+		generatePath(p, *plane, cruiseRange * 0.2f, cruiseRange * 0.6f, p->iterationCount, MaxDivergenceDegrees);
 		p->epochsSinceLastTarget = 0;
 	}
 	printf("Target position: x: %f, y: %f, z: %f | Plane position: x: %f, y: %f, z: %f\n",
