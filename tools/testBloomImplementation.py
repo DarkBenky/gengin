@@ -1,3 +1,6 @@
+# TODO: implement serilization of data and use it in open cl to render cloads
+# TODO: generate n textures and use chunking to show only staff needed on screen
+
 import numpy as np
 import matplotlib.pyplot as plt
 import time
