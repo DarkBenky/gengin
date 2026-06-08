@@ -61,14 +61,11 @@ float yawLoss(const Plane *plane, float3 target) {
 
 // TODO: implement this
 static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target) {
-	float3 toTarget = Float3_Sub(target, ctrl->plane.position);
-	float3 forward = planeGetForwardVector(&ctrl->plane);
-	float3 right = planeGetRightVector(&ctrl->plane);
-	float3 up = planeGetUpVector(&ctrl->plane);
+	// TODO: loop to minimize rollLoss
 
-	float3 idealUp = Float3_Normalize(toTarget);
-	float dot = Float3_Dot(idealUp, forward);
-	float3 idealUpInRollPlane = Float3_Normalize(Float3_Sub(idealUp, Float3_Scale(forward, dot)));
+    // TODO: loop to minimize pitchLoss
+
+    // TODO: loop to minimize yawLoss
 }
 
 // main testing loop to debug controller
