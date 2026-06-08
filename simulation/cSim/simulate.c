@@ -21,6 +21,9 @@
 #define LEVER_AILERON 5.0f
 #define LEVER_ELEVATOR 7.0f
 #define LEVER_RUDDER 7.0f
+// Lateral lever arms for differential roll from tail/flap surfaces.
+#define LEVER_ELEV_ROLL 2.5f
+#define LEVER_FLAP_ROLL 3.0f
 
 // Wing-leveling stability coefficient (N*m). Multiplied by sin(bankAngle) to
 // produce a restoring roll torque. Reduced for arcade feel — the plane will
@@ -289,6 +292,64 @@ void planeSetFlap(Plane *plane, float norm) {
 	setSurfaceTarget(&plane->rightFlap, norm);
 }
 
+void planeSetLeftFlap(Plane *plane, float norm) {
+	setSurfaceTarget(&plane->leftFlap, norm);
+}
+void planeSetRightFlap(Plane *plane, float norm) {
+	setSurfaceTarget(&plane->rightFlap, norm);
+}
+void planeSetLeftElevator(Plane *plane, float norm) {
+	setSurfaceTarget(&plane->leftElevator, norm);
+}
+void planeSetRightElevator(Plane *plane, float norm) {
+	setSurfaceTarget(&plane->rightElevator, norm);
+}
+
+void planeSetLeftFlapPct(Plane *plane, float pct) {
+	planeSetLeftFlap(plane, pctToNorm(pct));
+}
+void planeSetRightFlapPct(Plane *plane, float pct) {
+	planeSetRightFlap(plane, pctToNorm(pct));
+}
+void planeSetLeftElevatorPct(Plane *plane, float pct) {
+	planeSetLeftElevator(plane, pctToNorm(pct));
+}
+void planeSetRightElevatorPct(Plane *plane, float pct) {
+	planeSetRightElevator(plane, pctToNorm(pct));
+}
+
+void planeSetLeftFlap01(Plane *plane, float v) {
+	planeSetLeftFlap(plane, norm01ToNorm(v));
+}
+void planeSetRightFlap01(Plane *plane, float v) {
+	planeSetRightFlap(plane, norm01ToNorm(v));
+}
+void planeSetLeftElevator01(Plane *plane, float v) {
+	planeSetLeftElevator(plane, norm01ToNorm(v));
+}
+void planeSetRightElevator01(Plane *plane, float v) {
+	planeSetRightElevator(plane, norm01ToNorm(v));
+}
+
+float planeGetLeftFlapPct(const Plane *plane) {
+	return getSurfacePct(&plane->leftFlap);
+}
+float planeGetLeftFlap01(const Plane *plane) {
+	return getSurface01(&plane->leftFlap);
+}
+float planeGetLeftFlapNorm(const Plane *plane) {
+	return getSurfaceNorm(&plane->leftFlap);
+}
+float planeGetLeftElevatorPct(const Plane *plane) {
+	return getSurfacePct(&plane->leftElevator);
+}
+float planeGetLeftElevator01(const Plane *plane) {
+	return getSurface01(&plane->leftElevator);
+}
+float planeGetLeftElevatorNorm(const Plane *plane) {
+	return getSurfaceNorm(&plane->leftElevator);
+}
+
 void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	// Lazy-init velocity — handles base plane copies and old structs without velocity field.
 	if (f3Len(plane->velocity) < 1.0f && plane->currentSpeed > 1.0f)
@@ -346,22 +407,43 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float dampScale = fminf(q / 3500.0f, 2.5f);
 
 	// Resolve current surface deflections once — needed across multiple torque terms.
-	float ailDefl = 0.0f, elevDefl = 0.0f, rudDefl = 0.0f;
+	float ailDefl = 0.0f, rudDefl = 0.0f;
+	float leftElevDefl = 0.0f, rightElevDefl = 0.0f;
+	float leftFlapDefl = 0.0f, rightFlapDefl = 0.0f;
 	if (plane->rightAileron.active) {
 		float neutral = (plane->rightAileron.minRotationAngle + plane->rightAileron.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rightAileron.maxRotationAngle - plane->rightAileron.minRotationAngle) * 0.5f;
 		if (halfRange > MIN_CONTROL_RANGE) ailDefl = (plane->rightAileron.rotationAngle - neutral) / halfRange;
 	}
+	if (plane->leftElevator.active) {
+		float neutral = (plane->leftElevator.minRotationAngle + plane->leftElevator.maxRotationAngle) * 0.5f;
+		float halfRange = (plane->leftElevator.maxRotationAngle - plane->leftElevator.minRotationAngle) * 0.5f;
+		if (halfRange > MIN_CONTROL_RANGE) leftElevDefl = (plane->leftElevator.rotationAngle - neutral) / halfRange;
+	}
 	if (plane->rightElevator.active) {
 		float neutral = (plane->rightElevator.minRotationAngle + plane->rightElevator.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rightElevator.maxRotationAngle - plane->rightElevator.minRotationAngle) * 0.5f;
-		if (halfRange > MIN_CONTROL_RANGE) elevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
+		if (halfRange > MIN_CONTROL_RANGE) rightElevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
+	}
+	if (plane->leftFlap.active) {
+		float neutral = (plane->leftFlap.minRotationAngle + plane->leftFlap.maxRotationAngle) * 0.5f;
+		float halfRange = (plane->leftFlap.maxRotationAngle - plane->leftFlap.minRotationAngle) * 0.5f;
+		if (halfRange > MIN_CONTROL_RANGE) leftFlapDefl = (plane->leftFlap.rotationAngle - neutral) / halfRange;
+	}
+	if (plane->rightFlap.active) {
+		float neutral = (plane->rightFlap.minRotationAngle + plane->rightFlap.maxRotationAngle) * 0.5f;
+		float halfRange = (plane->rightFlap.maxRotationAngle - plane->rightFlap.minRotationAngle) * 0.5f;
+		if (halfRange > MIN_CONTROL_RANGE) rightFlapDefl = (plane->rightFlap.rotationAngle - neutral) / halfRange;
 	}
 	if (plane->rudder.active) {
 		float neutral = (plane->rudder.minRotationAngle + plane->rudder.maxRotationAngle) * 0.5f;
 		float halfRange = (plane->rudder.maxRotationAngle - plane->rudder.minRotationAngle) * 0.5f;
 		if (halfRange > MIN_CONTROL_RANGE) rudDefl = (plane->rudder.rotationAngle - neutral) / halfRange;
 	}
+	// Symmetric average drives pitch; differential drives roll.
+	float elevDefl = (leftElevDefl + rightElevDefl) * 0.5f;
+	float elevDiffDefl = rightElevDefl - leftElevDefl;
+	float flapDiffDefl = rightFlapDefl - leftFlapDefl;
 
 	// Roll: aileron differential lift + dihedral stability (sideslip rolls wings level).
 	// Dihedral effect: right sideslip (sideslip_rad > 0) exposes right wing to more airflow →
@@ -371,6 +453,12 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	// Wing-leveling: combined dihedral and pendular stability produces a restoring
 	// roll torque when banked, giving natural tendency to return to wings-level.
 	rollTorque -= sinf(plane->bankAngle) * BANK_RESTORE_COEFF;
+	// Differential flap (flaperon): wing surface, same sign as aileron — more deflection on
+	// right side reduces right-wing lift → right wing sinks → positive (right) bank.
+	rollTorque += flapDiffDefl * q * plane->rightFlap.surfaceArea * plane->rightFlap.liftCoefficient * LEVER_FLAP_ROLL * controlScale;
+	// Differential elevator (elevon): tail behind CG — more deflection on right side reduces
+	// right-tail lift → right tail sinks → right wing rises → negative (left) bank.
+	rollTorque -= elevDiffDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEV_ROLL * controlScale;
 
 	// Pitch: elevator + tail AoA restoring moment.
 	float pitchTorque = -elevDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEVATOR * controlScale;
@@ -510,15 +598,16 @@ float3 planeGetEulerAngles(const Plane *plane) {
 	float3 bankedUp = f3Add(f3Scale(up, cb), f3Scale(right, sb));
 
 	float fx = fwd.x, fy = fwd.y, fz = fwd.z;
-	float ux = bankedUp.x, uy = bankedUp.y;
+	float ux = bankedUp.x, uy = bankedUp.y, uz = bankedUp.z;
 	float horizLen = sqrtf(fx * fx + fy * fy); // projection onto XY plane = cos(ry)
 
 	float3 euler;
 	if (horizLen > 1e-10f) {
-		// General case: cos(ry) far from zero
+		// General case: cos(ry) far from zero.
+		// uz == horizLen * sin(rx), so atan2(uz, horizLen*cos(rx)) avoids dividing by fz.
 		euler.y = atan2f(-fz, horizLen);
 		euler.z = atan2f(fy, fx);
-		euler.x = atan2f(-(fx * ux + fy * uy) / fz, fx * uy - fy * ux);
+		euler.x = atan2f(uz, fx * uy - fy * ux);
 	} else {
 		// Gimbal lock: forward is purely +Z or -Z.
 		// Use limit values continuous with the general case as fy->0.

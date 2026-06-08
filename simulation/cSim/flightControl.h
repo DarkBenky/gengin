@@ -18,7 +18,51 @@
 //         pitch /= 1.125
 // 3. try to same algo for yaw
 
+#include "../../object/format.h"
+#include "../../math/vector3.h"
+#include "simulate.h"
 
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <time.h>
 
+#define MAX_ITERATION_PER_AXIS 16
+#define LOOKAHEAD_STEPS 24
 
+typedef struct {
+    Plane plane;
 
+    float Elevator[MAX_ITERATION_PER_AXIS];
+    float ElevatorLoss[MAX_ITERATION_PER_AXIS];
+    float Aileron[MAX_ITERATION_PER_AXIS];
+    float AileronLoss[MAX_ITERATION_PER_AXIS];
+    float Rudder[MAX_ITERATION_PER_AXIS];
+    float RudderLoss[MAX_ITERATION_PER_AXIS];
+
+    int MaxIterationPerAxis;
+    int LookaheadSteps;
+} Controller;
+
+static void initController(Controller *ctrl, const Plane *plane) {
+    ctrl->plane = *plane;
+    ctrl->MaxIterationPerAxis = MAX_ITERATION_PER_AXIS;
+    ctrl->LookaheadSteps = LOOKAHEAD_STEPS;
+    for (int i = 0; i < MAX_ITERATION_PER_AXIS; i++) {
+        ctrl->Elevator[i] = 0.0f;
+        ctrl->ElevatorLoss[i] = FLT_MAX;
+        ctrl->Aileron[i] = 0.0f;
+        ctrl->AileronLoss[i] = FLT_MAX;
+        ctrl->Rudder[i] = 0.0f;
+        ctrl->RudderLoss[i] = FLT_MAX;
+    }
+}
+
+typedef struct {
+    float Elevator;
+    float Aileron;
+    float Rudder;
+} ControllerOutput;
+
+static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target);
