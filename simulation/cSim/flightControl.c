@@ -30,7 +30,7 @@ float rollLoss(const Plane *plane, float3 target) {
 	float cross = Float3_Dot(Float3_Cross(up, idealUp), forward);
 	float dot = Float3_Dot(up, idealUp);
 
-	return atan2f(cross, dot); // radians, 0 = perfect roll alignment
+	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect roll alignment
 }
 
 float pitchLoss(const Plane *plane, float3 target) {
@@ -60,12 +60,64 @@ float yawLoss(const Plane *plane, float3 target) {
 }
 
 // TODO: implement this
-static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target) {
-	// TODO: loop to minimize rollLoss
+static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target, float deltaTime) {
+	ControllerOutput output = {0};
 
-    // TODO: loop to minimize pitchLoss
+	float aileronStart = 0.5f; // neutral
+	float aileronStep = 0.15f;
+	bool aileronSide = true; // true = increase from neutral, false = decrease from neutral
 
-    // TODO: loop to minimize yawLoss
+	Plane baselinePlane = ctrl->plane;
+
+	// get baseline loss at neutral aileron
+	planeSetAileron01(&baselinePlane, aileronStart);
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&baselinePlane, deltaTime, NULL);
+	}
+	float baselineLoss = rollLoss(&baselinePlane, target);
+	printf("Baseline roll loss at neutral aileron: %.4f\n", baselineLoss);
+
+	float bestAileronValue = aileronStart;
+	float bestLoss = baselineLoss;
+
+	for (int iter = 0; iter < ctrl->MaxIterationPerAxis; iter++) {
+		Plane simulationPlane = ctrl->plane;
+		float aileronValue = aileronStart;
+		if (aileronSide) {
+			aileronValue += aileronStep;
+		} else {
+			aileronValue -= aileronStep;
+		}
+
+		aileronValue = fmaxf(0.0f, fminf(1.0f, aileronValue)); // clamp to [0,1]
+
+		planeSetAileron01(&simulationPlane, aileronValue);
+		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+			updatePlane(&simulationPlane, deltaTime, NULL);
+		}
+		float loss = rollLoss(&simulationPlane, target);
+		printf("Iter %d: Aileron %.3f, Loss %.4f\n", iter, aileronValue, loss);
+
+		if (loss < bestLoss) {
+			bestLoss = loss;
+			bestAileronValue = aileronValue;
+			aileronStart = aileronValue; // recenter here
+			aileronStep *= 1.125f;
+		} else {
+			aileronStep /= 1.125f;
+			aileronSide = !aileronSide;
+		}
+	}
+
+	printf("Best aileron value: %.3f with roll loss: %.4f\n", bestAileronValue, bestLoss);
+
+	output.Aileron = bestAileronValue;
+
+	// TODO: loop to minimize pitchLoss
+
+	// TODO: loop to minimize yawLoss
+
+	return output;
 }
 
 // main testing loop to debug controller
@@ -80,4 +132,8 @@ int main() {
 	initController(&ctrl, &plane);
 
 	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1000.0f, 1000.0f});
+
+	getControllerOutput(&ctrl, target, 1.0f / 60.0f);
+
+	return 0;
 }

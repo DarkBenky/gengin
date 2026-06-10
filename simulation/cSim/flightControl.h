@@ -65,4 +65,4 @@ typedef struct {
     float Rudder;
 } ControllerOutput;
 
-static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target);
+static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target, float deltaTime);
