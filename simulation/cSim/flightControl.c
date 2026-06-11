@@ -43,7 +43,7 @@ float pitchLoss(const Plane *plane, float3 target) {
 	float cross = Float3_Dot(Float3_Cross(forward, idealForward), right);
 	float dot = Float3_Dot(forward, idealForward);
 
-	return atan2f(cross, dot); // radians, 0 = perfect pitch alignment
+	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect pitch alignment
 }
 
 float yawLoss(const Plane *plane, float3 target) {
@@ -56,7 +56,7 @@ float yawLoss(const Plane *plane, float3 target) {
 	float cross = Float3_Dot(Float3_Cross(forward, idealForward), up);
 	float dot = Float3_Dot(forward, idealForward);
 
-	return atan2f(cross, dot); // radians, 0 = perfect yaw alignment
+	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect yaw alignment
 }
 
 // TODO: implement this
@@ -75,7 +75,7 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 		updatePlane(&baselinePlane, deltaTime, NULL);
 	}
 	float baselineLoss = rollLoss(&baselinePlane, target);
-	printf("Baseline roll loss at neutral aileron: %.4f\n", baselineLoss);
+	// printf("Baseline roll loss at neutral aileron: %.4f\n", baselineLoss);
 
 	float bestAileronValue = aileronStart;
 	float bestLoss = baselineLoss;
@@ -96,7 +96,7 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 			updatePlane(&simulationPlane, deltaTime, NULL);
 		}
 		float loss = rollLoss(&simulationPlane, target);
-		printf("Iter %d: Aileron %.3f, Loss %.4f\n", iter, aileronValue, loss);
+		// printf("Iter %d: Aileron %.3f, Loss %.4f\n", iter, aileronValue, loss);
 
 		if (loss < bestLoss) {
 			bestLoss = loss;
@@ -109,9 +109,10 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 		}
 	}
 
-	printf("Best aileron value: %.3f with roll loss: %.4f\n", bestAileronValue, bestLoss);
+	// printf("Best aileron value: %.3f with roll loss: %.4f\n", bestAileronValue, bestLoss);
 
 	output.Aileron = bestAileronValue;
+	output.AileronLoss = bestLoss;
 
 	float pitchStart = 0.5f; // neutral
 	float pitchStep = 0.15f;
@@ -125,7 +126,7 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 		updatePlane(&pitchBaselinePlane, deltaTime, NULL);
 	}
 	float pitchBaselineLoss = pitchLoss(&pitchBaselinePlane, target);
-	printf("Baseline pitch loss at neutral elevator: %.4f\n", pitchBaselineLoss);
+	// printf("Baseline pitch loss at neutral elevator: %.4f\n", pitchBaselineLoss);
 
 
 	float bestPitchValue = pitchStart;
@@ -147,7 +148,7 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 			updatePlane(&simulationPlane, deltaTime, NULL);
 		}
 		float loss = pitchLoss(&simulationPlane, target);
-		printf("Iter %d: Elevator %.3f, Loss %.4f\n", iter, pitchValue, loss);
+		// printf("Iter %d: Elevator %.3f, Loss %.4f\n", iter, pitchValue, loss);
 
 		if (loss < bestLoss) {
 			bestLoss = loss;
@@ -159,9 +160,10 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 			pitchSide = !pitchSide;
 		}
 	}
-	printf("Best elevator value: %.3f with pitch loss: %.4f\n", bestPitchValue, bestLoss);
+	// printf("Best elevator value: %.3f with pitch loss: %.4f\n", bestPitchValue, bestLoss);
 
 	output.Elevator = bestPitchValue;
+	output.ElevatorLoss = bestLoss;
 
 	float yawStart = 0.5f; // neutral
 	float yawStep = 0.15f;
@@ -175,7 +177,7 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 		updatePlane(&yawBaselinePlane, deltaTime, NULL);
 	}
 	float yawBaselineLoss = yawLoss(&yawBaselinePlane, target);
-	printf("Baseline yaw loss at neutral rudder: %.4f\n", yawBaselineLoss);
+	// printf("Baseline yaw loss at neutral rudder: %.4f\n", yawBaselineLoss);
 
 	float bestYawValue = yawStart;
 	bestLoss = yawBaselineLoss;
@@ -196,7 +198,7 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 			updatePlane(&simulationPlane, deltaTime, NULL);
 		}
 		float loss = yawLoss(&simulationPlane, target);
-		printf("Iter %d: Rudder %.3f, Loss %.4f\n", iter, yawValue, loss);
+		// printf("Iter %d: Rudder %.3f, Loss %.4f\n", iter, yawValue, loss);
 
 		if (loss < bestLoss) {
 			bestLoss = loss;
@@ -208,17 +210,77 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 			yawSide = !yawSide;
 		}
 	}
-	printf("Best rudder value: %.3f with yaw loss: %.4f\n", bestYawValue, bestLoss);
+	// printf("Best rudder value: %.3f with yaw loss: %.4f\n", bestYawValue, bestLoss);
 
 	output.Rudder = bestYawValue;
+	output.RudderLoss = bestLoss;
 
 	return output;
 }
 
+float distanceToTarget(const Plane *plane, float3 target) {
+	return Float3_Length(Float3_Sub(target, plane->position));
+}
+
+typedef struct {
+	int iteration;
+	float aileronValue;
+	float aileronLoss;
+	float elevatorValue;
+	float elevatorLoss;
+	float rudderValue;
+	float rudderLoss;
+	float distanceToTarget;
+	float3 planePosition;
+	float3 targetPosition;
+	float3 planeVelocity;
+
+} PlaneControlLogs;
+
+typedef struct {
+	PlaneControlLogs *logs;
+	int len;
+	int cap;
+} Logs;
+
+
+void addLog(Logs *logs, PlaneControlLogs log) {
+	if (logs->len >= logs->cap) {
+		int newCap = logs->cap == 0 ? 16 : logs->cap * 2;
+		logs->logs = realloc(logs->logs, newCap * sizeof(PlaneControlLogs));
+		logs->cap = newCap;
+	}
+	logs->logs[logs->len++] = log;
+}
+
+void freeLogs(Logs *logs) {
+	free(logs->logs);
+	logs->logs = NULL;
+	logs->len = 0;
+	logs->cap = 0;
+}
+
+
+void saveLogsToCSV(const Logs *logs, const char *filename) {
+	FILE *file = fopen(filename, "w");
+	if (!file) {
+		printf("Failed to open log file for writing: %s\n", filename);
+		return;
+	}
+	fprintf(file, "Iteration,Aileron,AileronLoss,Elevator,ElevatorLoss,Rudder,RudderLoss,DistanceToTarget,PlanePositionX,PlanePositionY,PlanePositionZ,TargetPositionX,TargetPositionY,TargetPositionZ,PlaneVelocityX,PlaneVelocityY,PlaneVelocityZ\n");
+	for (int i = 0; i < logs->len; i++) {
+		const PlaneControlLogs *log = &logs->logs[i];
+		fprintf(file, "%d,%.3f,%.4f,%.3f,%.4f,%.3f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+			log->iteration, log->aileronValue, log->aileronLoss, log->elevatorValue, log->elevatorLoss, log->rudderValue, log->rudderLoss, log->distanceToTarget, log->planePosition.x, log->planePosition.y, log->planePosition.z, log->targetPosition.x, log->targetPosition.y, log->targetPosition.z, log->planeVelocity.x, log->planeVelocity.y, log->planeVelocity.z);
+	}
+	fclose(file);
+}
+
+
 // main testing loop to debug controller
 int main() {
 	Plane plane;
-	if (loadPlaneBin(&plane, "simulation/simModels/F-16C.bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 340.0f, 1.0f) != 0) {
+	if (loadPlaneBin(&plane, "simulation/simModels/F-16C.bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 180.0f, 1.0f) != 0) {
 		printf("Failed to load model: simulation/simModels/F-16C.bin\n");
 		return 1;
 	}
@@ -228,7 +290,42 @@ int main() {
 
 	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1000.0f, 1000.0f});
 
-	getControllerOutput(&ctrl, target, 1.0f / 60.0f);
+	const int simSteps = 2000;
+	const float deltaTime = 1.0f / 60.0f; // 60 FPS
+
+	Logs logs = {0};
+
+	for (int iter = 0; iter < simSteps; iter++) {
+		ControllerOutput out = getControllerOutput(&ctrl, target, deltaTime);
+		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
+
+		planeSetAileron01(&ctrl.plane, out.Aileron);
+		planeSetElevator01(&ctrl.plane, out.Elevator);
+		planeSetRudder01(&ctrl.plane, out.Rudder);
+		planeSetThrottle01(&ctrl.plane, 1.0f); // full throttle
+
+		updatePlane(&ctrl.plane, deltaTime, NULL);
+
+		float dist = distanceToTarget(&ctrl.plane, target);
+		printf("[Step %i] Distance to target: %.2f\n", iter, dist);
+
+		PlaneControlLogs log = {
+			.iteration = iter,
+			.aileronValue = out.Aileron,
+			.aileronLoss = out.AileronLoss,
+			.elevatorValue = out.Elevator,
+			.elevatorLoss = out.ElevatorLoss,
+			.rudderValue = out.Rudder,
+			.rudderLoss = out.RudderLoss,
+			.distanceToTarget = dist,
+			.planePosition = ctrl.plane.position,
+			.targetPosition = target,
+			.planeVelocity = ctrl.plane.velocity
+		};
+		addLog(&logs, log);
+	}
+
+	saveLogsToCSV(&logs, "simulation/cSim/flightControlLogs.csv");
 
 	return 0;
 }

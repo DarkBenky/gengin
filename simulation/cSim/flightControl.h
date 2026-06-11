@@ -29,7 +29,7 @@
 #include <time.h>
 
 #define MAX_ITERATION_PER_AXIS 16
-#define LOOKAHEAD_STEPS 24
+#define LOOKAHEAD_STEPS 1
 
 typedef struct {
     Plane plane;
@@ -61,8 +61,11 @@ static void initController(Controller *ctrl, const Plane *plane) {
 
 typedef struct {
     float Elevator;
+    float ElevatorLoss;
     float Aileron;
+    float AileronLoss;
     float Rudder;
+    float RudderLoss;
 } ControllerOutput;
 
 static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target, float deltaTime);
