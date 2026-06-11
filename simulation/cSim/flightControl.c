@@ -113,9 +113,104 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 
 	output.Aileron = bestAileronValue;
 
-	// TODO: loop to minimize pitchLoss
+	float pitchStart = 0.5f; // neutral
+	float pitchStep = 0.15f;
+	bool pitchSide = true; // true = increase from neutral, false = decrease from neutral
 
-	// TODO: loop to minimize yawLoss
+	Plane pitchBaselinePlane = ctrl->plane;
+
+	// get baseline loss at neutral pitch
+	planeSetElevator01(&pitchBaselinePlane, pitchStart);
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&pitchBaselinePlane, deltaTime, NULL);
+	}
+	float pitchBaselineLoss = pitchLoss(&pitchBaselinePlane, target);
+	printf("Baseline pitch loss at neutral elevator: %.4f\n", pitchBaselineLoss);
+
+
+	float bestPitchValue = pitchStart;
+	bestLoss = pitchBaselineLoss;
+
+	for (int iter = 0; iter < ctrl->MaxIterationPerAxis; iter++) {
+		Plane simulationPlane = ctrl->plane;
+		float pitchValue = pitchStart;
+		if (pitchSide) {
+			pitchValue += pitchStep;
+		} else {
+			pitchValue -= pitchStep;
+		}
+
+		pitchValue = fmaxf(0.0f, fminf(1.0f, pitchValue)); // clamp to [0,1]
+
+		planeSetElevator01(&simulationPlane, pitchValue);
+		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+			updatePlane(&simulationPlane, deltaTime, NULL);
+		}
+		float loss = pitchLoss(&simulationPlane, target);
+		printf("Iter %d: Elevator %.3f, Loss %.4f\n", iter, pitchValue, loss);
+
+		if (loss < bestLoss) {
+			bestLoss = loss;
+			bestPitchValue = pitchValue;
+			pitchStart = pitchValue; // recenter here
+			pitchStep *= 1.125f;
+		} else {
+			pitchStep /= 1.125f;
+			pitchSide = !pitchSide;
+		}
+	}
+	printf("Best elevator value: %.3f with pitch loss: %.4f\n", bestPitchValue, bestLoss);
+
+	output.Elevator = bestPitchValue;
+
+	float yawStart = 0.5f; // neutral
+	float yawStep = 0.15f;
+	bool yawSide = true; // true = increase from neutral, false = decrease from neutral
+
+	Plane yawBaselinePlane = ctrl->plane;
+
+	// get baseline loss at neutral yaw
+	planeSetRudder01(&yawBaselinePlane, yawStart);
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&yawBaselinePlane, deltaTime, NULL);
+	}
+	float yawBaselineLoss = yawLoss(&yawBaselinePlane, target);
+	printf("Baseline yaw loss at neutral rudder: %.4f\n", yawBaselineLoss);
+
+	float bestYawValue = yawStart;
+	bestLoss = yawBaselineLoss;
+
+	for (int iter = 0; iter < ctrl->MaxIterationPerAxis; iter++) {
+		Plane simulationPlane = ctrl->plane;
+		float yawValue = yawStart;
+		if (yawSide) {
+			yawValue += yawStep;
+		} else {
+			yawValue -= yawStep;
+		}
+
+		yawValue = fmaxf(0.0f, fminf(1.0f, yawValue)); // clamp to [0,1]
+
+		planeSetRudder01(&simulationPlane, yawValue);
+		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+			updatePlane(&simulationPlane, deltaTime, NULL);
+		}
+		float loss = yawLoss(&simulationPlane, target);
+		printf("Iter %d: Rudder %.3f, Loss %.4f\n", iter, yawValue, loss);
+
+		if (loss < bestLoss) {
+			bestLoss = loss;
+			bestYawValue = yawValue;
+			yawStart = yawValue; // recenter here
+			yawStep *= 1.125f;
+		} else {
+			yawStep /= 1.125f;
+			yawSide = !yawSide;
+		}
+	}
+	printf("Best rudder value: %.3f with yaw loss: %.4f\n", bestYawValue, bestLoss);
+
+	output.Rudder = bestYawValue;
 
 	return output;
 }
