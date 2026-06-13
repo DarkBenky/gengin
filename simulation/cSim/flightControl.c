@@ -226,6 +226,144 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 	return output;
 }
 
+static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 target, float deltaTime) {
+	ControllerOutput output = {0};
+
+	float yawStep = 0.5f;
+	float pitchStep = 0.5f;
+	float rollStep = 0.5f;
+
+	float yawValue = 0.5f;
+	float pitchValue = 0.5f;
+	float rollValue = 0.5f;
+
+	const int maxIterations = 64;
+	float bestLossYaw = FLT_MAX;
+	float bestLossPitch = FLT_MAX;
+	float bestLossRoll = FLT_MAX;
+
+	for (int iter = 0; iter < maxIterations * 3; iter++) {
+		int action = iter % 3;
+
+		Plane simulationPlanePositive = ctrl->plane;
+		Plane simulationPlaneNegative = ctrl->plane;
+
+		planeSetRudder01(&simulationPlanePositive, yawValue);
+		planeSetElevator01(&simulationPlanePositive, pitchValue);
+		planeSetAileron01(&simulationPlanePositive, rollValue);
+		planeSetRudder01(&simulationPlaneNegative, yawValue);
+		planeSetElevator01(&simulationPlaneNegative, pitchValue);
+		planeSetAileron01(&simulationPlaneNegative, rollValue);
+
+		if (action == 0) {
+			planeSetRudder01(&simulationPlanePositive, fminf(1.0f, yawValue + yawStep));
+			planeSetRudder01(&simulationPlaneNegative, fmaxf(0.0f, yawValue - yawStep));
+		} else if (action == 1) {
+			planeSetElevator01(&simulationPlanePositive, fminf(1.0f, pitchValue + pitchStep));
+			planeSetElevator01(&simulationPlaneNegative, fmaxf(0.0f, pitchValue - pitchStep));
+		} else {
+			planeSetAileron01(&simulationPlanePositive, fminf(1.0f, rollValue + rollStep));
+			planeSetAileron01(&simulationPlaneNegative, fmaxf(0.0f, rollValue - rollStep));
+		}
+
+		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+			updatePlane(&simulationPlaneNegative, deltaTime, NULL);
+			float distToTarget = distanceToTarget(&simulationPlaneNegative, target);
+			if (distToTarget < 10.0f) {
+				break;
+			}
+		}
+		
+		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+			updatePlane(&simulationPlanePositive, deltaTime, NULL);
+			float distToTarget = distanceToTarget(&simulationPlanePositive, target);
+			if (distToTarget < 10.0f) {
+				break;
+			}
+		}
+
+
+		float lossPositive = distanceToTarget(&simulationPlanePositive, target);
+		float3 planeVelocityVectorPositive = Float3_Normalize(planeGetForwardVector(&simulationPlanePositive));
+		// calculate misalignment between plane's forward vector and the vector to the target
+		float3 targetVector = Float3_Normalize(Float3_Sub(target, simulationPlanePositive.position));
+		// calculate dot product between plane's forward vector and the vector to the target
+		float dotProduct = Float3_Dot(planeVelocityVectorPositive, targetVector);
+		lossPositive += (1.0f - dotProduct) * 10.0f; // add a penalty for misalignment
+
+		float lossNegative = distanceToTarget(&simulationPlaneNegative, target);
+		float3 planeVelocityVectorNegative = Float3_Normalize(planeGetForwardVector(&simulationPlaneNegative));
+		// calculate misalignment between plane's forward vector and the vector to the target
+		float3 targetVectorNeg = Float3_Normalize(Float3_Sub(target, simulationPlaneNegative.position));
+		// calculate dot product between plane's forward vector and the vector to the target
+		float dotProductNeg = Float3_Dot(planeVelocityVectorNegative, targetVectorNeg);
+		lossNegative += (1.0f - dotProductNeg) * 10.0f; // add a penalty for misalignment
+
+
+		if (action == 0) {
+			if (lossPositive < lossNegative) {
+				if (lossPositive < bestLossYaw) {
+					bestLossYaw = lossPositive;
+					yawValue = fmaxf(0.0f, fminf(1.0f, yawValue + yawStep));
+					output.Rudder = yawValue;
+					printf("Yaw+ improved: %.4f\n", bestLossYaw);
+				}
+			} else {
+				if (lossNegative < bestLossYaw) {
+					bestLossYaw = lossNegative;
+					yawValue = fmaxf(0.0f, fminf(1.0f, yawValue - yawStep));
+					output.Rudder = yawValue;
+					printf("Yaw- improved: %.4f\n", bestLossYaw);
+				}
+			}
+			yawStep *= 0.8f;
+		} else if (action == 1) {
+			if (lossPositive < lossNegative) {
+				if (lossPositive < bestLossPitch) {
+					bestLossPitch = lossPositive;
+					pitchValue = fmaxf(0.0f, fminf(1.0f, pitchValue + pitchStep));
+					output.Elevator = pitchValue;
+					printf("Pitch+ improved: %.4f\n", bestLossPitch);
+				}
+			} else {
+				if (lossNegative < bestLossPitch) {
+					bestLossPitch = lossNegative;
+					pitchValue = fmaxf(0.0f, fminf(1.0f, pitchValue - pitchStep));
+					output.Elevator = pitchValue;
+					printf("Pitch- improved: %.4f\n", bestLossPitch);
+				}
+			}
+			pitchStep *= 0.8f;
+		} else {
+			if (lossPositive < lossNegative) {
+				if (lossPositive < bestLossRoll) {
+					bestLossRoll = lossPositive;
+					rollValue = fmaxf(0.0f, fminf(1.0f, rollValue + rollStep));
+					output.Aileron = rollValue;
+					printf("Roll+ improved: %.4f\n", bestLossRoll);
+				}
+			} else {
+				if (lossNegative < bestLossRoll) {
+					bestLossRoll = lossNegative;
+					rollValue = fmaxf(0.0f, fminf(1.0f, rollValue - rollStep));
+					output.Aileron = rollValue;
+					printf("Roll- improved: %.4f\n", bestLossRoll);
+				}
+			}
+			rollStep *= 0.8f;
+		}
+	}
+
+	float aileronLoss = rollLoss(&ctrl->plane, target);
+	float elevatorLoss = pitchLoss(&ctrl->plane, target);
+	float rudderLoss = yawLoss(&ctrl->plane, target);
+	output.AileronLoss = aileronLoss;
+	output.ElevatorLoss = elevatorLoss;
+	output.RudderLoss = rudderLoss;
+
+	return output;
+}
+
 typedef struct {
 	int iteration;
 	float aileronValue;
@@ -297,7 +435,7 @@ int main() {
 	Logs logs = {0};
 
 	for (int iter = 0; iter < simSteps; iter++) {
-		ControllerOutput out = getControllerOutput(&ctrl, target, deltaTime);
+		ControllerOutput out = getControllerOutputV2(&ctrl, target, deltaTime);
 		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
 
 		planeSetAileron01(&ctrl.plane, out.Aileron);
