@@ -521,8 +521,89 @@ def _find_normalized_lines(content_lines, old_lines):
     return -1
 
 
-def searchReplace(rel_path, old_text, new_text, context=None):
-    """Find old_text exactly once in rel_path and replace it with new_text."""
+def _find_all_normalized(content_lines, old_lines):
+    """Return list of all start indices where old_lines match (normalized)."""
+    norm_old = [l.rstrip() for l in old_lines]
+    norm_content = [l.rstrip() for l in content_lines]
+    n = len(norm_old)
+    indices = []
+    for i in range(len(norm_content) - n + 1):
+        if norm_content[i:i + n] == norm_old:
+            indices.append(i)
+    return indices
+
+
+def _fuzzyFind(content_lines, old_lines):
+    """
+    When exact and normalized match fail, find the region with the highest
+    character-level similarity ratio. Returns (start_idx, similarity_ratio, snippet).
+    """
+    old_text = "".join(old_lines)
+    best_ratio = 0.0
+    best_idx = -1
+    n = len(old_lines)
+
+    # Slide a window of the same line count, compute character similarity
+    for i in range(len(content_lines) - n + 1):
+        window = "".join(content_lines[i:i + n])
+        # Simple character-level Jaccard-like similarity
+        common = sum(1 for a, b in zip(old_text, window) if a == b)
+        total = max(len(old_text), len(window))
+        ratio = common / total if total > 0 else 0
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_idx = i
+
+    if best_idx >= 0:
+        snippet = "".join(content_lines[max(0, best_idx - 2):best_idx + n + 2])
+        # Build a character-level diff hint: show what's different
+        window = "".join(content_lines[best_idx:best_idx + n])
+        diff_hint = _charDiffHint(old_text, window)
+        return best_idx, best_ratio, snippet, diff_hint
+    return -1, 0.0, "", ""
+
+
+def _charDiffHint(expected, actual):
+    """Return a compact diff showing where expected and actual diverge."""
+    hints = []
+    max_len = min(len(expected), len(actual))
+    mismatch_start = None
+    for i in range(max_len):
+        if expected[i] != actual[i]:
+            if mismatch_start is None:
+                mismatch_start = i
+        else:
+            if mismatch_start is not None:
+                hints.append(
+                    f"  expected [{mismatch_start}:{i}]: {repr(expected[mismatch_start:i])}\n"
+                    f"  actual   [{mismatch_start}:{i}]: {repr(actual[mismatch_start:i])}"
+                )
+                mismatch_start = None
+    if mismatch_start is not None:
+        hints.append(
+            f"  expected [{mismatch_start}:{max_len}]: {repr(expected[mismatch_start:max_len])}\n"
+            f"  actual   [{mismatch_start}:{max_len}]: {repr(actual[mismatch_start:max_len])}"
+        )
+    # Length differences
+    if len(expected) > max_len:
+        hints.append(f"  expected has {len(expected) - max_len} extra chars: {repr(expected[max_len:max_len+40])}")
+    if len(actual) > max_len:
+        hints.append(f"  actual has {len(actual) - max_len} extra chars: {repr(actual[max_len:max_len+40])}")
+    return "\n".join(hints) if hints else "(no clear difference found)"
+
+
+def searchReplace(rel_path, old_text, new_text, occurrence=None, context=None):
+    """
+    Find old_text in rel_path and replace it with new_text.
+
+    Matching strategy (tried in order):
+      1. Exact string match
+      2. Trailing-whitespace-normalized line match
+      3. Fuzzy character-level match (reports closest match + diff hints)
+
+    If occurrence=N is specified, targets the N-th match (1-indexed).
+    Without occurrence, old_text must be unique (exactly 1 match).
+    """
     filepath = os.path.join(GENGIN, rel_path)
     try:
         with open(filepath, errors='replace') as fh:
@@ -530,54 +611,192 @@ def searchReplace(rel_path, old_text, new_text, context=None):
     except FileNotFoundError:
         msg = f"File not found: {rel_path}"
         if context is not None:
-            context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+            context.append({"type": "tool_use", "tool": "searchReplace",
+                           "input": {"file": rel_path}, "output": msg})
         return False
 
-    count = content.count(old_text)
-    if count > 1:
-        msg = f"old_text matched {count} locations in {rel_path}. Add more surrounding lines to make it unique."
+    content_lines = content.splitlines(keepends=True)
+    old_lines = old_text.splitlines(keepends=True)
+    n_old = len(old_lines)
+
+    # --- Strategy 1: exact string match ---
+    exact_count = content.count(old_text)
+    if exact_count == 1 or (occurrence is not None and exact_count >= occurrence):
+        if occurrence is not None:
+            # Find the N-th occurrence
+            pos = -1
+            for _ in range(occurrence):
+                pos = content.find(old_text, pos + 1)
+                if pos == -1:
+                    break
+            if pos == -1:
+                msg = f"occurrence {occurrence} requested but only {exact_count} exact match(es) in {rel_path}"
+                if context is not None:
+                    context.append({"type": "tool_use", "tool": "searchReplace",
+                                   "input": {"file": rel_path}, "output": msg})
+                return False
+            new_content = content[:pos] + new_text + content[pos + len(old_text):]
+        else:
+            new_content = content.replace(old_text, new_text, 1)
+
+        with open(filepath, 'w') as fh:
+            fh.write(new_content)
+        _refresh_file(filepath)
+        tag = f" (occurrence {occurrence})" if occurrence else ""
+        msg = f"replaced 1 occurrence{tag} in {rel_path}"
         if context is not None:
-            context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
+            context.append({"type": "tool_use", "tool": "searchReplace",
+                           "input": {"file": rel_path}, "output": msg})
+        return True
+
+    if exact_count > 1 and occurrence is None:
+        # Show context around each match so the model can pick one or add context
+        matches = []
+        pos = -1
+        for i in range(min(exact_count, 5)):
+            pos = content.find(old_text, pos + 1)
+            line_num = content[:pos].count('\n') + 1
+            # Show 2 lines of context around each match
+            before = content[max(0, pos - 80):pos].rsplit('\n', 2)[-1]
+            after = content[pos + len(old_text):pos + len(old_text) + 80].split('\n', 1)[0]
+            matches.append(f"  [{i+1}] line {line_num}: ...{before.strip()[-40:]} |HERE| {after.strip()[:40]}...")
+        msg = (
+            f"old_text matched {exact_count} locations in {rel_path}. "
+            f"Either add more surrounding context lines to make it unique, "
+            f"or specify occurrence=N to target a specific match.\n"
+            f"First {min(exact_count, 5)} occurrence(s):\n"
+            + "\n".join(matches)
+        )
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "searchReplace",
+                           "input": {"file": rel_path}, "output": msg})
         return False
 
-    if count == 1:
+    # --- Strategy 2: normalized line match ---
+    all_indices = _find_all_normalized(content_lines, old_lines)
+    if all_indices:
+        if occurrence is not None:
+            if occurrence > len(all_indices):
+                msg = f"occurrence {occurrence} requested but only {len(all_indices)} normalized match(es) in {rel_path}"
+                if context is not None:
+                    context.append({"type": "tool_use", "tool": "searchReplace",
+                                   "input": {"file": rel_path}, "output": msg})
+                return False
+            idx = all_indices[occurrence - 1]
+        elif len(all_indices) == 1:
+            idx = all_indices[0]
+        else:
+            matches = []
+            for i, m_idx in enumerate(all_indices[:5]):
+                line_num = m_idx + 1
+                snippet = "".join(content_lines[max(0, m_idx - 1):m_idx + n_old + 1]).strip()[:120]
+                matches.append(f"  [{i+1}] line {line_num}: {snippet}")
+            msg = (
+                f"old_text matched {len(all_indices)} locations (normalized) in {rel_path}. "
+                f"Add more context or use occurrence=N.\n"
+                + "\n".join(matches)
+            )
+            if context is not None:
+                context.append({"type": "tool_use", "tool": "searchReplace",
+                               "input": {"file": rel_path}, "output": msg})
+            return False
+
+        new_lines = new_text.splitlines(keepends=True)
+        new_content = "".join(content_lines[:idx] + new_lines + content_lines[idx + n_old:])
+        with open(filepath, 'w') as fh:
+            fh.write(new_content)
+        _refresh_file(filepath)
+        tag = f" (occurrence {occurrence})" if occurrence else ""
+        msg = f"replaced 1 occurrence{tag} in {rel_path} [normalized match]"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "searchReplace",
+                           "input": {"file": rel_path}, "output": msg})
+        return True
+
+    # --- Strategy 3: fuzzy character-level match ---
+    fuzzy_idx, ratio, snippet, diff_hint = _fuzzyFind(content_lines, old_lines)
+    if fuzzy_idx >= 0 and ratio > 0.5:
+        line_num = fuzzy_idx + 1
+        msg = (
+            f"old_text not found in {rel_path} (exact and normalized match failed).\n"
+            f"Closest match (line {line_num}, {ratio:.0%} similarity):\n"
+            f"```\n{snippet.rstrip()}\n```\n"
+        )
+        if diff_hint:
+            msg += f"\nCharacter differences:\n{diff_hint}\n"
+        msg += "\nUse showSrcPair to see the exact text, then retry with corrected old_text."
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "searchReplace",
+                           "input": {"file": rel_path}, "output": msg})
+        return False
+
+    # --- Complete failure ---
+    # Show first few lines of the file so the model can orient itself
+    first_lines = "".join(content_lines[:8]).rstrip()
+    msg = (
+        f"old_text not found in {rel_path} (tried exact, normalized, and fuzzy match).\n"
+        f"File starts with:\n```\n{first_lines}\n```\n"
+        f"Use showSrcPair('{rel_path}') to see the exact file content and copy the text verbatim."
+    )
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "searchReplace",
+                       "input": {"file": rel_path}, "output": msg})
+    return False
+
+
+def previewChange(rel_path, old_text, new_text, context=None):
+    """
+    Show what searchReplace WOULD change without actually modifying the file.
+    Returns a unified diff preview. Use before applying to verify correctness.
+    """
+    filepath = os.path.join(GENGIN, rel_path)
+    try:
+        with open(filepath, errors='replace') as fh:
+            content = fh.read()
+    except FileNotFoundError:
+        msg = f"File not found: {rel_path}"
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "previewChange",
+                           "input": {"file": rel_path}, "output": msg})
+        return msg
+
+    # Try each matching strategy, same as searchReplace
+    matched = False
+    if content.count(old_text) == 1:
         new_content = content.replace(old_text, new_text, 1)
+        matched = True
     else:
-        # Exact match failed — try trailing-whitespace-insensitive line match
         content_lines = content.splitlines(keepends=True)
         old_lines = old_text.splitlines(keepends=True)
         idx = _find_normalized_lines(
             [l.rstrip('\r\n') for l in content_lines],
             [l.rstrip('\r\n') for l in old_lines],
         )
-        if idx == -1:
-            msg = f"old_text not found in {rel_path} (tried exact and whitespace-normalized match). Use showSrcPair to copy the exact text."
-            if context is not None:
-                context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
-            return False
-        # Check uniqueness of normalized match
-        matches = 0
-        norm_old = [l.rstrip() for l in old_lines]
-        norm_content = [l.rstrip() for l in content_lines]
-        n = len(norm_old)
-        for i in range(len(norm_content) - n + 1):
-            if norm_content[i:i + n] == norm_old:
-                matches += 1
-        if matches > 1:
-            msg = f"old_text matched {matches} locations (normalized) in {rel_path}. Add more surrounding lines."
-            if context is not None:
-                context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
-            return False
-        new_lines = new_text.splitlines(keepends=True)
-        new_content = "".join(content_lines[:idx] + new_lines + content_lines[idx + n:])
+        if idx != -1:
+            new_lines = new_text.splitlines(keepends=True)
+            new_content = "".join(content_lines[:idx] + new_lines + content_lines[idx + len(old_lines):])
+            matched = True
 
-    with open(filepath, 'w') as fh:
-        fh.write(new_content)
-    _refresh_file(filepath)
-    msg = f"replaced 1 occurrence in {rel_path}"
+    if not matched:
+        msg = f"previewChange: old_text not found in {rel_path} (same strategies as searchReplace would fail)."
+        if context is not None:
+            context.append({"type": "tool_use", "tool": "previewChange",
+                           "input": {"file": rel_path}, "output": msg})
+        return msg
+
+    # Generate a simple unified diff
+    import difflib
+    diff_lines = list(difflib.unified_diff(
+        content.splitlines(keepends=True),
+        new_content.splitlines(keepends=True),
+        fromfile=f"a/{rel_path}",
+        tofile=f"b/{rel_path}",
+    ))
+    output = "".join(diff_lines) if diff_lines else "(no change — old and new are identical)"
     if context is not None:
-        context.append({"type": "tool_use", "tool": "searchReplace", "input": {"file": rel_path}, "output": msg})
-    return True
+        context.append({"type": "tool_use", "tool": "previewChange",
+                       "input": {"file": rel_path}, "output": output})
+    return output
 
 
 def replaceLines(rel_path, start, end, new_text, context=None):
@@ -675,8 +894,10 @@ def searchReplaceMulti(rel_path, replacements, context=None):
     """
     Apply multiple find-and-replace pairs in one call, top-to-bottom.
     replacements: list of {"old": str, "new": str}
-    Each old_text must be unique in the file at the time it is applied.
-    Stops and reports the first failure without writing the file.
+
+    ALL replacements are validated against the current file state BEFORE any
+    are applied. If any replacement would fail, NONE are applied and the
+    first failure is reported. This prevents partial-edit corruption.
     """
     filepath = os.path.join(GENGIN, rel_path)
     try:
@@ -685,50 +906,83 @@ def searchReplaceMulti(rel_path, replacements, context=None):
     except FileNotFoundError:
         msg = f"File not found: {rel_path}"
         if context is not None:
-            context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+            context.append({"type": "tool_use", "tool": "searchReplaceMulti",
+                           "input": {"file": rel_path}, "output": msg})
         return False
 
+    # Phase 1: validate ALL replacements against current content
+    working = content
     for i, pair in enumerate(replacements):
         old, new = pair["old"], pair["new"]
-        count = content.count(old)
+        count = working.count(old)
+
         if count == 0:
-            # fallback: whitespace-normalised line match
-            content_lines = content.splitlines(keepends=True)
+            # Try normalized line match
+            content_lines = working.splitlines(keepends=True)
             old_lines = old.splitlines(keepends=True)
             idx = _find_normalized_lines(
                 [l.rstrip('\r\n') for l in content_lines],
                 [l.rstrip('\r\n') for l in old_lines],
             )
             if idx == -1:
-                msg = f"replacement {i}: old_text not found in {rel_path}"
+                msg = f"replacement {i}: old_text not found in {rel_path} (would fail). Use previewChange() or showSrcPair() to check the exact text."
                 if context is not None:
-                    context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+                    context.append({"type": "tool_use", "tool": "searchReplaceMulti",
+                                   "input": {"file": rel_path}, "output": msg})
                 return False
+            # Check uniqueness
             norm_old = [l.rstrip() for l in old_lines]
             norm_content = [l.rstrip() for l in content_lines]
             n = len(norm_old)
-            matches = sum(1 for j in range(len(norm_content) - n + 1) if norm_content[j:j+n] == norm_old)
+            matches = sum(1 for j in range(len(norm_content) - n + 1)
+                         if norm_content[j:j + n] == norm_old)
             if matches > 1:
-                msg = f"replacement {i}: old_text matched {matches} locations (normalized) in {rel_path}. Add more context."
+                # Show occurrences so the model can split into individual searchReplace calls with occurrence=N
+                occurrences = _find_all_normalized(content_lines, old_lines)
+                match_list = []
+                for k, m_idx in enumerate(occurrences[:5]):
+                    line_num = m_idx + 1
+                    snippet = "".join(content_lines[m_idx:m_idx + n]).strip()[:80]
+                    match_list.append(f"  [{k+1}] line {line_num}: {snippet}")
+                msg = (f"replacement {i}: old_text matched {matches} locations (normalized) in {rel_path}. "
+                       f"Split into individual searchReplace() calls with occurrence=N.\n"
+                       + "\n".join(match_list))
                 if context is not None:
-                    context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+                    context.append({"type": "tool_use", "tool": "searchReplaceMulti",
+                                   "input": {"file": rel_path}, "output": msg})
                 return False
+            # Apply to working copy for validation
             new_lines = new.splitlines(keepends=True)
-            content = "".join(content_lines[:idx] + new_lines + content_lines[idx + n:])
+            working = "".join(content_lines[:idx] + new_lines + content_lines[idx + n:])
         elif count > 1:
-            msg = f"replacement {i}: old_text matched {count} locations in {rel_path}. Add more surrounding lines."
+            # Show occurrences
+            matches = []
+            pos = -1
+            for k in range(min(count, 5)):
+                pos = working.find(old, pos + 1)
+                line_num = working[:pos].count('\n') + 1
+                before = working[max(0, pos - 40):pos].rsplit('\n', 2)[-1]
+                after = working[pos + len(old):pos + len(old) + 40].split('\n', 1)[0]
+                matches.append(f"  [{k+1}] line {line_num}: ...{before.strip()[-30:]} |HERE| {after.strip()[:30]}...")
+            msg = (f"replacement {i}: old_text matched {count} locations in {rel_path}. "
+                   f"Add context or split into individual searchReplace() with occurrence=N.\n"
+                   + "\n".join(matches))
             if context is not None:
-                context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+                context.append({"type": "tool_use", "tool": "searchReplaceMulti",
+                               "input": {"file": rel_path}, "output": msg})
             return False
         else:
-            content = content.replace(old, new, 1)
+            # Exact unique match — apply to working copy
+            working = working.replace(old, new, 1)
 
+    # Phase 2: all validated — write to file
     with open(filepath, 'w') as fh:
-        fh.write(content)
+        fh.write(working)
     _refresh_file(filepath)
-    msg = f"applied {len(replacements)} replacement(s) in {rel_path}"
+    msg = f"applied {len(replacements)} replacement(s) in {rel_path} (all validated before applying)"
     if context is not None:
-        context.append({"type": "tool_use", "tool": "searchReplaceMulti", "input": {"file": rel_path}, "output": msg})
+        context.append({"type": "tool_use", "tool": "searchReplaceMulti",
+                       "input": {"file": rel_path}, "output": msg})
     return True
 
 
@@ -1094,10 +1348,19 @@ _API = [
          "Text/read: diff, wc, sort, uniq, head, tail, xxd, hexdump, cat."),
     ]),
     ("Applying Changes", [
-        ("searchReplace(rel_path, old_text, new_text)",
-         "PREFERRED edit tool. Find old_text (must be unique in file) and replace with new_text. No line numbers needed — copy exact text from showSrc/showContext output."),
+        ("searchReplace(rel_path, old_text, new_text, occurrence=None)",
+         "PREFERRED edit tool. Find old_text (must be unique in file) and replace with new_text. "
+         "No line numbers needed — copy exact text from showSrc/showContext output. "
+         "Matching: exact -> whitespace-normalized -> fuzzy (shows closest match + character diff hints). "
+         "Use occurrence=N to target the N-th match of a repeated pattern (1-indexed). "
+         "When multiple matches exist, shows context around each so you can pick one or add more lines."),
+        ("previewChange(rel_path, old_text, new_text)",
+         "Show a unified diff of what searchReplace WOULD change, without modifying the file. "
+         "Use BEFORE applying edits to verify correctness. Returns standard diff format with +/- lines."),
         ("searchReplaceMulti(rel_path, replacements)",
-         "Apply multiple find-and-replace pairs in one call. replacements = [{\"old\": str, \"new\": str}, ...]. Applied top-to-bottom; stops on first failure. Use when renaming a variable/symbol across a file or making several non-adjacent edits at once."),
+         "Apply multiple find-and-replace pairs in one call. replacements = [{\"old\": str, \"new\": str}, ...]. "
+         "ALL replacements are validated against the current file BEFORE any are written — "
+         "if any would fail, NONE are applied (transaction safety)."),
         ("applyChange(func_name, new_definition)",
          "Replace a named function in-place by locating its signature in the source file."),
         ("replaceLines(rel_path, start, end, new_text)",
@@ -1143,8 +1406,26 @@ _API = [
         ("runFuncBench(func_name)",
          "Build and run bench/<func_name>.c (linked with tests/timings.c). "
          "Returns stdout with timing and validation output. Use before touching main codebase."),
+        ("runPerfStat(func_name)",
+         "Run `perf stat -e cache-misses,cycles,instructions,branches,branch-misses` on a "
+         "micro-benchmark binary. Returns parsed counters with IPC, cache-miss rate, and "
+         "branch-miss rate plus an interpretation guide. Use AFTER runFuncBench() to see "
+         "whether your optimization traded instructions for cache misses — the #1 cause of "
+         "micro-bench wins that regress in the multi-threaded renderer."),
         ("deleteFuncBench(func_name)",
          "Remove bench/<func_name>.h, bench/<func_name>.c, and the compiled binary."),
+    ]),
+    ("Validation & Bisection  [main.py]", [
+        ("reviewChanges()",
+         "Send the current git diff to a fast reviewer model that checks for: compile errors, "
+         "null derefs, off-by-one, VLA stack explosions in threaded code, cache false sharing, "
+         "and logic errors. Returns PASS/FAIL with specific issues and fix suggestions. "
+         "Call AFTER applying edits but BEFORE buildProject() — catches bugs before the 30-second build cycle."),
+        ("bisectRegression()",
+         "When makeBench shows a regression, this automatically identifies which specific edit "
+         "caused it. Applies edits one at a time (or binary-search for 5+ edits), runs "
+         "makeBench after each, and reports the exact culprit. Call this INSTEAD of restoreAll() "
+         "to get precise feedback about what went wrong."),
     ]),
     ("Knowledge Persistence  [main.py]", [
         ("syncPlannerToCodebaseContext()",
@@ -1158,14 +1439,20 @@ _API = [
     ("Planner  [planner.py]", [
         ("addTask(text)",
          "Add a task with status 'todo'. Returns assigned task id."),
+        ("addSubtask(parent_id, text)",
+         "Create a child task under parent_id. Auto-completes parent when all children done."),
         ("listTasks()",
-         "Print all tasks with id, status marker [ ] [~] [x], and text."),
+         "Print all tasks with id, status marker [ ] [~] [x] [!] [c], text, attempt count, and stall warnings."),
         ("markTaskDone(task_id)",
          "Mark a task as done."),
         ("markTaskInProgress(task_id)",
          "Mark a task as in_progress."),
         ("markTaskTodo(task_id)",
          "Reset a task back to todo."),
+        ("markTaskBlocked(task_id, reason='')",
+         "Mark a task as blocked (waiting on dependency)."),
+        ("markTaskConverged(task_id)",
+         "Mark a task as converged — further optimization yields diminishing returns."),
         ("removeTask(task_id)",
          "Delete a task by id."),
         ("clearDoneTasks()",
@@ -1181,9 +1468,27 @@ _API = [
         ("clearNotes()",
          "Remove all notes."),
         ("showBoard()",
-         "Print tasks and notes together in one view."),
+         "Print tasks, notes, and convergence data together."),
         ("resetBoard()",
          "Wipe all tasks and notes."),
+        ("recordAttempt(task_id, approach, success, result_summary='')",
+         "Record an optimization attempt against a task. Auto-tracks stall count and triggers convergence after repeated failures."),
+        ("getConvergenceReport()",
+         "Show which tasks have converged or are stalling, and why."),
+    ]),
+    ("Recursive Refinement  [refine.py]  — USE THESE to avoid stuck loops", [
+        ("getRefinementState(func_name)",
+         "Show the complete refinement history for a function: all attempts, strategies tried, untried strategies, and convergence status. Use this when starting work on a function to avoid retrying known failures."),
+        ("getUntriedStrategies(func_name)",
+         "List optimization strategies not yet attempted for a function. Strategies ordered by expected impact: algorithmic > memory_layout > simd > threading > branchless > precompute > loop_transform > data_reuse > instruction_level."),
+        ("recordRefinementAttempt(func_name, strategy, approach, success, result_summary='', lessons_learned='')",
+         "Record an optimization attempt. CRITICAL: call this after every createFuncBench()+runFuncBench() cycle. On failure, include a specific lesson about WHY it failed so future attempts avoid the same mistake."),
+        ("convergeFunction(func_name, reason='')",
+         "Mark a function as converged — no more optimization attempts. Use when all strategies are exhausted or repeated attempts show diminishing returns. This frees you to move to the next hotspot."),
+        ("avoidStrategy(func_name, strategy, reason)",
+         "Mark a strategy as known-bad for a function. Prevents wasting iterations on approaches proven not to work (e.g., 'branchless' on functions where -O3 already optimizes branches)."),
+        ("addSubComponent(func_name, sub_name, description)",
+         "Register a sub-component of a function for recursive decomposition. Use when a function is too complex to optimize as a whole — break it into independently optimizable parts."),
     ]),
     ("Command Execution  [executor.py]", [
         ("extractCommands(text)",

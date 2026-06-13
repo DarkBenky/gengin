@@ -168,10 +168,11 @@ def executeAll(text, tool_map, context=None):
     return results
 
 
-def buildToolMap(gf_module, planner_module, main_module=None):
+def buildToolMap(gf_module, planner_module, main_module=None, refine_module=None):
     """
     Assemble the whitelist tool map from available modules.
     Pass main_module to include build/git/PR functions.
+    Pass refine_module to include refinement loop tools.
     """
     gf = gf_module
     pl = planner_module
@@ -197,6 +198,7 @@ def buildToolMap(gf_module, planner_module, main_module=None):
         # --- applying changes ---
         "searchReplace":       gf.searchReplace,
         "searchReplaceMulti":  gf.searchReplaceMulti,
+        "previewChange":       gf.previewChange,
         "applyChange":         gf.applyChange,
         "replaceLines":        gf.replaceLines,
         "insertLines":         gf.insertLines,
@@ -209,10 +211,13 @@ def buildToolMap(gf_module, planner_module, main_module=None):
         "restoreFunction":     gf.restoreFunction,
         # --- planner ---
         "addTask":             pl.addTask,
+        "addSubtask":          pl.addSubtask,
         "listTasks":           pl.listTasks,
         "markTaskDone":        pl.markTaskDone,
         "markTaskInProgress":  pl.markTaskInProgress,
         "markTaskTodo":        pl.markTaskTodo,
+        "markTaskBlocked":     pl.markTaskBlocked,
+        "markTaskConverged":   pl.markTaskConverged,
         "removeTask":          pl.removeTask,
         "clearDoneTasks":      pl.clearDoneTasks,
         "clearAllTasks":       pl.clearAllTasks,
@@ -221,7 +226,21 @@ def buildToolMap(gf_module, planner_module, main_module=None):
         "removeNote":          pl.removeNote,
         "clearNotes":          pl.clearNotes,
         "showBoard":           pl.showBoard,
+        "recordAttempt":       pl.recordAttempt,
+        "getConvergenceReport": pl.getConvergenceReport,
     }
+
+    if refine_module is not None:
+        rf = refine_module
+        tools.update({
+            "initRefinement":         rf.toolRecordRefinementAttempt,
+            "recordRefinementAttempt": rf.toolRecordRefinementAttempt,
+            "convergeFunction":       rf.toolConvergeFunction,
+            "avoidStrategy":          rf.toolAvoidStrategy,
+            "getRefinementState":     rf.toolGetRefinementState,
+            "getUntriedStrategies":   rf.toolGetUntriedStrategies,
+            "addSubComponent":        rf.toolAddSubComponent,
+        })
 
     if main_module is not None:
         m = main_module
@@ -234,7 +253,10 @@ def buildToolMap(gf_module, planner_module, main_module=None):
             "createPR":        m.createPR,
             "createFuncBench": m.createFuncBench,
             "runFuncBench":    m.runFuncBench,
+            "runPerfStat":     m.runPerfStat,
             "deleteFuncBench": m.deleteFuncBench,
+            "reviewChanges":   m.reviewChanges,
+            "bisectRegression": m.bisectRegression,
             "syncPlannerToCodebaseContext": m.syncPlannerToCodebaseContext,
         })
 

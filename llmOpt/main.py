@@ -36,6 +36,7 @@ import modelSelector as model
 import sys
 import ui
 import random
+import refine
 
 CONTEXT = []
 
@@ -304,6 +305,9 @@ def makeFlame():
                 for h in top5
             )
         )
+        # Auto-initialize or refresh refinement state for current top hotspots
+        for h in top5:
+            refine.initRefinement(h["fn"], hotspotData=h)
     CONTEXT.append({
         "type": "tool_use",
         "tool": "makeFlame",
@@ -379,6 +383,373 @@ def deleteFuncBench(func_name: str):
     return msg
 
 
+# ---------------------------------------------------------------------------
+# perf stat integration — gives the pre-mortem real cache/memory data
+# ---------------------------------------------------------------------------
+
+def runPerfStat(func_name: str):
+    """
+    Run `perf stat` on a micro-benchmark binary to collect hardware counter data:
+    cache-misses, cycles, instructions, branches, branch-misses.
+
+    Call this AFTER runFuncBench() to see whether your optimization traded
+    instructions for cache misses — the #1 cause of micro-bench wins that
+    regress in the multi-threaded renderer.
+
+    Returns a dict with parsed counters, and injects a human-readable summary
+    into the context.
+    """
+    bench_bin = os.path.join(PROJECT_DIR, "bench", func_name)
+    if not os.path.exists(bench_bin):
+        msg = f"Bench binary not found: bench/{func_name}. Run runFuncBench() first."
+        CONTEXT.append({"type": "tool_use", "tool": "runPerfStat",
+                        "input": func_name, "output": msg})
+        return msg
+
+    events = "cache-misses,cycles,instructions,branches,branch-misses"
+    try:
+        result = subprocess.run(
+            ["perf", "stat", "-e", events, bench_bin],
+            capture_output=True, text=True, cwd=PROJECT_DIR, timeout=60
+        )
+        # perf stat writes to stderr
+        raw = result.stderr.strip()
+        if not raw:
+            raw = result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        msg = f"perf stat timed out on bench/{func_name}"
+        CONTEXT.append({"type": "tool_use", "tool": "runPerfStat",
+                        "input": func_name, "output": msg})
+        return msg
+    except FileNotFoundError:
+        msg = "perf not found — install linux-tools package"
+        CONTEXT.append({"type": "tool_use", "tool": "runPerfStat",
+                        "input": func_name, "output": msg})
+        return msg
+
+    # Parse perf stat output
+    parsed = {}
+    import re as _re
+    for line in raw.splitlines():
+        # Lines look like: "  1,234,567      cache-misses"
+        m = _re.match(r'\s*([\d,]+)\s+(\S+)', line)
+        if m:
+            value = int(m.group(1).replace(',', ''))
+            name = m.group(2)
+            parsed[name] = value
+
+    if not parsed:
+        msg = f"perf stat produced no parseable counters:\n{raw[:500]}"
+        CONTEXT.append({"type": "tool_use", "tool": "runPerfStat",
+                        "input": func_name, "output": msg})
+        return msg
+
+    # Compute derived metrics
+    cycles = parsed.get("cycles", 1)
+    instructions = parsed.get("instructions", 1)
+    cache_misses = parsed.get("cache-misses", 0)
+    branches = parsed.get("branches", 0)
+    branch_misses = parsed.get("branch-misses", 0)
+
+    ipc = instructions / cycles if cycles > 0 else 0
+    cache_miss_pct = (cache_misses / instructions * 100) if instructions > 0 else 0
+    branch_miss_pct = (branch_misses / branches * 100) if branches > 0 else 0
+
+    summary_lines = [
+        f"perf stat results for bench/{func_name}:",
+        f"  {instructions:>12,}  instructions",
+        f"  {cycles:>12,}  cycles  (IPC = {ipc:.2f})",
+        f"  {cache_misses:>12,}  cache-misses  ({cache_miss_pct:.2f}% of instructions)",
+        f"  {branches:>12,}  branches",
+        f"  {branch_misses:>12,}  branch-misses  ({branch_miss_pct:.2f}% mispredicted)",
+        "",
+        "INTERPRETATION GUIDE:",
+        f"  IPC: {ipc:.2f} — {'GOOD (>1.5)' if ipc > 1.5 else 'OK (0.7-1.5)' if ipc > 0.7 else 'LOW (<0.7) — likely memory-bound or branch-heavy'}",
+        f"  Cache-miss rate: {cache_miss_pct:.2f}% — {'HIGH (>1%) — memory pressure is significant' if cache_miss_pct > 1.0 else 'LOW (<1%) — cache-friendly'}",
+        f"  Branch-miss rate: {branch_miss_pct:.2f}% — {'HIGH (>5%) — unpredictable branches' if branch_miss_pct > 5.0 else 'LOW (<5%) — predictable'}",
+        "",
+        "If comparing two runs: increased instructions with LOWER IPC = compiler bloated code.",
+        "Decreased instructions with HIGHER cache-miss rate = you saved CPU but hurt memory.",
+        "This is the EXACT tradeoff that causes micro-bench wins to regress in the real renderer.",
+    ]
+    output = "\n".join(summary_lines)
+
+    CONTEXT.append({
+        "type": "tool_use",
+        "tool": "runPerfStat",
+        "input": func_name,
+        "output": output,
+        "perf_counters": parsed,
+    })
+    return output
+
+
+# ---------------------------------------------------------------------------
+# automatic bisection on regression
+# ---------------------------------------------------------------------------
+
+# Stack of (description, patch_content) captured after each successful edit
+_edit_stack = []
+
+def _captureEditSnapshot(description=""):
+    """Capture the current git diff as a named snapshot on the edit stack."""
+    result = subprocess.run(
+        ["git", "diff", "HEAD"],
+        capture_output=True, text=True, cwd=PROJECT_DIR
+    )
+    diff = result.stdout.strip()
+    if not diff:
+        return  # no changes to capture
+    if _edit_stack and _edit_stack[-1][1] == diff:
+        return  # duplicate — same diff as last capture
+    _edit_stack.append((description, diff))
+
+
+def _clearEditStack():
+    _edit_stack.clear()
+
+
+def bisectRegression():
+    """
+    When makeBench shows a regression, try to identify which specific edit
+    caused it by applying patches incrementally and re-benchmarking.
+
+    Strategy:
+      - If 1 edit was made: that's the culprit, report it directly.
+      - If 2-4 edits: apply one at a time, test each.
+      - If 5+ edits: binary search (apply first half, test, narrow down).
+
+    After identifying the culprit, restores all changes and reports findings.
+    Call this instead of restoreAll() when you want precise feedback.
+    """
+    if not _edit_stack:
+        return "No edit snapshots available. Edits may have been made before tracking started."
+
+    n = len(_edit_stack)
+    if n == 1:
+        desc, _ = _edit_stack[0]
+        msg = (f"Only 1 edit was made: '{desc}'. This is the cause of the regression. "
+               "Restore it and try a different approach.")
+        planner.addNote(f"[BISECT] Single edit '{desc}' caused regression")
+        _clearEditStack()
+        return msg
+
+    # Save current state so we can return to it
+    subprocess.run(["git", "stash", "push", "-m", "bisect-pre-revert"],
+                   capture_output=True, text=True, cwd=PROJECT_DIR)
+
+    # Revert to HEAD
+    gf.restoreAll()
+
+    culprit = None
+    tested = []
+
+    if n <= 4:
+        # Linear search: apply one at a time
+        for i, (desc, patch) in enumerate(_edit_stack):
+            # Apply this single patch
+            proc = subprocess.run(
+                ["git", "apply"],
+                input=patch, capture_output=True, text=True, cwd=PROJECT_DIR
+            )
+            if proc.returncode != 0:
+                tested.append(f"  [{i+1}] '{desc}' — could not apply in isolation (depends on other edits)")
+                subprocess.run(["git", "checkout", "--", "."],
+                               capture_output=True, cwd=PROJECT_DIR)
+                continue
+
+            # Quick build check first
+            build_proc = subprocess.run(
+                ["make"], capture_output=True, text=True, cwd=PROJECT_DIR
+            )
+            if build_proc.returncode != 0:
+                tested.append(f"  [{i+1}] '{desc}' — BUILD FAILED (this edit alone breaks compilation)")
+                culprit = (i, desc, "build failure")
+                break
+
+            # Run bench
+            try:
+                _, bench_raw = makeBench()
+                bench_summary = _benchSummary(bench_raw, BASELINE_RESULTS)
+                if "REGRESSED" in bench_summary:
+                    tested.append(f"  [{i+1}] '{desc}' — REGRESSION CONFIRMED")
+                    culprit = (i, desc, "performance regression")
+                    break
+                else:
+                    tested.append(f"  [{i+1}] '{desc}' — OK (no regression)")
+            except Exception as e:
+                tested.append(f"  [{i+1}] '{desc}' — BENCH FAILED: {e}")
+                culprit = (i, desc, f"bench error: {e}")
+                break
+
+            # Revert before testing next
+            subprocess.run(["git", "checkout", "--", "."],
+                           capture_output=True, cwd=PROJECT_DIR)
+    else:
+        # Binary search for 5+ edits
+        mid = n // 2
+        first_half = _edit_stack[:mid]
+        second_half = _edit_stack[mid:]
+
+        # Test first half
+        for _, patch in first_half:
+            subprocess.run(["git", "apply"], input=patch, capture_output=True,
+                           text=True, cwd=PROJECT_DIR)
+        try:
+            _, bench_raw = makeBench()
+            bench_summary = _benchSummary(bench_raw, BASELINE_RESULTS)
+            if "REGRESSED" in bench_summary:
+                tested.append(f"  First {mid} edits — REGRESSION (culprit in this group)")
+                # Would recurse here, but keep simple: report the group
+                culprit_desc = f"some edit in the first {mid} edits"
+            else:
+                tested.append(f"  First {mid} edits — OK")
+                # Culprit in second half
+                gf.restoreAll()
+                for _, patch in second_half:
+                    subprocess.run(["git", "apply"], input=patch, capture_output=True,
+                                   text=True, cwd=PROJECT_DIR)
+                _, bench_raw = makeBench()
+                bench_summary = _benchSummary(bench_raw, BASELINE_RESULTS)
+                if "REGRESSED" in bench_summary:
+                    culprit_desc = f"some edit in the last {n - mid} edits"
+                else:
+                    culprit_desc = "interaction between edits (neither half alone regresses)"
+        except Exception as e:
+            culprit_desc = f"bench error during bisection: {e}"
+
+        gf.restoreAll()
+        culprit = (None, culprit_desc, "binary search result")
+
+    # Build report
+    lines = [f"BISECTION RESULT ({n} edit(s) tested):"]
+    lines.extend(tested)
+    if culprit:
+        idx, desc, reason = culprit
+        if idx is not None:
+            lines.append(f"\nCULPRIT: Edit [{idx+1}] '{desc}' — {reason}.")
+        else:
+            lines.append(f"\nCULPRIT: {desc} — {reason}.")
+        lines.append("Restore this edit and try a different approach.")
+        planner.addNote(f"[BISECT] Culprit: {desc} — {reason}")
+    else:
+        lines.append("\nNo single edit caused regression — may be an interaction effect.")
+        lines.append("Try applying fewer edits at once, or test combinations.")
+
+    # Restore original state from stash
+    pop = subprocess.run(
+        ["git", "stash", "pop"],
+        capture_output=True, text=True, cwd=PROJECT_DIR
+    )
+
+    output = "\n".join(lines)
+    _clearEditStack()
+    CONTEXT.append({"type": "tool_use", "tool": "bisectRegression",
+                    "input": f"{n} edits", "output": output})
+    return output
+
+
+# ---------------------------------------------------------------------------
+# reviewer model pass — second pair of eyes before build
+# ---------------------------------------------------------------------------
+
+REVIEWER_MODEL = "deepseek/deepseek-v4-flash"
+REVIEWER_PROVIDER = "baidu/fp8"
+
+REVIEWER_PROMPT = """\
+You are a senior C code reviewer. Review the following git diff for correctness \
+bugs. Focus ONLY on bugs that would cause:
+
+1. COMPILE ERRORS: missing semicolons, undeclared variables, type mismatches, \
+   missing #includes, broken macro expansions.
+2. RUNTIME CRASHES: null pointer dereference, use-after-free, buffer overflow, \
+   stack overflow (large VLAs), division by zero.
+3. LOGIC ERRORS: off-by-one, inverted conditions, missing edge cases, \
+   incorrect operator precedence, accidental assignment in condition (= vs ==).
+4. PERFORMANCE REGRESSIONS: accidental O(n^2) loops, repeated malloc/free in \
+   hot path, VLAs on stack in threaded code (32 threads x VLA = stack explosion), \
+   cache line false sharing between threads.
+5. CORRECTNESS: changed function behavior (side effects removed, return value \
+   semantics changed, const violations), float precision issues.
+
+IGNORE: style issues, naming, comments, whitespace. Only flag bugs that would \
+cause wrong output, crashes, or significant performance problems.
+
+Reply with ONLY a valid JSON object (no markdown fences, no prose):
+{
+  "verdict": "PASS" or "FAIL",
+  "issues": [
+    {
+      "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+      "file": "path/to/file.c",
+      "line_hint": "approximate line or context",
+      "description": "what is wrong",
+      "fix_suggestion": "how to fix it"
+    }
+  ],
+  "summary": "1-sentence summary if issues found, or empty string if PASS"
+}
+
+If no issues found: {"verdict": "PASS", "issues": [], "summary": ""}
+"""
+
+
+def reviewChanges():
+    """
+    Send the current git diff to a fast reviewer model for a bug check.
+    Call this AFTER applying edits but BEFORE buildProject().
+
+    The reviewer checks for: compile errors, null derefs, off-by-one,
+    VLA stack explosions in threaded code, cache false sharing, etc.
+
+    Returns the review verdict and injects issues into the context.
+    """
+    diff = gf.getDiff(returnString=True)
+    if not diff or diff == "(no changes)":
+        return "(no changes to review)"
+
+    # Truncate diff if it's enormous (reviewer model has context limits)
+    diff_truncated = diff[:12000]
+    if len(diff) > 12000:
+        diff_truncated += f"\n... [{len(diff) - 12000} more bytes truncated]"
+
+    prompt = REVIEWER_PROMPT + "\n\nDIFF TO REVIEW:\n```diff\n" + diff_truncated + "\n```"
+
+    try:
+        raw = model.getResponse(prompt, model=REVIEWER_MODEL, provider=REVIEWER_PROVIDER)
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            output = f"Reviewer model returned no valid JSON. Raw response:\n{raw[:500]}"
+        else:
+            data = json.loads(m.group(0))
+            verdict = data.get("verdict", "?")
+            issues = data.get("issues", [])
+            summary = data.get("summary", "")
+
+            if verdict == "PASS" or not issues:
+                output = "REVIEW: PASS — no bugs detected."
+            else:
+                lines = [f"REVIEW: {verdict} — {len(issues)} issue(s) found:"]
+                for issue in issues:
+                    sev = issue.get("severity", "?")
+                    file = issue.get("file", "?")
+                    desc = issue.get("description", "?")
+                    fix = issue.get("fix_suggestion", "")
+                    lines.append(f"  [{sev}] {file}: {desc}")
+                    if fix:
+                        lines.append(f"        Fix: {fix}")
+                if summary:
+                    lines.append(f"\nSummary: {summary}")
+                output = "\n".join(lines)
+    except Exception as e:
+        output = f"Reviewer model error: {e}"
+
+    CONTEXT.append({"type": "tool_use", "tool": "reviewChanges",
+                    "input": f"{len(diff)} byte diff", "output": output})
+    return output
+
+
 def convertContextToXml():
     def _esc(v):
         return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -405,9 +776,27 @@ def compressContext():
     Ask the model to summarise the current context, persist key findings and
     pending tasks to the planner board, then trim the in-memory context so
     nothing important is lost to truncation.
+
+    Also preserves refinement state and recent benchmark results as structured
+    notes so the model doesn't lose track of what strategies were tried.
     """
     if not CONTEXT:
         return
+
+    # Persist refinement state to planner notes before compression
+    refinementSummary = refine.getGlobalRefinementSummary()
+    if refinementSummary:
+        planner.addNote(f"[REFINEMENT_STATE]\n{refinementSummary}")
+
+    # Persist calibration guidance
+    calGuidance = refine.getCalibrationGuidance()
+    if calGuidance:
+        planner.addNote(f"[CALIBRATION]\n{calGuidance}")
+
+    # Persist active convergence data
+    convReport = planner.getConvergenceReport()
+    if convReport and convReport != "(no convergence data)":
+        planner.addNote(f"[CONVERGENCE]\n{convReport}")
 
     xmlContext, _ = convertContextToXml()
     summarize_prompt = (
@@ -415,13 +804,17 @@ def compressContext():
         "optimization session. Before this context is trimmed, extract and preserve "
         "the most critical information.\n"
         "<context_to_summarize>\n" + xmlContext + "\n</context_to_summarize>\n\n"
+        "CRITICAL: Preserve anything that would help avoid repeating failed approaches.\n"
+        "Include specific function names, strategies tried, and measured numbers.\n"
         "Reply with ONLY a valid JSON object (no prose, no markdown fences):\n"
         "{\n"
         '  "summary": "2-3 sentence overview of progress so far",\n'
-        '  "key_findings": ["important hotspot or perf finding"],\n'
+        '  "key_findings": ["important hotspot or perf finding with numbers"],\n'
         '  "completed_changes": ["change applied + measured result"],\n'
+        '  "failed_approaches": ["what was tried and WHY it failed — MOST IMPORTANT"],\n'
         '  "pending_tasks": ["still needs to be investigated or tried"],\n'
-        '  "critical_notes": ["baselines, regressions, constraints to remember"]\n'
+        '  "critical_notes": ["baselines, regressions, constraints to remember"],\n'
+        '  "lessons_learned": ["patterns discovered about this specific codebase"]\n'
         "}"
     )
 
@@ -439,12 +832,16 @@ def compressContext():
                 planner.addNote(f"[HOTSPOT] {item}")
             for item in data.get("completed_changes", []):
                 planner.addNote(f"[DONE] {item}")
+            for item in data.get("failed_approaches", []):
+                planner.addNote(f"[FAILED] {item}")
             for item in data.get("pending_tasks", []):
                 planner.addTask(item)
             for item in data.get("critical_notes", []):
                 planner.addNote(f"[CRITICAL] {item}")
+            for item in data.get("lessons_learned", []):
+                planner.addNote(f"[LESSON] {item}")
             print(f"[compressContext] saved {len(data.get('pending_tasks', []))} tasks and "
-                  f"{len(data.get('key_findings', [])) + len(data.get('completed_changes', [])) + len(data.get('critical_notes', []))} notes to planner")
+                  f"{len(data.get('key_findings', [])) + len(data.get('completed_changes', [])) + len(data.get('failed_approaches', [])) + len(data.get('critical_notes', [])) + len(data.get('lessons_learned', []))} notes to planner")
     except Exception as e:
         print(f"[compressContext] summarization failed: {e}")
 
@@ -452,12 +849,27 @@ def compressContext():
     syncPlannerToCodebaseContext()
 
     board = planner.showBoard(returnString=True)
+    # Preserve the last few entries that contain benchmark results or flame data
+    preserved = []
+    for entry in reversed(CONTEXT):
+        if entry.get("tool") in ("makeBench", "makeFlame", "getRefinementState",
+                                  "getUntriedStrategies", "showBoard"):
+            preserved.append(entry)
+        if len(preserved) >= 3:
+            break
+
     keep = max(8, len(CONTEXT) * 2 // 3)
     del CONTEXT[:-keep]
+    # Re-insert preserved entries at the front (most recent first)
+    for entry in reversed(preserved):
+        CONTEXT.insert(1, entry)
     CONTEXT.insert(0, {
         "type": "context_summary",
         "tool": "contextSummary",
-        "output": f"[Context compressed. Key information saved to planner.]\n{board}",
+        "output": (
+            f"[Context compressed. Key information saved to planner.]\n{board}\n\n"
+            f"PINNED_HOTSPOTS:\n{PINNED_HOTSPOTS if PINNED_HOTSPOTS else '(none)'}"
+        ),
     })
 
 
@@ -863,28 +1275,69 @@ Your ONLY task right now is to think deeply and produce a structured plan. \
 Do NOT call any tools. Do NOT write any code. Do NOT emit any JSON tool blocks.
 
 Review everything in the context — flame graph data, bench results, code you have \
-already read, notes on the board, completed changes, regressions — and answer:
+already read, notes on the board, completed changes, regressions, and the \
+REFINEMENT STATE section showing what strategies have been tried on each function.
 
-1. What have I already tried and what were the results? (be specific: function names, \
-   measured numbers from bench results)
-2. What are the current top hotspots that are NOT yet addressed?
-3. What is the single most impactful function I should optimize next, and why?
-4. What optimization strategies should I try for that function? (e.g. SIMD, loop \
-   unrolling, data layout changes, algorithmic improvements, branchless techniques)
-5. What do I need to read first to write a correct micro-benchmark for this function?
-6. Are there any risks or constraints I should keep in mind?
-7. Is there anything I have been stubbornly repeating that is not working? Be honest.
+Fill out EVERY section below. Be specific with function names, file paths, and \
+measured numbers from the context.
 
-REMEMBER: The workflow is ISOLATION-FIRST. Your next step after planning should be:
-  read function code -> createFuncBench with original + optimized variants -> \
-  runFuncBench -> prove speedup -> only then apply to main code.
+== SITUATION REVIEW ==
+1. Functions already optimized (with measured results):
+   [List each function, what was tried, and the bench result. Be honest about regressions.]
 
-After your analysis, call addNote() with a summary of this plan (use [PLAN] prefix), \
-then call addTask() for each concrete next step. Then resume normal tool-calling \
-with the SYSTEM_PROMPT workflow.
+2. Current top 3 hotspots from flame graph (NOT yet successfully optimized):
+   [Function name — inclusive% — why it's hot]
 
-Reply in plain prose. Be specific: name functions, file paths, and measured numbers \
-from the context where relevant.
+3. Recent failures and what was learned from each:
+   [For each failed attempt: what approach, why it failed, what you learned.]
+
+== NEXT TARGET ==
+4. Single function to optimize next:
+   [Name]
+
+5. Why this function (use numbers from context):
+   [Justify with hotspot data, potential impact, and whether strategies remain untried.]
+
+== STRATEGY ==
+6. Optimization strategy (pick ONE from this taxonomy):
+   algorithmic / memory_layout / simd / threading / branchless / precompute /
+   loop_transform / data_reuse / instruction_level
+   [Your choice]
+
+7. Specific approach:
+   [What exact change will you make? Be concrete.]
+
+8. Expected improvement:
+   Micro-bench: [X%]   makeBench: [Y%]
+
+== PRE-MORTEM (answer honestly) ==
+9. Why might this optimization regress in the multi-threaded renderer?
+   Consider: cache pressure, memory bandwidth, TLB contention, working set size,
+   compiler already doing this at -O3 -ffast-math, micro-bench not representative.
+
+10. What evidence would convince you this approach is WRONG?
+    [What bench result would make you abandon this strategy?]
+
+11. Is there an alternative strategy you should try FIRST?
+    [Sometimes a simpler approach works better. Think before committing.]
+
+== EXECUTION ==
+12. Concrete next steps (in order):
+    1. [Read what source file/function?]
+    2. [Create micro-benchmark for what function?]
+    3. [What variant(s) will you compare?]
+    4. [After proving speedup, apply to which file?]
+
+REMEMBER: The workflow is ISOLATION-FIRST.
+  read function code -> createFuncBench -> runFuncBench -> prove speedup ->
+  ONLY THEN apply to main code -> buildProject -> makeBench.
+
+After your analysis, call addNote() with "[PLAN] <function>: <strategy> — <approach>" \
+and addTask() for each concrete step. If all strategies for a function are exhausted, \
+call convergeFunction() and pick a different hotspot.
+
+Reply in plain prose filling out all sections above. Be brutally honest in the \
+pre-mortem — recognizing failure modes BEFORE coding is the most valuable skill.
 """
 
 SYSTEM_PROMPT = """\
@@ -893,7 +1346,8 @@ codebase and iteratively improve its performance. You work in an ISOLATION-FIRST
 
   profile -> identify hotspot -> read function code -> write optimized variant \
 in bench/ folder -> benchmark in isolation -> validate correctness -> \
-only then apply proven optimization to main codebase -> build -> bench -> PR
+PRE-MORTEM check -> only then apply proven optimization to main codebase -> \
+build -> bench -> PR
 
 The KEY PRINCIPLE is: NEVER optimize the main codebase directly. Always first write \
 and prove your optimization in the bench/ micro-benchmark sandbox, similar to how \
@@ -901,8 +1355,25 @@ tests/rayAABB_inv.h contains multiple versions (V1 original, V2, V3, V4 AVX2, et
 with timing and correctness validation. Only after proving a speedup in isolation \
 should you apply the change to the main code.
 
+== CRITICAL: THE PRE-MORTEM RULE ==
+Before applying ANY micro-benchmark win to the main codebase, you MUST do a \
+pre-mortem assessment. Ask yourself:
+  "This micro-benchmark is single-threaded and has a tiny working set. The real \
+   renderer is multi-threaded (32 threads) with heavy cache and memory pressure. \
+   Will this optimization survive the transition?"
+Common reasons micro-bench wins regress in the real renderer:
+  - Increased working set size (more cache eviction)
+  - Extra indirection (more cache misses per thread)
+  - Changed alignment (TLB effects across threads)
+  - Added instructions that the compiler cannot hoist/schedule across thread boundaries
+  - The micro-benchmark's input data pattern doesn't match real workload
+If you cannot explain WHY the optimization will survive multi-threaded conditions, \
+do NOT apply it. Instead, try a different strategy or converge.
+
 The session header shows your current iteration, iterations since last successful \
 change, and whether you have uncommitted modifications. Use this to gauge progress.
+The REFINEMENT STATE section shows what strategies have been tried on each function —
+use getRefinementState() and getUntriedStrategies() to avoid repeating failures.
 
 == CALLING TOOLS ==
 To call a tool, emit one or more fenced JSON blocks anywhere in your response.
@@ -1053,6 +1524,101 @@ def _buildSystemPrompt():
     return SYSTEM_PROMPT.replace("{codebase_context_section}", section), ctx
 
 
+# Track session-wide patterns for adaptive guidance
+_session_micro_bench_wins = 0     # micro-benchmarks that showed speedup
+_session_real_regressions = 0     # those same changes that regressed in makeBench
+_session_restore_count = 0        # total restoreAll calls
+_session_last_target_func = ""    # last function the model worked on
+_session_same_func_iterations = 0 # consecutive iterations on same function
+
+
+def _buildAdaptiveGuidance(recentToolNames, iteration, lastBenchIteration):
+    """
+    Build adaptive guidance that gets stronger as problematic patterns persist.
+    Returns a string to inject into the system prompt, or empty string.
+    """
+    global _session_micro_bench_wins, _session_real_regressions
+    global _session_restore_count, _session_last_target_func, _session_same_func_iterations
+
+    parts = []
+
+    # Pattern A: micro-bench wins that regress in real workload
+    # This is the most critical pattern — it means the model doesn't understand
+    # the multi-threaded cache/memory dynamics of this codebase.
+    if _session_micro_bench_wins >= 2 and _session_real_regressions >= 2:
+        ratio = _session_real_regressions / max(_session_micro_bench_wins, 1)
+        if ratio >= 0.5:
+            parts.append(
+                "== ADAPTIVE GUIDANCE: MICRO-BENCH UNRELIABILITY ==\n"
+                f"You have had {_session_micro_bench_wins} micro-benchmark wins but "
+                f"{_session_real_regressions} regressed in the real renderer. "
+                "This codebase's single-threaded micro-benchmarks DO NOT predict "
+                "multi-threaded performance. Before applying ANY micro-bench win:\n"
+                "1. Explain WHY the change will survive 32-thread cache pressure.\n"
+                "2. If you cannot explain it, do NOT apply — try a different strategy.\n"
+                "3. Consider algorithmic changes (which scale) over micro-optimizations "
+                "(which the compiler already does).\n"
+                "4. Prefer strategies that REDUCE working set or IMPROVE locality.\n"
+                "The codebase_context.md documents this pattern in detail — re-read "
+                "the 'Techniques to Avoid' section."
+            )
+
+    # Pattern B: excessive restores without convergence
+    restoreRecent = sum(1 for t in recentToolNames[-10:] if t == "restoreAll")
+    if restoreRecent >= 3:
+        _session_restore_count += restoreRecent
+        parts.append(
+            "== ADAPTIVE GUIDANCE: CONVERGENCE NEEDED ==\n"
+            "You are repeatedly restoring changes. This means your approaches are "
+            "not working. Instead of trying yet another variant:\n"
+            "1. Call getRefinementState() on your current target function.\n"
+            "2. Call getUntriedStrategies() to see what remains.\n"
+            "3. If only low-impact strategies remain (instruction_level, branchless, "
+            "loop_transform), call convergeFunction() and MOVE ON.\n"
+            "4. If high-impact strategies remain untried, pick ONE and commit to it.\n"
+            "STOP RESTORING AND RETRYING THE SAME APPROACH."
+        )
+
+    # Pattern C: stuck on same function too long
+    itersSinceBench = iteration - lastBenchIteration if lastBenchIteration else iteration
+    if itersSinceBench > 20:
+        parts.append(
+            "== ADAPTIVE GUIDANCE: MOVE ON ==\n"
+            f"It has been {itersSinceBench} iterations since your last successful "
+            "build+bench. You are deep in analysis paralysis. "
+            "Call convergeFunction() on your current target and switch to a "
+            "DIFFERENT hotspot from the PINNED_HOTSPOTS list. A fresh function "
+            "may have easier wins than the one you are stuck on."
+        )
+
+    # Pattern D: using low-impact strategies when high-impact remain
+    # Check if model is trying instruction_level/loop_transform/branchless
+    # on functions where algorithmic/memory_layout haven't been tried
+    lowImpactRecent = sum(1 for t in recentToolNames[-8:]
+                          if t in ("createFuncBench", "runFuncBench"))
+    if lowImpactRecent >= 3:
+        # Check if any active refinement targets have untried high-impact strategies
+        activeStates = refine.getAllRefinementStates()
+        for name, rs in activeStates.items():
+            if rs.get("converged"):
+                continue
+            tried = set(rs.get("strategies_tried", []))
+            avoided = {a["strategy"] for a in rs.get("strategies_avoided", [])}
+            highUntried = [s for s in refine.HIGH_IMPACT_STRATEGIES
+                          if s not in tried and s not in avoided]
+            if highUntried:
+                parts.append(
+                    f"== ADAPTIVE GUIDANCE: TRY HIGH-IMPACT FIRST ==\n"
+                    f"Function '{name}' still has untried high-impact strategies: "
+                    f"{', '.join(highUntried)}. These are likely to yield larger "
+                    f"gains than micro-optimizations. Try algorithmic or memory "
+                    f"layout changes before instruction-level tweaks."
+                )
+                break  # only mention once
+
+    return "\n\n".join(parts) if parts else ""
+
+
 if __name__ == "__main__":
     import argparse
     _parser = argparse.ArgumentParser(description="llmOpt agentic optimization loop")
@@ -1095,6 +1661,9 @@ if __name__ == "__main__":
                 for h in top5
             )
         )
+        # Auto-initialize refinement state for top hotspots
+        for h in top5:
+            refine.initRefinement(h["fn"], hotspotData=h)
 
     gf.listFunctions(context=CONTEXT)
     gf.apiHelp(context=CONTEXT)
@@ -1110,7 +1679,7 @@ if __name__ == "__main__":
     else:
         print(f"[main] No codebase_context.md found. Run with --research to generate it.")
 
-    TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__])
+    TOOL_MAP = executor.buildToolMap(gf, planner, sys.modules[__name__], refine_module=refine)
     iteration = 0
     _recent_calls = []          # (tool, args_str) tuples for loop detection
     _recent_tool_names = []     # tool names only, for broader pattern detection
@@ -1144,12 +1713,25 @@ if __name__ == "__main__":
         iters_since_bench = iteration - _last_build_bench_iteration if _last_build_bench_iteration else iteration
         diff = gf.getDiff(returnString=True, code_only=True)
         has_changes = bool(diff and diff.strip())
+
+        # Refinement state summary
+        refinementSummary = refine.getGlobalRefinementSummary()
+        calibrationGuidance = refine.getCalibrationGuidance()
+        refinementSection = ""
+        if refinementSummary or calibrationGuidance:
+            refinementSection = "\n== REFINEMENT STATE ==\n"
+            if refinementSummary:
+                refinementSection += refinementSummary + "\n"
+            if calibrationGuidance:
+                refinementSection += calibrationGuidance + "\n"
+
         session_header = (
             f"== SESSION STATE ==\n"
             f"Total iterations: {iteration}\n"
             f"Iterations since last PR: {iters_since_pr}\n"
             f"Iterations since last successful build+bench: {iters_since_bench}\n"
             f"Uncommitted changes: {'YES -- call getDiff() to review' if has_changes else 'none'}\n"
+            + refinementSection
             + (PINNED_HOTSPOTS + "\n" if PINNED_HOTSPOTS else "")
         )
 
@@ -1167,6 +1749,11 @@ if __name__ == "__main__":
                 f"\n(Note: {iters_since_bench} iterations since last build+bench. "
                 "Consider making a concrete change soon.)"
             )
+
+        # Adaptive guidance based on session patterns
+        adaptive_guidance = _buildAdaptiveGuidance(
+            _recent_tool_names, iteration, _last_build_bench_iteration
+        )
 
         # Prose-only nudge
         prose_nudge = ""
@@ -1196,6 +1783,7 @@ if __name__ == "__main__":
                 _SYSTEM_PROMPT
                 + "\n\n" + session_header
                 + staleness_warning
+                + ("\n\n" + adaptive_guidance if adaptive_guidance else "")
                 + prose_nudge
                 + "\n== CURRENT BOARD ==\n" + board
                 + "\n\nContext:\n" + xmlContext
@@ -1246,6 +1834,7 @@ if __name__ == "__main__":
         results = executor.executeAll(response, TOOL_MAP, context=CONTEXT)
 
         # Track tool usage patterns
+        _pending_micro_bench_win = False  # set when runFuncBench succeeds
         for r in results:
             ui.log_tool_result(r["tool"], r["error"])
             tool_name = r["tool"]
@@ -1255,11 +1844,37 @@ if __name__ == "__main__":
             # Track build+bench success
             if tool_name == "makeBench" and r["error"] is None:
                 _last_build_bench_iteration = iteration
+                # Check the bench output for regression vs baseline
+                output_str = str(r.get("result", ""))
+                if "REGRESSED" in output_str or "PERFORMANCE REGRESSED" in output_str:
+                    _session_real_regressions += 1
             if tool_name == "buildProject" and r["error"] is None:
                 pass  # bench must also succeed to count
             if tool_name == "createPR" and r["error"] is None:
                 _last_pr_iteration = iteration
                 _plan_at_iteration = iteration + 3  # plan soon after a PR
+            # Track micro-bench wins
+            if tool_name == "runFuncBench" and r["error"] is None:
+                output_str = str(r.get("result", ""))
+                # Look for speedup indicators in the output
+                if any(phrase in output_str.lower() for phrase in
+                       ("speedup", "faster", "improvement", "ns/call", "ms/call")):
+                    _session_micro_bench_wins += 1
+            # Track restores
+            if tool_name == "restoreAll":
+                _session_restore_count += 1
+                _clearEditStack()
+
+            # Capture edit snapshots for bisection
+            if tool_name in ("searchReplace", "searchReplaceMulti", "applyChange",
+                             "replaceLines", "insertLines", "deleteLines", "applyPatch"):
+                if r["error"] is None:
+                    desc = str(r.get("tool", "edit")) + ": " + str(r.get("result", ""))[:100]
+                    _captureEditSnapshot(desc)
+
+            # Clear edit stack on successful PR (changes committed)
+            if tool_name == "createPR" and r["error"] is None:
+                _clearEditStack()
 
         _recent_calls = _recent_calls[-12:]
         _recent_tool_names = _recent_tool_names[-20:]
@@ -1345,6 +1960,43 @@ if __name__ == "__main__":
                 )
                 CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
                 print("[loop-detect] injected nudge for editing without bench-first")
+
+        # Pattern 5: refinement stagnation — same function, repeated failures, not converging
+        if _recent_tool_names and len(_recent_tool_names) >= 8:
+            recent_8 = _recent_tool_names[-8:]
+            # Count exploration + bench tools that suggest working on same function
+            explore_bench = sum(1 for t in recent_8
+                               if t in ("showContext", "showSrc", "showSrcPair",
+                                        "createFuncBench", "runFuncBench", "getRefinementState"))
+            restore_count = sum(1 for t in recent_8 if t == "restoreAll")
+            converge_count = sum(1 for t in recent_8 if t == "convergeFunction")
+            if explore_bench >= 5 and restore_count >= 2 and converge_count == 0:
+                # Model keeps trying and restoring on same function without converging
+                # Find active refinement targets that are stalling
+                activeStates = refine.getAllRefinementStates()
+                stalling = []
+                for name, rs in activeStates.items():
+                    if not rs.get("converged"):
+                        attempts = len(rs.get("attempts", []))
+                        failures = sum(1 for a in rs.get("attempts", []) if not a.get("success"))
+                        if failures >= 3:
+                            stalling.append(f"{name} ({failures}/{attempts} failed)")
+                if stalling:
+                    nudge = (
+                        "[AUTO-NUDGE] You have been working on the same function(s) with "
+                        "repeated failures and restores. Use the refinement tools to break "
+                        "the cycle:\n"
+                        f"Stalling functions: {', '.join(stalling)}\n"
+                        "1. Call getRefinementState() to review what has been tried.\n"
+                        "2. Call getUntriedStrategies() to see what approaches remain.\n"
+                        "3. If no promising strategies remain, call convergeFunction() to "
+                        "move on — further optimization yields diminishing returns.\n"
+                        "4. If strategies remain, pick the highest-impact untried one "
+                        "and create a micro-benchmark with createFuncBench().\n"
+                        "DO NOT restoreAll() and retry the same approach."
+                    )
+                    CONTEXT.append({"type": "intervention", "tool": "nudge", "output": nudge})
+                    print("[loop-detect] injected nudge for refinement stagnation")
 
         ui.sync_context(CONTEXT)
         ui.sync_diff(gf.getDiff(returnString=True, code_only=True))

@@ -3,7 +3,11 @@ import sys
 from pathlib import Path
 
 import plotly.graph_objects as go
+import plotly.io as pio
 from plotly.subplots import make_subplots
+
+# Use browser renderer for standalone scripts (not notebooks)
+pio.renderers.default = "browser"
 
 
 def loadLogs(csvPath):
@@ -201,7 +205,15 @@ def main():
     fig3d = plot3dPath(data)
     figDashboard = plotDashboard(data)
 
-    # Show both figures — they open in separate browser tabs
+    # Save HTML files (always works, even without a browser)
+    html3d = scriptDir / "flightPath3d.html"
+    htmlDash = scriptDir / "flightDashboard.html"
+    fig3d.write_html(str(html3d))
+    figDashboard.write_html(str(htmlDash))
+    print(f"Saved: {html3d}")
+    print(f"Saved: {htmlDash}")
+
+    # Try to open in browser — works if DISPLAY and xdg-open are available
     fig3d.show()
     figDashboard.show()
 
