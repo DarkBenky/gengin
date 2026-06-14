@@ -59,6 +59,15 @@ float yawLoss(const Plane *plane, float3 target) {
 	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect yaw alignment
 }
 
+inline float alignmentLoss(const Plane *plane, float3 target) {
+    float3 planePosition = plane->position;
+    float3 toTarget = Float3_Normalize(Float3_Sub(target, planePosition));
+    float3 forward = planeGetForwardVector(plane);
+
+    float alignment = Float3_Dot(forward, toTarget); // 1 = perfect, -1 = opposite
+    return 1.0f - alignment;                         // 0 = perfect, 2 = opposite
+}
+
 inline float distanceToTarget(const Plane *plane, float3 target) {
 	return Float3_Length(Float3_Sub(target, plane->position));
 }
