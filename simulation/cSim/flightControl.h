@@ -29,7 +29,7 @@
 #include <time.h>
 
 #define MAX_ITERATION_PER_AXIS 128
-#define LOOKAHEAD_STEPS 128
+#define LOOKAHEAD_STEPS 16
 
 typedef struct {
     Plane plane;

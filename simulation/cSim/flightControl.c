@@ -59,16 +59,16 @@ float yawLoss(const Plane *plane, float3 target) {
 	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect yaw alignment
 }
 
-inline float alignmentLoss(const Plane *plane, float3 target) {
-    float3 planePosition = plane->position;
-    float3 toTarget = Float3_Normalize(Float3_Sub(target, planePosition));
-    float3 forward = planeGetForwardVector(plane);
+static inline float alignmentLoss(const Plane *plane, float3 target) {
+	float3 planePosition = plane->position;
+	float3 toTarget = Float3_Normalize(Float3_Sub(target, planePosition));
+	float3 forward = planeGetForwardVector(plane);
 
-    float alignment = Float3_Dot(forward, toTarget); // 1 = perfect, -1 = opposite
-    return 1.0f - alignment;                         // 0 = perfect, 2 = opposite
+	float alignment = Float3_Dot(forward, toTarget); // 1 = perfect, -1 = opposite
+	return fabsf(1.0f - alignment);					 // 0 = perfect, 2 = opposite
 }
 
-inline float distanceToTarget(const Plane *plane, float3 target) {
+static inline float distanceToTarget(const Plane *plane, float3 target) {
 	return Float3_Length(Float3_Sub(target, plane->position));
 }
 
@@ -235,7 +235,150 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 	return output;
 }
 
-// TODO: create function with same logic but loss will be the difference between plane forward vector and the vector to the target
+static ControllerOutput getControllerOutputV3(const Controller *ctrl, float3 target, float deltaTime) {
+	ControllerOutput output = {0};
+
+	float yawStep = 0.35f;
+	float pitchStep = 0.35f;
+	float rollStep = 0.35f;
+
+	float yawValue = 0.5f;
+	float pitchValue = 0.5f;
+	float rollValue = 0.5f;
+
+	const int maxIterations = 128;
+	float bestLossYaw = FLT_MAX;
+	float bestLossPitch = FLT_MAX;
+	float bestLossRoll = FLT_MAX;
+
+	for (int iter = 0; iter < maxIterations * 3; iter++) {
+		int action = iter % 3;
+
+		Plane simulationPlanePositive = ctrl->plane;
+		Plane simulationPlaneNegative = ctrl->plane;
+
+		planeSetRudder01(&simulationPlanePositive, yawValue);
+		planeSetElevator01(&simulationPlanePositive, pitchValue);
+		planeSetAileron01(&simulationPlanePositive, rollValue);
+		planeSetRudder01(&simulationPlaneNegative, yawValue);
+		planeSetElevator01(&simulationPlaneNegative, pitchValue);
+		planeSetAileron01(&simulationPlaneNegative, rollValue);
+
+		if (action == 0) {
+			planeSetRudder01(&simulationPlanePositive, fminf(1.0f, yawValue + yawStep));
+			planeSetRudder01(&simulationPlaneNegative, fmaxf(0.0f, yawValue - yawStep));
+		} else if (action == 1) {
+			planeSetElevator01(&simulationPlanePositive, fminf(1.0f, pitchValue + pitchStep));
+			planeSetElevator01(&simulationPlaneNegative, fmaxf(0.0f, pitchValue - pitchStep));
+		} else {
+			planeSetAileron01(&simulationPlanePositive, fminf(1.0f, rollValue + rollStep));
+			planeSetAileron01(&simulationPlaneNegative, fmaxf(0.0f, rollValue - rollStep));
+		}
+
+		float runningAlignmentLossPositive = 0.0f;
+		float runningAlignmentLossNegative = 0.0f;
+
+		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+			updatePlane(&simulationPlanePositive, deltaTime, NULL);
+			runningAlignmentLossPositive += alignmentLoss(&simulationPlanePositive, target);
+		}
+
+		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+			updatePlane(&simulationPlaneNegative, deltaTime, NULL);
+			runningAlignmentLossNegative += alignmentLoss(&simulationPlaneNegative, target);
+		}
+
+		float distLossPositive = distanceToTarget(&simulationPlanePositive, target);
+		float distLossNegative = distanceToTarget(&simulationPlaneNegative, target);
+
+		float lossPositive = alignmentLoss(&simulationPlanePositive, target);
+		float lossNegative = alignmentLoss(&simulationPlaneNegative, target);
+
+		lossPositive += runningAlignmentLossPositive / (float)ctrl->LookaheadSteps;
+		lossNegative += runningAlignmentLossNegative / (float)ctrl->LookaheadSteps;
+		float currentDist = distanceToTarget(&ctrl->plane, target);
+		lossPositive += distLossPositive - currentDist;
+		lossNegative += distLossNegative - currentDist;
+		
+		if (action == 0) {
+			if (lossPositive < lossNegative) {
+				if (lossPositive < bestLossYaw) {
+					bestLossYaw = lossPositive;
+					yawValue = fmaxf(0.0f, fminf(1.0f, yawValue + yawStep));
+					output.Rudder = yawValue;
+					yawStep *= 1.125f;
+					printf("Yaw+ improved: %.4f\n", bestLossYaw);
+				} else {
+					yawStep *= 0.8f;
+				}
+			} else {
+				if (lossNegative < bestLossYaw) {
+					bestLossYaw = lossNegative;
+					yawValue = fmaxf(0.0f, fminf(1.0f, yawValue - yawStep));
+					output.Rudder = yawValue;
+					yawStep *= 1.125f;
+					printf("Yaw- improved: %.4f\n", bestLossYaw);
+				} else {
+					yawStep *= 0.8f;
+				}
+			}
+		} else if (action == 1) {
+			if (lossPositive < lossNegative) {
+				if (lossPositive < bestLossPitch) {
+					bestLossPitch = lossPositive;
+					pitchValue = fmaxf(0.0f, fminf(1.0f, pitchValue + pitchStep));
+					output.Elevator = pitchValue;
+					pitchStep *= 1.125f;
+					printf("Pitch+ improved: %.4f\n", bestLossPitch);
+				} else {
+					pitchStep *= 0.8f;
+				}
+			} else {
+				if (lossNegative < bestLossPitch) {
+					bestLossPitch = lossNegative;
+					pitchValue = fmaxf(0.0f, fminf(1.0f, pitchValue - pitchStep));
+					output.Elevator = pitchValue;
+					pitchStep *= 1.125f;
+					printf("Pitch- improved: %.4f\n", bestLossPitch);
+				} else {
+					pitchStep *= 0.8f;
+				}
+			}
+		} else {
+			if (lossPositive < lossNegative) {
+				if (lossPositive < bestLossRoll) {
+					bestLossRoll = lossPositive;
+					rollValue = fmaxf(0.0f, fminf(1.0f, rollValue + rollStep));
+					output.Aileron = rollValue;
+					rollStep *= 1.125f;
+					printf("Roll+ improved: %.4f\n", bestLossRoll);
+				} else {
+					rollStep *= 0.8f;
+				}
+			} else {
+				if (lossNegative < bestLossRoll) {
+					bestLossRoll = lossNegative;
+					rollValue = fmaxf(0.0f, fminf(1.0f, rollValue - rollStep));
+					output.Aileron = rollValue;
+					rollStep *= 1.125f;
+					printf("Roll- improved: %.4f\n", bestLossRoll);
+				} else {
+					rollStep *= 0.8f;
+				}
+			}
+		}
+	}
+
+	float aileronLoss = rollLoss(&ctrl->plane, target);
+	float elevatorLoss = pitchLoss(&ctrl->plane, target);
+	float rudderLoss = yawLoss(&ctrl->plane, target);
+	output.AileronLoss = bestLossRoll;
+	output.ElevatorLoss = bestLossPitch;
+	output.RudderLoss = bestLossYaw;
+
+	return output;
+}
+
 static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 target, float deltaTime) {
 	ControllerOutput output = {0};
 
@@ -283,7 +426,7 @@ static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 tar
 				break;
 			}
 		}
-		
+
 		for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 			updatePlane(&simulationPlanePositive, deltaTime, NULL);
 			float distToTarget = distanceToTarget(&simulationPlanePositive, target);
@@ -291,7 +434,6 @@ static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 tar
 				break;
 			}
 		}
-
 
 		float lossPositive = distanceToTarget(&simulationPlanePositive, target);
 		float3 planeVelocityVectorPositive = Float3_Normalize(planeGetForwardVector(&simulationPlanePositive));
@@ -308,7 +450,6 @@ static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 tar
 		// calculate dot product between plane's forward vector and the vector to the target
 		float dotProductNeg = Float3_Dot(planeVelocityVectorNegative, targetVectorNeg);
 		lossNegative += (1.0f - dotProductNeg) * 10.0f; // add a penalty for misalignment
-
 
 		if (action == 0) {
 			if (lossPositive < lossNegative) {
@@ -377,7 +518,6 @@ static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 tar
 // TODO : create PID controller to control the plane to the target point in 3d space (distance loss)
 // TODO : create PID controller to control the plane to the target point in 3d space (angle loss)
 
-
 typedef struct {
 	int iteration;
 	float aileronValue;
@@ -441,7 +581,7 @@ int main() {
 	Controller ctrl;
 	initController(&ctrl, &plane);
 
-	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1000.0f, 1000.0f});
+	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1500.0f, 1000.0f});
 
 	const int simSteps = 2000;
 	const float deltaTime = 1.0f / 60.0f; // 60 FPS
@@ -449,7 +589,7 @@ int main() {
 	Logs logs = {0};
 
 	for (int iter = 0; iter < simSteps; iter++) {
-		ControllerOutput out = getControllerOutputV2(&ctrl, target, deltaTime);
+		ControllerOutput out = getControllerOutputV3(&ctrl, target, deltaTime);
 		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
 
 		planeSetAileron01(&ctrl.plane, out.Aileron);

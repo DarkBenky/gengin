@@ -15,6 +15,19 @@
         "reveal": "always",
         "panel": "shared"
       }
+    },
+    {
+      "label": "make flightController debug",
+      "type": "shell",
+      "command": "clang -g -O0 -march=native -Wall -Isimulation -I. -Iobject -o flightController_debug simulation/cSim/flightControl.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c -L/usr/local/lib -lm",
+      "group": {
+        "kind": "build"
+      },
+      "problemMatcher": ["$gcc"],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
     }
   ]
 }
