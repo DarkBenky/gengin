@@ -365,7 +365,8 @@ static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 tar
 	return output;
 }
 
-// TODO : create PID controller to control the plane to the target point in 3d space
+// TODO : create PID controller to control the plane to the target point in 3d space (distance loss)
+// TODO : create PID controller to control the plane to the target point in 3d space (angle loss)
 
 
 typedef struct {
