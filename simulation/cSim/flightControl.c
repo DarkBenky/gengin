@@ -226,6 +226,7 @@ static ControllerOutput getControllerOutput(const Controller *ctrl, float3 targe
 	return output;
 }
 
+// TODO: create function with same logic but loss will be the difference between plane forward vector and the vector to the target
 static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 target, float deltaTime) {
 	ControllerOutput output = {0};
 
@@ -363,6 +364,9 @@ static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 tar
 
 	return output;
 }
+
+// TODO : create PID controller to control the plane to the target point in 3d space
+
 
 typedef struct {
 	int iteration;
