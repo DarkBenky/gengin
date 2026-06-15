@@ -1,4 +1,5 @@
 import csv
+import subprocess
 import sys
 from pathlib import Path
 
@@ -6,8 +7,28 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
 
-# Use browser renderer for standalone scripts (not notebooks)
 pio.renderers.default = "browser"
+
+
+def _isWSL():
+    try:
+        return "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        return False
+
+
+def showFig(fig, htmlPath):
+    """Show a figure, working around WSL's lack of a native browser."""
+    if _isWSL():
+        # Convert the WSL path to a Windows path and open with explorer.exe
+        result = subprocess.run(
+            ["wslpath", "-w", str(htmlPath)],
+            capture_output=True, text=True
+        )
+        winPath = result.stdout.strip()
+        subprocess.Popen(["explorer.exe", winPath])
+    else:
+        fig.show()
 
 
 def loadLogs(csvPath):
@@ -73,6 +94,37 @@ def plot3dPath(data):
         name="Target",
         marker=dict(color="gold", size=10, symbol="diamond"),
     ))
+
+    # Orientation frames sampled along the path — forward (blue), up (green), right (red)
+    n = len(data["PlanePositionX"])
+    step = max(1, n // 40)
+    idx = list(range(0, n, step))
+    px = [data["PlanePositionX"][i] for i in idx]
+    py = [data["PlanePositionY"][i] for i in idx]
+    pz = [data["PlanePositionZ"][i] for i in idx]
+    # Scale factor: ~2% of the path bounding box diagonal so cones are scene-relative
+    xs, ys, zs = data["PlanePositionX"], data["PlanePositionY"], data["PlanePositionZ"]
+    diagLen = ((max(xs)-min(xs))**2 + (max(ys)-min(ys))**2 + (max(zs)-min(zs))**2) ** 0.5
+    arrowSize = max(diagLen * 0.0006, 0.1)
+
+    orientationAxes = [
+        ("Forward (nose)",  "PlaneForwardX", "PlaneForwardY", "PlaneForwardZ", "dodgerblue",  arrowSize),
+        ("Up (top)",        "PlaneUpX",      "PlaneUpY",      "PlaneUpZ",      "limegreen",   arrowSize * 0.7),
+        ("Right (wing)",    "PlaneRightX",   "PlaneRightY",   "PlaneRightZ",   "tomato",      arrowSize * 0.7),
+    ]
+    for axisName, ux, uy, uz, color, sz in orientationAxes:
+        fig.add_trace(go.Cone(
+            x=px, y=py, z=pz,
+            u=[data[ux][i] for i in idx],
+            v=[data[uy][i] for i in idx],
+            w=[data[uz][i] for i in idx],
+            sizemode="absolute", sizeref=sz, anchor="tail",
+            colorscale=[[0, color], [1, color]],
+            showscale=False, showlegend=True, name=axisName,
+            legendgroup="orientation",
+            hovertemplate=f"%{{customdata}} — {axisName}<extra></extra>",
+            customdata=[int(data["Iteration"][i]) for i in idx],
+        ))
 
     # Line from last plane position to target
     fig.add_trace(go.Scatter3d(
@@ -213,9 +265,8 @@ def main():
     print(f"Saved: {html3d}")
     print(f"Saved: {htmlDash}")
 
-    # Try to open in browser — works if DISPLAY and xdg-open are available
-    fig3d.show()
-    figDashboard.show()
+    showFig(fig3d, html3d)
+    showFig(figDashboard, htmlDash)
 
 
 if __name__ == "__main__":

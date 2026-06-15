@@ -19,6 +19,7 @@
 // 3. try to same algo for yaw
 
 #include "flightControl.h"
+#include <math.h>
 
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
@@ -299,7 +300,7 @@ static ControllerOutput getControllerOutputV3(const Controller *ctrl, float3 tar
 		float currentDist = distanceToTarget(&ctrl->plane, target);
 		lossPositive += distLossPositive - currentDist;
 		lossNegative += distLossNegative - currentDist;
-		
+
 		if (action == 0) {
 			if (lossPositive < lossNegative) {
 				if (lossPositive < bestLossYaw) {
@@ -379,87 +380,90 @@ static ControllerOutput getControllerOutputV3(const Controller *ctrl, float3 tar
 	return output;
 }
 
-// // Unified loss function that evaluates a full control input set
-// static float evaluateLoss(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
-//     Plane simPlane = ctrl->plane;
+static float evaluateLoss(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+	Plane simPlane = ctrl->plane;
 
-//     planeSetRudder01(&simPlane, values[0]);
-//     planeSetElevator01(&simPlane, values[1]);
-//     planeSetAileron01(&simPlane, values[2]);
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
 
-//     float runningAlignmentLoss = 0.0f;
-//     float currentDist = distanceToTarget(&ctrl->plane, target);
+	float runningAlignmentLoss = 0.0f;
+	float currentDist = distanceToTarget(&ctrl->plane, target);
 
-//     for (int step = 0; step < ctrl->LookaheadSteps; step++) {
-//         updatePlane(&simPlane, deltaTime, NULL);
-//         runningAlignmentLoss += alignmentLoss(&simPlane, target);
-//     }
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, deltaTime, NULL);
+		runningAlignmentLoss += alignmentLoss(&simPlane, target);
+	}
 
-//     float finalAlignment = alignmentLoss(&simPlane, target);
-//     float finalDist = distanceToTarget(&simPlane, target);
+	float finalAlignment = alignmentLoss(&simPlane, target);
+	float finalDist = distanceToTarget(&simPlane, target);
 
-//     float loss = finalAlignment
-//                + runningAlignmentLoss / (float)ctrl->LookaheadSteps
-//                + (finalDist - currentDist);
+	float loss = finalAlignment + runningAlignmentLoss / (float)ctrl->LookaheadSteps + (finalDist - currentDist);
 
-//     return loss;
-// }
+	return loss;
+}
 
-// static ControllerOutput getControllerOutputV4(const Controller *ctrl, float3 target, float deltaTime) {
-//     ControllerOutput output = {0};
+static ControllerOutput getControllerOutputV4(const Controller *ctrl, float3 target, float deltaTime) {
+	ControllerOutput output = {0};
 
-//     float values[3] = {0.5f, 0.5f, 0.5f}; // yaw, pitch, roll
-//     float learningRate = 0.15f;
-//     float epsilon = 0.02f; // for finite difference gradient
+	float values[3] = {0.5f, 0.5f, 0.5f};	// yaw, pitch, roll
+	float momentum[3] = {0.0f, 0.0f, 0.0f}; // momentum for each axis
+	float momentumCoefficient = 0.9f;		// how much of the previous momentum to keep
+	float learningRate = 0.15f;
+	float epsilon = 0.025f; // for finite difference gradient
 
-//     const int maxIterations = 64;
+	const int maxIterations = 512;
 
-//     for (int iter = 0; iter < maxIterations; iter++) {
-//         // Compute gradient for ALL axes simultaneously
-//         float gradient[3] = {0};
+	for (int iter = 0; iter < maxIterations; iter++) {
+		// Compute gradient for ALL axes simultaneously
+		float gradient[3] = {0};
 
-//         for (int axis = 0; axis < 3; axis++) {
-//             // Perturb positively
-//             float perturbedPositive[3] = {values[0], values[1], values[2]};
-//             perturbedPositive[axis] = fminf(1.0f, perturbedPositive[axis] + epsilon);
+		for (int axis = 0; axis < 3; axis++) {
+			// Perturb positively
+			float perturbedPositive[3] = {values[0], values[1], values[2]};
+			perturbedPositive[axis] = fminf(1.0f, perturbedPositive[axis] + epsilon);
 
-//             // Perturb negatively
-//             float perturbedNegative[3] = {values[0], values[1], values[2]};
-//             perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
+			// Perturb negatively
+			float perturbedNegative[3] = {values[0], values[1], values[2]};
+			perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
 
-//             float lossPos = evaluateLoss(ctrl, perturbedPositive, target, deltaTime);
-//             float lossNeg = evaluateLoss(ctrl, perturbedNegative, target, deltaTime);
+			float lossPos = evaluateLoss(ctrl, perturbedPositive, target, deltaTime);
+			float lossNeg = evaluateLoss(ctrl, perturbedNegative, target, deltaTime);
 
-//             // Central difference gradient
-//             gradient[axis] = (lossPos - lossNeg) / (2.0f * epsilon);
-//         }
+			// Central difference gradient
+			gradient[axis] = (lossPos - lossNeg) / (2.0f * epsilon);
+		}
 
-//         // Normalize gradient to prevent explosion
-//         float gradMag = sqrtf(gradient[0]*gradient[0] + 
-//                               gradient[1]*gradient[1] + 
-//                               gradient[2]*gradient[2]);
-//         if (gradMag > 1e-6f) {
-//             gradient[0] /= gradMag;
-//             gradient[1] /= gradMag;
-//             gradient[2] /= gradMag;
-//         }
+		// Normalize gradient to prevent explosion
+		float gradMag = sqrtf(gradient[0] * gradient[0] +
+							  gradient[1] * gradient[1] +
+							  gradient[2] * gradient[2]);
+		if (gradMag > 1e-6f) {
+			gradient[0] /= gradMag;
+			gradient[1] /= gradMag;
+			gradient[2] /= gradMag;
+		}
 
-//         // Update ALL values simultaneously (this couples them)
-//         for (int axis = 0; axis < 3; axis++) {
-//             values[axis] -= learningRate * gradient[axis];
-//             values[axis] = fmaxf(0.0f, fminf(1.0f, values[axis]));
-//         }
+		// Update ALL values simultaneously (this couples them)
+		for (int axis = 0; axis < 3; axis++) {
+			momentum[axis] = momentumCoefficient * momentum[axis] - learningRate * gradient[axis];
+			values[axis] += momentum[axis];
+			if (values[axis] <= 0.0f || values[axis] >= 1.0f) {
+				momentum[axis] = 0.0f; // reset momentum at boundary
+			}
+			values[axis] = fmaxf(0.0f, fminf(1.0f, values[axis]));
+		}
 
-//         // Adaptive learning rate decay
-//         learningRate *= 0.97f;
-//     }
+		// Adaptive learning rate decay
+		learningRate *= 0.95f;
+	}
 
-//     output.Rudder = values[0];
-//     output.Elevator = values[1];
-//     output.Aileron = values[2];
+	output.Rudder = values[0];
+	output.Elevator = values[1];
+	output.Aileron = values[2];
 
-//     return output;
-// }
+	return output;
+}
 
 static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 target, float deltaTime) {
 	ControllerOutput output = {0};
@@ -612,7 +616,9 @@ typedef struct {
 	float3 planePosition;
 	float3 targetPosition;
 	float3 planeVelocity;
-
+	float3 planeForward;
+	float3 planeUp;
+	float3 planeRight;
 } PlaneControlLogs;
 
 typedef struct {
@@ -643,11 +649,11 @@ void saveLogsToCSV(const Logs *logs, const char *filename) {
 		printf("Failed to open log file for writing: %s\n", filename);
 		return;
 	}
-	fprintf(file, "Iteration,Aileron,AileronLoss,Elevator,ElevatorLoss,Rudder,RudderLoss,DistanceToTarget,PlanePositionX,PlanePositionY,PlanePositionZ,TargetPositionX,TargetPositionY,TargetPositionZ,PlaneVelocityX,PlaneVelocityY,PlaneVelocityZ\n");
+	fprintf(file, "Iteration,Aileron,AileronLoss,Elevator,ElevatorLoss,Rudder,RudderLoss,DistanceToTarget,PlanePositionX,PlanePositionY,PlanePositionZ,TargetPositionX,TargetPositionY,TargetPositionZ,PlaneVelocityX,PlaneVelocityY,PlaneVelocityZ,PlaneForwardX,PlaneForwardY,PlaneForwardZ,PlaneUpX,PlaneUpY,PlaneUpZ,PlaneRightX,PlaneRightY,PlaneRightZ\n");
 	for (int i = 0; i < logs->len; i++) {
 		const PlaneControlLogs *log = &logs->logs[i];
-		fprintf(file, "%d,%.3f,%.4f,%.3f,%.4f,%.3f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
-				log->iteration, log->aileronValue, log->aileronLoss, log->elevatorValue, log->elevatorLoss, log->rudderValue, log->rudderLoss, log->distanceToTarget, log->planePosition.x, log->planePosition.y, log->planePosition.z, log->targetPosition.x, log->targetPosition.y, log->targetPosition.z, log->planeVelocity.x, log->planeVelocity.y, log->planeVelocity.z);
+		fprintf(file, "%d,%.3f,%.4f,%.3f,%.4f,%.3f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+				log->iteration, log->aileronValue, log->aileronLoss, log->elevatorValue, log->elevatorLoss, log->rudderValue, log->rudderLoss, log->distanceToTarget, log->planePosition.x, log->planePosition.y, log->planePosition.z, log->targetPosition.x, log->targetPosition.y, log->targetPosition.z, log->planeVelocity.x, log->planeVelocity.y, log->planeVelocity.z, log->planeForward.x, log->planeForward.y, log->planeForward.z, log->planeUp.x, log->planeUp.y, log->planeUp.z, log->planeRight.x, log->planeRight.y, log->planeRight.z);
 	}
 	fclose(file);
 }
@@ -663,7 +669,7 @@ int main() {
 	Controller ctrl;
 	initController(&ctrl, &plane);
 
-	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1500.0f, 1000.0f});
+	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1000.0f, 1000.0f});
 
 	const int simSteps = 2000;
 	const float deltaTime = 1.0f / 60.0f; // 60 FPS
@@ -671,7 +677,7 @@ int main() {
 	Logs logs = {0};
 
 	for (int iter = 0; iter < simSteps; iter++) {
-		ControllerOutput out = getControllerOutputV3(&ctrl, target, deltaTime);
+		ControllerOutput out = getControllerOutputV4(&ctrl, target, deltaTime);
 		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
 
 		planeSetAileron01(&ctrl.plane, out.Aileron);
@@ -684,6 +690,10 @@ int main() {
 		float dist = distanceToTarget(&ctrl.plane, target);
 		printf("[Step %i] Distance to target: %.2f\n", iter, dist);
 
+		float3 planeForward = planeGetForwardVector(&ctrl.plane);
+		float3 planeUp = planeGetUpVector(&ctrl.plane);
+		float3 planeRight = planeGetRightVector(&ctrl.plane);
+
 		PlaneControlLogs log = {
 			.iteration = iter,
 			.aileronValue = out.Aileron,
@@ -695,7 +705,11 @@ int main() {
 			.distanceToTarget = dist,
 			.planePosition = ctrl.plane.position,
 			.targetPosition = target,
-			.planeVelocity = ctrl.plane.velocity};
+			.planeVelocity = ctrl.plane.velocity,
+			.planeForward = planeForward,
+			.planeUp = planeUp,
+			.planeRight = planeRight,
+		};
 		addLog(&logs, log);
 	}
 
