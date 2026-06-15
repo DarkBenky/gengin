@@ -379,6 +379,88 @@ static ControllerOutput getControllerOutputV3(const Controller *ctrl, float3 tar
 	return output;
 }
 
+// // Unified loss function that evaluates a full control input set
+// static float evaluateLoss(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+//     Plane simPlane = ctrl->plane;
+
+//     planeSetRudder01(&simPlane, values[0]);
+//     planeSetElevator01(&simPlane, values[1]);
+//     planeSetAileron01(&simPlane, values[2]);
+
+//     float runningAlignmentLoss = 0.0f;
+//     float currentDist = distanceToTarget(&ctrl->plane, target);
+
+//     for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+//         updatePlane(&simPlane, deltaTime, NULL);
+//         runningAlignmentLoss += alignmentLoss(&simPlane, target);
+//     }
+
+//     float finalAlignment = alignmentLoss(&simPlane, target);
+//     float finalDist = distanceToTarget(&simPlane, target);
+
+//     float loss = finalAlignment
+//                + runningAlignmentLoss / (float)ctrl->LookaheadSteps
+//                + (finalDist - currentDist);
+
+//     return loss;
+// }
+
+// static ControllerOutput getControllerOutputV4(const Controller *ctrl, float3 target, float deltaTime) {
+//     ControllerOutput output = {0};
+
+//     float values[3] = {0.5f, 0.5f, 0.5f}; // yaw, pitch, roll
+//     float learningRate = 0.15f;
+//     float epsilon = 0.02f; // for finite difference gradient
+
+//     const int maxIterations = 64;
+
+//     for (int iter = 0; iter < maxIterations; iter++) {
+//         // Compute gradient for ALL axes simultaneously
+//         float gradient[3] = {0};
+
+//         for (int axis = 0; axis < 3; axis++) {
+//             // Perturb positively
+//             float perturbedPositive[3] = {values[0], values[1], values[2]};
+//             perturbedPositive[axis] = fminf(1.0f, perturbedPositive[axis] + epsilon);
+
+//             // Perturb negatively
+//             float perturbedNegative[3] = {values[0], values[1], values[2]};
+//             perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
+
+//             float lossPos = evaluateLoss(ctrl, perturbedPositive, target, deltaTime);
+//             float lossNeg = evaluateLoss(ctrl, perturbedNegative, target, deltaTime);
+
+//             // Central difference gradient
+//             gradient[axis] = (lossPos - lossNeg) / (2.0f * epsilon);
+//         }
+
+//         // Normalize gradient to prevent explosion
+//         float gradMag = sqrtf(gradient[0]*gradient[0] + 
+//                               gradient[1]*gradient[1] + 
+//                               gradient[2]*gradient[2]);
+//         if (gradMag > 1e-6f) {
+//             gradient[0] /= gradMag;
+//             gradient[1] /= gradMag;
+//             gradient[2] /= gradMag;
+//         }
+
+//         // Update ALL values simultaneously (this couples them)
+//         for (int axis = 0; axis < 3; axis++) {
+//             values[axis] -= learningRate * gradient[axis];
+//             values[axis] = fmaxf(0.0f, fminf(1.0f, values[axis]));
+//         }
+
+//         // Adaptive learning rate decay
+//         learningRate *= 0.97f;
+//     }
+
+//     output.Rudder = values[0];
+//     output.Elevator = values[1];
+//     output.Aileron = values[2];
+
+//     return output;
+// }
+
 static ControllerOutput getControllerOutputV2(const Controller *ctrl, float3 target, float deltaTime) {
 	ControllerOutput output = {0};
 
