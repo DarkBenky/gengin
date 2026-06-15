@@ -28,3 +28,9 @@ simulation/trainNN
 
 simulation/wandb/
 llmOpt/.env
+
+simulation/cSim/*.html
+simulation/cSim/flightControlLogs.csv
+simulation/cSim/flightControlLogs.csv
+simulation/cSim/flightDashboard.html
+simulation/cSim/flightPath3d.html
