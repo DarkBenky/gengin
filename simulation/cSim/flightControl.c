@@ -439,6 +439,8 @@ static float evaluateLossV2(const Controller *ctrl, float values[3], float3 targ
 	return loss;
 }
 
+// TODO: test idea to change look ahead based on change of angle of loss
+// TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
 static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum) {
 	ControllerOutput output = {0};
 

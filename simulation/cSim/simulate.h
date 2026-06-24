@@ -1,6 +1,9 @@
 #pragma once
 #include "import.h"
 
+// TODO: add max angle of attack
+// TODO: add max g force
+
 float3 planeGetForwardVector(const Plane *plane);
 float3 planeGetRightVector(const Plane *plane);
 float3 planeGetUpVector(const Plane *plane);
