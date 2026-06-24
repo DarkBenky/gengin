@@ -1,5 +1,8 @@
 ## Tasks
-
+- [ ] Add audio
+    - [ ] lib ![link](https://github.com/RandyGaul/cute_headers/blob/master/cute_sound.h)
+    - [ ] test volumetric sound first with small demo
+        - [ ] implement to real code
 - [ ] atmosphere rendering on gpu
     - [ ] optimized sky box rendering with SDF
 - [ ] test idea of pre pas gpu bbox itersection
