@@ -441,7 +441,7 @@ static float evaluateLossV2(const Controller *ctrl, float values[3], float3 targ
 
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum) {
+static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss) {
 	ControllerOutput output = {0};
 
 	float values[3] = {0.5f, 0.5f, 0.5f}; // yaw, pitch, roll
@@ -511,6 +511,12 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	output.RudderLoss = bestAxisLoss[0];
 	output.ElevatorLoss = bestAxisLoss[1];
 	output.AileronLoss = bestAxisLoss[2];
+
+	float lossDiff = bestAxisLoss[0] - *prevLoss;
+	float angleChange = atanf(lossDiff / (deltaTime));
+	output.LossAngle = angleChange; // if we see this value above 0.0 something wrong is happening
+	// TODO: implement handling of this situation
+	*prevLoss = bestAxisLoss[0];
 
 	return output;
 }
@@ -725,6 +731,7 @@ typedef struct {
 	float rudderValue;
 	float rudderLoss;
 	float distanceToTarget;
+	float lossAngle;
 	float3 planePosition;
 	float3 targetPosition;
 	float3 planeVelocity;
@@ -761,11 +768,11 @@ void saveLogsToCSV(const Logs *logs, const char *filename) {
 		printf("Failed to open log file for writing: %s\n", filename);
 		return;
 	}
-	fprintf(file, "Iteration,Aileron,AileronLoss,Elevator,ElevatorLoss,Rudder,RudderLoss,DistanceToTarget,PlanePositionX,PlanePositionY,PlanePositionZ,TargetPositionX,TargetPositionY,TargetPositionZ,PlaneVelocityX,PlaneVelocityY,PlaneVelocityZ,PlaneForwardX,PlaneForwardY,PlaneForwardZ,PlaneUpX,PlaneUpY,PlaneUpZ,PlaneRightX,PlaneRightY,PlaneRightZ\n");
+	fprintf(file, "Iteration,Aileron,AileronLoss,Elevator,ElevatorLoss,Rudder,RudderLoss,DistanceToTarget,PlanePositionX,PlanePositionY,PlanePositionZ,TargetPositionX,TargetPositionY,TargetPositionZ,PlaneVelocityX,PlaneVelocityY,PlaneVelocityZ,PlaneForwardX,PlaneForwardY,PlaneForwardZ,PlaneUpX,PlaneUpY,PlaneUpZ,PlaneRightX,PlaneRightY,PlaneRightZ,LossAngleChange\n");
 	for (int i = 0; i < logs->len; i++) {
 		const PlaneControlLogs *log = &logs->logs[i];
-		fprintf(file, "%d,%.3f,%.4f,%.3f,%.4f,%.3f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
-				log->iteration, log->aileronValue, log->aileronLoss, log->elevatorValue, log->elevatorLoss, log->rudderValue, log->rudderLoss, log->distanceToTarget, log->planePosition.x, log->planePosition.y, log->planePosition.z, log->targetPosition.x, log->targetPosition.y, log->targetPosition.z, log->planeVelocity.x, log->planeVelocity.y, log->planeVelocity.z, log->planeForward.x, log->planeForward.y, log->planeForward.z, log->planeUp.x, log->planeUp.y, log->planeUp.z, log->planeRight.x, log->planeRight.y, log->planeRight.z);
+		fprintf(file, "%d,%.3f,%.4f,%.3f,%.4f,%.3f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.7f\n",
+				log->iteration, log->aileronValue, log->aileronLoss, log->elevatorValue, log->elevatorLoss, log->rudderValue, log->rudderLoss, log->distanceToTarget, log->planePosition.x, log->planePosition.y, log->planePosition.z, log->targetPosition.x, log->targetPosition.y, log->targetPosition.z, log->planeVelocity.x, log->planeVelocity.y, log->planeVelocity.z, log->planeForward.x, log->planeForward.y, log->planeForward.z, log->planeUp.x, log->planeUp.y, log->planeUp.z, log->planeRight.x, log->planeRight.y, log->planeRight.z,log->lossAngle);
 	}
 	fclose(file);
 }
@@ -788,9 +795,10 @@ int main() {
 
 	Logs logs = {0};
 	float momentum[3] = {0.0f, 0.0f, 0.0f}; // for getControllerOutputV5
+	float prevLoss = 0.0f;
 
 	for (int iter = 0; iter < simSteps; iter++) {
-		ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum);
+		ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss);
 		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
 
 		planeSetAileron01(&ctrl.plane, out.Aileron);
@@ -816,6 +824,7 @@ int main() {
 			.rudderValue = out.Rudder,
 			.rudderLoss = out.RudderLoss,
 			.distanceToTarget = dist,
+			.lossAngle = out.LossAngle,
 			.planePosition = ctrl.plane.position,
 			.targetPosition = target,
 			.planeVelocity = ctrl.plane.velocity,

@@ -153,14 +153,15 @@ def plot3dPath(data):
 def plotDashboard(data):
     """2x2 dashboard: controls, losses, distance, velocity."""
     fig = make_subplots(
-        rows=2, cols=2,
+        rows=3, cols=2,
         subplot_titles=(
             "Control Surface Values",
             "Alignment Loss (radians)",
             "Distance to Target",
             "Velocity Components",
+            "Loss Angle Change (rad)",
         ),
-        vertical_spacing=0.12,
+        vertical_spacing=0.08,
         horizontal_spacing=0.10,
     )
 
@@ -224,16 +225,25 @@ def plotDashboard(data):
         line=dict(color="orangered", width=3, dash="dot"), legendgroup="vel",
     ), row=2, col=2)
 
+    # --- Loss Angle Change ---
+    fig.add_trace(go.Scatter(
+        x=iterations, y=data["LossAngleChange"], name="Loss Angle Change",
+        line=dict(color="darkorange", width=2),
+        fill="tozeroy", fillcolor="rgba(255,140,0,0.08)",
+    ), row=3, col=1)
+
     fig.update_xaxes(title_text="Iteration", row=2, col=1)
     fig.update_xaxes(title_text="Iteration", row=2, col=2)
+    fig.update_xaxes(title_text="Iteration", row=3, col=1)
     fig.update_yaxes(title_text="Value [0,1]", row=1, col=1)
     fig.update_yaxes(title_text="Loss (rad)", row=1, col=2)
     fig.update_yaxes(title_text="Distance (units)", row=2, col=1)
     fig.update_yaxes(title_text="Velocity (units/s)", row=2, col=2)
+    fig.update_yaxes(title_text="Angle (rad)", row=3, col=1)
 
     fig.update_layout(
         title="Flight Controller Diagnostics",
-        height=800,
+        height=1100,
         hovermode="x unified",
     )
     return fig

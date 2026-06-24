@@ -66,6 +66,7 @@ typedef struct {
     float AileronLoss;
     float Rudder;
     float RudderLoss;
+    float LossAngle;
 } ControllerOutput;
 
 static ControllerOutput getControllerOutput(const Controller *ctrl, float3 target, float deltaTime); 
