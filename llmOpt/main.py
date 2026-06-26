@@ -127,6 +127,12 @@ def buildProject():
             })
             raise
 
+        # Auto-review the diff with the reviewer model BEFORE the ~30s build,
+        # but only once per unique diff so we never pay for a duplicate review.
+        review = _autoReviewBeforeBuild()
+        if review:
+            print(f"[buildProject] auto-review: {review.splitlines()[0]}")
+
     res = run(["make"], cwd=PROJECT_DIR)
     CONTEXT.append({
         "type": "tool_use",
@@ -315,6 +321,78 @@ def makeFlame():
         "output": data
     })
     return data
+
+
+# ---------------------------------------------------------------------------
+# baseline cache — skip the cold-start bench+flame when project code is unchanged
+# ---------------------------------------------------------------------------
+
+BASELINE_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline_cache.json")
+
+
+def _projectGitHead():
+    """Return (head_hash, is_dirty) for PROJECT_DIR, or (None, True) on failure."""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=PROJECT_DIR
+        )
+        if head.returncode != 0:
+            return None, True
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            capture_output=True, text=True, cwd=PROJECT_DIR
+        )
+        return head.stdout.strip(), bool(dirty.stdout.strip())
+    except Exception:
+        return None, True
+
+
+def _loadBaselineCache():
+    """Return cached (baseline, flame) if the cache matches the current clean HEAD."""
+    if not os.path.exists(BASELINE_CACHE_FILE):
+        return None
+    head, dirty = _projectGitHead()
+    if head is None or dirty:
+        return None  # uncommitted changes — cache cannot be trusted
+    try:
+        with open(BASELINE_CACHE_FILE) as fh:
+            cache = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if cache.get("head") != head:
+        return None
+    return cache.get("baseline"), cache.get("flame")
+
+
+def _saveBaselineCache(baseline, flame):
+    """Persist the baseline + flame keyed by the current clean HEAD."""
+    head, dirty = _projectGitHead()
+    if head is None or dirty:
+        return  # don't cache a baseline taken against a dirty tree
+    try:
+        with open(BASELINE_CACHE_FILE, "w") as fh:
+            json.dump({"head": head, "baseline": baseline, "flame": flame}, fh)
+    except OSError as e:
+        print(f"[baseline-cache] save failed: {e}")
+
+
+def _applyFlameHotspots(flame):
+    """Pin top-5 hotspots and seed refinement state from a flame dict. Returns the header string."""
+    global PINNED_HOTSPOTS
+    if not (flame and flame.get("hot_functions")):
+        return PINNED_HOTSPOTS
+    top5 = flame["hot_functions"][:5]
+    PINNED_HOTSPOTS = (
+        "Top hotspots (always visible):\n" +
+        "\n".join(
+            f"  {h['fn']:40s}  incl={h['inclusive_pct']:5.1f}%  excl={h['exclusive_pct']:5.1f}%"
+            for h in top5
+        )
+    )
+    for h in top5:
+        refine.initRefinement(h["fn"], hotspotData=h)
+    return PINNED_HOTSPOTS
 
 
 BENCH_FUNC_DIR = os.path.join(PROJECT_DIR, "bench")
@@ -693,6 +771,47 @@ Reply with ONLY a valid JSON object (no markdown fences, no prose):
 If no issues found: {"verdict": "PASS", "issues": [], "summary": ""}
 """
 
+# Cache of the last reviewed diff so the same change is never reviewed twice,
+# whether the review was triggered manually (reviewChanges) or automatically
+# (buildProject pre-build gate).
+_last_reviewed_diff_hash = None
+_last_review_output = None
+
+
+def _reviewDiff(diff: str) -> str:
+    """Run the reviewer model on a diff string and return a human-readable verdict."""
+    diff_truncated = diff[:12000]
+    if len(diff) > 12000:
+        diff_truncated += f"\n... [{len(diff) - 12000} more bytes truncated]"
+
+    prompt = REVIEWER_PROMPT + "\n\nDIFF TO REVIEW:\n```diff\n" + diff_truncated + "\n```"
+    try:
+        raw = model.getResponse(prompt, model=REVIEWER_MODEL, provider=REVIEWER_PROVIDER)
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            return f"Reviewer model returned no valid JSON. Raw response:\n{raw[:500]}"
+        data = json.loads(m.group(0))
+        verdict = data.get("verdict", "?")
+        issues = data.get("issues", [])
+        summary = data.get("summary", "")
+        if verdict == "PASS" or not issues:
+            return "REVIEW: PASS — no bugs detected."
+        lines = [f"REVIEW: {verdict} — {len(issues)} issue(s) found:"]
+        for issue in issues:
+            sev = issue.get("severity", "?")
+            file = issue.get("file", "?")
+            desc = issue.get("description", "?")
+            fix = issue.get("fix_suggestion", "")
+            lines.append(f"  [{sev}] {file}: {desc}")
+            if fix:
+                lines.append(f"        Fix: {fix}")
+        if summary:
+            lines.append(f"\nSummary: {summary}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Reviewer model error: {e}"
+
 
 def reviewChanges():
     """
@@ -704,49 +823,46 @@ def reviewChanges():
 
     Returns the review verdict and injects issues into the context.
     """
+    global _last_reviewed_diff_hash, _last_review_output
     diff = gf.getDiff(returnString=True)
     if not diff or diff == "(no changes)":
         return "(no changes to review)"
 
-    # Truncate diff if it's enormous (reviewer model has context limits)
-    diff_truncated = diff[:12000]
-    if len(diff) > 12000:
-        diff_truncated += f"\n... [{len(diff) - 12000} more bytes truncated]"
+    import hashlib
+    diff_hash = hashlib.md5(diff.encode()).hexdigest()
+    if diff_hash == _last_reviewed_diff_hash and _last_review_output is not None:
+        return _last_review_output + "\n(cached — diff unchanged since last review)"
 
-    prompt = REVIEWER_PROMPT + "\n\nDIFF TO REVIEW:\n```diff\n" + diff_truncated + "\n```"
-
-    try:
-        raw = model.getResponse(prompt, model=REVIEWER_MODEL, provider=REVIEWER_PROVIDER)
-        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-        m = re.search(r'\{.*\}', raw, re.DOTALL)
-        if not m:
-            output = f"Reviewer model returned no valid JSON. Raw response:\n{raw[:500]}"
-        else:
-            data = json.loads(m.group(0))
-            verdict = data.get("verdict", "?")
-            issues = data.get("issues", [])
-            summary = data.get("summary", "")
-
-            if verdict == "PASS" or not issues:
-                output = "REVIEW: PASS — no bugs detected."
-            else:
-                lines = [f"REVIEW: {verdict} — {len(issues)} issue(s) found:"]
-                for issue in issues:
-                    sev = issue.get("severity", "?")
-                    file = issue.get("file", "?")
-                    desc = issue.get("description", "?")
-                    fix = issue.get("fix_suggestion", "")
-                    lines.append(f"  [{sev}] {file}: {desc}")
-                    if fix:
-                        lines.append(f"        Fix: {fix}")
-                if summary:
-                    lines.append(f"\nSummary: {summary}")
-                output = "\n".join(lines)
-    except Exception as e:
-        output = f"Reviewer model error: {e}"
+    output = _reviewDiff(diff)
+    _last_reviewed_diff_hash = diff_hash
+    _last_review_output = output
 
     CONTEXT.append({"type": "tool_use", "tool": "reviewChanges",
                     "input": f"{len(diff)} byte diff", "output": output})
+    return output
+
+
+def _autoReviewBeforeBuild():
+    """
+    Run the reviewer model on the current diff before an expensive build, unless
+    that exact diff was already reviewed. Returns the verdict string, or "" if
+    there is nothing new to review. Cheap insurance against burning a 30s build
+    cycle on a diff with an obvious bug.
+    """
+    global _last_reviewed_diff_hash, _last_review_output
+    diff = gf.getDiff(returnString=True)
+    if not diff or diff == "(no changes)":
+        return ""
+    import hashlib
+    diff_hash = hashlib.md5(diff.encode()).hexdigest()
+    if diff_hash == _last_reviewed_diff_hash:
+        return ""  # already reviewed this exact diff
+
+    output = _reviewDiff(diff)
+    _last_reviewed_diff_hash = diff_hash
+    _last_review_output = output
+    CONTEXT.append({"type": "tool_use", "tool": "reviewChanges",
+                    "input": f"auto pre-build, {len(diff)} byte diff", "output": output})
     return output
 
 
@@ -858,11 +974,19 @@ def compressContext():
         if len(preserved) >= 3:
             break
 
+    # Preserve the codebase-knowledge pointer so the model always remembers it can
+    # re-read the knowledge base via getCodebaseContext() after compression.
+    knowledge_entry = next(
+        (e for e in CONTEXT if e.get("type") == "codebase_knowledge"), None
+    )
+
     keep = max(8, len(CONTEXT) * 2 // 3)
     del CONTEXT[:-keep]
     # Re-insert preserved entries at the front (most recent first)
     for entry in reversed(preserved):
         CONTEXT.insert(1, entry)
+    if knowledge_entry is not None and knowledge_entry not in CONTEXT:
+        CONTEXT.insert(1, knowledge_entry)
     CONTEXT.insert(0, {
         "type": "context_summary",
         "tool": "contextSummary",
@@ -874,11 +998,29 @@ def compressContext():
 
 
 def removeStaffFromContext(maxTokens=CONTEXT_MAX_TOKENS):
-    if _estimateTokens(CONTEXT) > maxTokens * CONTEXT_COMPRESS_AT:
+    # The real prompt is system_prompt + session_header + board + xmlContext. The
+    # system prompt embeds the codebase knowledge base, which grows as insights
+    # accumulate. Reserve room for it so CONTEXT is trimmed against the budget that
+    # actually remains, not the full window.
+    try:
+        prompt_tokens = len(getSystemPrompt()) // 4
+    except Exception:
+        prompt_tokens = 0
+    reserve = prompt_tokens + 4_000  # +headroom for board, session header, response
+    effective = max(maxTokens // 4, maxTokens - reserve)
+
+    if _estimateTokens(CONTEXT) > effective * CONTEXT_COMPRESS_AT:
         compressContext()
-    # Hard trim if still over limit after compression
-    while _estimateTokens(CONTEXT) > maxTokens and len(CONTEXT) > 1:
-        removed = CONTEXT.pop(0)
+    # Hard trim if still over limit after compression. Never drop the codebase
+    # knowledge pointer — it is the model's gateway back to the knowledge base.
+    idx = 0
+    while _estimateTokens(CONTEXT) > effective and len(CONTEXT) > 1:
+        if idx >= len(CONTEXT):
+            break
+        if CONTEXT[idx].get("type") == "codebase_knowledge":
+            idx += 1
+            continue
+        removed = CONTEXT.pop(idx)
         print(f"[trim] dropped entry type={removed.get('type')} tool={removed.get('tool')}")
 
 def _github_create_pr(title, body, head, base="main"):
@@ -945,6 +1087,66 @@ def removeDoublesFromContext():
 
 CODEBASE_CONTEXT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codebase_context.md")
 PLANNER_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "planner_state.json")
+KNOWLEDGE_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge_state.json")
+
+# Insight categories accumulated across sessions, in render order.
+_KNOWLEDGE_CATEGORIES = [
+    ("confirmed_wins", "Confirmed Wins"),
+    ("architectural_insights", "Architectural Insights"),
+    ("remaining_hotspots", "Remaining Hotspots"),
+    ("techniques_to_try", "Techniques to Try"),
+    ("techniques_to_avoid", "Techniques to Avoid"),
+]
+_KNOWLEDGE_CAP = 25  # max insights kept per category (most recent retained)
+
+
+def _normInsight(text: str) -> str:
+    """Normalize an insight for dedup: lowercase, collapse whitespace, strip punctuation tails."""
+    return re.sub(r"\s+", " ", str(text).strip().lower()).rstrip(".;,")
+
+
+def _loadKnowledgeState() -> dict:
+    if os.path.exists(KNOWLEDGE_STATE_FILE):
+        try:
+            with open(KNOWLEDGE_STATE_FILE) as fh:
+                return json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {key: [] for key, _ in _KNOWLEDGE_CATEGORIES}
+
+
+def _mergeKnowledge(state: dict, data: dict) -> int:
+    """Merge a session's distilled insights into the accumulated store.
+    Dedupes case-insensitively (newest wins) and caps each category. Returns count added."""
+    added = 0
+    for key, _ in _KNOWLEDGE_CATEGORIES:
+        existing = state.setdefault(key, [])
+        seen = {_normInsight(x) for x in existing}
+        for item in data.get(key, []):
+            norm = _normInsight(item)
+            if not norm or norm in seen:
+                continue
+            existing.append(str(item).strip())
+            seen.add(norm)
+            added += 1
+        # keep the most recent _KNOWLEDGE_CAP entries
+        if len(existing) > _KNOWLEDGE_CAP:
+            del existing[:-_KNOWLEDGE_CAP]
+    return added
+
+
+def _renderKnowledgeSection(state: dict, summary: str, timestamp: str) -> str:
+    lines = [f"\n\n---\n\n## Accumulated Insights (updated {timestamp})\n"]
+    if summary:
+        lines.append(f"**Latest session**: {summary}\n")
+    for key, heading in _KNOWLEDGE_CATEGORIES:
+        items = state.get(key, [])
+        if items:
+            lines.append(f"### {heading}")
+            for item in items:
+                lines.append(f"  - {item}")
+            lines.append("")
+    return "\n".join(lines)
 
 
 def syncPlannerToCodebaseContext():
@@ -1013,30 +1215,15 @@ def syncPlannerToCodebaseContext():
     except Exception as e:
         return f"Summarization failed: {e}"
 
-    # Build the section to inject
+    # Merge this session's insights into the persistent, deduplicated knowledge store
+    # so findings accumulate across runs instead of overwriting each other.
+    knowledge = _loadKnowledgeState()
+    added = _mergeKnowledge(knowledge, data)
+    with open(KNOWLEDGE_STATE_FILE, "w") as fh:
+        json.dump(knowledge, fh, indent=2)
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines = [
-        f"\n\n---\n\n## Session Insights ({timestamp})\n",
-    ]
-    if data.get("summary"):
-        lines.append(f"**Summary**: {data['summary']}\n")
-
-    sections = [
-        ("Confirmed Wins", "confirmed_wins"),
-        ("Architectural Insights", "architectural_insights"),
-        ("Remaining Hotspots", "remaining_hotspots"),
-        ("Techniques to Try", "techniques_to_try"),
-        ("Techniques to Avoid", "techniques_to_avoid"),
-    ]
-    for heading, key in sections:
-        items = data.get(key, [])
-        if items:
-            lines.append(f"### {heading}")
-            for item in items:
-                lines.append(f"  - {item}")
-            lines.append("")
-
-    section_text = "\n".join(lines)
+    section_text = _renderKnowledgeSection(knowledge, data.get("summary", ""), timestamp)
 
     # Load existing codebase context
     if os.path.exists(CODEBASE_CONTEXT_FILE):
@@ -1045,11 +1232,12 @@ def syncPlannerToCodebaseContext():
     else:
         existing = ""
 
-    # Replace old Session Insights section if present, otherwise append
-    marker = "\n\n---\n\n## Session Insights"
-    if marker in existing:
-        # Keep everything before the first session insights marker
-        existing = existing[:existing.index(marker)].rstrip()
+    # Replace the rendered insights block if present, otherwise append. The
+    # canonical store is knowledge_state.json; the markdown is just a view of it.
+    for marker in ("\n\n---\n\n## Accumulated Insights", "\n\n---\n\n## Session Insights"):
+        if marker in existing:
+            existing = existing[:existing.index(marker)].rstrip()
+            break
 
     with open(CODEBASE_CONTEXT_FILE, "w") as fh:
         fh.write(existing.rstrip() + section_text)
@@ -1059,7 +1247,8 @@ def syncPlannerToCodebaseContext():
     with open(PLANNER_STATE_FILE, "w") as fh:
         json.dump(state, fh, indent=2)
 
-    return f"Synced {len(notes)} note(s) and {len(tasks)} task(s) into {CODEBASE_CONTEXT_FILE}. Planner notes cleared."
+    return (f"Synced {len(notes)} note(s) and {len(tasks)} task(s): {added} new insight(s) "
+            f"merged into the knowledge base ({KNOWLEDGE_STATE_FILE}). Planner notes cleared.")
 
 RESEARCH_MODEL = "deepseek/deepseek-v4-flash"
 RESEARCH_PROVIDER = "baidu/fp8"
@@ -1153,6 +1342,56 @@ def loadCodebaseContext() -> str | None:
         return None
     with open(CODEBASE_CONTEXT_FILE) as fh:
         return fh.read()
+
+
+def _extractSection(markdown: str, heading_query: str) -> str | None:
+    """Return the markdown block whose '#'/'##'/'###' heading contains heading_query
+    (case-insensitive), up to the next heading of the same-or-higher level."""
+    q = heading_query.strip().lower()
+    lines = markdown.splitlines()
+    start = None
+    start_level = 0
+    for i, line in enumerate(lines):
+        m = re.match(r'^(#{1,6})\s+(.*)$', line)
+        if m and q in m.group(2).strip().lower():
+            start = i
+            start_level = len(m.group(1))
+            break
+    if start is None:
+        return None
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        m = re.match(r'^(#{1,6})\s+', lines[j])
+        if m and len(m.group(1)) <= start_level:
+            end = j
+            break
+    return "\n".join(lines[start:end]).strip()
+
+
+def getCodebaseContext(section: str = None, context=None):
+    """
+    Return the persisted codebase knowledge base (codebase_context.md).
+
+    The full report is always present in the system prompt, but it can be trimmed
+    from the working context during compression — call this to re-read it on demand.
+    Pass `section` (a heading substring, e.g. "Performance-Critical Functions" or
+    "Accumulated Insights") to fetch only that part instead of the whole document.
+    """
+    ctx = loadCodebaseContext()
+    if not ctx:
+        output = "No codebase_context.md found. Run the research phase (--research) first."
+    elif section:
+        block = _extractSection(ctx, section)
+        output = block if block else (
+            f"No section matching '{section}'. Call getCodebaseContext() without args "
+            "to read the whole report."
+        )
+    else:
+        output = ctx
+    if context is not None:
+        context.append({"type": "tool_use", "tool": "getCodebaseContext",
+                        "input": section, "output": output})
+    return output
 
 
 def runCodebaseResearch():
@@ -1524,6 +1763,30 @@ def _buildSystemPrompt():
     return SYSTEM_PROMPT.replace("{codebase_context_section}", section), ctx
 
 
+_SYSTEM_PROMPT_CACHE = None
+_SYSTEM_PROMPT_MTIME = None
+
+
+def getSystemPrompt() -> str:
+    """
+    Return the system prompt with the codebase knowledge base embedded, rebuilding
+    it whenever codebase_context.md changes on disk. This lets insights written by
+    syncPlannerToCodebaseContext() mid-session become visible to the model on the
+    very next iteration instead of only after a process restart.
+    """
+    global _SYSTEM_PROMPT_CACHE, _SYSTEM_PROMPT_MTIME
+    try:
+        mtime = os.path.getmtime(CODEBASE_CONTEXT_FILE)
+    except OSError:
+        mtime = None
+    if _SYSTEM_PROMPT_CACHE is None or mtime != _SYSTEM_PROMPT_MTIME:
+        _SYSTEM_PROMPT_CACHE, _ = _buildSystemPrompt()
+        _SYSTEM_PROMPT_MTIME = mtime
+        if mtime is not None:
+            print("[main] Rebuilt system prompt from updated codebase_context.md")
+    return _SYSTEM_PROMPT_CACHE
+
+
 # Track session-wide patterns for adaptive guidance
 _session_micro_bench_wins = 0     # micro-benchmarks that showed speedup
 _session_real_regressions = 0     # those same changes that regressed in makeBench
@@ -1647,23 +1910,31 @@ if __name__ == "__main__":
     getTree()
     # getTodos()
     buildProject()
-    _ , BASELINE_RESULTS = makeBench()
-    flame = makeFlame()
+
+    # Reuse a cached baseline + flame when the project HEAD is unchanged and the
+    # tree is clean — avoids the costly 5x bench + perf flame cold start on restart.
+    _cached = _loadBaselineCache()
+    if _cached is not None:
+        BASELINE_RESULTS, flame = _cached
+        print("[main] Reused cached baseline + flame for current HEAD (skipped cold-start bench).")
+        # Replay the bench/flame context entries the model expects to see.
+        CONTEXT.append({
+            "type": "tool_use", "tool": "makeBench", "input": None,
+            "output": _benchSummary(BASELINE_RESULTS, None),
+            "bench_results": {k: v for k, v in BASELINE_RESULTS.items()
+                              if k not in ("frame_images", "frame_hashes")},
+        })
+        CONTEXT.append({
+            "type": "tool_use", "tool": "makeFlame", "input": None, "output": flame,
+        })
+    else:
+        _ , BASELINE_RESULTS = makeBench()
+        flame = makeFlame()
+        _saveBaselineCache(BASELINE_RESULTS, flame)
 
     # Pin top 5 hotspots so the model always knows what to target,
     # even after context compression trims the raw flame data.
-    if flame and flame.get("hot_functions"):
-        top5 = flame["hot_functions"][:5]
-        PINNED_HOTSPOTS = (
-            "Top hotspots (always visible):\n" +
-            "\n".join(
-                f"  {h['fn']:40s}  incl={h['inclusive_pct']:5.1f}%  excl={h['exclusive_pct']:5.1f}%"
-                for h in top5
-            )
-        )
-        # Auto-initialize refinement state for top hotspots
-        for h in top5:
-            refine.initRefinement(h["fn"], hotspotData=h)
+    _applyFlameHotspots(flame)
 
     gf.listFunctions(context=CONTEXT)
     gf.apiHelp(context=CONTEXT)
@@ -1671,10 +1942,18 @@ if __name__ == "__main__":
     _SYSTEM_PROMPT, codebase_ctx = _buildSystemPrompt()
     if codebase_ctx:
         print(f"[main] Loaded codebase context ({len(codebase_ctx)} chars) from {CODEBASE_CONTEXT_FILE}")
+        # The full report lives in the system prompt every turn; keep only a compact
+        # pointer in the working context to avoid duplicating ~hundreds of lines of
+        # tokens. The model can call getCodebaseContext(section=...) to re-read it.
         CONTEXT.insert(0, {
             "type": "codebase_knowledge",
             "tool": "loadCodebaseContext",
-            "output": codebase_ctx,
+            "output": (
+                "Codebase knowledge base is loaded in the system prompt (architecture, "
+                "hotspots, TODOs, accumulated insights). Call getCodebaseContext() to re-read "
+                "the full report, or getCodebaseContext('Performance-Critical Functions') / "
+                "getCodebaseContext('Accumulated Insights') for a specific section."
+            ),
         })
     else:
         print(f"[main] No codebase_context.md found. Run with --research to generate it.")
@@ -1780,7 +2059,7 @@ if __name__ == "__main__":
             print(f"[plan] Iteration {iteration}: injecting planning step (next plan at {_plan_at_iteration})")
         else:
             prompt = (
-                _SYSTEM_PROMPT
+                getSystemPrompt()
                 + "\n\n" + session_header
                 + staleness_warning
                 + ("\n\n" + adaptive_guidance if adaptive_guidance else "")

@@ -258,6 +258,7 @@ def buildToolMap(gf_module, planner_module, main_module=None, refine_module=None
             "reviewChanges":   m.reviewChanges,
             "bisectRegression": m.bisectRegression,
             "syncPlannerToCodebaseContext": m.syncPlannerToCodebaseContext,
+            "getCodebaseContext": m.getCodebaseContext,
         })
 
     return tools

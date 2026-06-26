@@ -1435,6 +1435,13 @@ _API = [
          "planner notes. Call this before shutting down or after major milestones "
          "so insights survive across runs. NEVER stores rejected code — only "
          "high-level lessons."),
+        ("getCodebaseContext(section='')",
+         "Re-read the persisted codebase knowledge base (codebase_context.md): "
+         "architecture, hotspots, TODOs, and accumulated session insights. The full "
+         "report is already in the system prompt, but call this to recover it if it was "
+         "trimmed from context, or pass a heading substring (e.g. "
+         "'Performance-Critical Functions', 'Accumulated Insights', 'Optimization Order') "
+         "to fetch just that section."),
     ]),
     ("Planner  [planner.py]", [
         ("addTask(text)",
