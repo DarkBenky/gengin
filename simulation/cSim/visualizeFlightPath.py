@@ -158,6 +158,7 @@ def plotDashboard(data):
             "Control Surface Values",
             "Alignment Loss (radians)",
             "Distance to Target",
+            "Aggregate Metrics",
             "Velocity Components",
             "Loss Angle Change (rad)",
         ),
@@ -166,6 +167,7 @@ def plotDashboard(data):
     )
 
     iterations = data["Iteration"]
+    distances = data["DistanceToTarget"]
 
     # --- Controls ---
     fig.add_trace(go.Scatter(
@@ -184,23 +186,40 @@ def plotDashboard(data):
     # --- Losses ---
     fig.add_trace(go.Scatter(
         x=iterations, y=data["AileronLoss"], name="Roll Loss",
-        line=dict(color="coral"), legendgroup="losses",
+        line=dict(color="coral", dash="dot"), legendgroup="losses",
     ), row=1, col=2)
     fig.add_trace(go.Scatter(
         x=iterations, y=data["ElevatorLoss"], name="Pitch Loss",
-        line=dict(color="mediumseagreen"), legendgroup="losses",
+        line=dict(color="mediumseagreen", dash="dot"), legendgroup="losses",
     ), row=1, col=2)
     fig.add_trace(go.Scatter(
         x=iterations, y=data["RudderLoss"], name="Yaw Loss",
-        line=dict(color="steelblue"), legendgroup="losses",
+        line=dict(color="steelblue", dash="dot"), legendgroup="losses",
+    ), row=1, col=2)
+
+    # Aggregate loss (sum of all three axis losses)
+    combinedLoss = [data["AileronLoss"][i] + data["ElevatorLoss"][i] + data["RudderLoss"][i]
+                    for i in range(len(iterations))]
+    fig.add_trace(go.Scatter(
+        x=iterations, y=combinedLoss, name="Combined Loss",
+        line=dict(color="black", width=3), legendgroup="losses",
     ), row=1, col=2)
 
     # --- Distance ---
     fig.add_trace(go.Scatter(
-        x=iterations, y=data["DistanceToTarget"], name="Distance",
+        x=iterations, y=distances, name="Distance",
         line=dict(color="firebrick"), fill="tozeroy",
         fillcolor="rgba(178,34,34,0.1)",
     ), row=2, col=1)
+
+    # --- Aggregate Metrics ---
+    # Distance delta per step (positive = getting closer to target)
+    distDelta = [0.0] + [distances[i - 1] - distances[i] for i in range(1, len(distances))]
+    fig.add_trace(go.Scatter(
+        x=iterations, y=distDelta, name="Dist Delta (closer +)",
+        line=dict(color="limegreen", width=2),
+        fill="tozeroy", fillcolor="rgba(50,205,50,0.08)",
+    ), row=2, col=2)
 
     # --- Velocity ---
     vx = data["PlaneVelocityX"]
@@ -211,35 +230,37 @@ def plotDashboard(data):
     fig.add_trace(go.Scatter(
         x=iterations, y=data["PlaneVelocityX"], name="Vx",
         line=dict(color="mediumpurple"), legendgroup="vel",
-    ), row=2, col=2)
+    ), row=3, col=1)
     fig.add_trace(go.Scatter(
         x=iterations, y=data["PlaneVelocityY"], name="Vy",
         line=dict(color="goldenrod"), legendgroup="vel",
-    ), row=2, col=2)
+    ), row=3, col=1)
     fig.add_trace(go.Scatter(
         x=iterations, y=data["PlaneVelocityZ"], name="Vz",
         line=dict(color="darkcyan"), legendgroup="vel",
-    ), row=2, col=2)
+    ), row=3, col=1)
     fig.add_trace(go.Scatter(
         x=iterations, y=totalV, name="|V|",
         line=dict(color="orangered", width=3, dash="dot"), legendgroup="vel",
-    ), row=2, col=2)
+    ), row=3, col=1)
 
     # --- Loss Angle Change ---
     fig.add_trace(go.Scatter(
         x=iterations, y=data["LossAngleChange"], name="Loss Angle Change",
         line=dict(color="darkorange", width=2),
         fill="tozeroy", fillcolor="rgba(255,140,0,0.08)",
-    ), row=3, col=1)
+    ), row=3, col=2)
 
     fig.update_xaxes(title_text="Iteration", row=2, col=1)
     fig.update_xaxes(title_text="Iteration", row=2, col=2)
     fig.update_xaxes(title_text="Iteration", row=3, col=1)
+    fig.update_xaxes(title_text="Iteration", row=3, col=2)
     fig.update_yaxes(title_text="Value [0,1]", row=1, col=1)
     fig.update_yaxes(title_text="Loss (rad)", row=1, col=2)
     fig.update_yaxes(title_text="Distance (units)", row=2, col=1)
-    fig.update_yaxes(title_text="Velocity (units/s)", row=2, col=2)
-    fig.update_yaxes(title_text="Angle (rad)", row=3, col=1)
+    fig.update_yaxes(title_text="Delta (units/step)", row=2, col=2)
+    fig.update_yaxes(title_text="Velocity (units/s)", row=3, col=1)
+    fig.update_yaxes(title_text="Angle (rad)", row=3, col=2)
 
     fig.update_layout(
         title="Flight Controller Diagnostics",

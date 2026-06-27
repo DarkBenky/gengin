@@ -441,7 +441,7 @@ static float evaluateLossV2(const Controller *ctrl, float values[3], float3 targ
 
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss) {
+static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
 	ControllerOutput output = {0};
 
 	float values[3] = {0.5f, 0.5f, 0.5f}; // yaw, pitch, roll
@@ -450,8 +450,6 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	float epsilon = 0.025f; // for finite difference gradient
 
 	float bestAxisLoss[3] = {FLT_MAX, FLT_MAX, FLT_MAX}; // best loss for yaw, pitch, roll
-
-	const int maxIterations = 128;
 
 	for (int iter = 0; iter < maxIterations; iter++) {
 		// Compute gradient for ALL axes simultaneously
@@ -519,6 +517,77 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	*prevLoss = bestAxisLoss[0];
 
 	return output;
+}
+
+float lossPerSec(ControllerOutput *out, int steps, float dt) {
+	float totalTime = steps * dt;
+	if (totalTime <= 0.0f) return 0.0f;
+
+	float invTime = 1.0f / totalTime;
+	out->AileronLoss *= invTime;
+	out->ElevatorLoss *= invTime;
+	out->RudderLoss *= invTime;
+
+	return out->AileronLoss + out->ElevatorLoss + out->RudderLoss;
+}
+
+// TODO: Add modes here we have now avg but add also mode for best so we pick greedily the best loss
+static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int iterations, int maxSimulationSteps) {
+	float tempPrevLoss = *prevLoss;
+	float tempMomentum[3] = {momentum[0], momentum[1], momentum[2]};
+	Controller tempController = *ctrl;
+
+	ControllerOutput out = getControllerOutputV5(&tempController, target, deltaTime, tempMomentum, &tempPrevLoss, maxSimulationSteps);
+	lossPerSec(&out, maxSimulationSteps, deltaTime);
+
+	// Accumulators for weighted blending — controls and momentum
+	float sumAileron = out.Aileron;
+	float sumElevator = out.Elevator;
+	float sumRudder = out.Rudder;
+	float sumMomentum[3] = {tempMomentum[0], tempMomentum[1], tempMomentum[2]};
+	float totalWeight = 1.0f; // baseline always has weight 1.0
+
+	for (int iter = 1; iter < iterations + 1; iter++) {
+		float iterPrevLoss = *prevLoss;
+		float iterMomentum[3] = {momentum[0], momentum[1], momentum[2]};
+		Controller iterController = *ctrl;
+
+		float deltaTimeIter = deltaTime * iter * 4;
+		int simulationSteps = maxSimulationSteps / 2;
+
+		// V5 modifies iterMomentum in-place — capture it before it's lost
+		ControllerOutput iterOut = getControllerOutputV5(&iterController, target, deltaTimeIter, iterMomentum, &iterPrevLoss, simulationSteps);
+		lossPerSec(&iterOut, simulationSteps, deltaTimeIter);
+
+		// Weight: lower per-second loss = higher weight
+		// Clamp combinedLoss above -0.99 so denominator never goes to zero or negative
+		float combinedLoss = iterOut.AileronLoss + iterOut.ElevatorLoss + iterOut.RudderLoss;
+		if (combinedLoss < -0.99f) combinedLoss = -0.99f;
+		float weight = 1.0f / (1.0f + combinedLoss);
+
+		sumAileron += iterOut.Aileron * weight;
+		sumElevator += iterOut.Elevator * weight;
+		sumRudder += iterOut.Rudder * weight;
+		sumMomentum[0] += iterMomentum[0] * weight;
+		sumMomentum[1] += iterMomentum[1] * weight;
+		sumMomentum[2] += iterMomentum[2] * weight;
+		totalWeight += weight;
+	}
+
+	// Normalized weighted blend
+	out.Aileron = sumAileron / totalWeight;
+	out.Elevator = sumElevator / totalWeight;
+	out.Rudder = sumRudder / totalWeight;
+	momentum[0] = sumMomentum[0] / totalWeight;
+	momentum[1] = sumMomentum[1] / totalWeight;
+	momentum[2] = sumMomentum[2] / totalWeight;
+
+	// Guard against NaN propagation
+	if (isnan(out.Aileron)) out.Aileron = 0.5f;
+	if (isnan(out.Elevator)) out.Elevator = 0.5f;
+	if (isnan(out.Rudder)) out.Rudder = 0.5f;
+
+	return out;
 }
 
 static ControllerOutput getControllerOutputV4(const Controller *ctrl, float3 target, float deltaTime) {
@@ -772,7 +841,7 @@ void saveLogsToCSV(const Logs *logs, const char *filename) {
 	for (int i = 0; i < logs->len; i++) {
 		const PlaneControlLogs *log = &logs->logs[i];
 		fprintf(file, "%d,%.3f,%.4f,%.3f,%.4f,%.3f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.7f\n",
-				log->iteration, log->aileronValue, log->aileronLoss, log->elevatorValue, log->elevatorLoss, log->rudderValue, log->rudderLoss, log->distanceToTarget, log->planePosition.x, log->planePosition.y, log->planePosition.z, log->targetPosition.x, log->targetPosition.y, log->targetPosition.z, log->planeVelocity.x, log->planeVelocity.y, log->planeVelocity.z, log->planeForward.x, log->planeForward.y, log->planeForward.z, log->planeUp.x, log->planeUp.y, log->planeUp.z, log->planeRight.x, log->planeRight.y, log->planeRight.z,log->lossAngle);
+				log->iteration, log->aileronValue, log->aileronLoss, log->elevatorValue, log->elevatorLoss, log->rudderValue, log->rudderLoss, log->distanceToTarget, log->planePosition.x, log->planePosition.y, log->planePosition.z, log->targetPosition.x, log->targetPosition.y, log->targetPosition.z, log->planeVelocity.x, log->planeVelocity.y, log->planeVelocity.z, log->planeForward.x, log->planeForward.y, log->planeForward.z, log->planeUp.x, log->planeUp.y, log->planeUp.z, log->planeRight.x, log->planeRight.y, log->planeRight.z, log->lossAngle);
 	}
 	fclose(file);
 }
@@ -798,7 +867,8 @@ int main() {
 	float prevLoss = 0.0f;
 
 	for (int iter = 0; iter < simSteps; iter++) {
-		ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss);
+		ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 128);
+		// ControllerOutput out = getControllerOutputV6(&ctrl, target, deltaTime, momentum, &prevLoss, 4, 128);
 		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
 
 		planeSetAileron01(&ctrl.plane, out.Aileron);
