@@ -872,6 +872,7 @@ void saveLogsToCSV(const Logs *logs, const char *filename) {
 
 // main testing loop to debug controller
 int main() {
+	// TODO - make research what helps with model accuracy (more iteration, lower learning rate, lower dt, higher dt)
 	Plane plane;
 	if (loadPlaneBin(&plane, "simulation/simModels/F-16C.bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 180.0f, 1.0f) != 0) {
 		printf("Failed to load model: simulation/simModels/F-16C.bin\n");
