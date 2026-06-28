@@ -20,6 +20,9 @@
 
 #include "flightControl.h"
 #include <math.h>
+#include <string.h>
+
+#define memcopy(dst, src) memcpy((dst), (src), sizeof(*(dst)))
 
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
@@ -531,14 +534,19 @@ float lossPerSec(ControllerOutput *out, int steps, float dt) {
 	return out->AileronLoss + out->ElevatorLoss + out->RudderLoss;
 }
 
+typedef enum ControllerMode {
+	Average,
+	GreedyBest
+} ControllerMode;
+
 // TODO: Add modes here we have now avg but add also mode for best so we pick greedily the best loss
-static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int iterations, int maxSimulationSteps) {
+static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int iterations, int maxSimulationSteps, ControllerMode mode) {
 	float tempPrevLoss = *prevLoss;
 	float tempMomentum[3] = {momentum[0], momentum[1], momentum[2]};
 	Controller tempController = *ctrl;
 
 	ControllerOutput out = getControllerOutputV5(&tempController, target, deltaTime, tempMomentum, &tempPrevLoss, maxSimulationSteps);
-	lossPerSec(&out, maxSimulationSteps, deltaTime);
+	float totalLoss = lossPerSec(&out, maxSimulationSteps, deltaTime);
 
 	// Accumulators for weighted blending — controls and momentum
 	float sumAileron = out.Aileron;
@@ -546,6 +554,12 @@ static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 tar
 	float sumRudder = out.Rudder;
 	float sumMomentum[3] = {tempMomentum[0], tempMomentum[1], tempMomentum[2]};
 	float totalWeight = 1.0f; // baseline always has weight 1.0
+
+	float modeTotalLoss[iterations + 1];
+	ControllerOutput modelOutputs[iterations + 1];
+
+	modeTotalLoss[0] = totalLoss;
+	memcopy(&modelOutputs[0], &out);
 
 	for (int iter = 1; iter < iterations + 1; iter++) {
 		float iterPrevLoss = *prevLoss;
@@ -557,7 +571,9 @@ static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 tar
 
 		// V5 modifies iterMomentum in-place — capture it before it's lost
 		ControllerOutput iterOut = getControllerOutputV5(&iterController, target, deltaTimeIter, iterMomentum, &iterPrevLoss, simulationSteps);
-		lossPerSec(&iterOut, simulationSteps, deltaTimeIter);
+		float totalLoss = lossPerSec(&iterOut, simulationSteps, deltaTimeIter);
+		modeTotalLoss[iter] = totalLoss;
+		memcopy(&modelOutputs[iter], &iterOut);
 
 		// Weight: lower per-second loss = higher weight
 		// Clamp combinedLoss above -0.99 so denominator never goes to zero or negative
@@ -574,13 +590,21 @@ static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 tar
 		totalWeight += weight;
 	}
 
-	// Normalized weighted blend
-	out.Aileron = sumAileron / totalWeight;
-	out.Elevator = sumElevator / totalWeight;
-	out.Rudder = sumRudder / totalWeight;
-	momentum[0] = sumMomentum[0] / totalWeight;
-	momentum[1] = sumMomentum[1] / totalWeight;
-	momentum[2] = sumMomentum[2] / totalWeight;
+	if (mode == GreedyBest) {
+		int bestIdx = 0;
+		for (int i = 1; i <= iterations; i++) {
+			if (modeTotalLoss[i] < modeTotalLoss[bestIdx]) bestIdx = i;
+		}
+		out = modelOutputs[bestIdx];
+	} else {
+		// Normalized weighted blend
+		out.Aileron = sumAileron / totalWeight;
+		out.Elevator = sumElevator / totalWeight;
+		out.Rudder = sumRudder / totalWeight;
+		momentum[0] = sumMomentum[0] / totalWeight;
+		momentum[1] = sumMomentum[1] / totalWeight;
+		momentum[2] = sumMomentum[2] / totalWeight;
+	}
 
 	// Guard against NaN propagation
 	if (isnan(out.Aileron)) out.Aileron = 0.5f;
