@@ -1,3 +1,5 @@
+- [ ] make the loss function swapeble via function pointer
+
 # Flight Controller Research: Targeting Position Instead of Aligning Orientation
 
 Deep research notes for improving `flightControl.c`. The current code (V1..V6) iteratively
