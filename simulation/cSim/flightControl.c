@@ -23,6 +23,7 @@
 #include <string.h>
 
 #define memcopy(dst, src) memcpy((dst), (src), sizeof(*(dst)))
+#define MAX_FLOAT 3.402823466e+38F
 
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
@@ -442,9 +443,68 @@ static float evaluateLossV2(const Controller *ctrl, float values[3], float3 targ
 	return loss;
 }
 
+// Closing-speed focus: extends V2 by rewarding high approach speed,
+// not just direction alignment. Orientation terms give smooth gradient.
+// TODO: doesn't work look into it
+static float evaluateLossV3(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+	Plane simPlane = ctrl->plane;
+
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
+
+	float currentDist = distanceToTarget(&ctrl->plane, target);
+	float runningLoss = 0.0f;
+
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, deltaTime, NULL);
+		runningLoss += alignmentLoss(&simPlane, target);
+		runningLoss += alignmentLossVelocity(&simPlane, target);
+		// Reward raw closing speed (m/s). At ~340 m/s this is ~340.
+		// Divide by reference speed to keep scale comparable to alignment terms.
+		float3 toTarget = Float3_Normalize(Float3_Sub(target, simPlane.position));
+		float closingSpeed = Float3_Dot(simPlane.velocity, toTarget);
+		runningLoss -= closingSpeed * (1.0f / 340.0f);
+	}
+
+	float finalDist = distanceToTarget(&simPlane, target);
+	return (runningLoss / (float)ctrl->LookaheadSteps) + (finalDist - currentDist);
+}
+
+// Lateral-velocity focus: extends V2 by penalizing sideways drift.
+// Orientation terms give smooth gradient; lateral term rewards coordinated turns.
+// TODO: doesn't work look into it
+static float evaluateLossV4(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+	Plane simPlane = ctrl->plane;
+
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
+
+	float currentDist = distanceToTarget(&ctrl->plane, target);
+	float runningLoss = 0.0f;
+
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, deltaTime, NULL);
+		runningLoss += alignmentLoss(&simPlane, target);
+		runningLoss += alignmentLossVelocity(&simPlane, target);
+		// Penalize lateral velocity component (normalized, 0..2 range).
+		float3 toTarget = Float3_Normalize(Float3_Sub(target, simPlane.position));
+		float3 velDir = Float3_Normalize(simPlane.velocity);
+		float along = Float3_Dot(velDir, toTarget);
+		float3 lateral = Float3_Sub(velDir, Float3_Scale(toTarget, along));
+		runningLoss += Float3_Length(lateral);
+	}
+
+	float finalDist = distanceToTarget(&simPlane, target);
+	return (runningLoss / (float)ctrl->LookaheadSteps) + (finalDist - currentDist);
+}
+
+typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 target, float deltaTime);
+
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
+static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
 	ControllerOutput output = {0};
 
 	float values[3] = {0.5f, 0.5f, 0.5f}; // yaw, pitch, roll
@@ -467,8 +527,8 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			float perturbedNegative[3] = {values[0], values[1], values[2]};
 			perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
 
-			float lossPos = evaluateLossV2(ctrl, perturbedPositive, target, deltaTime);
-			float lossNeg = evaluateLossV2(ctrl, perturbedNegative, target, deltaTime);
+			float lossPos = lossFunc(ctrl, perturbedPositive, target, deltaTime);
+			float lossNeg = lossFunc(ctrl, perturbedNegative, target, deltaTime);
 
 			if (lossPos < bestAxisLoss[axis]) {
 				bestAxisLoss[axis] = lossPos;
@@ -539,12 +599,12 @@ typedef enum ControllerMode {
 	GreedyBest
 } ControllerMode;
 
-static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int iterations, int maxSimulationSteps, ControllerMode mode) {
+static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int iterations, int maxSimulationSteps, ControllerMode mode, LossFunction lossFunc) {
 	float tempPrevLoss = *prevLoss;
 	float tempMomentum[3] = {momentum[0], momentum[1], momentum[2]};
 	Controller tempController = *ctrl;
 
-	ControllerOutput out = getControllerOutputV5(&tempController, target, deltaTime, tempMomentum, &tempPrevLoss, maxSimulationSteps);
+	ControllerOutput out = getControllerOutputV5(&tempController, target, deltaTime, tempMomentum, &tempPrevLoss, maxSimulationSteps, lossFunc);
 	float totalLoss = lossPerSec(&out, maxSimulationSteps, deltaTime);
 
 	// Accumulators for weighted blending — controls and momentum
@@ -569,7 +629,7 @@ static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 tar
 		int simulationSteps = maxSimulationSteps / 2;
 
 		// V5 modifies iterMomentum in-place — capture it before it's lost
-		ControllerOutput iterOut = getControllerOutputV5(&iterController, target, deltaTimeIter, iterMomentum, &iterPrevLoss, simulationSteps);
+		ControllerOutput iterOut = getControllerOutputV5(&iterController, target, deltaTimeIter, iterMomentum, &iterPrevLoss, simulationSteps, lossFunc);
 		float totalLoss = lossPerSec(&iterOut, simulationSteps, deltaTimeIter);
 		modeTotalLoss[iter] = totalLoss;
 		memcopy(&modelOutputs[iter], &iterOut);
@@ -614,12 +674,12 @@ static ControllerOutput getControllerOutputV6(const Controller *ctrl, float3 tar
 }
 
 // version that reduces but increases steps
-static ControllerOutput getControllerOutputV7(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int iterations, int maxSimulationSteps, ControllerMode mode) {
+static ControllerOutput getControllerOutputV7(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int iterations, int maxSimulationSteps, ControllerMode mode, LossFunction lossFunc) {
 	float tempPrevLoss = *prevLoss;
 	float tempMomentum[3] = {momentum[0], momentum[1], momentum[2]};
 	Controller tempController = *ctrl;
 
-	ControllerOutput out = getControllerOutputV5(&tempController, target, deltaTime, tempMomentum, &tempPrevLoss, maxSimulationSteps);
+	ControllerOutput out = getControllerOutputV5(&tempController, target, deltaTime, tempMomentum, &tempPrevLoss, maxSimulationSteps, lossFunc);
 	float totalLoss = lossPerSec(&out, maxSimulationSteps, deltaTime);
 
 	// Accumulators for weighted blending — controls and momentum
@@ -644,7 +704,7 @@ static ControllerOutput getControllerOutputV7(const Controller *ctrl, float3 tar
 		int simulationSteps = maxSimulationSteps;
 
 		// V5 modifies iterMomentum in-place — capture it before it's lost
-		ControllerOutput iterOut = getControllerOutputV5(&iterController, target, deltaTimeIter, iterMomentum, &iterPrevLoss, simulationSteps);
+		ControllerOutput iterOut = getControllerOutputV5(&iterController, target, deltaTimeIter, iterMomentum, &iterPrevLoss, simulationSteps, lossFunc);
 		float totalLoss = lossPerSec(&iterOut, simulationSteps, deltaTimeIter);
 		modeTotalLoss[iter] = totalLoss;
 		memcopy(&modelOutputs[iter], &iterOut);
@@ -958,7 +1018,7 @@ int main() {
 
 	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1000.0f, 1000.0f});
 
-	const int simSteps = 2000;
+	const int simSteps = 1000;
 	const float deltaTime = 1.0f / 60.0f; // 60 FPS
 
 	Logs logs = {0};
@@ -966,10 +1026,11 @@ int main() {
 	float prevLoss = 0.0f;
 
 	for (int iter = 0; iter < simSteps; iter++) {
-		// ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 128);
-		// ControllerOutput out = getControllerOutputV6(&ctrl, target, deltaTime, momentum, &prevLoss, 4, 128, GreedyBest);
-		ControllerOutput out = getControllerOutputV6(&ctrl, target, deltaTime, momentum, &prevLoss, 8, 256, Average);
-		// ControllerOutput out = getControllerOutputV7(&ctrl, target, deltaTime, momentum, &prevLoss, 4, 128, Average);
+		// ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 128, evaluateLossV2);
+		// ControllerOutput out = getControllerOutputV6(&ctrl, target, deltaTime, momentum, &prevLoss, 4, 128, GreedyBest, evaluateLossV2);
+		// ControllerOutput out = getControllerOutputV6(&ctrl, target, deltaTime, momentum, &prevLoss, 8, 256, Average, evaluateLossV2);
+		// ControllerOutput out = getControllerOutputV7(&ctrl, target, deltaTime, momentum, &prevLoss, 4, 128, Average, evaluateLossV2);
+		ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 128, evaluateLossV3);
 		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
 
 		planeSetAileron01(&ctrl.plane, out.Aileron);

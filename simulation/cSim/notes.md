@@ -38,7 +38,8 @@ loss = min(distance_to_target(t) for t in rollout) + small * angle_penalty
 
 ## 2. Loss redesign (highest impact, lowest effort)
 
-### 2.1 Closest-point-of-approach (CPA) loss
+### 2.1 Closest-point-of-approach (CPA) loss 
+- [ ] Didnt work look into it more but kept the selcting the best one
 Instead of distance at the last lookahead step, track the **minimum** distance across the whole
 rollout. This directly optimizes "hit", not "be near at step N".
 
