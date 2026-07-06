@@ -3,6 +3,8 @@
     - [ ] lib ![link](https://github.com/RandyGaul/cute_headers/blob/master/cute_sound.h)
     - [ ] test volumetric sound first with small demo
         - [ ] implement to real code
+        - [ ] run the audio in different thread
+        - [ ] implement 3d sound
 - [ ] atmosphere rendering on gpu
     - [ ] optimized sky box rendering with SDF
 - [ ] test idea of pre pas gpu bbox itersection
