@@ -1184,6 +1184,7 @@ int main() {
 	printf("=== V2Plus ===\n");
 	runSimulation(&initialPlane, target, simSteps, deltaTime, evaluateLossV2Plus, "V2Plus", "simulation/cSim/flightControlLogs_V2Plus.csv");
 
+	// TODO: Use this loss it is best
 	printf("=== V2PlusTuned ===\n");
 	runSimulation(&initialPlane, target, simSteps, deltaTime, evaluateLossV2PlusTuned, "V2PlusTuned", "simulation/cSim/flightControlLogs_V2PlusTuned.csv");
 
