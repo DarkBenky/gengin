@@ -272,7 +272,7 @@ def plotDashboard(data):
 
 def main():
     scriptDir = Path(__file__).resolve().parent
-    csvPath = scriptDir / "flightControlLogs.csv"
+    csvPath = scriptDir / "flightControlLogs_V2PlusTuned.csv"
 
     if not csvPath.exists():
         print(f"CSV not found: {csvPath}", file=sys.stderr)

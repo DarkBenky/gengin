@@ -477,8 +477,79 @@ static float evaluateLossV2Plus(const Controller *ctrl, float values[3], float3 
 	float distImprovement = (finalDist - currentDist) * 0.4f + (minDist - currentDist) * 0.6f;
 	float overshootTerm = (finalDist - minDist) * 0.5f;
 
-	// Amplify alignment near target: at 1700m 1.2x, at 200m 2x, at 50m 2.6x
+	// Amplify alignment near target. At 1700m 1.18x, at 500m 1.57x, at 200m 2.0x, at 50m 2.6x, at 0m 3.0x.
 	float alignWeight = 1.0f + 2.0f / (1.0f + currentDist * 0.005f);
+
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm;
+
+	return loss;
+}
+
+// V2PlusTuned_v1: final tuned — A=3.0, B=0.0063.
+// At 0m 4.0x, at 50m 3.28x, at 100m 2.84x, at 200m 2.33x, at 500m 1.81x.
+static float evaluateLossV2PlusTuned(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+	Plane simPlane = ctrl->plane;
+
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
+
+	float currentDist = distanceToTarget(&ctrl->plane, target);
+	float minDist = currentDist;
+	float runningAlignment = 0.0f;
+	float runningAlignVel = 0.0f;
+
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, deltaTime, NULL);
+		runningAlignment += alignmentLoss(&simPlane, target);
+		runningAlignVel += alignmentLossVelocity(&simPlane, target);
+		float d = distanceToTarget(&simPlane, target);
+		if (d < minDist) minDist = d;
+	}
+
+	float finalAlignment = alignmentLoss(&simPlane, target);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
+	float finalDist = distanceToTarget(&simPlane, target);
+
+	float distImprovement = (finalDist - currentDist) * 0.3f + (minDist - currentDist) * 0.7f;
+	float overshootTerm = (finalDist - minDist) * 1.0f;
+
+	float alignWeight = 1.0f + 3.0f / (1.0f + currentDist * 0.0063f);
+
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm;
+
+	return loss;
+}
+
+// V2PlusTuned_v2: A=3.0, B=0.0065 — runner-up, slightly faster decay than v1.
+static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+	Plane simPlane = ctrl->plane;
+
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
+
+	float currentDist = distanceToTarget(&ctrl->plane, target);
+	float minDist = currentDist;
+	float runningAlignment = 0.0f;
+	float runningAlignVel = 0.0f;
+
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, deltaTime, NULL);
+		runningAlignment += alignmentLoss(&simPlane, target);
+		runningAlignVel += alignmentLossVelocity(&simPlane, target);
+		float d = distanceToTarget(&simPlane, target);
+		if (d < minDist) minDist = d;
+	}
+
+	float finalAlignment = alignmentLoss(&simPlane, target);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
+	float finalDist = distanceToTarget(&simPlane, target);
+
+	float distImprovement = (finalDist - currentDist) * 0.3f + (minDist - currentDist) * 0.7f;
+	float overshootTerm = (finalDist - minDist) * 1.0f;
+
+	float alignWeight = 1.0f + 3.0f / (1.0f + currentDist * 0.0065f);
 
 	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm;
 
@@ -1042,44 +1113,28 @@ void saveLogsToCSV(const Logs *logs, const char *filename) {
 	fclose(file);
 }
 
-// main testing loop to debug controller
-int main() {
-	// TODO - make research what helps with model accuracy (more iteration, lower learning rate, lower dt, higher dt)
-	Plane plane;
-	if (loadPlaneBin(&plane, "simulation/simModels/F-16C.bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 180.0f, 1.0f) != 0) {
-		printf("Failed to load model: simulation/simModels/F-16C.bin\n");
-		return 1;
-	}
-
+static void runSimulation(const Plane *initialPlane, float3 target, int simSteps, float deltaTime, LossFunction lossFunc, const char *label, const char *csvPath) {
+	Plane plane = *initialPlane;
 	Controller ctrl;
 	initController(&ctrl, &plane);
 
-	float3 target = Float3_Add(plane.position, (float3){1000.0f, 1000.0f, 1000.0f});
-
-	const int simSteps = 2000;
-	const float deltaTime = 1.0f / 60.0f; // 60 FPS
-
 	Logs logs = {0};
-	float momentum[3] = {0.0f, 0.0f, 0.0f}; // for getControllerOutputV5
+	float momentum[3] = {0.0f, 0.0f, 0.0f};
 	float prevLoss = 0.0f;
+	float minDistOverall = FLT_MAX;
 
 	for (int iter = 0; iter < simSteps; iter++) {
-		// ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 128, evaluateLossV2);
-		// ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 256, evaluateLossV2Plus);
-		// ControllerOutput out = getControllerOutputV6(&ctrl, target, deltaTime, momentum, &prevLoss, 6, 128, GreedyBest, evaluateLossV2Plus);
-		// ControllerOutput out = getControllerOutputV7(&ctrl, target, deltaTime, momentum, &prevLoss, 4, 128, Average, evaluateLossV2);
-		ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 128, evaluateLossV2Plus);
-		printf("Sim Step %d: Aileron %.3f, Elevator %.3f, Rudder %.3f\n", iter, out.Aileron, out.Elevator, out.Rudder);
+		ControllerOutput out = getControllerOutputV5(&ctrl, target, deltaTime, momentum, &prevLoss, 128, lossFunc);
 
 		planeSetAileron01(&ctrl.plane, out.Aileron);
 		planeSetElevator01(&ctrl.plane, out.Elevator);
 		planeSetRudder01(&ctrl.plane, out.Rudder);
-		planeSetThrottle01(&ctrl.plane, 1.0f); // full throttle
+		planeSetThrottle01(&ctrl.plane, 1.0f);
 
 		updatePlane(&ctrl.plane, deltaTime, NULL);
 
 		float dist = distanceToTarget(&ctrl.plane, target);
-		printf("[Step %i] Distance to target: %.2f\n", iter, dist);
+		if (dist < minDistOverall) minDistOverall = dist;
 
 		float3 planeForward = planeGetForwardVector(&ctrl.plane);
 		float3 planeUp = planeGetUpVector(&ctrl.plane);
@@ -1105,7 +1160,35 @@ int main() {
 		addLog(&logs, log);
 	}
 
-	saveLogsToCSV(&logs, "simulation/cSim/flightControlLogs.csv");
+	saveLogsToCSV(&logs, csvPath);
+	printf("%s: minDist=%.2f finalDist=%.2f\n", label, minDistOverall, distanceToTarget(&ctrl.plane, target));
+	freeLogs(&logs);
+}
+
+// main testing loop to debug controller
+int main() {
+	Plane initialPlane;
+	if (loadPlaneBin(&initialPlane, "simulation/simModels/F-16C.bin", (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f}, 180.0f, 1.0f) != 0) {
+		printf("Failed to load model: simulation/simModels/F-16C.bin\n");
+		return 1;
+	}
+
+	float3 target = Float3_Add(initialPlane.position, (float3){1000.0f, 1000.0f, 1000.0f});
+
+	const int simSteps = 2000;
+	const float deltaTime = 1.0f / 60.0f;
+
+	printf("=== V2 ===\n");
+	runSimulation(&initialPlane, target, simSteps, deltaTime, evaluateLossV2, "V2", "simulation/cSim/flightControlLogs_V2.csv");
+
+	printf("=== V2Plus ===\n");
+	runSimulation(&initialPlane, target, simSteps, deltaTime, evaluateLossV2Plus, "V2Plus", "simulation/cSim/flightControlLogs_V2Plus.csv");
+
+	printf("=== V2PlusTuned ===\n");
+	runSimulation(&initialPlane, target, simSteps, deltaTime, evaluateLossV2PlusTuned, "V2PlusTuned", "simulation/cSim/flightControlLogs_V2PlusTuned.csv");
+
+	printf("=== V2PlusTuned2 ===\n");
+	runSimulation(&initialPlane, target, simSteps, deltaTime, evaluateLossV2PlusTuned2, "V2PlusTuned2", "simulation/cSim/flightControlLogs_V2PlusTuned2.csv");
 
 	return 0;
 }
