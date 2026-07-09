@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../object/format.h"
+#include "../math/vector3.h"
 #include <time.h>
 
 // typedef struct SoundObject {
@@ -81,3 +82,15 @@ int addSoundObject(SoundSystem *system, const char *filePath, float3 position, f
     return 0; // success
 }
 
+void compute3dSound(SoundObject *obj, float3 listenerPosition, float3 listenerForward, float3 listenerUp, float3 listenerRight) {
+    float distance = Float3_Length(Float3_Sub(obj->position, listenerPosition));
+}
+
+void playSounds(SoundSystem *system, float3 listenerPosition, float3 listenerForward, float3 listenerUp, float3 listenerRight) {
+    for (int i = 0; i < system->soundCount; i++) {
+        SoundObject *obj = &system->sounds[i];
+        compute3dSound(obj, listenerPosition, listenerForward, listenerUp, listenerRight);
+
+        ...
+    }
+}
