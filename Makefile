@@ -31,13 +31,13 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c skybox/skybox.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC         = $(filter-out test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound, $(MAKECMDGOALS))
+_SPECIFIC         = $(filter-out test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound testSound3d, $(MAKECMDGOALS))
 _RUN_TESTS        = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 BENCH_FUNC_DIR    = bench
 BENCH_FUNC_SRCS   = $(wildcard $(BENCH_FUNC_DIR)/*.c)
 BENCH_FUNC_BINS   = $(patsubst $(BENCH_FUNC_DIR)/%.c, $(BENCH_FUNC_DIR)/%, $(BENCH_FUNC_SRCS))
-_BENCH_FUNC_SPECIFIC = $(filter-out test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound, $(MAKECMDGOALS))
+_BENCH_FUNC_SPECIFIC = $(filter-out test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound testSound3d, $(MAKECMDGOALS))
 _RUN_BENCH_FUNCS  = $(if $(_BENCH_FUNC_SPECIFIC), $(addprefix $(BENCH_FUNC_DIR)/, $(_BENCH_FUNC_SPECIFIC)))
 
 EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
@@ -47,9 +47,10 @@ GAME_CLIENT_SRC    = client/gameClient.c client/client.c object/format.c object/
 HEX_DUMP_SRC       = hexDump/hexDump.c
 TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c client/client.c util/threadPool.c
 FLIGHT_CONTROL_SRC = simulation/cSim/flightControl.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c
-TEST_SOUND_SRC     = sound/soundTest.c
+TEST_SOUND_SRC      = sound/soundTest.c
+TEST_SOUND3D_SRC    = sound/soundTest3d.c
 
-.PHONY: all clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
+.PHONY: all clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound testSound3d $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
 
 all: $(TARGET)
 
@@ -92,6 +93,10 @@ flightController: $(FLIGHT_CONTROL_SRC)
 testSound: $(TEST_SOUND_SRC)
 	$(CC) -O0 -g -Isound -I. -o $@ $^ $(LDFLAGS) -lSDL3 -lm
 	./testSound
+
+testSound3d: $(TEST_SOUND3D_SRC)
+	$(CC) -O0 -g -Isound -I. -o $@ $^ $(LDFLAGS) -lSDL3 -lm
+	./testSound3d
 
 run: $(TARGET)
 	./$(TARGET)
