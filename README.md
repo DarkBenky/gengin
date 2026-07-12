@@ -1,5 +1,10 @@
 ## Tasks
-- [ ] Add audio
+- [ ] **high** integrated FSR1 to renderer
+    - [ ] **low** test other algorithms like FSR2 ...
+- [ ] **high** test if we can improve guidance
+    - [ ] test lowering the dt for simulation when close to target
+    - [ ] test switching to genetic algorithm when close to target so we simulate some generation with random mutation and on next generation we cross mutate the top candidates 
+- [ ] **high** Add audio
     - [ ] lib ![link](https://github.com/RandyGaul/cute_headers/blob/master/cute_sound.h)
     - [ ] test volumetric sound first with small demo
         - [ ] implement to real code
