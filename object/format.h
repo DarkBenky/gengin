@@ -62,19 +62,31 @@ typedef struct uvMap {
 typedef struct Camera {
 	float3 position;
 	float3 forward;
+	float3 right;
+	float3 up;
+	float fovScale;
+	float aspect;
+
+	float3 prevPosition;
+	float3 prevForward;
+	float3 prevRight;
+	float3 prevUp;
+	float prevFovScale;
+	float prevAspect;
+
+
 	float fov;
 	float2 jitter;
 	int screenWidth;
 	int screenHeight;
 	float3 lightDir;
 	/* precomputed per-frame, set by RenderObjects */
-	float3 right;
-	float3 up;
 	float3 viewDir;
 	float3 halfVec;
 	float3 renderLightDir;
-	float aspect;
-	float fovScale;
+	
+	float seed;
+	
 	uint32 *framebuffer;
 	int4 *accumulationBuffer;
 	float3 *normalBuffer;
@@ -85,7 +97,7 @@ typedef struct Camera {
 	float3 *bloomDst;
 	uvMap *uvBuffer;
 	float *depthBuffer;
-	float seed;
+	float2 *motionVectorBuffer;
 	Color *reflectCache;
 	Color *tempFramebuffer;
 	float *tempBuffer_1;
@@ -103,5 +115,6 @@ void CameraMoveForward(Camera *camera, float amount);
 void CameraMoveRight(Camera *camera, float amount);
 void CameraMoveUp(Camera *camera, float amount);
 void CameraRotate(Camera *camera, float pitch, float yaw);
+void ComputePrevCameraPos(Camera *camera);
 
 #endif // FORMAT_H

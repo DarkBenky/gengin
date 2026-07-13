@@ -47,6 +47,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->objectIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
 	camera->uvBuffer = (uvMap *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(uvMap)));
 	camera->triangleIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
+	camera->motionVectorBuffer = (float2 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float2)));
 	camera->frameCounter = 0;
 	clearBuffers(camera);
 }
@@ -69,6 +70,7 @@ void destroyCamera(Camera *camera) {
 	free(camera->bloomDst);
 	free(camera->uvBuffer);
 	free(camera->triangleIdBuffer);
+	free(camera->motionVectorBuffer);
 	camera->framebuffer = NULL;
 	camera->normalBuffer = NULL;
 	camera->positionBuffer = NULL;
@@ -85,6 +87,7 @@ void destroyCamera(Camera *camera) {
 	camera->bloomDst = NULL;
 	camera->uvBuffer = NULL;
 	camera->triangleIdBuffer = NULL;
+	camera->motionVectorBuffer = NULL;
 }
 
 void CameraMoveForward(Camera *camera, float amount) {
@@ -128,3 +131,12 @@ void CameraRotate(Camera *camera, float pitch, float yaw) {
 		fwd1.y * cosPitch + camUp.y * sinPitch,
 		fwd1.z * cosPitch + camUp.z * sinPitch});
 }
+
+void ComputePrevCameraPos(Camera *camera) {
+	camera->prevPosition = camera->position;
+	camera->prevForward = camera->forward;
+	camera->prevRight = camera->right;
+	camera->prevUp = camera->up;
+	camera->prevFovScale = camera->fovScale;
+	camera->prevAspect = camera->aspect;
+};

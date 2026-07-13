@@ -217,6 +217,10 @@ int main() {
 	benchInit(&bench);
 
 	while (1) {
+		// Update prev postion rotation scale for motion vectors
+		ComputePrevPostionRotationScale(&scene);
+		ComputePrevCameraPos(&camera);
+		
 		// get current scene state from server
 		getObjects(&c, &scene, &matLib, &objectRegistry);
 

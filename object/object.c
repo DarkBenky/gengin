@@ -81,6 +81,9 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
+	obj->prevPostion = position;
+	obj->prevRotation = rotation;
+	obj->prevScale = scale;
 	CreateObjectBVH(obj, &obj->bvh);
 	Object_UpdateWorldBounds(obj);
 	CalculateFaceEmissions(obj, lib);
@@ -168,6 +171,15 @@ void Object_SetRoughness(Object *obj, MaterialLib *lib, float roughness) {
 void Object_SetMetallic(Object *obj, MaterialLib *lib, float metallic) {
 	for (int i = 0; i < obj->triangleCount; i++)
 		lib->entries[obj->materialIds[i]].metallic = metallic;
+}
+
+void ComputePrevPostionRotationScale(ObjectList *objList) {
+	for (int i = 0; i < objList->count; i++) {
+		Object *obj = &objList->objects[i];
+		obj->prevPostion = obj->position;
+		obj->prevRotation = obj->rotation;
+		obj->prevScale = obj->scale;
+	}
 }
 
 void Object_Destroy(Object *obj) {

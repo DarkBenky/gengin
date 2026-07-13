@@ -1,4 +1,6 @@
 #include "scene.h"
+#include "object.h"
+#include "material/material.h"
 
 #include <math.h>
 #include <stdlib.h>

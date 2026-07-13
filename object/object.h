@@ -1,6 +1,7 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
+#include "scene.h"
 #include <math.h>
 #include <immintrin.h>
 
@@ -91,6 +92,10 @@ typedef struct Object {
 	float3 worldBBmin;
 	float3 worldBBmax;
 
+	float3 prevPostion;
+	float3 prevRotation;
+	float3 prevScale;
+
 	// cached inverse transform — recomputed in Object_UpdateWorldBounds
 	float3 _invScale;  // row 0 of M = Diag(invScale)*InvRot
 	float3 _invRotSin; // row 1 of M
@@ -153,6 +158,8 @@ void DestroyObjectBVH(BVH *bvh);
 void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld);
 bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir);
 void getBvhStats(const BVH *bvh, int *outNodeCount, int *outTriCount);
+
+void ComputePrevPostionRotationScale(ObjectList *objList);
 
 // Perspective frustum — 5 planes (near, left, right, bottom, top), all inward-facing.
 // Test: dot(normal, P) + d >= 0 means P is on the inside of the plane.

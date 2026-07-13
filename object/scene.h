@@ -1,7 +1,8 @@
 #ifndef SCENE_H
 #define SCENE_H
 
-#include "object.h"
+typedef struct Object Object;
+typedef struct MaterialLib MaterialLib;
 
 int DemoScene_ObjectCount(void);
 void DemoScene_Build(Object *objects, MaterialLib *lib);
@@ -25,5 +26,7 @@ int ObjectList_CountTriangles(const ObjectList *list);
 // Merge all objects in src into a single world-space mesh added to dst.
 // Src objects are destroyed and the list is reset after merging.
 void ObjectList_Merge(ObjectList *src, ObjectList *dst);
+
+#include "object.h"
 
 #endif // SCENE_H

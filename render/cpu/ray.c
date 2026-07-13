@@ -594,6 +594,14 @@ static void RayTraceRowFunc(void *arg) {
 	float aspect = camera->aspect;
 	float fovScale = camera->fovScale;
 
+	// prev camera state for motion vectors
+	float3 prevPos = camera->prevPosition;
+	float3 prevFwd = camera->prevForward;
+	float3 prevRgt = camera->prevRight;
+	float3 prevUp = camera->prevUp;
+	float prevAsp = camera->prevAspect;
+	float prevFov = camera->prevFovScale;
+
 	// precompute per-row ray base and per-pixel right step
 	float ndcY = 1.0f - (row + 0.5f) / (float)height * 2.0f;
 	float yscale = ndcY * fovScale;
@@ -696,6 +704,7 @@ static void RayTraceRowFunc(void *arg) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
 			camera->objectIdBuffer[idx] = -1;
 			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
+			camera->motionVectorBuffer[idx] = (float2){0.0f, 0.0f};
 			continue;
 		}
 
@@ -918,6 +927,27 @@ static void RayTraceRowFunc(void *arg) {
 		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
 		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, v0, v1, v2);
 		camera->triangleIdBuffer[idx] = bestTri;
+
+		// Motion vector: screen-UV delta from previous frame
+		{
+			float3 localPos = InverseTransformPointTRS(bestHitPos, obj->position, obj->rotation, obj->scale);
+			float3 prevWorldPos = TransformPointTRS(localPos, obj->prevPostion, obj->prevRotation, obj->prevScale);
+			float3 prevToPoint = Float3_Sub(prevWorldPos, prevPos);
+			float prevViewZ = Float3_Dot(prevToPoint, prevFwd);
+			if (prevViewZ > 1e-4f) {
+				float prevViewX = Float3_Dot(prevToPoint, prevRgt);
+				float prevViewY = Float3_Dot(prevToPoint, prevUp);
+				float prevNdcX = prevViewX / (prevViewZ * prevAsp * prevFov);
+				float prevNdcY = prevViewY / (prevViewZ * prevFov);
+				float prevU = (prevNdcX + 1.0f) * 0.5f;
+				float prevV = (1.0f - prevNdcY) * 0.5f;
+				float currU = (x + 0.5f) / (float)width;
+				float currV = (row + 0.5f) / (float)height;
+				camera->motionVectorBuffer[idx] = (float2){currU - prevU, currV - prevV};
+			} else {
+				camera->motionVectorBuffer[idx] = (float2){0.0f, 0.0f};
+			}
+		}
 
 		// ray traced reflection only cast every REFLECTION_RESOLUTION columns
 		if (x % REFLECTION_RESOLUTION == 0) {
