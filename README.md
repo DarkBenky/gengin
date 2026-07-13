@@ -1,6 +1,8 @@
 ## Tasks
 - [ ] **high** integrated FSR1 to renderer
     - [ ] **low** test other algorithms like FSR2 ...
+    - [ ] **low** try to implement own fsr2 like alogo
+        - [ ] **low** create motion vectors 
 - [ ] **high** test if we can improve guidance
     - [ ] test lowering the dt for simulation when close to target
     - [ ] test switching to genetic algorithm when close to target so we simulate some generation with random mutation and on next generation we cross mutate the top candidates 
