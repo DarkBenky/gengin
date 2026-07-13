@@ -594,11 +594,11 @@ static void RayTraceRowFunc(void *arg) {
 	float aspect = camera->aspect;
 	float fovScale = camera->fovScale;
 
-	// prev camera state for motion vectors
+	// prev camera state for motion vectors — normalize for orthonormal projection basis
 	float3 prevPos = camera->prevPosition;
-	float3 prevFwd = camera->prevForward;
-	float3 prevRgt = camera->prevRight;
-	float3 prevUp = camera->prevUp;
+	float3 prevFwd = Float3_Normalize(camera->prevForward);
+	float3 prevRgt = Float3_Normalize(camera->prevRight);
+	float3 prevUp = Float3_Normalize(camera->prevUp);
 	float prevAsp = camera->prevAspect;
 	float prevFov = camera->prevFovScale;
 
@@ -1069,6 +1069,8 @@ static void RayTraceRowFunc(void *arg) {
 		// camera->framebuffer[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
 		// camera->framebuffer[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
 		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z));
+		// float2 motionColor = camera->motionVectorBuffer[row * width + x];
+		// camera->framebuffer[row * width + x] = PackColor(motionColor.x / 4.0f, 0.0f, motionColor.y / 4.0f);
 	}
 }
 
