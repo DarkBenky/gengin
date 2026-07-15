@@ -1,3 +1,7 @@
+## DEPRECATED — This module is part of the legacy custom agent orchestration layer.
+## It is only used when running the old standalone loop via main.py directly.
+## For the new MCP-server workflow, use mcp_server.py with an external agent
+## harness (OpenCode) which handles model selection and routing independently.
 from openrouter import OpenRouter
 import os
 
