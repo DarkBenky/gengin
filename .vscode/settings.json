@@ -63,6 +63,7 @@
   "C_Cpp.intelliSenseEngine": "disabled",
   "cSpell.words": [
     "backpropagation",
+    "disocclusion",
     "skybox"
   ],
   "python-envs.defaultEnvManager": "ms-python.python:conda",
