@@ -866,6 +866,153 @@ def _autoReviewBeforeBuild():
     return output
 
 
+# ---------------------------------------------------------------------------
+# skeptical review model pass — adversarial pre-commit gate
+# ---------------------------------------------------------------------------
+
+SKEPTICAL_REVIEW_MODEL = "deepseek/deepseek-v4-flash"
+SKEPTICAL_REVIEW_PROVIDER = "baidu/fp8"
+
+SKEPTICAL_REVIEW_PROMPT = """\
+You are a skeptical senior C performance engineer. Your job is to find flaws in \
+a code change that claims to improve application performance.
+
+ASSUME THE CHANGE IS WRONG. Find concrete reasons why it could:
+1. FAIL TO COMPILE: missing headers, type mismatches, broken macro expansions,
+   undeclared identifiers introduced by the diff.
+2. PRODUCE WRONG RESULTS: changed function semantics, missing edge cases,
+   off-by-one errors, float precision issues, accidental sign changes.
+3. CRASH AT RUNTIME: null pointer dereference, buffer overflow, use-after-free,
+   stack overflow (large VLAs in threaded code = 32x stack multiplier).
+4. HURT PERFORMANCE (the opposite of the claimed goal): increased cache pressure,
+   false sharing between threads, extra indirection, accidental O(n^2), repeated
+   allocations in hot paths, VLAs on stack in multi-threaded contexts, worse
+   branch prediction, destroyed compiler optimization opportunities (inlining,
+   vectorization, hoisting).
+5. BREAK THREAD SAFETY: data races, missing synchronization, non-atomic
+   read-modify-write, thread-unsafe global state.
+
+Be adversarial. If the diff looks correct at first glance, dig deeper. Look for
+subtle issues: integer overflow on edge-case inputs, alignment assumptions that
+may not hold, implicit conversions that change meaning, const violations that
+could cause undefined behavior.
+
+IGNORE: style, naming, comments, whitespace, formatting preferences.
+ONLY flag issues that would cause wrong output, crashes, or performance problems.
+
+Reply with ONLY a valid JSON object (no markdown fences, no prose):
+{
+  "verdict": "PASS" or "FAIL",
+  "issues": [
+    {
+      "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+      "file": "path/to/file.c",
+      "line_hint": "approximate line or context",
+      "description": "what is wrong and why it matters",
+      "fix_suggestion": "how to fix it"
+    }
+  ],
+  "summary": "1-sentence summary if issues found, or empty string if PASS"
+}
+
+If no issues found: {"verdict": "PASS", "issues": [], "summary": ""}
+"""
+
+# Separate cache for skeptical reviews (different prompt, different model,
+# different purpose — should not share cache with correctness review).
+_last_skeptical_diff_hash = None
+_last_skeptical_output = None
+_last_skeptical_issues = None  # parsed issues list for robust CRITICAL detection
+_last_skeptical_cached_issues = None  # issues saved with cache to survive cache hits
+
+
+def _skepticalReview(diff: str) -> str:
+    """Run the skeptical reviewer model on a diff string.
+
+    This is a separate model instance from the correctness reviewer — it uses
+    an adversarial prompt designed to find flaws in performance-oriented changes.
+    The model has NO tool access; it only sees the diff and the prompt.
+    """
+    global _last_skeptical_issues
+    diff_truncated = diff[:12000]
+    if len(diff) > 12000:
+        diff_truncated += f"\n... [{len(diff) - 12000} more bytes truncated]"
+
+    prompt = SKEPTICAL_REVIEW_PROMPT + "\n\nDIFF TO REVIEW:\n```diff\n" + diff_truncated + "\n```"
+    try:
+        raw = model.getResponse(
+            prompt,
+            model=SKEPTICAL_REVIEW_MODEL,
+            provider=SKEPTICAL_REVIEW_PROVIDER,
+        )
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            _last_skeptical_issues = []
+            return f"Skeptical reviewer returned no valid JSON. Raw response:\n{raw[:500]}"
+        data = json.loads(m.group(0))
+        verdict = data.get("verdict", "?")
+        issues = data.get("issues", [])
+        _last_skeptical_issues = issues
+        summary = data.get("summary", "")
+        if verdict == "PASS" or not issues:
+            return "SKEPTICAL REVIEW: PASS — no flaws found."
+        lines = [f"SKEPTICAL REVIEW: {verdict} — {len(issues)} issue(s) found:"]
+        for issue in issues:
+            sev = issue.get("severity", "?")
+            file = issue.get("file", "?")
+            desc = issue.get("description", "?")
+            fix = issue.get("fix_suggestion", "")
+            lines.append(f"  [{sev}] {file}: {desc}")
+            if fix:
+                lines.append(f"        Fix: {fix}")
+        if summary:
+            lines.append(f"\nSummary: {summary}")
+        return "\n".join(lines)
+    except Exception as e:
+        _last_skeptical_issues = []
+        return f"Skeptical reviewer error: {e}"
+
+
+def skepticalReview():
+    """
+    Run an adversarial review of the current git diff using a separate model
+    instance.  The reviewer is primed to be skeptical — it assumes the change
+    is wrong and looks for concrete reasons why.
+
+    Call this BEFORE createPR() as a pre-commit gate, or anytime you want a
+    second adversarial opinion on your changes.
+
+    Results are cached per unique diff hash (separate from the correctness
+    review cache).
+    """
+    global _last_skeptical_diff_hash, _last_skeptical_output, _last_skeptical_issues
+    global _last_skeptical_cached_issues
+    diff = gf.getDiff(returnString=True)
+    if not diff or diff == "(no changes)":
+        _last_skeptical_issues = []
+        # Do NOT clear _last_skeptical_cached_issues — a future cache hit
+        # on the same diff needs the original issues.
+        return "(no changes to review)"
+
+    import hashlib
+    diff_hash = hashlib.md5(diff.encode()).hexdigest()
+    if diff_hash == _last_skeptical_diff_hash and _last_skeptical_output is not None:
+        # Cache hit — restore issues to match the cached output so createPR
+        # sees the correct CRITICAL status even after intervening calls.
+        _last_skeptical_issues = _last_skeptical_cached_issues
+        return _last_skeptical_output + "\n(cached — diff unchanged since last skeptical review)"
+
+    output = _skepticalReview(diff)
+    _last_skeptical_diff_hash = diff_hash
+    _last_skeptical_output = output
+    _last_skeptical_cached_issues = _last_skeptical_issues
+
+    CONTEXT.append({"type": "tool_use", "tool": "skepticalReview",
+                    "input": f"{len(diff)} byte diff", "output": output})
+    return output
+
+
 def convertContextToXml():
     def _esc(v):
         return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -1055,6 +1202,26 @@ def _github_create_pr(title, body, head, base="main"):
 
 def createPR(title, body, branch, commit_msg=None):
     commit_msg = commit_msg or title
+
+    # Pre-commit skeptical review gate — catch issues before they land.
+    review_result = skepticalReview()
+    # Robust check: use the parsed issues list, not string matching.
+    has_critical = (
+        _last_skeptical_issues is not None
+        and len(_last_skeptical_issues) > 0
+        and any(issue.get("severity") == "CRITICAL" for issue in _last_skeptical_issues)
+    )
+    if has_critical:
+        critical_msg = (
+            "PR ABORTED: Skeptical review found CRITICAL issues.\n"
+            f"{review_result}\n"
+            "Fix the critical issues before committing, or re-run skepticalReview() "
+            "to re-evaluate after fixes."
+        )
+        CONTEXT.append({"type": "tool_use", "tool": "createPR",
+                        "input": {"title": title, "branch": branch},
+                        "output": critical_msg})
+        return critical_msg
 
     run(["git", "checkout", "-b", branch], cwd=PROJECT_DIR)
     run(["git", "add", "-A"], cwd=PROJECT_DIR)

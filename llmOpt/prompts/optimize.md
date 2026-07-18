@@ -21,7 +21,14 @@ approaches, and remaining hotspots.
    perf percentages so you know exactly which lines are expensive.
 3. Call `lsp_show_context(symbol, rel_path)` — definition, callers, references,
    and exact line range in one call.
-4. Record your findings and plan.
+4. **If you need to deeply understand a subsystem before planning**, call
+   `research_agent(prompt)`.  This launches a read-only sub-agent that can
+   explore the codebase, trace call chains, check existing benchmarks, and
+   return structured findings.  Use it for unfamiliar code areas.
+   Example: `research_agent("Trace the full call chain of Trace() in
+   render/cpu/ through all callees and identify which functions do the
+   most math operations")`
+5. Record your findings and plan.
 
 ### Phase 2 — Micro-Benchmark (MANDATORY)
 5. Call `create_func_bench(func_name, header_code, impl_code)` where:
@@ -68,23 +75,30 @@ approaches, and remaining hotspots.
     updates ALL references across all files.
 12. `lsp_diagnostics(rel_path)` — fast syntax/type check (< 1s, catches 90%
     of errors before the 30s build).
-13. `review_changes()` — AI code review for null derefs, off-by-one, VLA
-    stack explosions, cache false sharing, logic errors.  (Cached per diff.)
-14. `build_project` — full compilation.  Fix errors immediately.
-15. `make_bench` — compare against baseline:
+13. `review_changes()` — AI code review for correctness bugs (null derefs,
+    off-by-one, VLA stack explosions, cache false sharing, logic errors).
+    (Cached per diff.)
+14. `skeptical_review()` — ADVERSARIAL review using a separate model instance.
+    This reviewer assumes your change is WRONG and actively looks for flaws.
+    It catches issues the correctness reviewer might miss.  (Cached per diff,
+    independent cache from review_changes.)
+15. `build_project` — full compilation.  Fix errors immediately.
+16. `make_bench` — compare against baseline:
     - **IMPROVED** → Phase 5.
     - **REGRESSED** → `bisect_regression` to find culprit edit.
     - **VISUAL REGRESSION** → code auto-restored (MSE >= 50).  Read the
       auto-restore message and try a different approach.
 
 ### Phase 5 — Persist & Clean Up
-16. `delete_func_bench(func_name)` — clean up bench files.
-17. When solid and measured: `create_pr(title, body, branch)`.  One logical
+17. `delete_func_bench(func_name)` — clean up bench files.
+18. When solid and measured: `create_pr(title, body, branch)`.  One logical
     improvement per PR.  Body should explain what changed, the measured
     speedup, and why it's safe.
-18. `sync_planner_to_codebase_context()` — persist findings to the knowledge
+    **NOTE: `create_pr` auto-runs `skeptical_review()` before committing.**
+    If CRITICAL issues are found, the PR is aborted — fix them first.
+19. `sync_planner_to_codebase_context()` — persist findings to the knowledge
     base so future sessions learn from this one.
-19. Move to the next hotspot.
+20. Move to the next hotspot.
 
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:

@@ -1,7 +1,7 @@
 """
 gengin-optimizer MCP Server
 ============================
-Exposes ~45 domain tools from main.py and getFunc.py as MCP tools so an
+Exposes ~47 domain tools from main.py and getFunc.py as MCP tools so an
 external agent harness (OpenCode) can drive C codebase performance
 optimization without the legacy custom planning/execution loop.
 
@@ -14,7 +14,7 @@ Tools are grouped by category:
   build_project          — Run make (with pre-build syntax check + auto-review)
   make_bench             — Run make bench, return comparison vs baseline
   make_flame             — Run make flame, return perf data + hotspots
-  create_pr              — Commit, push, and open a GitHub PR
+  create_pr              — Commit, push, and open a GitHub PR (auto-runs skeptical review)
 
 === Micro-Benchmark Sandbox (main.py) ===
   create_func_bench      — Create bench/<name>.h and bench/<name>.c
@@ -23,8 +23,12 @@ Tools are grouped by category:
   delete_func_bench      — Remove bench files for a function
 
 === Validation & Bisection (main.py) ===
-  review_changes         — Send git diff to reviewer model for bug check
+  review_changes         — Send git diff to reviewer model for correctness check
+  skeptical_review       — Adversarial review: assumes the change is wrong, finds flaws
   bisect_regression      — Identify which edit caused a benchmark regression
+
+=== Agents (research_agent.py) ===
+  research_agent         — Launch a read-only sub-agent to explore the codebase
 
 === Knowledge Persistence (main.py) ===
   sync_planner_to_codebase_context — Distill planner notes into codebase_context.md
@@ -374,12 +378,66 @@ def review_changes() -> str:
 
 
 @mcp.tool()
+def skeptical_review() -> str:
+    """Run an ADVERSARIAL code review on the current git diff using a separate
+    model instance.  The reviewer is primed to be SKEPTICAL: it assumes the
+    change is WRONG and actively looks for reasons why it could fail, crash,
+    produce wrong results, or hurt performance (the opposite of the claimed goal).
+
+    This is a sandboxed model call — the reviewer has NO tool access and cannot
+    modify code, launch sub-reviews, or change any state.  It only sees the diff
+    and returns its analysis.
+
+    Call BEFORE create_pr() (it auto-runs there too) or anytime you want a
+    second adversarial opinion.  Results are cached per unique diff hash.
+
+    The model used is independently configurable (default: DeepSeek V4 Flash).
+    Set GENGIN_REVIEW_MODEL env var to override."""
+    return _main.skepticalReview()
+
+
+@mcp.tool()
 def bisect_regression() -> str:
     """When make_bench shows a regression, identify which specific edit caused it.
     Uses linear search (1-4 edits) or binary search (5+ edits), running
     make_bench after each.  Reports the exact culprit edit.
     Requires edit snapshots captured during the editing session."""
     return _main.bisectRegression()
+
+
+# ===================================================================
+# Agents  (research_agent.py)
+# ===================================================================
+
+@mcp.tool()
+def research_agent(research_prompt: str) -> str:
+    """Launch a read-only sub-agent to explore and understand the codebase before
+    implementing changes.  The research agent uses a separate, independently
+    configurable model (default: DeepSeek V4 Flash, set GENGIN_RESEARCH_MODEL
+    to override).
+
+    The research agent has access to READ-ONLY tools only:
+      - Exploration: show_context, get_definition, get_callers, grep_source,
+        find_symbol, list_dir, read_lines, read_source_file, list_functions,
+        show_src, show_src_pair, get_tree, get_todos
+      - Profiling: make_flame, hot_annotate_func, hot_annotate_file,
+        run_func_bench, run_perf_stat
+      - LSP: lsp_diagnostics, lsp_symbols, lsp_hover
+      - Knowledge: get_codebase_context
+
+    It CANNOT modify source code, create commits, open PRs, or launch reviews.
+    Use this when you need to deeply understand a subsystem, trace call chains,
+    or gather context before planning an optimization.
+
+    Args:
+        research_prompt: What to research. Be specific — name functions, files,
+                         or concepts to explore. Example: "Trace the full call
+                         chain of Trace() in render/cpu/ through all callees and
+                         identify which functions do the most math operations."
+
+    Returns the research agent's structured findings."""
+    import research_agent as _ra
+    return _ra.runResearch(research_prompt)
 
 
 # ===================================================================
