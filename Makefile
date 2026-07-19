@@ -31,7 +31,7 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c skybox/skybox.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC         = $(filter-out test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound testSound3d, $(MAKECMDGOALS))
+_SPECIFIC         = $(filter-out test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound testSound3d testRadarScreen, $(MAKECMDGOALS))
 _RUN_TESTS        = $(if $(_SPECIFIC), $(addprefix $(TESTS_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 BENCH_FUNC_DIR    = bench
@@ -50,7 +50,9 @@ FLIGHT_CONTROL_SRC = simulation/cSim/flightControl.c simulation/cSim/simulate.c 
 TEST_SOUND_SRC      = sound/soundTest.c
 TEST_SOUND3D_SRC    = sound/soundTest3d.c
 
-.PHONY: all clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound testSound3d $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
+TEST_RADAR_SCREEN_SRC = radarScreen/testRadarScreen.c util/saveImage.c render/cpu/font.c render/cpu/tile.c
+
+.PHONY: all clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController benchFunc testSound testSound3d testRadarScreen $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
 
 all: $(TARGET)
 
@@ -97,6 +99,10 @@ testSound: $(TEST_SOUND_SRC)
 testSound3d: $(TEST_SOUND3D_SRC)
 	$(CC) -O0 -g -Isound -I. -o $@ $^ $(LDFLAGS) -lSDL3 -lm
 	./testSound3d
+
+testRadarScreen: $(TEST_RADAR_SCREEN_SRC)
+	$(CC) $(CFLAGS_BASE) -IradarScreen -I. -o $@ $^ $(LDFLAGS) -lm
+	./testRadarScreen
 
 run: $(TARGET)
 	./$(TARGET)

@@ -28,6 +28,9 @@ typedef uint32_t Color;
 #define nil NULL
 #define boll bool
 
+#define HexToUint32(hex) ((uint32)(0xFF000000 | (hex)))
+#define RGBToUint32(r, g, b) ((uint32)(0xFF000000 | ((uint32)(r) << 16) | ((uint32)(g) << 8) | (uint32)(b)))
+
 typedef struct float3 {
 	float x;
 	float y;
