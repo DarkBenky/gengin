@@ -731,8 +731,8 @@ def bisectRegression():
 # reviewer model pass — second pair of eyes before build
 # ---------------------------------------------------------------------------
 
-REVIEWER_MODEL = "deepseek/deepseek-v4-flash"
-REVIEWER_PROVIDER = "baidu/fp8"
+REVIEWER_MODEL = "deepseek/deepseek-v4-flash-0731"
+REVIEWER_PROVIDER = None  # set to None; cost-first routing handles provider selection
 
 REVIEWER_PROMPT = """\
 You are a senior C code reviewer. Review the following git diff for correctness \
@@ -870,8 +870,8 @@ def _autoReviewBeforeBuild():
 # skeptical review model pass — adversarial pre-commit gate
 # ---------------------------------------------------------------------------
 
-SKEPTICAL_REVIEW_MODEL = "deepseek/deepseek-v4-flash"
-SKEPTICAL_REVIEW_PROVIDER = "baidu/fp8"
+SKEPTICAL_REVIEW_MODEL = "deepseek/deepseek-v4-flash-0731"
+SKEPTICAL_REVIEW_PROVIDER = None  # cost-first routing handles provider selection
 
 SKEPTICAL_REVIEW_PROMPT = """\
 You are a skeptical senior C performance engineer. Your job is to find flaws in \
@@ -1373,7 +1373,7 @@ def syncPlannerToCodebaseContext():
     )
 
     try:
-        raw = model.getResponse(summarize_prompt, model="deepseek/deepseek-v4-flash", provider="deepinfra/fp4")
+        raw = model.getResponse(summarize_prompt, model="deepseek/deepseek-v4-flash-0731")
         raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
         m = re.search(r'\{.*\}', raw, re.DOTALL)
         if not m:
@@ -1417,8 +1417,8 @@ def syncPlannerToCodebaseContext():
     return (f"Synced {len(notes)} note(s) and {len(tasks)} task(s): {added} new insight(s) "
             f"merged into the knowledge base ({KNOWLEDGE_STATE_FILE}). Planner notes cleared.")
 
-RESEARCH_MODEL = "deepseek/deepseek-v4-flash"
-RESEARCH_PROVIDER = "baidu/fp8"
+RESEARCH_MODEL = "deepseek/deepseek-v4-flash-0731"
+RESEARCH_PROVIDER = None  # cost-first routing handles provider selection
 MIN_RESEARCH_CONTEXT_ENTRIES = 5
 
 # Tools that must be excluded from the research-phase tool map (read-only mode).
@@ -2247,9 +2247,9 @@ if __name__ == "__main__":
 
         try:
             if is_plan_iteration:
-                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="baidu/fp8")
+                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash-0731")
             else:
-                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash", provider="baidu/fp8")
+                response = model.getResponse(prompt, model="deepseek/deepseek-v4-flash-0731")
         except Exception as e:
             CONTEXT.append({
                 "type": "model_response",

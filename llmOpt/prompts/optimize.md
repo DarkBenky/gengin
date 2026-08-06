@@ -153,6 +153,6 @@ All tools operate on `llmOpt/gengin/`.  Your changes never touch the main repo
 until `create_pr`.  Call `git_pull_project` to refresh the sandbox.
 
 ## MODEL
-- `set_model_flash()` → cheaper/faster for iterative editing.
-- `set_model_pro()` → higher quality for complex reasoning (DEFAULT).
-- `get_model_config()` → current model and provider.
+- `set_model_flash()` → flash-0731, cheaper/faster (DEFAULT).
+- `set_model_pro()` → pro, higher quality for complex reasoning.
+- `get_model_config()` → current model, provider, backend, cost_first.

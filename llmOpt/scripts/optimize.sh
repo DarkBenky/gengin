@@ -2,25 +2,43 @@
 # Zero-prompt optimization loop — runs the full pipeline automatically.
 #
 # Usage:
-#   ./llmOpt/scripts/optimize.sh          # v4-pro (default)
-#   ./llmOpt/scripts/optimize.sh flash    # v4-flash (cheaper)
-#   ./llmOpt/scripts/optimize.sh pro      # v4-pro (explicit)
+#   ./llmOpt/scripts/optimize.sh              # flash-0731 via OpenRouter (default)
+#   ./llmOpt/scripts/optimize.sh pro          # pro via OpenRouter
+#   ./llmOpt/scripts/optimize.sh flash deepseek  # flash via DeepSeek direct
+#   ./llmOpt/scripts/optimize.sh pro deepseek    # pro via DeepSeek direct
 #
 # Prerequisites:
 #   npm install -g opencode-ai
 #   pip install -r llmOpt/requirements-mcp.txt
 #   API key in llmOpt/.env (KEY=sk-or-v1-...)
+#   For deepseek backend: DEEPSEEK_API_KEY in llmOpt/.env
 
 set -euo pipefail
 
-MODEL="${1:-pro}"
+MODEL="${1:-flash}"
+BACKEND="${2:-openrouter}"
+
 case "$MODEL" in
-    flash) MODEL_ID="openrouter/deepseek/deepseek-v4-flash" ;;
-    pro)   MODEL_ID="openrouter/deepseek/deepseek-v4-pro" ;;
+    flash)
+        case "$BACKEND" in
+            openrouter) MODEL_ID="openrouter/deepseek/deepseek-v4-flash-0731" ;;
+            deepseek)   MODEL_ID="deepseek/deepseek-v4-flash" ;;
+            *) echo "Usage: $0 [flash|pro] [openrouter|deepseek]"; exit 1 ;;
+        esac
+        ;;
+    pro)
+        case "$BACKEND" in
+            openrouter) MODEL_ID="openrouter/deepseek/deepseek-v4-pro" ;;
+            deepseek)   MODEL_ID="deepseek/deepseek-v4-pro" ;;
+            *) echo "Usage: $0 [flash|pro] [openrouter|deepseek]"; exit 1 ;;
+        esac
+        ;;
     *)
-        echo "Usage: $0 [flash|pro]"
-        echo "  flash — deepseek-v4-flash (cheaper, faster)"
-        echo "  pro   — deepseek-v4-pro   (higher quality, default)"
+        echo "Usage: $0 [flash|pro] [openrouter|deepseek]"
+        echo "  flash       -- deepseek-v4-flash (default, cheaper)"
+        echo "  pro         -- deepseek-v4-pro (higher quality)"
+        echo "  openrouter  -- route via OpenRouter with floor pricing (default)"
+        echo "  deepseek    -- direct DeepSeek API (needs DEEPSEEK_API_KEY)"
         exit 1
         ;;
 esac
@@ -37,9 +55,10 @@ fi
 # Load API key from .env
 if [ -f "$SCRIPT_DIR/../.env" ]; then
     export OPENROUTER_API_KEY=$(grep '^KEY=' "$SCRIPT_DIR/../.env" | cut -d= -f2)
+    export DEEPSEEK_API_KEY=$(grep '^DEEPSEEK_API_KEY=' "$SCRIPT_DIR/../.env" | cut -d= -f2 || true)
 fi
 
-if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+if [ -z "${OPENROUTER_API_KEY:-}" ] && [ "$BACKEND" = "openrouter" ]; then
     echo "Error: OPENROUTER_API_KEY not set. Add KEY=sk-or-v1-... to llmOpt/.env"
     exit 1
 fi
@@ -47,8 +66,9 @@ fi
 cd "$PROJECT_DIR"
 
 echo "=== gengin optimizer ==="
-echo "Model:  $MODEL_ID"
-echo "Prompt: $PROMPT_FILE"
+echo "Model:   $MODEL_ID"
+echo "Backend: $BACKEND"
+echo "Prompt:  $PROMPT_FILE"
 echo "Project: $PROJECT_DIR"
 echo
 

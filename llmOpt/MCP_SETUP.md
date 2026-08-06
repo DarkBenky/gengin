@@ -45,7 +45,7 @@ Create `opencode.json` in the project root (`/home/user/Desktop/gengin/opencode.
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "openrouter/deepseek/deepseek-v4-flash",
+  "model": "openrouter/deepseek/deepseek-v4-flash-0731",
   "mcp": {
     "gengin-optimizer": {
       "type": "local",
@@ -66,7 +66,7 @@ export OPENROUTER_API_KEY=sk-or-v1-...
 Then run an optimization task:
 
 ```bash
-opencode run --model openrouter/deepseek/deepseek-v4-flash "your prompt"
+opencode run --model openrouter/deepseek/deepseek-v4-flash-0731 "your prompt"
 ```
 
 ### Example provider blocks for other models

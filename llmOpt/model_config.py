@@ -2,40 +2,49 @@
 model_config.py -- Centralized model selection for the gengin optimization harness.
 
 Three independent model roles, each configurable via env vars or API:
-  MAIN_MODEL     — drives the optimization loop (default: deepseek-v4-pro)
-  REVIEW_MODEL   — skeptical pre-commit code review (default: deepseek-v4-flash)
-  RESEARCH_MODEL — read-only codebase exploration sub-agent (default: deepseek-v4-flash)
+  MAIN_MODEL     — drives the optimization loop (default: deepseek-v4-flash-0731)
+  REVIEW_MODEL   — skeptical pre-commit code review (default: deepseek-v4-flash-0731)
+  RESEARCH_MODEL — read-only codebase exploration sub-agent (default: deepseek-v4-flash-0731)
 
 Environment variable overrides (set before import):
   GENGIN_MAIN_MODEL       GENGIN_MAIN_PROVIDER
   GENGIN_REVIEW_MODEL     GENGIN_REVIEW_PROVIDER
   GENGIN_RESEARCH_MODEL   GENGIN_RESEARCH_PROVIDER
+  GENGIN_BACKEND          openrouter | deepseek   (default: openrouter)
+  GENGIN_COST_FIRST       1 | 0                  (default: 1 — cheapest provider via OpenRouter)
 
 Usage:
     from model_config import FLASH, PRO, getConfig
-    from model_config import setReviewModel, setResearchModel
+    from model_config import setReviewModel, setResearchModel, setBackend
 
-    setReviewModel(FLASH)           # use flash for skeptical reviews
-    setResearchModel("anthropic/claude-3-haiku")  # custom research model
-    cfg = getConfig()               # full three-role dict
+    setBackend("deepseek")          # switch to DeepSeek direct API
+    cfg = getConfig()               # full three-role dict + backend/cost_first
 """
 
 import os
 
 # Canonical model identifiers
-FLASH = "deepseek/deepseek-v4-flash"
+FLASH = "deepseek/deepseek-v4-flash-0731"
 PRO   = "deepseek/deepseek-v4-pro"
 
 # Provider — use DeepSeek's own infrastructure via OpenRouter routing.
 # "deepseek" routes directly to DeepSeek API, avoiding third-party resellers.
 PROVIDER_DEEPSEEK = "deepseek"
 
+# Backend: "openrouter" (default) routes via OpenRouter with floor pricing.
+# "deepseek" calls DeepSeek's own API directly (needs DEEPSEEK_API_KEY in .env).
+BACKEND = os.environ.get("GENGIN_BACKEND", "openrouter")
+
+# Cost-first: when True, OpenRouter selects the cheapest provider for every call.
+# Equivalent to provider.sort:"price" in the OpenRouter API.
+COST_FIRST = os.environ.get("GENGIN_COST_FIRST", "1") != "0"
+
 # Three independent model slots with per-role defaults.
 # MAIN_MODEL drives the primary optimization agent (planning, editing, PRs).
 # REVIEW_MODEL is the skeptical second pair of eyes before commits.
 # RESEARCH_MODEL is a cheaper model for read-only codebase exploration.
 _models = {
-    "main":     {"model": PRO,   "provider": PROVIDER_DEEPSEEK},
+    "main":     {"model": FLASH, "provider": PROVIDER_DEEPSEEK},
     "review":   {"model": FLASH, "provider": PROVIDER_DEEPSEEK},
     "research": {"model": FLASH, "provider": PROVIDER_DEEPSEEK},
 }
@@ -115,6 +124,40 @@ def setResearchProvider(provider: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Backend and cost-first control
+# ---------------------------------------------------------------------------
+
+def setBackend(backend: str) -> str:
+    """Set the LLM backend: 'openrouter' (default) or 'deepseek' (direct API)."""
+    global BACKEND
+    if backend not in ("openrouter", "deepseek"):
+        return f"Invalid backend {backend!r} — must be 'openrouter' or 'deepseek'."
+    old = BACKEND
+    BACKEND = backend
+    _applyToMain()
+    return f"Backend: {old} -> {backend}."
+
+
+def getBackend() -> str:
+    """Return the current LLM backend."""
+    return BACKEND
+
+
+def setCostFirst(enabled: bool) -> str:
+    """Enable/disable cheapest-provider selection on OpenRouter."""
+    global COST_FIRST
+    old = COST_FIRST
+    COST_FIRST = bool(enabled)
+    _applyToMain()
+    return f"Cost-first: {old} -> {COST_FIRST}."
+
+
+def getCostFirst() -> bool:
+    """Return whether cheapest-provider selection is enabled."""
+    return COST_FIRST
+
+
+# ---------------------------------------------------------------------------
 # Getters
 # ---------------------------------------------------------------------------
 
@@ -122,6 +165,8 @@ def getConfig() -> dict:
     """Return the full three-role model configuration as a dict."""
     return {
         "available_models": [FLASH, PRO],
+        "backend": BACKEND,
+        "cost_first": COST_FIRST,
         "roles": {
             role: {"model": cfg["model"], "provider": cfg["provider"]}
             for role, cfg in _models.items()
@@ -169,6 +214,9 @@ def _applyToMain():
     Sets REVIEWER_MODEL, REVIEWER_PROVIDER, RESEARCH_MODEL, RESEARCH_PROVIDER
     so all internal LLM calls (review, research, sync) use the correct model.
 
+    Also pushes BACKEND and COST_FIRST into modelSelector globals so getResponse
+    dispatches correctly.
+
     Called automatically by every setter.  Safe to call before main.py import.
     """
     try:
@@ -181,3 +229,10 @@ def _applyToMain():
         _main.SKEPTICAL_REVIEW_PROVIDER = _models["review"]["provider"]
     except ImportError:
         pass  # main.py not yet imported — applied at MCP server startup
+
+    try:
+        import modelSelector as _ms
+        _ms.COST_FIRST = COST_FIRST
+        _ms.BACKEND = BACKEND
+    except ImportError:
+        pass

@@ -11,14 +11,17 @@ npm install -g opencode-ai
 pip install -r llmOpt/requirements-mcp.txt
 
 # 2. Set API key (in llmOpt/.env)
+#    KEY=sk-or-v1-...            (OpenRouter)
+#    DEEPSEEK_API_KEY=...        (optional, for direct DeepSeek API)
 
 # 3. Run the full optimization pipeline — NO PROMPT NEEDED
-./llmOpt/scripts/optimize.sh          # deepseek-v4-pro (default)
-./llmOpt/scripts/optimize.sh flash    # deepseek-v4-flash (cheaper)
+./llmOpt/scripts/optimize.sh              # flash-0731 via OpenRouter (default)
+./llmOpt/scripts/optimize.sh pro          # pro via OpenRouter
+./llmOpt/scripts/optimize.sh flash deepseek  # flash via DeepSeek direct API
 
 # 4. Or provide your own prompt
 cd /home/user/Desktop/gengin
-opencode run --model openrouter/deepseek/deepseek-v4-pro --auto \
+opencode run --model openrouter/deepseek/deepseek-v4-flash-0731 --auto \
   --file llmOpt/prompts/optimize.md \
   "Profile with make_flame, then optimize the hottest function."
 ```
@@ -38,13 +41,13 @@ profile → micro-benchmark → pre-mortem → apply → validate → PR.
 
 ```bash
 # Analysis only (no edits)
-opencode run --model openrouter/deepseek/deepseek-v4-flash \
+opencode run --model openrouter/deepseek/deepseek-v4-flash-0731 \
   "Call get_tree, get_todos, and list_functions. Report top 3 bottlenecks."
 
 # Switch model mid-session
 # Agent calls: set_model_flash() or set_model_pro()
 
-# Check current config
+# Check current config (shows backend, cost_first, model roles)
 # Agent calls: get_model_config()
 ```
 
@@ -57,13 +60,13 @@ opencode run --model openrouter/deepseek/deepseek-v4-flash \
 | `getFunc.py` | C codebase indexer and editing tools |
 | `lsp_client.py` | clangd LSP client — semantic code intelligence |
 | `gen_compile_commands.py` | Auto-generates compile_commands.json for clangd |
-| `model_config.py` | Model switcher (flash ↔ pro) |
+| `model_config.py` | Model switcher (flash-0731 <-> pro) + backend/cost_first |
 | `perf.py` | perf.data → flamegraph parser |
 | `prompts/optimize.md` | System prompt — full optimization workflow |
 | `scripts/optimize.sh` | Zero-prompt wrapper — runs the full pipeline |
 | `planner.py` | Task/note board (deprecated — OpenCode manages its own) |
 | `executor.py` | Old command dispatcher (deprecated) |
-| `modelSelector.py` | Old model router (deprecated) |
+| `modelSelector.py` | LLM call dispatcher (OpenRouter / DeepSeek direct / Ollama) |
 | `refine.py` | Old refinement engine (deprecated) |
 | `MCP_SETUP.md` | Detailed setup + opencode.json config |
 | `requirements-mcp.txt` | Python deps (`mcp>=1.27,<2`) |

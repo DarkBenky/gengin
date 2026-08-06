@@ -7,5 +7,37 @@
       "enabled": true,
       "timeout": 60000
     }
+  },
+  "provider": {
+    "openrouter": {
+      "models": {
+        "deepseek/deepseek-v4-flash-0731": {
+          "options": {
+            "provider": { "sort": "price" },
+            "reasoningEffort": "xhigh"
+          }
+        },
+        "deepseek/deepseek-v4-pro": {
+          "options": {
+            "provider": { "sort": "price" },
+            "reasoningEffort": "xhigh"
+          }
+        }
+      }
+    },
+    "deepseek": {
+      "models": {
+        "deepseek-v4-flash": {
+          "options": {
+            "reasoningEffort": "max"
+          }
+        },
+        "deepseek-v4-pro": {
+          "options": {
+            "reasoningEffort": "max"
+          }
+        }
+      }
+    }
   }
 }

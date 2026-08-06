@@ -1070,25 +1070,32 @@ def lsp_implementations(symbol: str, rel_path: str) -> str:
 
 @mcp.tool()
 def set_model_pro() -> str:
-    """Switch internal LLM calls (code review, research, planner sync) to
-    deepseek/deepseek-v4-pro via DeepSeek provider.  Higher quality, slower,
-    better for complex reasoning.  This is the DEFAULT model."""
+    """Switch internal LLM calls to deepseek/deepseek-v4-pro via OpenRouter
+    floor-priced routing.  Higher quality, slower, better for complex reasoning.
+    NOTE: flash-0731 is the DEFAULT.  Use this only when you need pro-level quality."""
     return _mc.setModel(_mc.PRO)
 
 
 @mcp.tool()
 def set_model_flash() -> str:
-    """Switch internal LLM calls to deepseek/deepseek-v4-flash via DeepSeek
-    provider.  Faster and cheaper, good for simple reviews and summarization.
-    Use this to save tokens during iterative optimization loops."""
+    """Switch internal LLM calls to deepseek/deepseek-v4-flash-0731 via
+    OpenRouter floor-priced routing.  This is the DEFAULT model.  Faster
+    and cheaper, good for simple reviews and iterative optimization loops."""
     return _mc.setModel(_mc.FLASH)
+
+
+@mcp.tool()
+def set_model_flash_pro() -> str:
+    """Switch internal LLM calls to deepseek/deepseek-v4-pro via OpenRouter
+    floor-priced routing.  Same as set_model_pro() — kept for compatibility."""
+    return _mc.setModel(_mc.PRO)
 
 
 @mcp.tool()
 def get_model_config() -> str:
     """Return the current model configuration as JSON: active model, provider,
-    available models, and which model is used for each internal LLM task
-    (review, research, sync)."""
+    backend (openrouter/deepseek), cost_first flag, available models, and which
+    model is used for each internal LLM task (review, research, sync)."""
     import json as _json
     return _json.dumps(_mc.getConfig(), indent=2)
 
@@ -1116,8 +1123,11 @@ if __name__ == "__main__":
     print("--", file=sys.stderr)
     print("Set your OpenRouter API key:", file=sys.stderr)
     print("  export OPENROUTER_API_KEY=sk-or-v1-...", file=sys.stderr)
+    print("For DeepSeek direct API:", file=sys.stderr)
+    print("  export DEEPSEEK_API_KEY=...", file=sys.stderr)
     print("Then run:", file=sys.stderr)
-    print("  opencode run --model openrouter/deepseek/deepseek-v4-flash \"your prompt\"", file=sys.stderr)
+    print("  opencode run --model openrouter/deepseek/deepseek-v4-flash-0731 \"your prompt\"", file=sys.stderr)
+    print("  opencode run --model deepseek/deepseek-v4-flash \"your prompt\"  (direct API)", file=sys.stderr)
     print("--", file=sys.stderr)
     print(f"Indexed {len(_gf._functions)} functions in {len(_gf._sources)} source files.", file=sys.stderr)
     print("Ready.", file=sys.stderr)

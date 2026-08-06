@@ -1,7 +1,21 @@
-## DEPRECATED — This module is part of the legacy custom agent orchestration layer.
-## It is only used when running the old standalone loop via main.py directly.
-## For the new MCP-server workflow, use mcp_server.py with an external agent
-## harness (OpenCode) which handles model selection and routing independently.
+"""
+modelSelector.py — LLM call dispatcher for the gengin optimization harness.
+
+Supports three backends:
+  openrouter — OpenRouter API (default). COST_FIRST=True selects the cheapest
+               provider via provider.sort:"price". COST_FIRST=False uses the
+               explicit provider pin.
+  deepseek   — DeepSeek direct API (https://api.deepseek.com). Requires
+               DEEPSEEK_API_KEY in .env.
+
+Globals (set by model_config._applyToMain or directly):
+  COST_FIRST  — bool, select cheapest OpenRouter provider (default True)
+  BACKEND     — "openrouter" | "deepseek" (default "openrouter")
+
+Also provides:
+  getResponseOllama — local Ollama backend
+  getResponseQwen3_6 — Unsloth Studio local backend
+"""
 from openrouter import OpenRouter
 import os
 
@@ -18,15 +32,28 @@ def _load_env(path: str):
 
 _load_env(os.path.join(os.path.dirname(__file__), ".env"))
 API_KEY = os.getenv("KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+
+# Set by model_config._applyToMain(); these control dispatch.
+COST_FIRST = True
+BACKEND = "openrouter"
+
 
 def getResponse(
     prompt: str,
     model: str,
-    provider: str,
+    provider: str | None = None,
     reasoning_effort: str | None = "xhigh",
 ) -> str:
     """
-    Send a chat request through OpenRouter.
+    Send a chat request through the configured backend.
+
+    When BACKEND="deepseek", dispatches to DeepSeek direct API regardless
+    of the provider arg (provider arg is ignored in that case).
+
+    When BACKEND="openrouter":
+      COST_FIRST=True  — uses provider.sort:"price" (cheapest provider)
+      COST_FIRST=False — uses provider.order:[provider] (explicit pin)
 
     reasoning_effort controls thinking mode depth:
       "xhigh" = max thinking (best for complex code optimization tasks)
@@ -34,21 +61,75 @@ def getResponse(
       "medium"/"low" = mapped to "high"
       None    = disable thinking (model default)
     """
+    if BACKEND == "deepseek":
+        return _getResponseDeepSeek(prompt, model, reasoning_effort)
+
+    # OpenRouter path
+    from openrouter import OpenRouter
     from openrouter import components
 
     client = OpenRouter(api_key=API_KEY)
+
+    if COST_FIRST:
+        prov_cfg = {"sort": "price"}
+    else:
+        prov_cfg = {"order": [provider]} if provider else None
+
     kwargs = {
         "messages": [{"role": "user", "content": prompt}],
         "model": model,
-        "provider": {"order": [provider]} if provider else None,
+        "provider": prov_cfg,
     }
     if reasoning_effort is not None:
         kwargs["reasoning"] = components.Reasoning(effort=reasoning_effort)
 
     res = client.chat.send(**kwargs)
-    # reasoning_content is intentionally discarded — we use single-turn,
-    # so the chain-of-thought does not need to be preserved for context.
     return res.choices[0].message.content
+
+
+def _getResponseDeepSeek(
+    prompt: str,
+    model: str,
+    reasoning_effort: str | None = "xhigh",
+) -> str:
+    """Call DeepSeek direct API (OpenAI-compatible, https://api.deepseek.com).
+
+    Model strings like "deepseek/deepseek-v4-flash-0731" are stripped to the
+    API model id (e.g. "deepseek-v4-flash"). The -0731 version suffix is
+    handled by DeepSeek's own versioning; the direct API uses "deepseek-v4-flash".
+    """
+    import urllib.request, json
+
+    if not DEEPSEEK_API_KEY:
+        raise RuntimeError(
+            "DEEPSEEK_API_KEY not set. Add DEEPSEEK_API_KEY=... to llmOpt/.env"
+        )
+
+    # Strip OpenRouter prefix and version suffixes to get the API model id.
+    api_model = model.split("/")[-1]
+    # Remove version suffixes like -0731 to get the base API model id.
+    api_model = api_model.split("-07")[0] if "-07" in api_model else api_model
+
+    body: dict = {
+        "model": api_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "thinking": {"type": "enabled"},
+    }
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
+
+    req = urllib.request.Request(
+        "https://api.deepseek.com/chat/completions",
+        data=json.dumps(body).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        data = json.loads(resp.read())
+    return data["choices"][0]["message"]["content"]
 
 def getResponseOllama(prompt: str, model: str) -> str:
     import urllib.request
