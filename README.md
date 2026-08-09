@@ -25,27 +25,31 @@
         - [X] implement 3d sound
 
 - [ ] **Not Sure** atmosphere rendering on gpu
-    - [ ] maybe we can pre bake for each voxel the sun reflection distance (trough how many voxels does the ray need to travel to sun)
-        - [ ] we can also try to store for example 6 float for each voxel that will define the distance trough claud in each direction and we will interpolate
-            - for better quality maybe more
-            ```c
-            struct DistancesPerAxis {
-                int Degrees_000
-                int Degrees_090
-                int Degrees_180
-                int Degrees_270
-            }
+        - [ ] maybe we can pre bake for each voxel the sun reflection distance (trough how many voxels does the ray need to travel to sun)
+            - [ ] we can also try to store for example 6 float for each voxel that will define the distance trough claud in each direction and we will interpolate
+                - for better quality maybe more
 
-            struct ClaudVoxel {
-                int distToClosestClaudSurfaceOutside // if inside of claud -1
-                int distToClosestClaudSurfaceInside // if outside of claud -1
-                int distToSun // number of voxels needed to travel trough to sun
-                DistancesPerAxis xAxis
-                DistancesPerAxis yAxis
-                DistancesPerAxis zAxis
-            }
-            ```
-    
+                ```c
+                struct DistancesPerAxis {
+                    int Degrees_000
+                    int Degrees_045
+                    int Degrees_090
+                    int Degrees_135
+                    int Degrees_180
+                    int Degrees_225
+                    int Degrees_270
+                    int Degrees_315
+                }
+
+                struct ClaudVoxel {
+                    int distToClosestClaudSurfaceOutside // if inside of claud -1
+                    int distToClosestClaudSurfaceInside // if outside of claud -1
+                    int distToSun // number of voxels needed to travel trough to sun
+                    DistancesPerAxis xAxis
+                    DistancesPerAxis yAxis
+                    DistancesPerAxis zAxis
+                }
+                ```
     - [ ] optimized sky box rendering with SDF
 
 - [ ] test idea of pre pas gpu bbox itersection
