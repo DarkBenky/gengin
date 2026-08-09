@@ -1,22 +1,57 @@
 ## Tasks
+
+- [ ] Radar Screen UI
+    - [X] test idea
+    - [ ] implement
+
+- [ ] Clean Up the root dir
+
+- [ ] Better worker split maybe instead of horizontal lines use vertical (problem is that this will force cpu to jump in image not just one long scan maybe we can change layout)
+
 - [ ] **high** integrated FSR1 to renderer
     - [ ] **low** test other algorithms like FSR2 ...
     - [ ] **low** try to implement own fsr2 like alogo
         - [ ] **low** create motion vectors 
+
 - [ ] **high** test if we can improve guidance
     - [ ] test lowering the dt for simulation when close to target
-    - [ ] test switching to genetic algorithm when close to target so we simulate some generation with random mutation and on next generation we cross mutate the top candidates 
+    - [ ] test switching to genetic algorithm when close to target so we simulate some generation with random mutation and on next generation we cross mutate the top candidates
+
 - [ ] **high** Add audio
-    - [ ] lib ![link](https://github.com/RandyGaul/cute_headers/blob/master/cute_sound.h)
-    - [ ] test volumetric sound first with small demo
+    - [X] lib ![link](https://github.com/RandyGaul/cute_headers/blob/master/cute_sound.h)
+    - [X] test volumetric sound first with small demo
         - [ ] implement to real code
-        - [ ] run the audio in different thread
-        - [ ] implement 3d sound
-- [ ] atmosphere rendering on gpu
+            - [ ] Add sound to code base for planes missiles ...
+        - [X] implement 3d sound
+
+- [ ] **Not Sure** atmosphere rendering on gpu
+    - [ ] maybe we can pre bake for each voxel the sun reflection distance (trough how many voxels does the ray need to travel to sun)
+        - [ ] we can also try to store for example 6 float for each voxel that will define the distance trough claud in each direction and we will interpolate
+            - for better quality maybe more
+            ```c
+            struct DistancesPerAxis {
+                int Degrees_000
+                int Degrees_090
+                int Degrees_180
+                int Degrees_270
+            }
+
+            struct ClaudVoxel {
+                int distToClosestClaudSurfaceOutside // if inside of claud -1
+                int distToClosestClaudSurfaceInside // if outside of claud -1
+                int distToSun // number of voxels needed to travel trough to sun
+                DistancesPerAxis xAxis
+                DistancesPerAxis yAxis
+                DistancesPerAxis zAxis
+            }
+            ```
+    
     - [ ] optimized sky box rendering with SDF
+
 - [ ] test idea of pre pas gpu bbox itersection
     - [ ] we uplod objects bbox and object index and trace rays against them we store per pixel object index if no hit we can set it to -1 then in cpu side we first check the stored index if not hit in bvh we continue normaly
-    - [ ] GPU - per pixel bBox check -> store hit object index -> CPU - BVH travers for this object -> if no hit continue with normal traverse       
+    - [ ] GPU - per pixel bBox check -> store hit object index -> CPU - BVH travers for this object -> if no hit continue with normal traverse
+
 - [ ] Wire frame rendering
 - [ ] Crete shader that will simulate hot air fluctuations for jet engine or missiles
 

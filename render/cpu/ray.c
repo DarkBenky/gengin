@@ -330,7 +330,9 @@ static void SkyBoxTaskFunc(void *arg) {
 // NOTE: Not used in main render loop
 void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, SkyBoxTaskQueue *taskQueue) {
 	if (!skybox || !camera || !threadPool || !taskQueue) return;
-	for (int row = 0; row < camera->screenHeight; row++) {
+	// interleave top/bottom rows so fast sky rows and slow geometry rows are spread through the queue
+	for (int i = 0; i < camera->screenHeight; i++) {
+		int row = (i % 2 == 0) ? (i / 2) : (camera->screenHeight - 1 - i / 2);
 		SkyBoxTask *task = &taskQueue->tasks[row];
 		task->row = row;
 		task->camera = camera;
