@@ -7,7 +7,7 @@ int main(void) {
 	uint32 *fb = (uint32 *)malloc(sizeof(uint32) * width * height);
 
 	radarScreenUi radar;
-	initRadarUi(fb, width, height, 90, 60, 1000, 50, 50, 700, 500, &radar);
+	initRadarUi(fb, width, height, 90, 60, 1000, 50, 50, 700, 500, &radar, true, 15, 15);
 
 	struct Alphabet alphabet;
 	LoadAlphabet(&alphabet, "assets/chars");
@@ -27,13 +27,29 @@ int main(void) {
 	};
 	const int numTargets = sizeof(targets) / sizeof(targets[0]);
 
-	drawRadarScreen(&radar, &alphabet);
+	float3 velocities[] = {
+		{4.0f, 0.0f, 3.0f, 0.0f},
+		{-4.0f, 1.0f, 4.0f, 0.0f},
+		{3.0f, 0.0f, 4.0f, 0.0f},
+		{-5.0f, -1.0f, 5.0f, 0.0f},
+		{2.0f, 0.0f, 6.0f, 0.0f},
+		{2.0f, 0.0f, 6.0f, 0.0f},
+	};
 
-	for (int i = 0; i < numTargets; i++) {
-		addRadarTarget(&radar, targets[i], radarPos, radarForward, radarLeft, radarUp);
+	// sweep the beam in small steps so consecutive scans overlap, forming a smooth trail
+	const int beamStep = 5;
+	const int sweepFrames = 10; // -45 .. 0 in 5 degree steps, ending at center
+	for (int frame = 0; frame < sweepFrames; frame++) {
+		clearRadarTargets(&radar);
+		for (int i = 0; i < numTargets; i++) {
+			addRadarTarget(&radar, targets[i], radarPos, radarForward, radarLeft, radarUp);
+		}
+		const int beamWidth = -45 + frame * beamStep;
+		drawRadarScreen(&radar, &alphabet, beamWidth, 0, true);
+		for (int i = 0; i < numTargets; i++) {
+			targets[i] = Float3_Add(targets[i], velocities[i]);
+		}
 	}
-
-	drawRadarScreen(&radar, &alphabet);
 
 	Camera cam = {0};
 	cam.framebuffer = fb;
@@ -45,7 +61,7 @@ int main(void) {
 	clock_gettime(CLOCK_MONOTONIC, &t0);
 	const int iterations = 10000;
 	for (int i = 0; i < iterations; i++) {
-		drawRadarScreen(&radar, &alphabet);
+		drawRadarScreen(&radar, &alphabet, 0, 0, true);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &t1);
 	double elapsed = (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) * 1e-9;
