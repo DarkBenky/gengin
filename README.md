@@ -30,25 +30,24 @@
                 - for better quality maybe more
 
                 ```c
-                struct DistancesPerAxis {
-                    int Degrees_000
-                    int Degrees_045
-                    int Degrees_090
-                    int Degrees_135
-                    int Degrees_180
-                    int Degrees_225
-                    int Degrees_270
-                    int Degrees_315
-                }
+                typedef enum {
+    DIR_POS_X, DIR_NEG_X,
+    DIR_POS_Y, DIR_NEG_Y,
+    DIR_POS_Z, DIR_NEG_Z,
+    DIR_PXPY, DIR_PXNY, DIR_NXPY, DIR_NXNY,  // xy diagonals
+    DIR_PYPZ, DIR_PYNZ, DIR_NYPZ, DIR_NYNZ,  // yz diagonals
+    DIR_PXPZ, DIR_PXNZ, DIR_NXPZ, DIR_NXNZ,  // xz diagonals
+    DIR_PPP, DIR_PPN, DIR_PNP, DIR_PNN,      // corners
+    DIR_NPP, DIR_NPN, DIR_NNP, DIR_NNN,
+    DIR_COUNT // 26
+} VoxelDirection;
 
-                struct ClaudVoxel {
-                    int distToClosestClaudSurfaceOutside // if inside of claud -1
-                    int distToClosestClaudSurfaceInside // if outside of claud -1
-                    int distToSun // number of voxels needed to travel trough to sun
-                    DistancesPerAxis xAxis
-                    DistancesPerAxis yAxis
-                    DistancesPerAxis zAxis
-                }
+struct ClaudVoxel {
+    int distToClosestSurfaceOutside;
+    int distToClosestSurfaceInside;
+    int distToSun;
+    int dist[DIR_COUNT]; // flat, static, GPU-serializable
+};
                 ```
     - [ ] optimized sky box rendering with SDF
 
