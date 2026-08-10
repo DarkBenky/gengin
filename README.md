@@ -1,126 +1,126 @@
 ## Tasks
 
 - [ ] Radar Screen UI
-    - [X] test idea
-    - [ ] implement
+  - [X] test idea
+  - [ ] implement
 
 - [ ] Clean Up the root dir
 
 - [ ] Better worker split maybe instead of horizontal lines use vertical (problem is that this will force cpu to jump in image not just one long scan maybe we can change layout)
 
 - [ ] **high** integrated FSR1 to renderer
-    - [ ] **low** test other algorithms like FSR2 ...
-    - [ ] **low** try to implement own fsr2 like alogo
-        - [ ] **low** create motion vectors 
+  - [ ] **low** test other algorithms like FSR2 ...
+  - [ ] **low** try to implement own fsr2 like alogo
+    - [ ] **low** create motion vectors
 
 - [ ] **high** test if we can improve guidance
-    - [ ] test lowering the dt for simulation when close to target
-    - [ ] test switching to genetic algorithm when close to target so we simulate some generation with random mutation and on next generation we cross mutate the top candidates
+  - [ ] test lowering the dt for simulation when close to target
+  - [ ] test switching to genetic algorithm when close to target so we simulate some generation with random mutation and on next generation we cross mutate the top candidates
 
 - [ ] **high** Add audio
-    - [X] lib ![link](https://github.com/RandyGaul/cute_headers/blob/master/cute_sound.h)
-    - [X] test volumetric sound first with small demo
-        - [ ] implement to real code
-            - [ ] Add sound to code base for planes missiles ...
-        - [X] implement 3d sound
+  - [X] lib ![link](https://github.com/RandyGaul/cute_headers/blob/master/cute_sound.h)
+  - [X] test volumetric sound first with small demo
+    - [ ] implement to real code
+      - [ ] Add sound to code base for planes missiles ...
+    - [X] implement 3d sound
 
 - [ ] **Not Sure** atmosphere rendering on gpu
-        - [ ] maybe we can pre bake for each voxel the sun reflection distance (trough how many voxels does the ray need to travel to sun)
-            - [ ] we can also try to store for example 6 float for each voxel that will define the distance trough claud in each direction and we will interpolate
-                - for better quality maybe more
+  - [ ] maybe we can pre bake for each voxel the sun reflection distance (trough how many voxels does the ray need to travel to sun)
+    - [ ] we can also try to store for example 6 float for each voxel that will define the distance trough claud in each direction and we will interpolate
+      - for better quality maybe more
 
-                ```c
-                typedef enum {
-    DIR_POS_X, DIR_NEG_X,
-    DIR_POS_Y, DIR_NEG_Y,
-    DIR_POS_Z, DIR_NEG_Z,
-    DIR_PXPY, DIR_PXNY, DIR_NXPY, DIR_NXNY,  // xy diagonals
-    DIR_PYPZ, DIR_PYNZ, DIR_NYPZ, DIR_NYNZ,  // yz diagonals
-    DIR_PXPZ, DIR_PXNZ, DIR_NXPZ, DIR_NXNZ,  // xz diagonals
-    DIR_PPP, DIR_PPN, DIR_PNP, DIR_PNN,      // corners
-    DIR_NPP, DIR_NPN, DIR_NNP, DIR_NNN,
-    DIR_COUNT // 26
-} VoxelDirection;
+        ```c
+        typedef enum {
+            DIR_POS_X, DIR_NEG_X,
+            DIR_POS_Y, DIR_NEG_Y,
+            DIR_POS_Z, DIR_NEG_Z,
+            DIR_PXPY, DIR_PXNY, DIR_NXPY, DIR_NXNY,  // xy diagonals
+            DIR_PYPZ, DIR_PYNZ, DIR_NYPZ, DIR_NYNZ,  // yz diagonals
+            DIR_PXPZ, DIR_PXNZ, DIR_NXPZ, DIR_NXNZ,  // xz diagonals
+            DIR_PPP, DIR_PPN, DIR_PNP, DIR_PNN,      // corners
+            DIR_NPP, DIR_NPN, DIR_NNP, DIR_NNN,
+            DIR_COUNT // 26
+        } VoxelDirection;
 
-struct ClaudVoxel {
-    int distToClosestSurfaceOutside;
-    int distToClosestSurfaceInside;
-    int distToSun;
-    int dist[DIR_COUNT]; // flat, static, GPU-serializable
-};
-                ```
-    - [ ] optimized sky box rendering with SDF
+        struct ClaudVoxel {
+            int distToClosestSurfaceOutside;
+            int distToClosestSurfaceInside;
+            int distToSun;
+            int dist[DIR_COUNT]; // flat, static, GPU-serializable
+        };
+        ```
+  - [ ] optimized sky box rendering with SDF
 
 - [ ] test idea of pre pas gpu bbox itersection
-    - [ ] we uplod objects bbox and object index and trace rays against them we store per pixel object index if no hit we can set it to -1 then in cpu side we first check the stored index if not hit in bvh we continue normaly
-    - [ ] GPU - per pixel bBox check -> store hit object index -> CPU - BVH travers for this object -> if no hit continue with normal traverse
+  - [ ] we uplod objects bbox and object index and trace rays against them we store per pixel object index if no hit we can set it to -1 then in cpu side we first check the stored index if not hit in bvh we continue normaly
+  - [ ] GPU - per pixel bBox check -> store hit object index -> CPU - BVH travers for this object -> if no hit continue with normal traverse
 
 - [ ] Wire frame rendering
 - [ ] Crete shader that will simulate hot air fluctuations for jet engine or missiles
 
 - [ ] Create Optimizes versions of this functions
-    - [ ] RayCast
-        - [ ] **low** opportunity just 0.11% of run time
-    - [ ] SampleEmission
-        - [ ] **medium/high** opportunity just 1.46% of run time
-    - [ ] SampleFace
-        - [ ] **notSure** inlined function need to experiment
-    - [ ] SampleSkybox
-        - [ ] **medium** opportunity just 1.16% of run time
-    - [ ] IntersectBVH
-        - [ ] **high/max** opportunity just 17.77% of run time
-    - [ ] IntersectBVH_Shadow
-        - [ ] **medium/high** opportunity just 1.92% of run time
-    - [ ] hdrToLDR
-        - [ ] **low/median** opportunity just 0.52% of run time
-    - [ ] CalculateUvCoordinates
-        - [ ]  [ ] **medium** opportunity just 1.03% of run time
+  - [ ] RayCast
+    - [ ] **low** opportunity just 0.11% of run time
+  - [ ] SampleEmission
+    - [ ] **medium/high** opportunity just 1.46% of run time
+  - [ ] SampleFace
+    - [ ] **notSure** inlined function need to experiment
+  - [ ] SampleSkybox
+    - [ ] **medium** opportunity just 1.16% of run time
+  - [ ] IntersectBVH
+    - [ ] **high/max** opportunity just 17.77% of run time
+  - [ ] IntersectBVH_Shadow
+    - [ ] **medium/high** opportunity just 1.92% of run time
+  - [ ] hdrToLDR
+    - [ ] **low/median** opportunity just 0.52% of run time
+  - [ ] CalculateUvCoordinates
+    - [ ] **medium** opportunity just 1.03% of run time
 - [ ] better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 
 - [ ] train model against moving target
 - [ ] disable trust control
 
 - [X] merge the new fixed flight model to main
-    - [X] train the model
-    - [ ] fix the visualizer
+  - [X] train the model
+  - [ ] fix the visualizer
 - [ ] Plane editor
-    - [ ] export
-    - [ ] import to c
-    - [ ] implement c wing simulation
+  - [ ] export
+  - [ ] import to c
+  - [ ] implement c wing simulation
 - [X] implement the simplified simulation in 2d then move to c
-    - [X] move python code to c
-    - [ ] train model
-        - [ ] train model to go to some to next waypoint but loss will be calculated based on pre calculated curve
-    - [ ] integrate the model
-    - [ ] add the more advanced version of simulation to main
-    - [ ] fix plane sim it feels wrong
+  - [X] move python code to c
+  - [ ] train model
+    - [ ] train model to go to some to next waypoint but loss will be calculated based on pre calculated curve
+  - [ ] integrate the model
+  - [ ] add the more advanced version of simulation to main
+  - [ ] fix plane sim it feels wrong
 - [ ] render directly wia open gl not c => open gl => minifb
 
 - [ ] textures as post proces step on gpu we need to add uv mapping we shoulde use per triangle texture (normal, albedo ...)
-    - [ ] input
-        - [ ] 2d screen buffers (G-buffer)
-            - [ ] Albedo map (HDR above 1 = lit) <- rendered scene color
-            - [ ] World space normal map
-            - [X] UV map <- done calculated on cpu
-            - [ ] Texture ID map
-            - [ ] Depth map
+  - [ ] input
+    - [ ] 2d screen buffers (G-buffer)
+      - [ ] Albedo map (HDR above 1 = lit) <- rendered scene color
+      - [ ] World space normal map
+      - [X] UV map <- done calculated on cpu
+      - [ ] Texture ID map
+      - [ ] Depth map
 
-        - [ ] light
-            - [ ] sun direction
-            - [ ] light intensity
+    - [ ] light
+      - [ ] sun direction
+      - [ ] light intensity
 
-        - [ ] texture atlas
-            - [ ] Blend Factor
-            - [ ] Albedo <- source texture (blend wit base color)
-            - [ ] Normal map
-            - [ ] Roughness
-            - [ ] Metallic
+    - [ ] texture atlas
+      - [ ] Blend Factor
+      - [ ] Albedo <- source texture (blend wit base color)
+      - [ ] Normal map
+      - [ ] Roughness
+      - [ ] Metallic
 
 - [ ] model editor / object editor / texture editor
 
 - [ ] GPU rendering (keep it simple — port current CPU pipeline (**later**)
-    - [X] clouds
-    - [X] god rays
+  - [X] clouds
+  - [X] god rays
 
 - [ ] Plane controls
   - [ ] Use something like this but we will simplified it
@@ -137,13 +137,13 @@ struct ClaudVoxel {
 - [ ] Missile guidance and control
 
 - [X] new import / export format to support textures
-    - [X] add new high quality models
-    - [X] test if models are loaded successfully
-        - [NotImplemented] use normals for ray tracer handle coloring on gpu
+  - [X] add new high quality models
+  - [X] test if models are loaded successfully
+    - [NotImplemented] use normals for ray tracer handle coloring on gpu
 
 - [X] Create optimized version of rayAABB_inv
-    - [NotImplemented] use optimized version processing 8 BoundingBoxes in same time
-        - [X] We used rayAABB_inv_x2_soa
+  - [NotImplemented] use optimized version processing 8 BoundingBoxes in same time
+    - [X] We used rayAABB_inv_x2_soa
 
 - [X] Implement optimized version of RayBoxIntersectV4
 
@@ -153,24 +153,26 @@ struct ClaudVoxel {
 
 - [X] Add screen space reflection
 
-- [x] Test if using multiple rows per ray trace task improves performance (e.g. 8 rows per task)
+- [X] Test if using multiple rows per ray trace task improves performance (e.g. 8 rows per task)
   - Tested: it is better to use one task per row when there is a lot of work (**more work == fewer rows per task**, **less work == more rows per task**)
     - ![results](results.md)
 
 - [X] sync all object
-    - [X] why movement si so jerky (jumping around)
+  - [X] why movement si so jerky (jumping around)
 - [X] Server Synchronization
-    - [X] crete simple project that will test diffrent methods
-        - [X] TCP server
-        - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
+  - [X] crete simple project that will test diffrent methods
+    - [X] TCP server
+    - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
         ```
         on innit => get free plane
         on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
         on close => set planes as free and invisible
-    - [X] integrate it to main.c
+        ```
+  - [X] integrate it to main.c
 
 - [X] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
-    - [X] reqest designe
+  - [X] reqest designe
+
     ```c
     #typedef struct {
         uint32 Size
@@ -179,23 +181,24 @@ struct ClaudVoxel {
         uint8 data
     } Reqest;
     ```
+
 - [X] God Rays
 - [X] Emission
-    - [X] crete emission map for each object
+  - [X] crete emission map for each object
     ![img](./render.png)
 - [X] Shadows same as reflection
 - [X] Clouds
 - [X] Bloom
-    - [X] Too slow
+  - [X] Too slow
 
 - [X] Replace screen space refection by raytraced onece
-    - [X] use lower resolution and blur row apply it to frame buffer
-        - [X] apply direct reflection [red][green][blue][roughness]
-            - [X] we blur based on 4th channel
+  - [X] use lower resolution and blur row apply it to frame buffer
+    - [X] apply direct reflection [red][green][blue][roughness]
+      - [X] we blur based on 4th channel
 
 ## Current Render
 
 ![img](./img.png)
 
-- [ ] Airofoil and flaps simulation 
-    - ![example_c_implementation](planeSurfacesExample.c)
+- [ ] Airofoil and flaps simulation
+  - ![example_c_implementation](planeSurfacesExample.c)
