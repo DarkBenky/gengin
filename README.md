@@ -52,6 +52,7 @@
             int dist[DIR_COUNT]; // flat, static, GPU-serializable
         };
         ```
+
   - [ ] optimized sky box rendering with SDF
 
 - [ ] test idea of pre pas gpu bbox itersection
@@ -166,11 +167,13 @@
   - [X] crete simple project that will test diffrent methods
     - [X] TCP server
     - [X] we can simplify it we crete n planes on each client for while there are not used they are invisible and when user connect one of the planes will be given to user synchronization will work like this
+
         ```
         on innit => get free plane
         on update => send users plane state and receive new state we can add velocity to each plane so the state will be interpolated between updates
         on close => set planes as free and invisible
         ```
+
   - [X] integrate it to main.c
 
 - [X] 1. create generic server (async) client (async) and then use lib that is client and server side for model loading updating etc ...
