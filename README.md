@@ -7,6 +7,8 @@
 
 - [ ] Clean Up the root dir
 
+- **low** [ ] Support for transparent materials
+
 - [ ] Better worker split maybe instead of horizontal lines use vertical (problem is that this will force cpu to jump in image not just one long scan maybe we can change layout)
 
 - [ ] **high** integrated FSR1 to renderer
