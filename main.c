@@ -44,7 +44,7 @@ void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input
 
 	// Chase camera: behind and above the plane, looking ahead of the nose
 	float3 planeFwd = Float3_Normalize(simPlane->forward);
-	float3 planeUp  = planeGetUpVector(simPlane);
+	float3 planeUp = planeGetUpVector(simPlane);
 	float3 camTarget = Float3_Add(simPlane->position, Float3_Scale(planeFwd, 50.0f));
 	float3 camOffset = Float3_Add(Float3_Scale(planeFwd, -25.0f), Float3_Scale(planeUp, 5.0f));
 	camera->position = Float3_Add(simPlane->position, camOffset);
@@ -181,7 +181,9 @@ int main() {
 	Skybox skybox;
 	LoadSkybox(&skybox, "skybox");
 
-	ThreadPool *threadPool = poolCreate(32, HEIGHT);
+	// queue must hold one task per row OR per column — column dispatch uses screenWidth
+	// tasks (WIDTH >= HEIGHT), so size the pool to WIDTH to avoid ring-buffer overflow
+	ThreadPool *threadPool = poolCreate(32, WIDTH);
 	RayTraceTaskQueue rayTaskQueue;
 	SSRTask *ssrTasks = malloc(sizeof(SSRTask) * ((HEIGHT + 3) / 4));
 
@@ -220,7 +222,7 @@ int main() {
 		// Update prev postion rotation scale for motion vectors
 		ComputePrevPostionRotationScale(&scene);
 		ComputePrevCameraPos(&camera);
-		
+
 		// get current scene state from server
 		getObjects(&c, &scene, &matLib, &objectRegistry);
 
@@ -267,6 +269,7 @@ int main() {
 		accumSetupTime += setupTime;
 
 		WNOW(wA);
+
 		RayTraceScene(scene.objects, scene.count, &camera, &matLib, &rayTaskQueue, threadPool, &skybox);
 
 		// RASTERIZE

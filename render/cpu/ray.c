@@ -1095,6 +1095,496 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 	poolWait(threadPool);
 }
 
+static void RayTraceColumnFunc(void *arg) {
+	RayTraceTask *task = arg;
+	int col = task->row;
+	Camera *camera = task->camera;
+	const Object *objects = task->objects;
+	int objectCount = task->objectCount;
+	const MaterialLib *lib = task->lib;
+	int width = camera->screenWidth;
+	int height = camera->screenHeight;
+
+	// hoist all per-frame constants out of the pixel loop
+	float3 orig = camera->position;
+	float3 lightDir = Float3_Normalize(camera->lightDir);
+	float3 fwd = Float3_Normalize(camera->forward);
+	float3 rgt = Float3_Normalize(camera->right);
+	float3 up_ = Float3_Normalize(camera->up);
+	float aspect = camera->aspect;
+	float fovScale = camera->fovScale;
+
+	// prev camera state for motion vectors — normalize for orthonormal projection basis
+	float3 prevPos = camera->prevPosition;
+	float3 prevFwd = Float3_Normalize(camera->prevForward);
+	float3 prevRgt = Float3_Normalize(camera->prevRight);
+	float3 prevUp = Float3_Normalize(camera->prevUp);
+	float prevAsp = camera->prevAspect;
+	float prevFov = camera->prevFovScale;
+
+	// per-column constants — products and association order match the row version
+	// exactly so rays are bit-identical and frame hashes match
+	float ndcX = (col + 0.5f) / (float)width * 2.0f - 1.0f;
+	float xstepX = rgt.x * aspect * fovScale;
+	float xstepY = rgt.y * aspect * fovScale;
+	float xstepZ = rgt.z * aspect * fovScale;
+
+	float3 catchReflections[height]; // accumulate reflection contributions for the entire column, then write to framebuffer in one pass
+	// NOTE: can not be removed frame hashes changed
+	memset(catchReflections, 0, sizeof(float3) * height);
+	float3 catchReflection = {0.0f, 0.0f, 0.0f};
+
+	float3 catchEmissions[height]; // accumulate emission contributions for the entire column, then write to framebuffer in one pass
+	// NOTE: can not be removed frame hashes changed
+	memset(catchEmissions, 0, sizeof(float3) * height);
+	float3 catchEmission = {0.0f, 0.0f, 0.0f};
+
+	float3 catchShadow[height]; // accumulate shadow contributions for the entire column, then write to framebuffer in one pass
+	// NOTE: can not be removed frame hashes changed
+	memset(catchShadow, 0, sizeof(float3) * height);
+	float3 catchShadowValue = {0.0f, 0.0f, 0.0f};
+
+	const int numberOfLightSamples = 8;
+
+	int emissiveObjectIndices[numberOfLightSamples];
+	int emissiveObjectCount = 0;
+
+	for (int i = 0; i < objectCount; i++) {
+		if (objects[i].hasEmission) {
+			if (emissiveObjectCount < numberOfLightSamples) {
+				emissiveObjectIndices[emissiveObjectCount++] = i;
+			} else {
+				break;
+			}
+		}
+	}
+
+	for (int y = 0; y < height; y++) {
+		int idx = y * width + col;
+
+		float ndcY = 1.0f - (y + 0.5f) / (float)height * 2.0f;
+		float yscale = ndcY * fovScale;
+		float dx = fwd.x + up_.x * yscale + xstepX * ndcX;
+		float dy = fwd.y + up_.y * yscale + xstepY * ndcX;
+		float dz = fwd.z + up_.z * yscale + xstepZ * ndcX;
+		float inv = 1.0f / sqrtf(dx * dx + dy * dy + dz * dz);
+		dx *= inv;
+		dy *= inv;
+		dz *= inv;
+
+		float bestT = DEPTH_FAR;
+		int bestObj = -1, bestTri = -1;
+		float3 bestHitPos = {0};
+
+		// precompute per-pixel invDir + bias — avoids recomputing 3 divisions per object in world AABB test
+		const float invDx = 1.0f / dx, invDy = 1.0f / dy, invDz = 1.0f / dz;
+		const float3 pixInvDir = {invDx, invDy, invDz};
+		const float3 pixBias = {orig.x * invDx, orig.y * invDy, orig.z * invDz};
+
+		const int *passIdx = task->frustumPassIndices;
+		const int passCount = task->frustumPassCount;
+		for (int ci = 0; ci < passCount; ci++) {
+			int i = passIdx[ci];
+			float tAABB = rayAABB_inv(pixBias, pixInvDir, &objects[i].worldBBmin.x, &objects[i].worldBBmax.x);
+			if (tAABB >= bestT) continue;
+
+			int triIdx = -1;
+			float3 hitPos;
+			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, &triIdx, &hitPos);
+			if (triIdx < 0) continue;
+
+			float t = (hitPos.x - orig.x) * dx + (hitPos.y - orig.y) * dy + (hitPos.z - orig.z) * dz;
+			if (t > 0.0f && t < bestT) {
+				bestT = t;
+				bestObj = i;
+				bestTri = triIdx;
+				bestHitPos = hitPos;
+			}
+		}
+
+		if (bestObj < 0) {
+			camera->depthBuffer[idx] = DEPTH_FAR;
+			camera->objectIdBuffer[idx] = -1;
+			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
+			camera->motionVectorBuffer[idx] = (float2){0.0f, 0.0f};
+			continue;
+		}
+
+		const Object *obj = &objects[bestObj];
+
+		float3 v0, v1, v2;
+		v0 = obj->v1[bestTri];
+		v1 = obj->v2[bestTri];
+		v2 = obj->v3[bestTri];
+
+		// check if object has textures
+		uvCoordinates xyCordsTexture = {0, 0};
+		bool hasTexture = obj->hasTexture;
+
+		if (hasTexture) {
+			// barycentric needs local-space coords — transform world hit back to local
+			float3 localHit = InverseTransformPointTRS(bestHitPos, obj->position, obj->rotation, obj->scale);
+			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, obj->uvs[bestTri]);
+		}
+
+		float3 ln = obj->normals[bestTri];
+		float3 n = {
+			obj->_fwdRot0.x * ln.x + obj->_fwdRot0.y * ln.y + obj->_fwdRot0.z * ln.z,
+			obj->_fwdRot1.x * ln.x + obj->_fwdRot1.y * ln.y + obj->_fwdRot1.z * ln.z,
+			obj->_fwdRot2.x * ln.x + obj->_fwdRot2.y * ln.y + obj->_fwdRot2.z * ln.z};
+		float nlen = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
+		if (nlen > 1e-6f) {
+			float ni = 1.0f / nlen;
+			n.x *= ni;
+			n.y *= ni;
+			n.z *= ni;
+		}
+
+		float3 color = {0.8f, 0.8f, 0.8f};
+		float emission = 0.0f;
+		float roughness = 0.8f;
+		float metallic = 0.0f;
+
+		// texture data
+		float3 normalFromTexture_Float3 = {0.0f, 0.0f, 0.0f};
+		float3 colorFromTexture_Float3 = {0.0f, 0.0f, 0.0f};
+		float roughnessFromTexture_Float = 0.0f;
+		float metallicFromTexture_Float = 0.0f;
+
+		if (lib && obj->materialIds) {
+			int matId = obj->materialIds[bestTri];
+			if (matId >= 0 && matId < lib->count) {
+				color = lib->entries[matId].color;
+				// emission = lib->entries[matId].emission;
+				emission = lib->entries[matId].emission * 0.01f; // scale down emission to prevent it from dominating the lighting
+				metallic = lib->entries[matId].metallic;
+
+				if (hasTexture && lib->entries[matId].textures) {
+					Color colorFromTexture = lib->entries[matId].textures->colorMap[xyCordsTexture.y][xyCordsTexture.x];
+					Color normalFromTexture = lib->entries[matId].textures->normalMap[xyCordsTexture.y][xyCordsTexture.x];
+					uint16 roughnessAndMetallicFromTexture = lib->entries[matId].textures->MaterialMap[xyCordsTexture.y][xyCordsTexture.x];
+
+					// Texture maps are stored R=bits[0..7], G=bits[8..15], B=bits[16..23]
+					// UnpackColor reads R from bits[16..23], so channels would be swapped — extract directly.
+					colorFromTexture_Float3 = (float3){
+						(colorFromTexture & 0xFF) / 255.0f,
+						((colorFromTexture >> 8) & 0xFF) / 255.0f,
+						((colorFromTexture >> 16) & 0xFF) / 255.0f,
+					};
+					normalFromTexture_Float3 = (float3){
+						(normalFromTexture & 0xFF) / 255.0f,
+						((normalFromTexture >> 8) & 0xFF) / 255.0f,
+						((normalFromTexture >> 16) & 0xFF) / 255.0f,
+					};
+
+					colorFromTexture_Float3 = Float3_Scale(colorFromTexture_Float3, 1.25f); // boost texture color a bit to make it more visible
+
+					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
+					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;
+					roughnessFromTexture_Float = 1.0f - roughnessFromTexture / 255.0f;
+					metallicFromTexture_Float = metallicFromTexture / 255.0f;
+					if (metallicFromTexture_Float > 0.25f) {
+						metallicFromTexture_Float = 0.25f + (metallicFromTexture_Float - 0.25f) * 0.75f; // compress metallic range to prevent it from dominating the lighting
+					}
+				}
+			}
+		}
+
+		if (hasTexture) {
+			color = colorFromTexture_Float3;
+			roughness = roughnessFromTexture_Float;
+			metallic = metallicFromTexture_Float;
+
+			// decode tangent-space normal from [0,1] -> [-1,1]
+			// negate Y: Go flips V (vc = 1-v), which negates dV and thus B, inverting normal.y
+			float3 nTex = {
+				normalFromTexture_Float3.x * 2.0f - 1.0f,
+				-(normalFromTexture_Float3.y * 2.0f - 1.0f),
+				normalFromTexture_Float3.z * 2.0f - 1.0f,
+			};
+			float nTexLen = Float3_Length(nTex);
+			if (nTexLen > 1e-3f) {
+				UvCords uvCords = obj->uvs[bestTri];
+				float dU1 = ((int)uvCords.uv2x - (int)uvCords.uv1x) / 65535.0f;
+				float dV1 = ((int)uvCords.uv2y - (int)uvCords.uv1y) / 65535.0f;
+				float dU2 = ((int)uvCords.uv3x - (int)uvCords.uv1x) / 65535.0f;
+				float dV2 = ((int)uvCords.uv3y - (int)uvCords.uv1y) / 65535.0f;
+				float3 edge1 = Float3_Sub(v1, v0);
+				float3 edge2 = Float3_Sub(v2, v0);
+				float det = dU1 * dV2 - dU2 * dV1;
+				float3 T, B;
+				if (fabsf(det) > 1e-6f) {
+					float inv = 1.0f / det;
+					float3 tRaw = {
+						(dV2 * edge1.x - dV1 * edge2.x) * inv,
+						(dV2 * edge1.y - dV1 * edge2.y) * inv,
+						(dV2 * edge1.z - dV1 * edge2.z) * inv,
+					};
+					// rotate tangent to world space, same transform as normals
+					float3 tWorld = {
+						obj->_fwdRot0.x * tRaw.x + obj->_fwdRot0.y * tRaw.y + obj->_fwdRot0.z * tRaw.z,
+						obj->_fwdRot1.x * tRaw.x + obj->_fwdRot1.y * tRaw.y + obj->_fwdRot1.z * tRaw.z,
+						obj->_fwdRot2.x * tRaw.x + obj->_fwdRot2.y * tRaw.y + obj->_fwdRot2.z * tRaw.z,
+					};
+					// Gram-Schmidt orthogonalize against geometric normal
+					T = Float3_Normalize(Float3_Sub(tWorld, Float3_Scale(n, Float3_Dot(tWorld, n))));
+					B = Float3_Cross(n, T);
+				} else {
+					// degenerate UVs — build arbitrary frame from n
+					float3 up = fabsf(n.y) < 0.9f ? (float3){0.0f, 1.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f};
+					T = Float3_Normalize(Float3_Cross(up, n));
+					B = Float3_Cross(n, T);
+				}
+				float3 nTexN = Float3_Normalize((float3){nTex.x * 5.0f / nTexLen, nTex.y * 5.0f / nTexLen, nTex.z / nTexLen});
+				n = Float3_Normalize((float3){
+					T.x * nTexN.x + B.x * nTexN.y + n.x * nTexN.z,
+					T.y * nTexN.x + B.y * nTexN.y + n.y * nTexN.z,
+					T.z * nTexN.x + B.z * nTexN.y + n.z * nTexN.z,
+				});
+			}
+		}
+
+		float3 sOrig = {bestHitPos.x + n.x * 0.01f, bestHitPos.y + n.y * 0.01f, bestHitPos.z + n.z * 0.01f};
+		camera->normalBuffer[idx] = n;
+		camera->positionBuffer[idx] = bestHitPos;
+
+		float diffuse = n.x * lightDir.x + n.y * lightDir.y + n.z * lightDir.z;
+		if (diffuse < 0.0f) diffuse = 0.0f;
+
+		// fresnel hoisted before specular — shared with reflection strength
+		float NdotV = fmaxf(1e-4f, -(n.x * dx + n.y * dy + n.z * dz));
+		float invNdotV = 1.0f - NdotV;
+		float inv2 = invNdotV * invNdotV;
+		float fresnelT = inv2 * inv2 * invNdotV;
+		float roughInv = 1.0f - roughness;
+		float f0 = 0.04f + 0.96f * metallic;
+		float fresnel = f0 + (1.0f - f0) * fresnelT;
+
+		// GGX NDF + Smith G: smooth → narrow bright highlight, rough → broad dim
+		float hx = lightDir.x - dx, hy = lightDir.y - dy, hz = lightDir.z - dz;
+		float hlen = 1.0f / sqrtf(hx * hx + hy * hy + hz * hz);
+		float NdotH = fmaxf(0.0f, (n.x * hx + n.y * hy + n.z * hz) * hlen);
+		float alpha = roughness * roughness;
+		float alpha2 = alpha * alpha;
+		float dg = NdotH * NdotH * (alpha2 - 1.0f) + 1.0f;
+		float D = alpha2 / fmaxf(dg * dg, 1e-5f);
+		float k = alpha * 0.5f;
+		float GV = NdotV / fmaxf(NdotV * (1.0f - k) + k, 1e-5f);
+		float GL = diffuse / fmaxf(diffuse * (1.0f - k) + k, 1e-5f);
+		float specularBase = (diffuse > 0.0f) ? (D * GV * GL * fresnel / fmaxf(4.0f * diffuse * NdotV, 1e-5f)) : 0.0f;
+		// metals: albedo-tinted specular; dielectrics: white specular (Fresnel already in specularBase)
+		float specR = specularBase * (1.0f - metallic) + specularBase * metallic * color.x;
+		float specG = specularBase * (1.0f - metallic) + specularBase * metallic * color.y;
+		float specB = specularBase * (1.0f - metallic) + specularBase * metallic * color.z;
+
+		// metals absorb no diffuse all energy is specular
+		float diffuseWeight = 1.0f - metallic;
+		float lit = (0.02f + 0.98f * diffuse) * diffuseWeight;
+
+		float3 ldr = hdrToLDR(color.x * lit + specR + color.x * emission,
+							  color.y * lit + specG + color.y * emission,
+							  color.z * lit + specB + color.z * emission);
+		uint8 r = (uint8)(ldr.x * 255.0f);
+		uint8 g = (uint8)(ldr.y * 255.0f);
+		uint8 b = (uint8)(ldr.z * 255.0f);
+
+		// rough surfaces suppress reflections — fresnel already computed above
+		// also modulate by light facing: back-facing surfaces can't receive strong sky reflection
+		float roughnessDamp = roughInv * 0.18f;
+		float lightFacing = 0.15f + 0.85f * diffuse; // [0.15, 1.0] — never fully zero to preserve ambient sheen
+		float reflectStrength = fresnel * roughnessDamp * lightFacing * (1.0f - fminf(emission, 1.0f));
+
+		// perfect specular reflect dir roughness already baked into reflectStrength
+		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
+		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
+
+		// sky reflection blend metals tint it by albedo, dielectrics reflect white sky
+		Color skyRefl = SampleSkybox(task->skybox, reflDir);
+		uint32 st = (uint32)(reflectStrength * 255.0f);
+		if (st > 255u) st = 255u;
+		uint32 sit = 255u - st;
+		uint32 skyR = (skyRefl >> 16) & 0xFF;
+		uint32 skyG = (skyRefl >> 8) & 0xFF;
+		uint32 skyB = (skyRefl) & 0xFF;
+		// tint sky colour by albedo for metals
+		skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
+		skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
+		skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+		uint32 nr = ((uint32)r * sit + skyR * st) >> 8;
+		uint32 ng = ((uint32)g * sit + skyG * st) >> 8;
+		uint32 nb = ((uint32)b * sit + skyB * st) >> 8;
+
+		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
+		// View-Z depth (dot with forward) keeps SSR depth comparisons consistent
+		camera->depthBuffer[idx] = (bestHitPos.x - orig.x) * fwd.x + (bestHitPos.y - orig.y) * fwd.y + (bestHitPos.z - orig.z) * fwd.z;
+		camera->objectIdBuffer[idx] = bestObj;
+		// w = geometry reflection strength — use roughGloss^2 so it stays stronger than sky blend
+		float roughGloss = 1.0f - roughness;
+		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, roughGloss * roughGloss};
+		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
+		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, v0, v1, v2);
+		camera->triangleIdBuffer[idx] = bestTri;
+
+		// Motion vector: screen-UV delta from previous frame
+		{
+			float3 localPos = InverseTransformPointTRS(bestHitPos, obj->position, obj->rotation, obj->scale);
+			float3 prevWorldPos = TransformPointTRS(localPos, obj->prevPostion, obj->prevRotation, obj->prevScale);
+			float3 prevToPoint = Float3_Sub(prevWorldPos, prevPos);
+			float prevViewZ = Float3_Dot(prevToPoint, prevFwd);
+			if (prevViewZ > 1e-4f) {
+				float prevViewX = Float3_Dot(prevToPoint, prevRgt);
+				float prevViewY = Float3_Dot(prevToPoint, prevUp);
+				float prevNdcX = prevViewX / (prevViewZ * prevAsp * prevFov);
+				float prevNdcY = prevViewY / (prevViewZ * prevFov);
+				float prevU = (prevNdcX + 1.0f) * 0.5f;
+				float prevV = (1.0f - prevNdcY) * 0.5f;
+				float currU = (col + 0.5f) / (float)width;
+				float currV = (y + 0.5f) / (float)height;
+				camera->motionVectorBuffer[idx] = (float2){currU - prevU, currV - prevV};
+			} else {
+				camera->motionVectorBuffer[idx] = (float2){0.0f, 0.0f};
+			}
+		}
+
+		// ray traced reflection only cast every REFLECTION_RESOLUTION rows
+		if (y % REFLECTION_RESOLUTION == 0) {
+			int shadowHit = -1;
+			if (emission <= 0.0f) {
+				rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
+			}
+			int inShadow = shadowHit >= 0;
+			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
+
+			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
+			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
+			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
+			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
+			for (int e = 0; e < emissiveObjectCount; e++) {
+				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
+				float dist = Float3_Length(toEmissive);
+				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+					if (dist < topEmissiveDistances[t]) {
+						// insert into sorted list
+						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
+							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
+							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
+						}
+						topEmissiveDistances[t] = dist;
+						topEmissiveIndices[t] = emissiveObjectIndices[e];
+						break;
+					}
+				}
+			}
+
+			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
+			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+				if (topEmissiveIndices[t] < 0) break; // fewer emitters than TOP_EMISSIVE_OBJECTS
+				float3 targetPos = objects[topEmissiveIndices[t]].position;
+				float3 toEmissive = Float3_Sub(targetPos, bestHitPos);
+				// NdotL: only surfaces facing the emitter receive light
+				float3 toEmissiveN = Float3_Normalize(toEmissive);
+				float NdotL = fabsf(n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z);
+				if (NdotL <= 0.0f) continue;
+				float3 em = SampleEmission(objects, objectCount, bestHitPos, toEmissive, topEmissiveIndices[t], lib);
+				float falloff = NdotL / (topEmissiveDistances[t] * topEmissiveDistances[t] + 1e-6f);
+				accumulatedEmission.x += em.x * falloff;
+				accumulatedEmission.y += em.y * falloff;
+				accumulatedEmission.z += em.z * falloff;
+			}
+
+			catchEmission = accumulatedEmission;
+
+			float3 rOrig = sOrig;
+			RayHit rHit;
+			if (RayCast((Object *)objects, objectCount, rOrig, reflDir, bestObj, lib, &rHit)) {
+				catchReflection.x = rHit.mat.color.x;
+				catchReflection.y = rHit.mat.color.y;
+				catchReflection.z = rHit.mat.color.z;
+				catchReflection.w = reflectStrength;
+			} else {
+				Color skyColor = SampleSkybox(task->skybox, reflDir);
+				catchReflection.x = ((skyColor >> 16) & 0xFF) / 255.0f;
+				catchReflection.y = ((skyColor >> 8) & 0xFF) / 255.0f;
+				catchReflection.z = (skyColor & 0xFF) / 255.0f;
+				catchReflection.w = reflectStrength;
+			}
+		}
+		catchReflections[y] = catchReflection;
+		catchEmissions[y] = catchEmission;
+		catchShadow[y] = catchShadowValue;
+	}
+	// blur reflection emission and shadows contributions down the column
+	for (int y = 0; y < height; y++) {
+		if (camera->depthBuffer[y * width + col] >= DEPTH_FAR) continue; // skip sky pixels
+		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
+		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
+		float3 accumulatedShadow = {0.0f, 0.0f, 0.0f};
+		int samples = 0;
+		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
+			int kIdx = y + kernelSize - BLUR_RADIUS - 1;
+			if (kIdx >= 0 && kIdx < height) {
+				accumulatedColor.x += catchReflections[kIdx].x;
+				accumulatedColor.y += catchReflections[kIdx].y;
+				accumulatedColor.z += catchReflections[kIdx].z;
+				accumulatedEmission.x += catchEmissions[kIdx].x;
+				accumulatedEmission.y += catchEmissions[kIdx].y;
+				accumulatedEmission.z += catchEmissions[kIdx].z;
+				accumulatedShadow.x += catchShadow[kIdx].x;
+				accumulatedShadow.y += catchShadow[kIdx].y;
+				accumulatedShadow.z += catchShadow[kIdx].z;
+				samples++;
+			}
+		}
+		if (samples > 0) {
+			float invW = 1.0f / samples;
+			accumulatedColor.x *= invW;
+			accumulatedColor.y *= invW;
+			accumulatedColor.z *= invW;
+			accumulatedEmission.x *= invW;
+			accumulatedEmission.y *= invW;
+			accumulatedEmission.z *= invW;
+			accumulatedShadow.x *= invW;
+			accumulatedShadow.y *= invW;
+			accumulatedShadow.z *= invW;
+		}
+		Color baseColor = camera->framebuffer[y * width + col];
+		float3 base = UnpackColor(baseColor);
+		float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
+		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[y * width + col].w,
+								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[y * width + col].w,
+								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[y * width + col].w);
+
+		float3 ownEmission = camera->bloomBuffer[y * width + col];
+		camera->bloomBuffer[y * width + col] = (float3){
+			ownEmission.x + accumulatedEmission.x,
+			ownEmission.y + accumulatedEmission.y,
+			ownEmission.z + accumulatedEmission.z,
+		};
+
+		camera->framebuffer[y * width + col] = PackColor(combined.x, combined.y, combined.z);
+	}
+}
+
+// TODO: test column based ray tracing and benchmark it against row based
+void RayTraceSceneColumn(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox) {
+	if (!objects || objectCount <= 0 || !camera || !taskQueue || !threadPool) return;
+	Frustum frustum = Frustum_FromCamera(camera);
+
+	// cull once per frame — frustum is constant across all pixels
+	int frustumPassIndices[objectCount];
+	int frustumPassCount = 0;
+	for (int i = 0; i < objectCount; i++) {
+		if (Frustum_TestAABB(&frustum, objects[i].worldBBmin, objects[i].worldBBmax))
+			frustumPassIndices[frustumPassCount++] = i;
+	}
+
+	for (int col = 0; col < camera->screenWidth; col++) {
+		taskQueue->tasks[col] = (RayTraceTask){col, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
+		poolAdd(threadPool, RayTraceColumnFunc, &taskQueue->tasks[col]);
+	}
+	poolWait(threadPool);
+}
+
 void DitherPostProcess(Camera *camera, int frame) {
 	if (!camera) return;
 	int width = camera->screenWidth;

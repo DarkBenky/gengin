@@ -3,6 +3,7 @@
 - [ ] Radar Screen UI
   - [X] test idea
   - [ ] implement
+    - [ ] trick where we can use radar ui as mask so renderer will render less pixels
 
 - [ ] Clean Up the root dir
 

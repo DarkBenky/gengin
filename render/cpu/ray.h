@@ -35,10 +35,12 @@ typedef struct {
 } RayTraceTask;
 
 typedef struct {
-	RayTraceTask tasks[HEIGHT];
+	// WIDTH >= HEIGHT, so one queue serves both row- and column-based dispatch
+	RayTraceTask tasks[WIDTH];
 } RayTraceTaskQueue;
 
 void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox);
+void RayTraceSceneColumn(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox);
 
 // Persistent raytrace workers — live for program lifetime, sync via barriers each frame
 typedef struct RayTracer RayTracer;
