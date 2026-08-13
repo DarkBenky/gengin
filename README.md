@@ -1,5 +1,5 @@
 ## Tasks
-
+- [ ] **high** Ambient Occlusion 
 - [ ] Radar Screen UI
   - [X] test idea
   - [ ] implement
