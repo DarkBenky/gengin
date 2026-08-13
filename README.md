@@ -1,4 +1,6 @@
 ## Tasks
+- [ ] **low** two pass render to remove horizontal artefacts 
+- [ ] **high** Models are too shiny
 - [ ] **high** Ambient Occlusion 
 - [ ] Radar Screen UI
   - [X] test idea
