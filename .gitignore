@@ -1,11 +1,36 @@
+# build outputs (all binaries, test/bench builds, prof, pgo)
+build/
+
+# flamegraph tool clone
+.flamegraph/
+
+# profiling artifacts (legacy root locations)
 perf.data
 perf.data.old
 flamegraph.svg
+callgraph.svg
 *.profraw
 *.profdata
-bench_results.json
+
+# bench results
+bench/results/bench_results.json
+
+# root binaries (legacy, now built under build/)
 main
+main_debug
 main_bench
+main_bench_unopt
+main_pgo
+exampleClient
+exampleServer
+gameClient
+gameServer
+hexDumpBin
+flightController
+flightController_debug
+testSound
+testSound3d
+testRadarScreen
 
 # llmOpt cloned workspace
 llmOpt/gengin
@@ -20,9 +45,11 @@ tools/*.png
 !tools/01.png
 tests/img/
 
-# trained model checkpoint
+# trained model checkpoints
 simulation/model.bin
 simulation/trainNN
+simulation/best_model_*.bin
+simulation/best_backprop_model_*.bin
 
 .ccls-cache
 
@@ -30,7 +57,6 @@ simulation/wandb/
 llmOpt/.env
 
 simulation/cSim/*.html
-simulation/cSim/flightControlLogs.csv
 simulation/cSim/flightControlLogs.csv
 simulation/cSim/flightDashboard.html
 simulation/cSim/flightPath3d.html

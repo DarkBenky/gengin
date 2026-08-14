@@ -242,7 +242,7 @@ def makeBench():
         _res = run(["make", "clean"], cwd=PROJECT_DIR)
         res = run(["make", "bench"], cwd=PROJECT_DIR)
         last_stdout = res.stdout
-        with open(f"{PROJECT_DIR}/bench_results.json", "r") as f:
+        with open(f"{PROJECT_DIR}/bench/results/bench_results.json", "r") as f:
             runs.append(json.load(f))
 
     # median over scalar metrics; keep visual data from the middle run

@@ -1,8 +1,0 @@
-========================================
-Running: tests/testRayColumnBench
-========================================
-=== testRayColumnBench: plane + 42 cubes (24069 tris), 1080x720, 32 threads, 128 samples ===
-Saved tests/img/rayBench_row.bmp and tests/img/rayBench_column.bmp
-Row    avg=18.450ms  median=18.340ms  p99=21.803ms
-Column avg=22.078ms  median=21.950ms  p99=25.708ms
-Speedup: 0.84x (Row is 16.4% faster)

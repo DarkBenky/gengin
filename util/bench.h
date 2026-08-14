@@ -132,7 +132,7 @@ static inline void benchReport(Bench *b) {
 	printf("  avg    : %.3f ms\n", avg);
 	printf("  median : %.3f ms\n", median);
 	printf("  p99    : %.3f ms\n", p99);
-	FILE *f = fopen("bench_results.json", "w");
+	FILE *f = fopen("bench/results/bench_results.json", "w");
 	if (f) {
 		fprintf(f, "{\n");
 		fprintf(f, "  \"frames\": %d,\n", b->count);
@@ -166,7 +166,7 @@ static inline void benchReport(Bench *b) {
 		fprintf(f, "]\n");
 		fprintf(f, "}\n");
 		fclose(f);
-		printf("  saved  : bench_results.json\n");
+		printf("  saved  : bench/results/bench_results.json\n");
 	}
 }
 
