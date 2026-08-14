@@ -128,7 +128,7 @@
 
 - [ ] Plane controls
   - [ ] Use something like this but we will simplified it
-    - [ ] Example : ![c_heder](examplePlaneStruct.h)
+    - [ ] Example : ![c_heder](codeSnippits/examplePlaneStruct.h)
     - [ ] Flight model should be physics-based only — derived values like turn rate should not be hardcoded constants
     - [ ] Control by providing a target nose vector (like War Thunder)
       - [ ] Add damping to controls to avoid oscillations
