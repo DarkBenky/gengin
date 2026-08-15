@@ -7,10 +7,15 @@ CFLAGS_BASE += -fno-plt -fprefetch-loop-arrays
 CFLAGS_BASE += -fvectorize -fslp-vectorize
 CFLAGS_BASE += -mllvm -polly
 CFLAGS_BASE += -w -I/usr/local/include -Iobject
+
+# Vendored minifb: headers + locally built static lib (deps/minifb/build)
+MINIFB_DIR = deps/minifb
+CFLAGS_BASE += -I$(MINIFB_DIR)/include
+
 CFLAGS = $(CFLAGS_BASE)
-LDFLAGS = -flto -L/usr/local/lib
+LDFLAGS = -flto -L/usr/local/lib -L$(MINIFB_DIR)/build
 LDFLAGS += -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed
-LIBS = -lminifb -lX11 -lGL -lpthread -lm -ljpeg -lOpenCL
+LIBS = -lminifb -lxkbcommon -lX11 -lXrandr -lGL -lpthread -lm -ljpeg -lOpenCL
 
 # ---- Output layout: every target builds into its own dir under build/ ----
 # build/<target>/<binary> (+ variants like main_debug / main_bench)
@@ -41,13 +46,13 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c skybox/skybox.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC         = $(filter-out main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug benchFunc testSound testSound3d testRadarScreen, $(MAKECMDGOALS))
+_SPECIFIC         = $(filter-out build/% tests/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug benchFunc testSound testSound3d testRadarScreen, $(MAKECMDGOALS))
 _RUN_TESTS        = $(if $(_SPECIFIC), $(addprefix $(TEST_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 BENCH_FUNC_DIR    = bench
 BENCH_FUNC_SRCS   = $(wildcard $(BENCH_FUNC_DIR)/*.c)
 BENCH_FUNC_BINS   = $(patsubst $(BENCH_FUNC_DIR)/%.c, $(BENCH_DIR)/%, $(BENCH_FUNC_SRCS))
-_BENCH_FUNC_SPECIFIC = $(filter-out main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug benchFunc testSound testSound3d, $(MAKECMDGOALS))
+_BENCH_FUNC_SPECIFIC = $(filter-out build/% tests/% bench/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug benchFunc testSound testSound3d, $(MAKECMDGOALS))
 _RUN_BENCH_FUNCS  = $(if $(_BENCH_FUNC_SPECIFIC), $(addprefix $(BENCH_DIR)/, $(_BENCH_FUNC_SPECIFIC)))
 
 EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
@@ -73,7 +78,7 @@ $(TARGET): $(SRC)
 	@mkdir -p $(MAIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
 
-debug: CFLAGS = -g -O0 -march=native -Wall -I/usr/local/include -Iobject
+debug: CFLAGS = -g -O0 -march=native -Wall -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include
 debug: $(SRC)
 	@mkdir -p $(MAIN_DIR)
 	$(CC) $(CFLAGS) -o $(MAIN_DIR)/main_debug $^ $(LDFLAGS) $(LIBS)
@@ -144,7 +149,7 @@ bench: $(SRC)
 
 benchUnOpt: $(SRC)
 	@mkdir -p $(MAIN_DIR)
-	$(CC) -O1 -w -I/usr/local/include -Iobject -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(MAIN_DIR)/main_bench_unopt $^ -L/usr/local/lib $(LIBS)
+	$(CC) -O1 -w -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(MAIN_DIR)/main_bench_unopt $^ -L/usr/local/lib -L$(MINIFB_DIR)/build $(LIBS)
 	./$(MAIN_DIR)/main_bench_unopt
 	rm -f $(MAIN_DIR)/main_bench_unopt
 
@@ -166,8 +171,8 @@ test: $(_RUN_TESTS)
 	done
 
 ifneq ($(_SPECIFIC),)
-$(_SPECIFIC):
-	@:
+# map bare test goals (make test testRay) onto their build/tests/<name> binary
+$(foreach t,$(_SPECIFIC),$(eval $t: $(TEST_DIR)/$t))
 endif
 
 # Build rule for any micro-benchmark binary under bench/
@@ -199,8 +204,8 @@ pgo:
 
 flame:
 	$(CC) -O3 -march=native -fno-omit-frame-pointer -fno-inline-functions -fno-lto \
-		-w -I/usr/local/include -Iobject \
-		-o $(TARGET) $(SRC) -L/usr/local/lib $(LIBS)
+		-w -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include \
+		-o $(TARGET) $(SRC) -L/usr/local/lib -L$(MINIFB_DIR)/build $(LIBS)
 	@if [ ! -d "$(FLAMEGRAPH_DIR)" ]; then \
 		echo "Cloning FlameGraph tools..."; \
 		git clone --depth=1 https://github.com/brendangregg/FlameGraph $(FLAMEGRAPH_DIR); \
