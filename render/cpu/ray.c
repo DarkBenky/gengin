@@ -1,7 +1,6 @@
 #include "ray.h"
 
 #include <math.h>
-#include <omp.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -758,6 +757,7 @@ static void RayTraceRowFunc(void *arg) {
 				// emission = lib->entries[matId].emission;
 				emission = lib->entries[matId].emission * 0.01f; // scale down emission to prevent it from dominating the lighting
 				metallic = lib->entries[matId].metallic;
+				roughness = lib->entries[matId].roughness;
 
 				if (hasTexture && lib->entries[matId].textures) {
 					Color colorFromTexture = lib->entries[matId].textures->colorMap[xyCordsTexture.y][xyCordsTexture.x];
@@ -781,9 +781,8 @@ static void RayTraceRowFunc(void *arg) {
 
 					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
 					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;
-					roughnessFromTexture_Float = 1.0f - roughnessFromTexture / 255.0f;
-					// metallicFromTexture_Float = 1.0f - metallicFromTexture / 255.0f;
-					// roughnessFromTexture_Float = roughnessFromTexture / 255.0f;
+					// map_Ns holds a standard roughness map (white = rough) — do not invert
+					roughnessFromTexture_Float = roughnessFromTexture / 255.0f;
 					metallicFromTexture_Float = metallicFromTexture / 255.0f;
 					if (metallicFromTexture_Float > 0.25f) {
 						metallicFromTexture_Float = 0.25f + (metallicFromTexture_Float - 0.25f) * 0.75f; // compress metallic range to prevent it from dominating the lighting
@@ -840,7 +839,7 @@ static void RayTraceRowFunc(void *arg) {
 					T = Float3_Normalize(Float3_Cross(up, n));
 					B = Float3_Cross(n, T);
 				}
-				float3 nTexN = Float3_Normalize((float3){nTex.x * 5.0f / nTexLen, nTex.y * 5.0f / nTexLen, nTex.z / nTexLen});
+				float3 nTexN = Float3_Normalize((float3){nTex.x * NORMAL_MAP_STRENGTH / nTexLen, nTex.y * NORMAL_MAP_STRENGTH / nTexLen, nTex.z / nTexLen});
 				n = Float3_Normalize((float3){
 					T.x * nTexN.x + B.x * nTexN.y + n.x * nTexN.z,
 					T.y * nTexN.x + B.y * nTexN.y + n.y * nTexN.z,
@@ -1258,6 +1257,7 @@ static void RayTraceColumnFunc(void *arg) {
 				// emission = lib->entries[matId].emission;
 				emission = lib->entries[matId].emission * 0.01f; // scale down emission to prevent it from dominating the lighting
 				metallic = lib->entries[matId].metallic;
+				roughness = lib->entries[matId].roughness;
 
 				if (hasTexture && lib->entries[matId].textures) {
 					Color colorFromTexture = lib->entries[matId].textures->colorMap[xyCordsTexture.y][xyCordsTexture.x];
@@ -1281,7 +1281,8 @@ static void RayTraceColumnFunc(void *arg) {
 
 					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
 					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;
-					roughnessFromTexture_Float = 1.0f - roughnessFromTexture / 255.0f;
+					// map_Ns holds a standard roughness map (white = rough) — do not invert
+					roughnessFromTexture_Float = roughnessFromTexture / 255.0f;
 					metallicFromTexture_Float = metallicFromTexture / 255.0f;
 					if (metallicFromTexture_Float > 0.25f) {
 						metallicFromTexture_Float = 0.25f + (metallicFromTexture_Float - 0.25f) * 0.75f; // compress metallic range to prevent it from dominating the lighting
@@ -1335,7 +1336,7 @@ static void RayTraceColumnFunc(void *arg) {
 					T = Float3_Normalize(Float3_Cross(up, n));
 					B = Float3_Cross(n, T);
 				}
-				float3 nTexN = Float3_Normalize((float3){nTex.x * 5.0f / nTexLen, nTex.y * 5.0f / nTexLen, nTex.z / nTexLen});
+				float3 nTexN = Float3_Normalize((float3){nTex.x * NORMAL_MAP_STRENGTH / nTexLen, nTex.y * NORMAL_MAP_STRENGTH / nTexLen, nTex.z / nTexLen});
 				n = Float3_Normalize((float3){
 					T.x * nTexN.x + B.x * nTexN.y + n.x * nTexN.z,
 					T.y * nTexN.x + B.y * nTexN.y + n.y * nTexN.z,
