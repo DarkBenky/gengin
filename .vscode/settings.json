@@ -64,6 +64,7 @@
   "cSpell.words": [
     "backpropagation",
     "disocclusion",
+    "respawn",
     "skybox"
   ],
   "python-envs.defaultEnvManager": "ms-python.python:conda",

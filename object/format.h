@@ -57,6 +57,12 @@ typedef struct int4 {
 	int w;
 } int4;
 
+typedef struct int3 {
+	int x;
+	int y;
+	int z;
+	int w;
+} int3;
 typedef struct uvMap {
 	uint16 x;
 	uint16 y;
