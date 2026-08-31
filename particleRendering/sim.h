@@ -5,7 +5,7 @@ typedef struct ParticleContainer ParticleContainer;
 // Per-particle callbacks: receive the container and index, return a computed value
 typedef float3 (*ParticleColorFn)(const ParticleContainer *pc, int index);
 typedef float (*ParticleOpacityFn)(const ParticleContainer *pc, int index);
-typedef void (*ParticleUpdateFn)(ParticleContainer *pc, int index); // updates individual particle
+typedef float3 (*ParticleUpdateFn)(ParticleContainer *pc, int index); // returns the new velocity vector
 
 typedef struct Cell {
     float3 BBoxMin;
@@ -83,5 +83,4 @@ static void UpdateParticles(
     ParticleContainer *particles,
     float deltaTime
 ) {
-    
 }

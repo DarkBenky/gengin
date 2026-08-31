@@ -59,7 +59,7 @@ typedef struct {
 
 // Wrapper around the internal rayCollision — resolves normal and material on hit.
 // Returns true if something was hit. excludeObj is the object index to skip (-1 for none).
-bool RayCast(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, const MaterialLib *lib, RayHit *hit);
+bool RayCast(Object *restrict objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, const MaterialLib *restrict lib, RayHit *restrict hit);
 
 // void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, int resolution, int frameInterval);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);

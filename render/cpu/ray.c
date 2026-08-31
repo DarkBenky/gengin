@@ -341,7 +341,7 @@ void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, S
 	poolWait(threadPool);
 }
 
-static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, int *hitObjIdx, int *hitTriIdx, float3 *hitPos) {
+static void rayCollision(Object *restrict objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, int *restrict hitObjIdx, int *restrict hitTriIdx, float3 *restrict hitPos) {
 	*hitObjIdx = -1;
 	if (hitTriIdx) *hitTriIdx = -1;
 	if (hitPos) *hitPos = (float3){0.0f, 0.0f, 0.0f};
@@ -446,7 +446,7 @@ static void rayCollision(Object *objects, int objectCount, float3 rayOrigin, flo
 }
 
 // if (RayCast(objects, objectCount, origin, dir, excludeObj, lib, &hit)) { /* hit.pos, hit.normal in world-space, hit.mat, hit.objIdx, hit.triIdx */ }
-bool RayCast(Object *objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, const MaterialLib *lib, RayHit *hit) {
+bool RayCast(Object *restrict objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, const MaterialLib *restrict lib, RayHit *restrict hit) {
 	int objIdx, triIdx;
 	float3 hitPos;
 	rayCollision(objects, objectCount, rayOrigin, rayDir, excludeObj, &objIdx, &triIdx, &hitPos);
@@ -577,12 +577,12 @@ static inline uvCoordinates calculateUvCoordinatesForTriangle(const float3 hitPo
 }
 
 static void RayTraceRowFunc(void *arg) {
-	RayTraceTask *task = arg;
+	RayTraceTask *restrict task = arg;
 	int row = task->row;
-	Camera *camera = task->camera;
-	const Object *objects = task->objects;
+	Camera *restrict camera = task->camera;
+	const Object *restrict objects = task->objects;
 	int objectCount = task->objectCount;
-	const MaterialLib *lib = task->lib;
+	const MaterialLib *restrict lib = task->lib;
 	int width = camera->screenWidth;
 	int height = camera->screenHeight;
 
@@ -664,7 +664,7 @@ static void RayTraceRowFunc(void *arg) {
 		const float3 pixInvDir = {invDx, invDy, invDz};
 		const float3 pixBias = {orig.x * invDx, orig.y * invDy, orig.z * invDz};
 
-		const int *passIdx = task->frustumPassIndices;
+		const int *restrict passIdx = task->frustumPassIndices;
 		const int passCount = task->frustumPassCount;
 		// int ci = 0;
 		// for (; ci + 8 <= passCount; ci += 8) {
@@ -1095,12 +1095,12 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 }
 
 static void RayTraceColumnFunc(void *arg) {
-	RayTraceTask *task = arg;
+	RayTraceTask *restrict task = arg;
 	int col = task->row;
-	Camera *camera = task->camera;
-	const Object *objects = task->objects;
+	Camera *restrict camera = task->camera;
+	const Object *restrict objects = task->objects;
 	int objectCount = task->objectCount;
-	const MaterialLib *lib = task->lib;
+	const MaterialLib *restrict lib = task->lib;
 	int width = camera->screenWidth;
 	int height = camera->screenHeight;
 
@@ -1180,7 +1180,7 @@ static void RayTraceColumnFunc(void *arg) {
 		const float3 pixInvDir = {invDx, invDy, invDz};
 		const float3 pixBias = {orig.x * invDx, orig.y * invDy, orig.z * invDz};
 
-		const int *passIdx = task->frustumPassIndices;
+		const int *restrict passIdx = task->frustumPassIndices;
 		const int passCount = task->frustumPassCount;
 		for (int ci = 0; ci < passCount; ci++) {
 			int i = passIdx[ci];

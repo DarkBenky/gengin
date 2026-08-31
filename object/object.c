@@ -823,7 +823,7 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
 	}
 }
 
-float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, MaterialLib *lib) {
+float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, const MaterialLib *lib) {
 	(void)lib;
 	if (!objs || queryObject < 0 || queryObject >= objCount) return (float3){0};
 	const Object *emitter = &objs[queryObject];

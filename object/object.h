@@ -134,7 +134,7 @@ void UploadVolumeToGpu(Volume *vol, CL_Context *ctx);
 // calculate per-face emission maps with orthographic projection
 void CalculateFaceEmissions(Object *obj, MaterialLib *lib);
 // trace ray in direction of query object if we hit something before query object return 0 else return emission from query object
-float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, MaterialLib *lib);
+float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, const MaterialLib *lib);
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
 void Object_Destroy(Object *obj);

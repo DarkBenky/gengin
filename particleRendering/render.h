@@ -12,5 +12,4 @@ typedef struct Ray {
 
 // TODO
 static pixelInfo TraceRayParticles(Ray ray, ParticleContainer *particles) {
-    
 };
