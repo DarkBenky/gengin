@@ -1,10 +1,14 @@
 # Tasks
 
+- [ ] **high** Ambient Occlusion
+  - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
+
+- [ ] **High** Light even when behind of geometry (***NOTE***: implement it can be cheaply added)
+
 - [ ] **low** two pass render to remove horizontal artifacts
   - [ ] Benchmark again current implementation
 - [ ] **high** Models are too shiny
-- [ ] **high** Ambient Occlusion
-  - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
+
 - [ ] Radar Screen UI
   - [X] test idea
   - [ ] implement

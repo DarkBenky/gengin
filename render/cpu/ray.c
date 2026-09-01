@@ -688,7 +688,7 @@ static void RayTraceRowFunc(void *arg) {
 			if (tAABB >= bestT) continue;
 
 			int triIdx = -1;
-			float3 hitPos;
+			float3 hitPos = {0.0f, 0.0f, 0.0f};
 			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, &triIdx, &hitPos);
 			if (triIdx < 0) continue;
 
@@ -1066,6 +1066,11 @@ static void RayTraceRowFunc(void *arg) {
 		};
 
 		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+
+		// Visualize postion buffer for debugging
+		// float3 posVal = camera->positionBuffer[row * width + x];
+		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f));
+		
 		// camera->framebuffer[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
 		// camera->framebuffer[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
 		// camera->framebuffer[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;

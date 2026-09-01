@@ -13,7 +13,9 @@ MINIFB_DIR = deps/minifb
 CFLAGS_BASE += -I$(MINIFB_DIR)/include
 
 CFLAGS = $(CFLAGS_BASE)
-LDFLAGS = -flto -L/usr/local/lib -L$(MINIFB_DIR)/build
+# Pin the system linker: conda's ld on PATH lacks the Debian multiarch search
+# dirs and fails to resolve libxcb/libGL/libc dependencies.
+LDFLAGS = --ld-path=/usr/bin/ld -flto -L/usr/local/lib -L$(MINIFB_DIR)/build
 LDFLAGS += -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed
 LIBS = -lminifb -lxkbcommon -lX11 -lXrandr -lGL -lpthread -lm -ljpeg -lOpenCL
 
