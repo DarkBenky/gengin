@@ -7,6 +7,7 @@
 #include "../../skybox/skybox.h"
 #include "../../util/threadPool.h"
 #include "../render.h"
+#include "./AO.h"
 
 #define REFLECTION_RESOLUTION 4 // 1 = full, 2 = half, 4 = quarter, etc.
 #define BLUR_RADIUS 3

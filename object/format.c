@@ -39,6 +39,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->bloomDst = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
 	camera->accumulationBuffer = (int4 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int4)));
 	camera->depthBuffer = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
+	camera->ambientOcclusionBuffer = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
 	camera->reflectCache = (Color *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(Color)));
 	camera->tempFramebuffer = (Color *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(Color)));
 	camera->tempBuffer_1 = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
@@ -59,6 +60,8 @@ void destroyCamera(Camera *camera) {
 	free(camera->positionBuffer);
 	free(camera->reflectBuffer);
 	free(camera->depthBuffer);
+	free(camera->ambientOcclusionBuffer);
+	free(camera->accumulationBuffer);
 	free(camera->reflectCache);
 	free(camera->tempFramebuffer);
 	free(camera->tempBuffer_1);
@@ -88,6 +91,7 @@ void destroyCamera(Camera *camera) {
 	camera->uvBuffer = NULL;
 	camera->triangleIdBuffer = NULL;
 	camera->motionVectorBuffer = NULL;
+	camera->frameCounter = 0;
 }
 
 void CameraMoveForward(Camera *camera, float amount) {

@@ -322,7 +322,15 @@ int main() {
 #endif
 
 		WNOW(wA);
+		// Ambient occlusion debug output: convert 0..1 float AO to grayscale ARGB
+		for (int i = 0; i < WIDTH * HEIGHT; i++) {
+			float ao = camera.ambientOcclusionBuffer[i];
+			uint32_t v = (uint32_t)(ao * 255.0f);
+			camera.framebuffer[i] = 0xFF000000u | (v << 16) | (v << 8) | v;
+		}
 		if (mfb_update(window, camera.framebuffer) != STATE_OK) break;
+
+		// if (mfb_update(window, camera.framebuffer) != STATE_OK) break;
 		WNOW(wB);
 		accumPresentTime += WDIFF(wA, wB);
 

@@ -1,0 +1,367 @@
+[
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include ambientOcclusion/gpu/ambientOcclusion.c",
+    "file": "ambientOcclusion/gpu/ambientOcclusion.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include client/client.c",
+    "file": "client/client.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include client/example.c",
+    "file": "client/example.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include client/gameClient.c",
+    "file": "client/gameClient.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include hexDump/hexDump.c",
+    "file": "hexDump/hexDump.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include hexDump/hexDumpTest.c",
+    "file": "hexDump/hexDumpTest.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include keyboar/keyboar.c",
+    "file": "keyboar/keyboar.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/client/client.c",
+    "file": "llmOpt/gengin/client/client.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/client/example.c",
+    "file": "llmOpt/gengin/client/example.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/client/gameClient.c",
+    "file": "llmOpt/gengin/client/gameClient.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/hexDump/hexDump.c",
+    "file": "llmOpt/gengin/hexDump/hexDump.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/hexDump/hexDumpTest.c",
+    "file": "llmOpt/gengin/hexDump/hexDumpTest.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/keyboar/keyboar.c",
+    "file": "llmOpt/gengin/keyboar/keyboar.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/load/loadObj.c",
+    "file": "llmOpt/gengin/load/loadObj.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/main.c",
+    "file": "llmOpt/gengin/main.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/object/format.c",
+    "file": "llmOpt/gengin/object/format.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/object/material/material.c",
+    "file": "llmOpt/gengin/object/material/material.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/object/object.c",
+    "file": "llmOpt/gengin/object/object.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/object/scene.c",
+    "file": "llmOpt/gengin/object/scene.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/color/color.c",
+    "file": "llmOpt/gengin/render/color/color.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/cpu/font.c",
+    "file": "llmOpt/gengin/render/cpu/font.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/cpu/ray.c",
+    "file": "llmOpt/gengin/render/cpu/ray.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/cpu/ssr.c",
+    "file": "llmOpt/gengin/render/cpu/ssr.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/cpu/tile.c",
+    "file": "llmOpt/gengin/render/cpu/tile.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/gpu/format.c",
+    "file": "llmOpt/gengin/render/gpu/format.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/gpu/kernels/cloadrendering/cload.c",
+    "file": "llmOpt/gengin/render/gpu/kernels/cloadrendering/cload.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/gpu/kernels/loadBuffers/loadBuffers.c",
+    "file": "llmOpt/gengin/render/gpu/kernels/loadBuffers/loadBuffers.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/render/render.c",
+    "file": "llmOpt/gengin/render/render.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/server/example.c",
+    "file": "llmOpt/gengin/server/example.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/server/gameServer.c",
+    "file": "llmOpt/gengin/server/gameServer.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/server/server.c",
+    "file": "llmOpt/gengin/server/server.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/simulation/cSim/dense.c",
+    "file": "llmOpt/gengin/simulation/cSim/dense.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/simulation/cSim/import.c",
+    "file": "llmOpt/gengin/simulation/cSim/import.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/simulation/cSim/simulate.c",
+    "file": "llmOpt/gengin/simulation/cSim/simulate.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/simulation/cSim/trainNN.c",
+    "file": "llmOpt/gengin/simulation/cSim/trainNN.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/skybox/skybox.c",
+    "file": "llmOpt/gengin/skybox/skybox.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/util/bbox.c",
+    "file": "llmOpt/gengin/util/bbox.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/util/saveImage.c",
+    "file": "llmOpt/gengin/util/saveImage.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/util/threadExample.c",
+    "file": "llmOpt/gengin/util/threadExample.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/util/threadPool.c",
+    "file": "llmOpt/gengin/util/threadPool.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include load/loadObj.c",
+    "file": "load/loadObj.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include main.c",
+    "file": "main.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include object/format.c",
+    "file": "object/format.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include object/material/material.c",
+    "file": "object/material/material.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include object/object.c",
+    "file": "object/object.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include object/scene.c",
+    "file": "object/scene.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include particleRendering/render.c",
+    "file": "particleRendering/render.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include particleRendering/sim.c",
+    "file": "particleRendering/sim.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include radarScreen/testRadarScreen.c",
+    "file": "radarScreen/testRadarScreen.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/color/color.c",
+    "file": "render/color/color.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/cpu/font.c",
+    "file": "render/cpu/font.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/cpu/ray.c",
+    "file": "render/cpu/ray.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/cpu/ssr.c",
+    "file": "render/cpu/ssr.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/cpu/tile.c",
+    "file": "render/cpu/tile.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/gpu/format.c",
+    "file": "render/gpu/format.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/gpu/kernels/cloadrendering/cload.c",
+    "file": "render/gpu/kernels/cloadrendering/cload.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/gpu/kernels/loadBuffers/loadBuffers.c",
+    "file": "render/gpu/kernels/loadBuffers/loadBuffers.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include render/render.c",
+    "file": "render/render.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include server/example.c",
+    "file": "server/example.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include server/gameServer.c",
+    "file": "server/gameServer.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include server/server.c",
+    "file": "server/server.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include simulation/cSim/dense.c",
+    "file": "simulation/cSim/dense.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include simulation/cSim/flightControl.c",
+    "file": "simulation/cSim/flightControl.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include simulation/cSim/import.c",
+    "file": "simulation/cSim/import.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include simulation/cSim/simulate.c",
+    "file": "simulation/cSim/simulate.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include simulation/cSim/trainNN.c",
+    "file": "simulation/cSim/trainNN.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include skybox/skybox.c",
+    "file": "skybox/skybox.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include sound/soundTest.c",
+    "file": "sound/soundTest.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include sound/soundTest3d.c",
+    "file": "sound/soundTest3d.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include util/bbox.c",
+    "file": "util/bbox.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include util/saveImage.c",
+    "file": "util/saveImage.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include util/threadExample.c",
+    "file": "util/threadExample.c"
+  },
+  {
+    "directory": "/home/user/Desktop/gengin",
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include util/threadPool.c",
+    "file": "util/threadPool.c"
+  }
+]

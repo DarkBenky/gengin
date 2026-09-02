@@ -106,6 +106,7 @@ typedef struct Camera {
 	float3 *bloomDst;
 	uvMap *uvBuffer;
 	float *depthBuffer;
+	float *ambientOcclusionBuffer;
 	float2 *motionVectorBuffer;
 	Color *reflectCache;
 	Color *tempFramebuffer;
