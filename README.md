@@ -2,6 +2,7 @@
 
 - [ ] **high** Ambient Occlusion
   - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
+- [ ] **High** Render atmosphere 
 
 - [ ] **High** Light even when behind of geometry (***NOTE***: implement it can be cheaply added)
 
