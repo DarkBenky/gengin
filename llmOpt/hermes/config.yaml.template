@@ -1,0 +1,36 @@
+# Project-scoped Hermes Agent config for the gengin optimizer.
+# Render with scripts/setup-hermes.sh — it substitutes the project path, the
+# python path, and the local model name; HERMES_HOME must point at the output.
+
+model:
+  provider: openrouter
+  default: deepseek/deepseek-v4-flash-0731
+
+provider_routing:
+  sort: price
+
+providers:
+  local:
+    api: http://localhost:8012/v1
+    default_model: __LOCAL_MODEL__
+    models:
+      __LOCAL_MODEL__:
+        context_length: 262144
+
+mcp_servers:
+  gengin:
+    command: __PYTHON__
+    args: ["__LLMOPT_DIR__/mcp_server.py"]
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Hermes filters the child environment, so the bench display must be
+      # given explicitly.  :2 is this machine's headless Xorg (auth-free).
+      DISPLAY: "__DISPLAY__"
+    timeout: 600
+    connect_timeout: 60
+
+approvals:
+  mode: smart
+
+lsp:
+  enabled: true

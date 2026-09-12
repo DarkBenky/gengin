@@ -3,8 +3,7 @@ lsp_client.py — Thin clangd LSP client for the gengin MCP server.
 
 Spawns clangd as a long-lived subprocess and communicates via JSON-RPC 2.0
 over stdio with Content-Length framing.  Provides semantic code intelligence
-(references, definition, rename, diagnostics, call hierarchy) that complements
-getFunc.py's regex-based tools.
+(references, definition, diagnostics, call hierarchy) for the MCP server.
 
 Usage:
     from lsp_client import getClient
@@ -298,26 +297,6 @@ class LspClient:
             "context": {"includeDeclaration": include_declaration},
         })
 
-    def rename(self, rel_path: str, line: int, character: int,
-               new_name: str) -> dict | None:
-        if not self.ensureStarted():
-            return None
-        abs_path = self._requireFile(rel_path)
-        return self._request("textDocument/rename", {
-            "textDocument": {"uri": f"file://{abs_path}"},
-            "position": {"line": line, "character": character},
-            "newName": new_name,
-        })
-
-    def prepareRename(self, rel_path: str, line: int, character: int) -> dict | None:
-        if not self.ensureStarted():
-            return None
-        abs_path = self._requireFile(rel_path)
-        return self._request("textDocument/prepareRename", {
-            "textDocument": {"uri": f"file://{abs_path}"},
-            "position": {"line": line, "character": character},
-        })
-
     def documentSymbol(self, rel_path: str) -> list[dict] | None:
         if not self.ensureStarted():
             return None
@@ -346,20 +325,6 @@ class LspClient:
             if diags:
                 result[rel_path] = diags
         return result if result else None
-
-    def implementation(self, rel_path: str, line: int, character: int) -> list[dict] | None:
-        if not self.ensureStarted():
-            return None
-        abs_path = self._requireFile(rel_path)
-        result = self._request("textDocument/implementation", {
-            "textDocument": {"uri": f"file://{abs_path}"},
-            "position": {"line": line, "character": character},
-        })
-        if result is None:
-            return None
-        if isinstance(result, dict):
-            result = [result]
-        return result
 
     def callHierarchy(self, rel_path: str, line: int, character: int,
                       direction: str = "incoming") -> list[dict] | None:

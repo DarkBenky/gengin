@@ -222,3 +222,8 @@ main()  [main.c]
   - Structural changes to RayTraceRowFunc that increase stack size or working set (e.g., combined VLAs, prefix-sum buffers). These consistently regress the multi-threaded bench due to cache/TLB pressure.
   - AVX2 batch AABB integrations with gather/scatter overhead. Despite strong micro-bench speedups, they regressed the real workload where AABB testing is not the dominant bottleneck.
   - Triangle data layout interleaving (AoS for vertices). Micro-bench showed no measurable improvement (1.00x) and introduces widespread structural plumbing changes.
+
+## Pending Work (archived 2026-09, from the old planner board)
+- Next planned experiment: a multi-threaded micro-benchmark for the RayTraceRowFunc blur loop (current stack-VLA version vs pre-allocated global buffers). Single-threaded wins regressed in the 32-threaded renderer, so any blur redesign must be proven under thread contention before integration.
+- Open task list from the last session (all unstarted): read RayTraceRowFunc blur code + BlurBuffer + Camera struct; build the MT micro-benchmark; apply global-buffer blur if proven; build + make_bench (avg_ms, p99, image_mse); PR on success.
+- The sandbox working tree carries a leftover `tmin-clamp-optimization` branch with uncommitted changes to render/cpu/ray.c and extra bench files; `git_pull_project` discards it.

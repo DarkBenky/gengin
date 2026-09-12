@@ -1,77 +1,77 @@
-# llmOpt — LLM-driven C Renderer Optimizer
+# llmOpt — MCP tool server for the gengin optimizer
 
-MCP server exposing 60 tools (46 domain + 14 LSP) for profiling, analyzing, and
-optimizing the gengin CPU ray tracer. Driven by an external agent (OpenCode).
+Deterministic build/bench/profile/PR tools for the `gengin` CPU ray tracer,
+exposed over MCP (stdio) and driven by the [Hermes Agent](https://hermes-agent.nousresearch.com/docs)
+harness.  Editing, searching, and terminal work are done by Hermes's built-in
+tools; this server owns the domain pipeline: sandbox lifecycle, make/flame/bench,
+micro-benchmark sandbox, perf annotation, regression bisection, and clangd queries.
 
-## Quick start
+## Setup
 
-```bash
-# 1. Install
-npm install -g opencode-ai
-pip install -r llmOpt/requirements-mcp.txt
+1. Install Hermes Agent (once):
 
-# 2. Set API key (in llmOpt/.env)
-#    KEY=sk-or-v1-...            (OpenRouter)
-#    DEEPSEEK_API_KEY=...        (optional, for direct DeepSeek API)
+       curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
 
-# 3. Run the full optimization pipeline — NO PROMPT NEEDED
-./llmOpt/scripts/optimize.sh              # flash-0731 via OpenRouter (default)
-./llmOpt/scripts/optimize.sh pro          # pro via OpenRouter
-./llmOpt/scripts/optimize.sh flash deepseek  # flash via DeepSeek direct API
+2. Install the MCP dependency:
 
-# 4. Or provide your own prompt
-cd /home/user/Desktop/gengin
-opencode run --model openrouter/deepseek/deepseek-v4-flash-0731 --auto \
-  --file llmOpt/prompts/optimize.md \
-  "Profile with make_flame, then optimize the hottest function."
-```
+       pip install -r llmOpt/requirements-mcp.txt
 
-## Zero-prompt optimization
+3. Render the project-scoped config:
 
-The script `llmOpt/scripts/optimize.sh` loads the full ISOLATION-FIRST workflow
-from `llmOpt/prompts/optimize.md` and runs it automatically. The pipeline:
-profile → micro-benchmark → pre-mortem → apply → validate → PR.
+       llmOpt/scripts/setup-hermes.sh
 
-```bash
-# Just run it — the prompt is built-in
-./llmOpt/scripts/optimize.sh
-```
+   This writes `llmOpt/.hermes/config.yaml` and `llmOpt/.hermes/.env` and points
+   `HERMES_HOME` there — the global `~/.hermes` config is never touched.
 
-## Common commands
+## Run
 
-```bash
-# Analysis only (no edits)
-opencode run --model openrouter/deepseek/deepseek-v4-flash-0731 \
-  "Call get_tree, get_todos, and list_functions. Report top 3 bottlenecks."
+    llmOpt/scripts/gengin-opt.sh                  # default model (OpenRouter flash)
+    llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
+    llmOpt/scripts/gengin-opt.sh local            # local llama.cpp server on :8012
+    llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
+    llmOpt/scripts/gengin-opt.sh deepseek         # direct DeepSeek API (DEEPSEEK_API_KEY)
+    llmOpt/scripts/gengin-opt.sh --headless       # unattended: scripted oneshot (-z), no approvals
 
-# Switch model mid-session
-# Agent calls: set_model_flash() or set_model_pro()
+The launcher loads `prompts/optimize.md` as the session query.  In-session you
+can switch models with `/model custom:local:Qwen3.8-27B` or
+`/model openrouter:deepseek/deepseek-v4-flash-0731`.
 
-# Check current config (shows backend, cost_first, model roles)
-# Agent calls: get_model_config()
-```
+## Tools (17)
+
+| Group | Tools |
+|---|---|
+| Build & profiling | `git_pull_project`, `build_project`, `make_bench`, `make_flame`, `create_pr`, `bisect_regression` |
+| Micro-bench sandbox | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench` |
+| Hotspot annotation | `hot_annotate_func`, `hot_annotate_file` |
+| clangd queries | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `mcp_server.py` | MCP server — 60 tools via stdio transport |
-| `main.py` | Build/bench/profile domain logic |
-| `getFunc.py` | C codebase indexer and editing tools |
-| `lsp_client.py` | clangd LSP client — semantic code intelligence |
-| `gen_compile_commands.py` | Auto-generates compile_commands.json for clangd |
-| `model_config.py` | Model switcher (flash-0731 <-> pro) + backend/cost_first |
-| `perf.py` | perf.data → flamegraph parser |
-| `prompts/optimize.md` | System prompt — full optimization workflow |
-| `scripts/optimize.sh` | Zero-prompt wrapper — runs the full pipeline |
-| `planner.py` | Task/note board (deprecated — OpenCode manages its own) |
-| `executor.py` | Old command dispatcher (deprecated) |
-| `modelSelector.py` | LLM call dispatcher (OpenRouter / DeepSeek direct / Ollama) |
-| `refine.py` | Old refinement engine (deprecated) |
-| `MCP_SETUP.md` | Detailed setup + opencode.json config |
-| `requirements-mcp.txt` | Python deps (`mcp>=1.27,<2`) |
+| `mcp_server.py` | MCP server (stdio) — the 17 domain tools |
+| `main.py` | Build/bench/flame/PR/bisect domain logic |
+| `getFunc.py` | C function/struct index + perf line annotation |
+| `lsp_client.py` | clangd client (definition/references/diagnostics/call hierarchy) |
+| `gen_compile_commands.py` | Generates compile_commands.json for clangd |
+| `perf.py` | perf.data → folded stacks → hotspot parser |
+| `prompts/optimize.md` | Session workflow (ISOLATION-FIRST loop) |
+| `hermes/config.yaml.template` | Project Hermes config template |
+| `scripts/setup-hermes.sh` | Renders the template + secrets into `llmOpt/.hermes/` |
+| `scripts/gengin-opt.sh` | Session launcher with model selection |
+| `codebase_context.md` | Persisted insights: architecture, wins, failures, hotspots |
 
 ## Sandbox
 
-All tools operate on `llmOpt/gengin/` — never touches the repo root.
-Your working copy is safe. Call `git_pull_project` to refresh the sandbox.
+All tools operate on `llmOpt/gengin/` — the repo root is never touched until
+`create_pr`.  `git_pull_project` refreshes the sandbox (clone + rsync of the
+gitignored `deps/`, `assets/`, `.flamegraph/`, `default.profdata`).  Secrets
+live in `llmOpt/.env` (`KEY`, `GITHUB_TOKEN`) and are mirrored into
+`llmOpt/.hermes/.env` by the setup script.
+
+Benches open a MiniFB window, so the MCP server needs a display: the rendered
+config passes `DISPLAY=:2` (this machine's headless Xorg).  Override with
+`GENGIN_DISPLAY=<display> llmOpt/scripts/setup-hermes.sh`.  `run_perf_stat` and
+`make_flame` need unprivileged perf counters — `llmOpt/scripts/enable-perf.sh`
+enables them once (sudo prompt; persists via `/etc/sysctl.d`, with a
+`cap_perfmon` fallback).

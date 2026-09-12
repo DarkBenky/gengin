@@ -35,6 +35,14 @@ testRadarScreen
 # llmOpt cloned workspace
 llmOpt/gengin
 
+# llmOpt project-scoped Hermes Agent state (config, sessions, logs)
+llmOpt/.hermes/
+
+# python caches + runtime baseline cache
+__pycache__/
+*.pyc
+llmOpt/baseline_cache.json
+
 # large binary assets
 assets/models/*.bin
 assets/models/map.obj
