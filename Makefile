@@ -178,7 +178,7 @@ $(foreach t,$(_SPECIFIC),$(eval $t: $(TEST_DIR)/$t))
 endif
 
 # Build rule for any micro-benchmark binary under bench/
-$(BENCH_DIR)/%: $(BENCH_FUNC_DIR)/%.c $(TESTS_DIR)/timings.c
+$(BENCH_DIR)/%: $(BENCH_FUNC_DIR)/%.c $(TESTS_DIR)/timings.c util/threadPool.c object/format.c
 	@mkdir -p $(BENCH_DIR)
 	$(CC) $(CFLAGS_BASE) -I$(BENCH_FUNC_DIR) -I$(TESTS_DIR) -o $@ $^ $(LDFLAGS) -lm
 

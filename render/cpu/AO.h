@@ -1,6 +1,6 @@
 #include "../../object/format.h"
 #include "../../math/vector3.h"
-#include <stdio.h>
+#include "../../util/threadPool.h"
 #include <stdbool.h>
 
 #define EPSILON 1e-6f
@@ -74,4 +74,170 @@ static void CalculateAmbientOcclusion(Camera *camera) {
 			camera->ambientOcclusionBuffer[idx] = ao;
 		}
 	}
+}
+
+static inline float HashToAngle(int x, int y) {
+	uint32_t h = (uint32_t)(x * 374761393 + y * 668265263);
+	h = (h ^ (h >> 13)) * 1274126177;
+	h = h ^ (h >> 16);
+	return (h & 0xFFFF) / 65535.0f * 6.28318530f;
+}
+
+static inline float Clamp(float val, float lower, float upper) {
+	if (val < lower) return lower;
+	if (val > upper) return upper;
+	return val;
+}
+
+static void CalculateAmbientOcclusionV2(Camera *camera) {
+	const float worldRadius = 20.5f;
+	const float bias = worldRadius * 0.02f;
+	float focalLengthPixels = (camera->screenHeight * 0.5f) / tanf(camera->fov * 0.5f);
+
+	for (int i = 0; i < camera->screenHeight; i++) {
+		for (int j = 0; j < camera->screenWidth; j++) {
+			int idx = i * camera->screenWidth + j;
+
+			if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) {
+				camera->ambientOcclusionBuffer[idx] = 1.0f;
+				continue;
+			}
+
+			float3 normal = camera->normalBuffer[idx];
+			float3 position = camera->positionBuffer[idx];
+			float viewDepth = camera->depthBuffer[idx];
+
+		
+			float pixelRadius = (focalLengthPixels * worldRadius) / viewDepth;
+			pixelRadius = Clamp(pixelRadius, 2.0f, 48.0f);
+
+			float angle = HashToAngle(j, i);
+			float ca = cosf(angle), sa = sinf(angle);
+
+			float occlusion = 0.0f;
+			int validSamples = 0;
+
+			for (int k = 0; k < SAMPLES; k++) {
+				float sx = SAMPLES_PATTERN[k].x;
+				float sy = SAMPLES_PATTERN[k].y;
+				float rx = sx * ca - sy * sa;
+				float ry = sx * sa + sy * ca;
+
+				float sampleX = j + rx * pixelRadius;
+				float sampleY = i + ry * pixelRadius;
+
+				if (sampleX < 0 || sampleX >= camera->screenWidth ||
+					sampleY < 0 || sampleY >= camera->screenHeight) {
+					continue;
+				}
+
+				int sampleIndex = (int)sampleY * camera->screenWidth + (int)sampleX;
+
+				if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
+					continue;
+				}
+
+				float3 samplePos = camera->positionBuffer[sampleIndex];
+				float3 dir = Float3_Sub(samplePos, position);
+				float dist = Float3_Length(dir);
+
+				if (dist < bias || dist > worldRadius) {
+					continue;
+				}
+
+				float3 dirNorm = Float3_Normalize(dir);
+				float facing = Float3_Dot(normal, dirNorm);
+				if (facing <= EPSILON) {
+					continue;
+				}
+
+				float distWeight = 1.0f - (dist / worldRadius);
+				occlusion += facing * distWeight;
+				validSamples++;
+			}
+
+			float ao = validSamples > 0 ? occlusion / validSamples : 1.0f;
+			camera->ambientOcclusionBuffer[idx] = ao;
+		}
+	}
+}
+
+typedef struct {
+	int row;
+	Camera *camera;
+} AmbientOcclusionTask;
+
+static void CalculateAmbientOcclusionRow(void *arg) {
+	AmbientOcclusionTask *restrict task = arg;
+
+	int row = task->row;
+	Camera *restrict camera = task->camera;
+
+	const int width = camera->screenWidth;
+	const int height = camera->screenHeight;
+
+	const float pixelRadius = 16.0f; // sample spread in pixels
+	const float worldRadius = 20.5f; // max world-space distance (scene units)
+	const float bias = worldRadius * 0.02f;
+
+	for (int j = 0; j < width; j++) {
+		const int idx = row * width + j;
+
+		// Sky / no geometry: no occlusion, overwrite with fully lit so old data never persists.
+		if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) {
+			camera->ambientOcclusionBuffer[idx] = 1.0f;
+			continue;
+		}
+
+		float3 normal = camera->normalBuffer[idx];
+		float3 position = camera->positionBuffer[idx];
+
+		float occlusion = 0.0f;
+		int validSamples = 0;
+
+		for (int k = 0; k < SAMPLES; k++) {
+			float sampleX = j + SAMPLES_PATTERN[k].x * pixelRadius;
+			float sampleY = row + SAMPLES_PATTERN[k].y * pixelRadius;
+
+			if (sampleX < 0 || sampleX >= width ||
+				sampleY < 0 || sampleY >= height) {
+				continue;
+			}
+
+			int sampleIndex = (int)sampleY * width + (int)sampleX;
+			float3 samplePos = camera->positionBuffer[sampleIndex];
+
+			float3 dir = Float3_Sub(samplePos, position);
+			float dist = Float3_Length(dir);
+
+			if (dist < bias || dist > worldRadius) {
+				continue;
+			}
+
+			float3 dirNorm = Float3_Normalize(dir);
+			float facing = Float3_Dot(normal, dirNorm);
+			if (facing <= EPSILON) {
+				continue;
+			}
+
+			float distWeight = 1.0f - (dist / worldRadius);
+			occlusion += facing * distWeight;
+			validSamples++;
+		}
+
+		float ao = validSamples > 0 ? occlusion / validSamples : 1.0f;
+		camera->ambientOcclusionBuffer[idx] = ao;
+	}
+}
+
+static void CalculateAmbientOcclusionMp(Camera *camera, ThreadPool *threadPool) {
+	if (!camera || !threadPool) return;
+
+	int height = camera->screenHeight;
+	AmbientOcclusionTask tasks[height];
+	for (int row = 0; row < height; row++) {
+		tasks[row] = (AmbientOcclusionTask){row, camera};
+		poolAdd(threadPool, CalculateAmbientOcclusionRow, &tasks[row]);
+	}
+	poolWait(threadPool);
 }
