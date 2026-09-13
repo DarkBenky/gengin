@@ -1096,7 +1096,7 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
-	CalculateAmbientOcclusion(camera);
+	CalculateAmbientOcclusionV2Mp(camera, threadPool);
 }
 
 static void RayTraceColumnFunc(void *arg) {
@@ -1571,7 +1571,6 @@ static void RayTraceColumnFunc(void *arg) {
 	}
 }
 
-// TODO: test column based ray tracing and benchmark it against row based
 void RayTraceSceneColumn(const Object *objects, int objectCount, Camera *camera, const MaterialLib *lib, RayTraceTaskQueue *taskQueue, ThreadPool *threadPool, const Skybox *skybox) {
 	if (!objects || objectCount <= 0 || !camera || !taskQueue || !threadPool) return;
 	Frustum frustum = Frustum_FromCamera(camera);

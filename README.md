@@ -3,6 +3,12 @@
 - [ ] **high** Ambient Occlusion
   - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
     - [ ] Write test of each implementation
+
+- [ ] **high** Overlap AO with the GPU cloud pass instead of running it inside RayTraceScene
+  - [ ] Do not just delete the poolWait in RayTraceScene: the pool ring is sized WIDTH (1080) and 720 ray + 720 AO rows overflow it, silently dropping rows.
+  - [ ] AO row r samples G-buffer rows r-48..r+48, so every ray row must be finished (FIFO only orders starts, not completions).
+  - [ ] Dispatch AO right after RayTraceScene and poolWait only before it is read in main.c, hiding ~4.5-7.6 ms of AO behind the OpenCL cloud pass.
+
 - [ ] **High** Render atmosphere
 
 - [ ] **High** Light even when behind of geometry (***NOTE***: implement it can be cheaply added)

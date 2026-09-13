@@ -29,6 +29,9 @@ BENCH_DIR = $(BUILD_DIR)/bench
 PROF_DIR  = $(BUILD_DIR)/prof
 PGO_DIR   = $(BUILD_DIR)/pgo
 
+# One SVG + perf.data per test, overwritten by the next run of that test
+FLAME_TEST_DIR = $(TEST_DIR)/flame
+
 # Auto-use PGO data if available from a previous 'make pgo' run
 PROFDATA = $(PGO_DIR)/default.profdata
 ifneq ($(wildcard $(PROFDATA)),)
@@ -41,6 +44,7 @@ SRC = main.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util
 FLAMEGRAPH_DIR = .flamegraph
 
 TESTS_DIR     = tests
+TOOLS_DIR     = tools
 TEST_SRCS     = $(filter-out $(TESTS_DIR)/timings.c, $(wildcard $(TESTS_DIR)/*.c))
 TEST_BINS     = $(patsubst $(TESTS_DIR)/%.c, $(TEST_DIR)/%, $(TEST_SRCS))
 TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c tests/timings.c object/object.c object/format.c object/scene.c \
@@ -50,6 +54,12 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
 _SPECIFIC         = $(filter-out build/% tests/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug benchFunc testSound testSound3d testRadarScreen, $(MAKECMDGOALS))
 _RUN_TESTS        = $(if $(_SPECIFIC), $(addprefix $(TEST_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
+
+# Named tests (make test AOBench) get a perf flame graph; FLAME=1 extends that
+# to a plain 'make test' run of everything, FLAME=0 disables it everywhere.
+FLAME             ?= 0
+_FLAME_ENABLED    = $(if $(filter 0,$(FLAME)),,$(if $(_SPECIFIC),1,$(filter 1,$(FLAME))))
+_FLAME_BINS       = $(if $(_FLAME_ENABLED),$(addsuffix _flame,$(_RUN_TESTS)))
 
 BENCH_FUNC_DIR    = bench
 BENCH_FUNC_SRCS   = $(wildcard $(BENCH_FUNC_DIR)/*.c)
@@ -160,9 +170,18 @@ $(TEST_DIR)/%: $(TESTS_DIR)/%.c $(TEST_COMMON)
 	@mkdir -p $(TEST_DIR)
 	$(CC) $(CFLAGS) -I$(TESTS_DIR) -o $@ $^ $(LDFLAGS) $(LIBS)
 
+# Profiling twin of a test binary: frame pointers kept so perf can unwind the
+# stacks and inlining/LTO off so hot functions stay visible. Timings still come
+# from the normal binary above, which keeps its aggressive flags.
+$(TEST_DIR)/%_flame: $(TESTS_DIR)/%.c $(TEST_COMMON)
+	@mkdir -p $(TEST_DIR)
+	$(CC) $(CFLAGS_BASE) -fno-omit-frame-pointer -fno-inline-functions -fno-lto -g -I$(TESTS_DIR) \
+		-o $@ $^ --ld-path=/usr/bin/ld -L/usr/local/lib -L$(MINIFB_DIR)/build -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
+
 # make test          → build & run all tests
-# make test testRay  → build & run only testRay
-test: $(_RUN_TESTS)
+# make test testRay  → build & run only testRay (+ perf flame graph)
+# make test FLAME=1  → flame graphs for every test as well
+test: $(_RUN_TESTS) $(_FLAME_BINS)
 	@LOG=$(TEST_DIR)/results.log; \
 	> $$LOG; \
 	for t in $(_RUN_TESTS); do \
@@ -170,6 +189,9 @@ test: $(_RUN_TESTS)
 		echo "Running: $$t" | tee -a $$LOG; \
 		echo "========================================" | tee -a $$LOG; \
 		$$t 2>&1 | tee -a $$LOG || exit 1; \
+		if [ -n "$(_FLAME_ENABLED)" ]; then \
+			bash $(TOOLS_DIR)/flame.sh $${t}_flame $(FLAME_TEST_DIR)/$$(basename $$t).svg; \
+		fi; \
 	done
 
 ifneq ($(_SPECIFIC),)
@@ -204,32 +226,27 @@ pgo:
 	$(CC) $(CFLAGS_BASE) -fprofile-use=$(PGO_DIR)/default.profdata -fprofile-correction -o $(TARGET) $(SRC) $(LDFLAGS) $(LIBS)
 	rm -f $(MAIN_DIR)/main_pgo $(PGO_DIR)/*.profraw
 
-flame:
-	$(CC) -O3 -march=native -fno-omit-frame-pointer -fno-inline-functions -fno-lto \
-		-w -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include \
-		-o $(TARGET) $(SRC) -L/usr/local/lib -L$(MINIFB_DIR)/build $(LIBS)
-	@if [ ! -d "$(FLAMEGRAPH_DIR)" ]; then \
-		echo "Cloning FlameGraph tools..."; \
-		git clone --depth=1 https://github.com/brendangregg/FlameGraph $(FLAMEGRAPH_DIR); \
-	fi
-	@mkdir -p $(PROF_DIR)
-	sudo perf record -F 99 -g --call-graph fp -o $(PROF_DIR)/perf.data -- timeout 10 ./$(TARGET) || true
-	sudo perf script -i $(PROF_DIR)/perf.data | $(FLAMEGRAPH_DIR)/stackcollapse-perf.pl | $(FLAMEGRAPH_DIR)/flamegraph.pl > $(PROF_DIR)/flamegraph.svg
-	sudo perf script -i $(PROF_DIR)/perf.data | gprof2dot -f perf | dot -Tsvg -o $(PROF_DIR)/callgraph.svg
-	sudo chown $(USER) $(PROF_DIR)/perf.data $(PROF_DIR)/perf.data.old $(PROF_DIR)/callgraph.svg 2>/dev/null || true
-	@echo "Flame graph saved to $(PROF_DIR)/flamegraph.svg"
-	@echo "Call graph saved to $(PROF_DIR)/callgraph.svg"
+# Profile the app: builds a frame-pointer twin (the shipped binary keeps its
+# LTO/inlining flags) and renders flame/icicle/call graph via tools/flame.sh.
+FLAME_BIN     = $(PROF_DIR)/main_flame
+FLAME_SECONDS = 10
 
-# Requires: pip install gprof2dot   apt install graphviz
+flame:
+	@mkdir -p $(PROF_DIR)
+	$(CC) -O3 -march=native -fno-omit-frame-pointer -fno-inline-functions -fno-lto -g \
+		-w -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include \
+		-o $(FLAME_BIN) $(SRC) --ld-path=/usr/bin/ld -L/usr/local/lib -L$(MINIFB_DIR)/build $(LIBS)
+	bash $(TOOLS_DIR)/flame.sh $(FLAME_BIN) $(PROF_DIR)/flamegraph.svg $(FLAME_SECONDS)
+
+# Requires: pip install gprof2dot   conda install -c conda-forge graphviz
 callgraph:
-	@if [ ! -f $(PROF_DIR)/perf.data ]; then echo "No perf.data found, run 'make flame' first"; exit 1; fi
-	sudo perf script -i $(PROF_DIR)/perf.data | gprof2dot -f perf | dot -Tsvg -o $(PROF_DIR)/callgraph.svg
-	sudo chown $(USER) $(PROF_DIR)/callgraph.svg 2>/dev/null || true
-	@echo "Call graph saved to $(PROF_DIR)/callgraph.svg"
+	@if [ ! -f $(PROF_DIR)/flamegraph.perf.data ]; then echo "No perf data found, run 'make flame' first"; exit 1; fi
+	perf script -i $(PROF_DIR)/flamegraph.perf.data | gprof2dot -f perf | dot -Tsvg -o $(PROF_DIR)/flamegraph.callgraph.svg
+	@echo "Call graph saved to $(PROF_DIR)/flamegraph.callgraph.svg"
 
 perf-report:
-	@if [ ! -f $(PROF_DIR)/perf.data ]; then echo "No perf.data found, run 'make flame' first"; exit 1; fi
-	sudo perf report -i $(PROF_DIR)/perf.data --no-children
+	@if [ ! -f $(PROF_DIR)/flamegraph.perf.data ]; then echo "No perf data found, run 'make flame' first"; exit 1; fi
+	perf report -i $(PROF_DIR)/flamegraph.perf.data --no-children
 
 clean:
 	rm -rf $(BUILD_DIR)
