@@ -1,5 +1,6 @@
 # Tasks
 
+- [ ] Add to aggent prompt specific part of trying to inject ```restrict``` so compiler can be more aggressive 
 - [ ] **high** Ambient Occlusion
   - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
     - [ ] Write test of each implementation
