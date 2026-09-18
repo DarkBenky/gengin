@@ -12,6 +12,7 @@
   - [ ] Dispatch AO right after RayTraceScene and poolWait only before it is read in main.c, hiding ~4.5-7.6 ms of AO behind the OpenCL cloud pass.
 
 - [ ] **High** Render atmosphere
+  - [ ] [Atmosphere rendering](https://www.youtube.com/watch?v=DxfEbulyFcY)
 
 - [ ] **High** Light even when behind of geometry (***NOTE***: implement it can be cheaply added)
 
