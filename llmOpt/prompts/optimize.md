@@ -118,7 +118,12 @@ the Phase 2/3 gate — no change purely for tidiness.
     measured numbers, why it is safe, what failed and why.
 18. `create_pr(title, body)` — one logical improvement per PR; the body
     states the measured speedup and the risk analysis.  Review the diff first.
-    The branch name is derived automatically; do NOT pass one.  Never merge.
+    The branch name is derived automatically; do NOT pass one.  In a manual
+    (unsupervised) session where the tool asks for one, pass
+    `branch="llmopt/<8-hex-sha>/<topic>"` (from `git rev-parse HEAD`).
+    If it fails on credentials (401/403), report `blocked` and STOP — never
+    hunt for tokens or use browser/GitHub-UI workarounds.
+    Never merge.  Never force-push or rewrite branches.
 19. `report_session_result(status, summary, pr_url)` — call EXACTLY ONCE before
     exit.  status: `pr_created` (with pr_url), `no_change` (no safe measurable
     optimization found; leave the sandbox clean), `blocked` (environment
@@ -166,6 +171,10 @@ Apply directly in those rare cases and validate with `make_bench`.
 10. NEVER end a turn by announcing an action ("I will now call `make_flame`") —
     emit the tool call itself in that same response. A turn that ends without a
     tool call terminates the session; a promise is not progress.
+11. NEVER chase environment problems: if `create_pr` fails on credentials
+    (401/403) or a guard rejects your input, fix the INPUT (valid `branch=`)
+    or report `blocked` and stop.  Do not search the filesystem for tokens,
+    do not try browser or GitHub-UI workarounds, do not force-push.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

@@ -923,7 +923,10 @@ def _githubRepo():
 def _githubHeaders():
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
-        raise RuntimeError("GITHUB_TOKEN not set in environment or .env")
+        raise RuntimeError(
+            "GITHUB_TOKEN is not set in the MCP server environment; an "
+            "operator must set it (VM: /etc/gengin-llmopt/secrets.env, local: "
+            "llmOpt/.env) and restart the supervisor — then report `blocked`")
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -965,15 +968,28 @@ def _github_create_pr(title, body, head, base="main"):
             existing = _github_find_pr(head)
             if existing:
                 return existing
+        if e.code == 401:
+            raise RuntimeError(
+                "GitHub API rejected the token (401 Bad credentials): it is "
+                "revoked, expired, or wrong. This is an environment problem — "
+                "report `blocked`; do not hunt for other credentials") from None
+        if e.code == 403:
+            raise RuntimeError(
+                "GitHub API denied access (403): the token likely lacks "
+                "'Pull requests: write' for this repository. Report `blocked`; "
+                "do not hunt for other credentials") from None
         raise
 
 
 _TARGET_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-_BRANCH_RE = re.compile(r"^llmopt/[0-9a-f]{8}/[A-Za-z0-9._-]+$")
+_BRANCH_RE = re.compile(r"^llmopt/[0-9a-f]{7,40}/[A-Za-z0-9._-]+$")
 _FORBIDDEN_STAGING_RE = re.compile(
     r"(^|/)(\.env|\.hermes|state|logs|run)(/|$)"
     r"|(^|/)baseline_cache\.json$"
     r"|(^|/)codebase_context\.md$"
+    r"|(^|/)\.cache(/|$)"
+    r"|(^|/)perf_folded\.txt$"
+    r"|(^|/)compile_commands\.json$"
     r"|\.perf\.data$|\.profdata$|\.profraw$"
     r"|^build/|^bench/results/|^\.flamegraph/"
     r"|(^|/)(flamegraph|callgraph|icicle)\.svg$"
@@ -1027,10 +1043,13 @@ def createPR(title, body, branch="", commit_msg=None):
         if not (target and session_id):
             raise RuntimeError(
                 "branch name required outside supervised sessions "
-                "(set GENGIN_TARGET_SHA and GENGIN_SESSION_ID)")
+                "(GENGIN_TARGET_SHA/GENGIN_SESSION_ID unset); pass e.g. "
+                "branch='llmopt/2ac04754/ao-fix'")
         branch = f"llmopt/{target[:8]}/{session_id.rsplit('-', 1)[-1]}"
     if not _BRANCH_RE.fullmatch(branch):
-        raise RuntimeError(f"branch must match llmopt/<8-hex-sha>/<id>: got {branch!r}")
+        raise RuntimeError(
+            f"branch must match llmopt/<7-40 hex sha>/<id>, e.g. "
+            f"llmopt/2ac04754/ao-fix: got {branch!r}")
 
     # Switch to (or create) the branch before staging so staged changes carry over.
     if _branchExists(branch):

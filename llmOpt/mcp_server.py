@@ -220,7 +220,9 @@ def create_pr(title: str, body: str, branch: str = "", commit_msg: str = "") -> 
     forbidden staged paths (logs/state/secrets), and non-descendant bases.
     In supervised sessions the branch is derived automatically
     (llmopt/<short-sha>/<session-id>); pass it explicitly only to reuse an
-    existing branch.  Returns the PR URL."""
+    existing branch or in a manual session, e.g. "llmopt/<8-hex-sha>/<topic>"
+    (7-40 hex accepted).  On credential errors (401/403) report `blocked`;
+    do not hunt for other credentials.  Returns the PR URL."""
     return _main.createPR(title, body, branch, commit_msg or title)
 
 

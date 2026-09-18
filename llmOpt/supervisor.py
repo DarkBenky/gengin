@@ -893,6 +893,29 @@ def check_agent_kill(config):
     return ("agent_kill", False, f"helper probe failed rc={rc}")
 
 
+def check_github_token():
+    """WARN-level: sessions can still run without a valid token (no_change
+    paths), but create_pr will fail — surface it before a session burns budget."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        return ("github_token", True, "WARN: GITHUB_TOKEN not set; create_pr will fail")
+    import urllib.request
+    import urllib.error
+    req = urllib.request.Request(
+        "https://api.github.com/user",
+        headers={"Authorization": f"Bearer {token}",
+                 "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            login = json.loads(resp.read()).get("login", "?")
+        return ("github_token", True, f"valid (user {login})")
+    except urllib.error.HTTPError as e:
+        return ("github_token", True,
+                f"WARN: token rejected HTTP {e.code}; create_pr will fail")
+    except Exception as e:
+        return ("github_token", True, f"WARN: token check failed: {e}")
+
+
 def run_preflight(config, sandbox=None):
     """Run all deterministic preflight checks. Returns (exit_code, results).
 
@@ -911,6 +934,7 @@ def run_preflight(config, sandbox=None):
     results.append(check_openrouter_model(config))
     results.append(check_openrouter_credit(config))
     results.append(check_credential_perms(config))
+    results.append(check_github_token())
     if sandbox:
         results.append(check_minifb(sandbox))
         results.append(check_assets(sandbox))
