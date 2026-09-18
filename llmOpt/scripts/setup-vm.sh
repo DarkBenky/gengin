@@ -98,6 +98,11 @@ getent group gengin-llmopt >/dev/null 2>&1 || groupadd --system gengin-llmopt
 usermod -aG gengin-llmopt llmopt-supervisor
 usermod -aG gengin-llmopt llmopt-agent
 
+# Files synced from a workstation may carry a foreign uid; with
+# fs.protected_regular=2 even root cannot rewrite files it does not own inside
+# sticky directories, so normalize ownership before anything else runs.
+find "$CHECKOUT/llmOpt" -uid 1000 -exec chown llmopt-supervisor:gengin-llmopt {} + 2>/dev/null || true
+
 # state: supervisor-owned (contains key hashes); agent has no access.
 mkdir -p "$CHECKOUT/llmOpt/state" "$CHECKOUT/llmOpt/logs/sessions" "$CHECKOUT/llmOpt/run"
 chown -R llmopt-supervisor:gengin-llmopt "$CHECKOUT/llmOpt/state"
@@ -108,13 +113,21 @@ chown -R llmopt-supervisor:gengin-llmopt "$CHECKOUT/llmOpt/logs" "$CHECKOUT/llmO
 chmod 2770 "$CHECKOUT/llmOpt/logs" "$CHECKOUT/llmOpt/logs/sessions" "$CHECKOUT/llmOpt/run"
 # llmOpt/: the supervisor clones the sandbox into it (gengin.prepare-<id> ->
 # gengin); the sticky bit stops the agent from renaming/removing entries it
-# does not own (supervisor code, units, credentials).
+# does not own (supervisor code, units, credentials). setgid keeps new entries
+# in gengin-llmopt so the group-write model keeps working with UMask=0007.
 chown llmopt-supervisor:gengin-llmopt "$CHECKOUT/llmOpt"
-chmod 1770 "$CHECKOUT/llmOpt"
-# The sandbox is agent-writable (group-shared); the supervisor only swaps it.
+chmod 3770 "$CHECKOUT/llmOpt"
+# The knowledge base is written by the agent during sessions; ownership by the
+# agent UID keeps in-place rewrites legal under the sticky bit.
+if [[ -f "$CHECKOUT/llmOpt/codebase_context.md" ]]; then
+  chown llmopt-agent:gengin-llmopt "$CHECKOUT/llmOpt/codebase_context.md"
+  chmod 0664 "$CHECKOUT/llmOpt/codebase_context.md"
+fi
+# The sandbox is agent-writable (group-shared, setgid for inherited group).
 if [[ -d "$CHECKOUT/llmOpt/gengin" ]]; then
   chgrp -R gengin-llmopt "$CHECKOUT/llmOpt/gengin"
   chmod -R g+rwX "$CHECKOUT/llmOpt/gengin"
+  find "$CHECKOUT/llmOpt/gengin" -type d -exec chmod g+s {} + 2>/dev/null || true
 fi
 # Control-plane source must NOT be agent-writable.
 chown -R root:root "$CHECKOUT/llmOpt/supervisor.py" "$CHECKOUT/llmOpt/openrouter_keys.py" \
@@ -131,7 +144,7 @@ sed -i "s|^MCP_VENV=.*|MCP_VENV=$VENV|" "$CHECKOUT/llmOpt/.env"
 if ! grep -q '^AGENT_USER=llmopt-agent' "$CHECKOUT/llmOpt/.env"; then
   log "WARNING: $CHECKOUT/llmOpt/.env should set AGENT_USER=llmopt-agent for two-user mode"
 fi
-chown llmopt-supervisor:llmopt-supervisor "$CHECKOUT/llmOpt/.env"
+chown llmopt-supervisor:gengin-llmopt "$CHECKOUT/llmOpt/.env"
 chmod 0640 "$CHECKOUT/llmOpt/.env"
 
 # --- agent-launch helper (root-owned, not agent-writable) -------------------
@@ -188,6 +201,34 @@ HELPER_EOF
 chown root:root "$HELPER"
 chmod 0755 "$HELPER"
 
+# --- agent-kill helper (root-owned; signal relay for two-user mode) --------
+# llmopt-supervisor cannot signal llmopt-agent's processes; termination goes
+# through this fixed helper running as root via a narrow sudoers rule.
+KILL_HELPER="$HELPER_DIR/agent-kill"
+log "installing agent-kill helper"
+cat > "$KILL_HELPER" <<'KILL_EOF'
+#!/usr/bin/env bash
+# Fixed process-group signal helper. Usage: agent-kill <TERM|KILL|probe> <pgid>
+set -euo pipefail
+
+action="${1:-}"
+pgid="${2:-}"
+
+[[ "$pgid" =~ ^[0-9]+$ ]] || { echo "agent-kill: bad pgid" >&2; exit 2; }
+(( pgid > 1 )) || { echo "agent-kill: refusing pgid $pgid" >&2; exit 2; }
+
+case "$action" in
+  TERM)  sig=TERM ;;
+  KILL)  sig=KILL ;;
+  probe) sig=0 ;;
+  *) echo "agent-kill: bad action" >&2; exit 2 ;;
+esac
+
+exec kill -s "$sig" -- "-$pgid"
+KILL_EOF
+chown root:root "$KILL_HELPER"
+chmod 0755 "$KILL_HELPER"
+
 # --- sudoers rule (exact, no shell, no reciprocal sudo) --------------------
 log "installing sudoers rule"
 cat > "$SUDOERS" <<SUDOERS_EOF
@@ -197,6 +238,9 @@ cat > "$SUDOERS" <<SUDOERS_EOF
 Defaults:llmopt-supervisor env_reset
 Defaults:llmopt-supervisor env_keep += "OPENROUTER_API_KEY HERMES_HOME DISPLAY LIBGL_ALWAYS_SOFTWARE PYTHONUNBUFFERED GENGIN_TARGET_SHA GENGIN_REPO_URL GENGIN_TARGET_BRANCH GENGIN_SESSION_ID GENGIN_SESSION_RESULT_PATH GENGIN_INPUTS_DIR GITHUB_TOKEN HOME PATH"
 llmopt-supervisor ALL=(llmopt-agent) NOPASSWD: $HELPER
+# Signal relay: the supervisor cannot signal the agent UID; this fixed helper
+# (root) may SIGTERM/SIGKILL a validated process group.
+llmopt-supervisor ALL=(root) NOPASSWD: $KILL_HELPER
 SUDOERS_EOF
 chown root:root "$SUDOERS"
 chmod 0440 "$SUDOERS"
@@ -240,11 +284,22 @@ if [[ ! -f "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY" ]]; then
 fi
 
 # --- Hermes agent (as the agent user) ---------------------------------------
-if ! sudo -u llmopt-agent bash -lc 'command -v hermes >/dev/null' 2>/dev/null; then
+if ! sudo -H -u llmopt-agent bash -lc 'command -v hermes >/dev/null' 2>/dev/null; then
   log "installing Hermes Agent as llmopt-agent"
-  sudo -u llmopt-agent bash -c '
+  sudo -H -u llmopt-agent bash -c '
     curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
-  ' || log "WARNING: Hermes install failed — install it manually as llmopt-agent"
+  ' </dev/null 2>&1 | tail -5 || log "WARNING: Hermes install failed — install it manually as llmopt-agent"
+fi
+# Expose the agent's hermes on the system PATH so availability checks and the
+# fixed launcher helper find it regardless of HOME. The agent home must be
+# traversable (not listable) for other users to resolve the symlink.
+AGENT_HERMES=/home/llmopt-agent/.local/bin/hermes
+chmod 711 /home/llmopt-agent
+if [[ -x "$AGENT_HERMES" ]]; then
+  ln -sf "$AGENT_HERMES" /usr/local/bin/hermes
+  log "linked $AGENT_HERMES -> /usr/local/bin/hermes"
+else
+  log "WARNING: agent hermes not found at $AGENT_HERMES"
 fi
 
 # --- systemd units ----------------------------------------------------------

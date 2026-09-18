@@ -41,6 +41,8 @@ KEY_NAME_PREFIX = "gengin-llmopt-"
 # Root-owned helper installed by setup-vm.sh; the only command the supervisor
 # may run as the agent user (see the generated sudoers rule).
 AGENT_LAUNCH_HELPER = "/usr/local/lib/gengin-llmopt/agent-launch"
+AGENT_KILL_HELPER = "/usr/local/lib/gengin-llmopt/agent-kill"
+AGENT_GROUP = "gengin-llmopt"
 
 EXIT_OK = 0
 EXIT_RUNTIME = 1
@@ -577,6 +579,7 @@ def prepare_sandbox(config, target_sha, session_id):
     result = gengin_main.git_pull_project(
         config.gengin_repo_url, config.watch_branch, target_sha,
         inputs_dir=inputs_dir, session_id=session_id,
+        agent_group=AGENT_GROUP if config.agent_user else None,
     )
     log("INFO", "sandbox.prepare.ok", sha=target_sha,
         descendant_of_branch=result.get("descendantOfBranch"))
@@ -850,6 +853,21 @@ def check_agent_launch(config):
     return ("agent_launch", False, f"helper invocation failed rc={rc}: {err.strip()[:200]}")
 
 
+def check_agent_kill(config):
+    """Verify the root kill helper works (two-user termination path)."""
+    if not config.agent_user:
+        return ("agent_kill", True, "single-user mode (direct signals)")
+    if not os.path.isfile(AGENT_KILL_HELPER):
+        return ("agent_kill", False, f"helper not installed: {AGENT_KILL_HELPER}")
+    if not os.access(AGENT_KILL_HELPER, os.X_OK):
+        return ("agent_kill", False, f"helper not executable: {AGENT_KILL_HELPER}")
+    # Probing the supervisor's own process group exercises sudo + kill as root.
+    rc = _helper_signal("probe", os.getpgrp())
+    if rc == 0:
+        return ("agent_kill", True, "sudo -> root helper ok")
+    return ("agent_kill", False, f"helper probe failed rc={rc}")
+
+
 def run_preflight(config, sandbox=None):
     """Run all deterministic preflight checks. Returns (exit_code, results).
 
@@ -875,6 +893,7 @@ def run_preflight(config, sandbox=None):
         results.append(check_short_bench(config, sandbox))
     results.append(check_perf(config))
     results.append(check_agent_launch(config))
+    results.append(check_agent_kill(config))
     results.append(check_mcp_python(config))
 
     failures = 0
@@ -1136,7 +1155,8 @@ def _recover_interrupted_session(config, state):
                 warnings.append("stored pid identity mismatch; not signaling")
         if signal_ok:
             log("WARN", "session.recovering", session=session_id, pgid=pgid)
-            _terminate_group(pgid, config.termination_grace_seconds)
+            _terminate_group(pgid, config.termination_grace_seconds,
+                             use_helper=bool(config.agent_user))
         else:
             warnings.append(f"process group {pgid} alive but identity unverified")
 
@@ -1297,23 +1317,53 @@ def _stream_output(proc, log_handle, secrets, stop_event):
     proc.stdout.close()
 
 
-def _terminate_group(pgid, grace_seconds):
-    """SIGTERM the process group, wait, then SIGKILL if anything remains."""
+def _helper_signal(sig_name, pgid):
+    """Signal a process group via the root helper. Returns rc, or None if the
+    helper itself failed to run (missing sudoers entry, sudo error, timeout).
+
+    The two-user model runs the agent under a different UID; llmopt-supervisor
+    cannot signal it directly, so termination must go through this helper.
+    """
     try:
-        os.killpg(pgid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        return
-    deadline = time.monotonic() + grace_seconds
-    while time.monotonic() < deadline:
+        proc = subprocess.run(
+            ["sudo", "-n", AGENT_KILL_HELPER, sig_name, str(pgid)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        return proc.returncode
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _terminate_group(pgid, grace_seconds, use_helper=False):
+    """SIGTERM the process group, wait, then SIGKILL if anything remains.
+
+    In two-user mode (use_helper) signals and liveness probes are routed
+    through the root helper, since the supervisor cannot signal the agent UID.
+    """
+    if use_helper:
+        _helper_signal("TERM", pgid)
+    else:
         try:
-            os.killpg(pgid, 0)  # probe
+            os.killpg(pgid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             return
+    deadline = time.monotonic() + grace_seconds
+    while time.monotonic() < deadline:
+        if use_helper:
+            if _helper_signal("probe", pgid) != 0:
+                return
+        else:
+            try:
+                os.killpg(pgid, 0)  # probe
+            except (ProcessLookupError, PermissionError):
+                return
         time.sleep(0.2)
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
+    if use_helper:
+        _helper_signal("KILL", pgid)
+    else:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def _rel(path):
@@ -1408,7 +1458,8 @@ def run_session(config, state, target_sha):
     if config.agent_user:
         # Group-shared (setgid) dirs: the agent must read config/query and write
         # usage/result/session artifacts; the supervisor owns the directory.
-        for path, mode in ((run_dir, 0o770), (hermes_home, 0o770),
+        # The setgid bit makes files created here inherit the shared group.
+        for path, mode in ((run_dir, 0o2770), (hermes_home, 0o2770),
                            (config_path, 0o640)):
             try:
                 os.chmod(path, mode)
@@ -1559,7 +1610,8 @@ def run_session(config, state, target_sha):
                 waited += 0.25
 
         if proc.poll() is None:
-            _terminate_group(proc.pid, config.termination_grace_seconds)
+            _terminate_group(proc.pid, config.termination_grace_seconds,
+                             use_helper=bool(config.agent_user))
         proc.wait()
         exit_code = proc.returncode
         stop_event.set()

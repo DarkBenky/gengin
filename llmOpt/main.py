@@ -27,6 +27,10 @@ def _load_env(path):
                     os.environ.setdefault(k.strip(), v.strip())
     except FileNotFoundError:
         pass
+    except PermissionError:
+        # Two-user mode: the MCP server runs as the agent UID and cannot read
+        # the supervisor-owned .env. Session env vars are already authoritative.
+        print(f"[env] unreadable: {path} (continuing with environment)", file=sys.stderr)
 
 
 _load_env(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
@@ -161,7 +165,19 @@ def _is_ancestor(sha, branch, cwd):
         return None
 
 
-def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=None):
+def _share_sandbox_with_group(sandbox, group):
+    """Two-user mode: give the shared group write access and setgid inheritance.
+
+    The sandbox is cloned by the supervisor UID but edited by the agent UID;
+    group write plus setgid directories let both users cooperate on the tree.
+    """
+    run(["chgrp", "-R", group, sandbox])
+    run(["chmod", "-R", "g+rwX", sandbox])
+    run(["find", sandbox, "-type", "d", "-exec", "chmod", "g+s", "{}", "+"])
+
+
+def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=None,
+                     agent_group=None):
     """Prepare an exact-SHA sandbox and atomically replace the current one.
 
     Clones the branch into a temporary sibling, checks out target_sha detached,
@@ -169,6 +185,9 @@ def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=N
     compile_commands.json, runs structural checks, then swaps the prepared
     sandbox into place. On any failure the temporary directory is removed and
     the previous sandbox is preserved.
+
+    agent_group: when set (two-user mode), hand the prepared tree to this
+    group for the agent UID before the atomic swap.
     """
     if not re.fullmatch(r"[0-9a-f]{40}", target_sha):
         raise RuntimeError(f"invalid target sha: {target_sha!r}")
@@ -211,6 +230,9 @@ def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=N
             _sync_inputs_legacy(prepare)
 
         _structural_checks(prepare)
+
+        if agent_group:
+            _share_sandbox_with_group(prepare, agent_group)
 
         # Atomic swap: move current sandbox aside, move prepared into place.
         if os.path.exists(sandbox):

@@ -104,6 +104,9 @@ if [[ "$SUPERVISED" -eq 1 ]]; then
     exit 2
   fi
   export PYTHONUNBUFFERED=1
+  # Shared-group umask: files the agent creates must stay writable by the
+  # supervisor (it snapshots/restores the sandbox and reads diffs).
+  umask 002
   echo "=== gengin optimizer (supervised) ==="
   echo "HERMES_HOME: $HERMES_HOME_RESOLVED"
   echo "model:       $MODEL"
