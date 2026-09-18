@@ -25,8 +25,6 @@
   - [ ] implement
     - [ ] trick where we can use radar ui as mask so renderer will render less pixels
 
-- [ ] Clean Up the root dir
-
 - **low** [ ] Support for transparent materials
 
 - [ ] Better worker split maybe instead of horizontal lines use vertical (problem is that this will force cpu to jump in image not just one long scan maybe we can change layout)
@@ -221,6 +219,8 @@
   - [X] use lower resolution and blur row apply it to frame buffer
     - [X] apply direct reflection [red][green][blue][roughness]
       - [X] we blur based on 4th channel
+
+- [X] Clean Up the root dir 
 
 ## Current Render
 
