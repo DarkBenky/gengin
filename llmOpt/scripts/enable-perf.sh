@@ -27,8 +27,14 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 
 if perfWorks; then
-  echo "perf counters already work — nothing to do"
-  exit 0
+  paranoid="$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo 0)"
+  if [[ "$paranoid" -le 1 ]]; then
+    echo "perf counters already work (perf_event_paranoid=$paranoid) — nothing to do"
+    exit 0
+  fi
+  # perf works for THIS user (e.g. root) but the sysctl still blocks other
+  # identities such as the supervisor service account.
+  echo "perf works here but perf_event_paranoid=$paranoid blocks other users — lowering to 1"
 fi
 
 echo "perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid) — requesting sudo to enable counters"

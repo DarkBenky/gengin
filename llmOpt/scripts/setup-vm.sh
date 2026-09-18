@@ -69,12 +69,19 @@ apt-get update -qq
 apt-get install -y -qq \
   build-essential clang lld make git rsync curl ca-certificates \
   python3 python3-venv python3-pip \
-  clangd linux-tools-generic linux-tools-$(uname -r) \
-  xvfb x11-utils x11-xkb-utils libx11-dev libxrandr2 libxkbcommon-dev \
-  mesa-utils libgl1-mesa-dri libgl1-mesa-glx \
+  clangd \
+  xvfb x11-utils x11-xkb-utils libx11-dev libxrandr-dev libxkbcommon-dev \
+  mesa-utils libgl1-mesa-dev libgl1-mesa-dri libgl1-mesa-glx \
   pocl-opencl-icd ocl-icd-opencl-dev clinfo \
-  libjpeg-dev perl graphviz gprof2dot \
+  libjpeg-dev perl graphviz \
   || die "apt-get install failed"
+
+# perf tools are kernel-versioned; best-effort (the generic wrapper usually works)
+if ! command -v perf >/dev/null 2>&1; then
+  apt-get install -y -qq linux-tools-generic "linux-tools-$(uname -r)" 2>/dev/null \
+    || apt-get install -y -qq linux-tools-generic 2>/dev/null \
+    || log "WARNING: perf not installed (install linux-tools-* manually for REQUIRE_PERF=true)"
+fi
 
 # gprof2dot is a python package; install into the system python for the helper.
 python3 -m pip install --quiet gprof2dot 2>/dev/null || log "gprof2dot pip install skipped (will use conda/system if present)"
@@ -99,8 +106,16 @@ chmod 2750 "$CHECKOUT/llmOpt/state"
 # its per-session artifacts (usage.json, result.json, Hermes home).
 chown -R llmopt-supervisor:gengin-llmopt "$CHECKOUT/llmOpt/logs" "$CHECKOUT/llmOpt/run"
 chmod 2770 "$CHECKOUT/llmOpt/logs" "$CHECKOUT/llmOpt/logs/sessions" "$CHECKOUT/llmOpt/run"
-# The sandbox is agent-writable; the supervisor only reads it.
-[[ -d "$CHECKOUT/llmOpt/gengin" ]] && chown -R llmopt-agent:llmopt-agent "$CHECKOUT/llmOpt/gengin"
+# llmOpt/: the supervisor clones the sandbox into it (gengin.prepare-<id> ->
+# gengin); the sticky bit stops the agent from renaming/removing entries it
+# does not own (supervisor code, units, credentials).
+chown llmopt-supervisor:gengin-llmopt "$CHECKOUT/llmOpt"
+chmod 1770 "$CHECKOUT/llmOpt"
+# The sandbox is agent-writable (group-shared); the supervisor only swaps it.
+if [[ -d "$CHECKOUT/llmOpt/gengin" ]]; then
+  chgrp -R gengin-llmopt "$CHECKOUT/llmOpt/gengin"
+  chmod -R g+rwX "$CHECKOUT/llmOpt/gengin"
+fi
 # Control-plane source must NOT be agent-writable.
 chown -R root:root "$CHECKOUT/llmOpt/supervisor.py" "$CHECKOUT/llmOpt/openrouter_keys.py" \
   "$CHECKOUT/llmOpt/systemd" "$CHECKOUT/llmOpt/scripts/setup-vm.sh" 2>/dev/null || true

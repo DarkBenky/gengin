@@ -583,6 +583,15 @@ def prepare_sandbox(config, target_sha, session_id):
     return result
 
 
+def _hermes_bin(config):
+    """Path to the hermes CLI: the agent's own install in two-user mode."""
+    if config.agent_user:
+        cand = os.path.join(_agent_home(config), ".local", "bin", "hermes")
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return shutil.which("hermes")
+
+
 def check_tools(config):
     """Deterministic tool availability checks. Returns list of (name, ok, detail)."""
     results = []
@@ -591,9 +600,11 @@ def check_tools(config):
         path = shutil.which(name)
         results.append((name, path is not None, path or "not found"))
 
-    for name in ("git", "make", "clang", "python3", "hermes", "clangd", "rsync",
+    for name in ("git", "make", "clang", "python3", "clangd", "rsync",
                  "Xvfb", "xdpyinfo", "glxinfo", "clinfo", "perl"):
         which(name)
+    hermes = _hermes_bin(config)
+    results.append(("hermes", hermes is not None, hermes or "not found"))
     results.append(("/usr/bin/ld", os.path.exists("/usr/bin/ld"),
                     "/usr/bin/ld" if os.path.exists("/usr/bin/ld") else "not found"))
     if config.require_perf:
@@ -926,20 +937,20 @@ def print_dry_run(config, state):
 
 
 def run_once(config, state):
-    """Poll once and, if a new SHA is pending, prepare the exact-SHA sandbox.
+    """Poll once and process at most one eligible SHA (full pipeline).
 
-    Stops before key creation (Phase D) and Hermes launch (Phase E). Persists
-    state after each transition.
+    Persists state after each transition; stops before key creation if
+    preparation or preflight fails.
     """
     tip, action = poll_once(config, state)
     if action == "remote_failed":
         return EXIT_RUNTIME
-    if action in ("first_start", "run_on_start", "unchanged"):
+    if action in ("first_start", "unchanged"):
         save_state(config.state_dir, state)
         return EXIT_OK
 
-    # action == "pending": prepare the sandbox for the pending SHA.
-    target = state["pendingSha"]
+    # action is "pending" or "run_on_start": process the pending SHA.
+    target = state["pendingSha"] or tip
     session_id = f"{utc_now().strftime('%Y%m%dT%H%M%SZ')}-{target[:8]}"
     try:
         prepare_sandbox(config, target, session_id)

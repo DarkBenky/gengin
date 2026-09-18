@@ -5,7 +5,15 @@ CL_Context CL_Context_Create() {
 	cl_int err;
 
 	clGetPlatformIDs(1, &ctx.platform, NULL);
-	clGetDeviceIDs(ctx.platform, CL_DEVICE_TYPE_GPU, 1, &ctx.device, NULL);
+	err = clGetDeviceIDs(ctx.platform, CL_DEVICE_TYPE_GPU, 1, &ctx.device, NULL);
+	if (err == CL_DEVICE_NOT_FOUND) {
+		/* CPU-only hosts (e.g. PoCL on a VM) expose no GPU device; use any. */
+		err = clGetDeviceIDs(ctx.platform, CL_DEVICE_TYPE_ALL, 1, &ctx.device, NULL);
+	}
+	if (err != CL_SUCCESS || ctx.device == NULL) {
+		printf("[CL] no OpenCL device found (err %d)\n", err);
+		return ctx;
+	}
 
 	char name[128];
 	clGetDeviceInfo(ctx.device, CL_DEVICE_NAME, sizeof(name), name, NULL);

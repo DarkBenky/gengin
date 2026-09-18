@@ -37,13 +37,19 @@ KillMode=control-group
 # Must exceed TERMINATION_GRACE_SECONDS so the supervisor can escalate
 # SIGTERM -> SIGKILL and delete the temporary key before systemd kills it.
 TimeoutStopSec=120
-UMask=0077
+# Group-shared runtime files: the agent (in group gengin-llmopt) must edit the
+# sandbox the supervisor clones, so service-created files are group-accessible.
+UMask=0007
 StandardOutput=journal
 StandardError=journal
 # Management key via systemd credential (see header). Never in Environment=.
 # systemd exposes the file at $CREDENTIALS_DIRECTORY/OPENROUTER_MANAGEMENT_KEY;
 # the supervisor reads it from there when the env var is not set.
 LoadCredential=OPENROUTER_MANAGEMENT_KEY:/etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
+# Optional: agent GitHub token for PR creation. Root-owned, 0600:
+#   sudo install -m600 /dev/null /etc/gengin-llmopt/agent.env
+#   printf 'GITHUB_TOKEN=<token>\n' | sudo tee /etc/gengin-llmopt/agent.env
+EnvironmentFile=-/etc/gengin-llmopt/agent.env
 # Resource controls that do not destabilize benchmarks.
 LimitNOFILE=65536
 TasksMax=4096
