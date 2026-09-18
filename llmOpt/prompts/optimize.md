@@ -17,6 +17,24 @@ speedup may be applied to the real code.
    `git -C gengin log --oneline -3` to see the sandbox state (uncommitted
    edits, current branch).
 
+## SESSION EFFORT BUDGET (READ THIS FIRST)
+You are given a long session (up to 30 minutes of wall time and a generous API
+budget).  The supervisor measures whether you USED it.  A session that ends
+after a single profile run and a quick `no_change` verdict is a FAILED
+session.  Minimum effort bar before you may report `no_change`:
+- at least 3 distinct candidate optimizations attempt-and-measured (different
+  functions and/or strategies), with the numbers recorded; AND
+- at least one full profile -> micro-bench -> pre-mortem cycle per candidate;
+  AND
+- the opportunity list below exhausted, or every entry refuted with measured
+  evidence.
+If a candidate fails, record WHY in `codebase_context.md` and immediately pick
+the next one.  Do not stop while unexplored hotspots remain.  Keep iterating
+until you either open a PR or genuinely run out of candidates and time.
+Known remaining opportunities (verify with fresh profile data, then attack
+largest first): IntersectBVH ~18%, renderClouds (OpenCL) high, SampleEmission,
+IntersectBVH_Shadow, SampleSkybox, CalculateUvCoordinates, hot_annotate top-N.
+
 ## WORKFLOW
 
 ### Phase 1 — Profile & Plan
@@ -34,7 +52,8 @@ speedup may be applied to the real code.
    - header_code: include guard, the ORIGINAL function copied verbatim, then
      your optimized variant(s) with distinct names (funcV2, funcV3_sse, ...).
      Explore one strategy per variant: algorithmic, memory layout, SIMD,
-     branchless, precompute, loop transform.
+     branchless, precompute, loop transform, `restrict`/aliasing contract,
+     cache-line alignment.
    - impl_code: a main() that generates millions of inputs, warms up, times
      each variant with clock_gettime(CLOCK_MONOTONIC), prints ns/call, and
      VALIDATES every variant against the original (report mismatches).
@@ -47,6 +66,25 @@ speedup may be applied to the real code.
    - branch-miss rate > 5%: unpredictable branches.
 9. Decision: speedup >= 3% AND cache-misses stable AND correctness PASS →
    Phase 3. Otherwise change strategy or move to the next hotspot.
+
+## COMPILER-ASSIST PLAYS (TRY THESE FIRST ON MEMORY-BOUND HOTSPOTS)
+A. `restrict` injection (aliasing contract):
+   - where the callers guarantee non-overlapping buffers, add C99 `restrict`
+     to hot pointer parameters so the compiler drops reload checks and
+     auto-vectorizes more aggressively;
+   - verify EVERY call site first — if the pointers can alias, this is UB;
+   - expect load count down and IPC up in `run_perf_stat`.
+B. Cache-line alignment, padding, false sharing:
+   - align hot SoA arrays and per-thread buffers to 64 bytes (`_Alignas`,
+     `aligned_alloc`, or explicit padding) so streams do not straddle cache
+     lines;
+   - pad hot structs to 64-byte multiples where practical (assert with
+     `_Static_assert(sizeof(T) % 64 == 0, ...)`);
+   - separate per-thread state by a whole cache line to kill false sharing
+     (52 KB per-thread stacks already pressure L1/TLB — see pre-mortem);
+   - keep the hottest stream within one 4K page when possible.
+Measure each change in isolation; alignment/`restrict` edits must still clear
+the Phase 2/3 gate — no change purely for tidiness.
 
 ### Phase 3 — Pre-Mortem Check (CRITICAL)
 10. Explain WHY the micro-bench win survives the jump to 32 threads.  Known
@@ -85,8 +123,9 @@ speedup may be applied to the real code.
     exit.  status: `pr_created` (with pr_url), `no_change` (no safe measurable
     optimization found; leave the sandbox clean), `blocked` (environment
     problem), or `failed`.  The supervisor uses this artifact as the outcome.
-20. Move to the next hotspot — or, if no further safe optimization is found,
-    report `no_change` and stop.
+20. Move to the next hotspot and repeat the cycle.  The session ends when a PR
+    is opened, or when the SESSION EFFORT BUDGET conditions are met and no
+    safe candidate survives — then report `no_change`.
 
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
@@ -96,6 +135,10 @@ Apply directly in those rare cases and validate with `make_bench`.
 
 ## EDITING & NAVIGATION TOOLS
 - `read_file` / `search_files` / `terminal` — read and search anything.
+- Prefer the domain tools (`make_flame`, `hot_annotate_*`, `create_func_bench`,
+  `run_func_bench`, `run_perf_stat`, `make_bench`, `create_pr`,
+  `report_session_result`) over ad-hoc terminal pipelines — they keep results
+  in the run artifacts the supervisor audits.
 - `patch` — targeted edit (fuzzy matcher; returns a unified diff).  Preferred.
 - `write_file` — full-file replacement only.
 - `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`,
@@ -116,6 +159,13 @@ Apply directly in those rare cases and validate with `make_bench`.
 5. NEVER ignore build errors.
 6. If 3 attempts on a function fail: move to the next hotspot.
 7. Keep changes focused — one logical improvement per PR.
+8. NEVER report `no_change` before meeting the SESSION EFFORT BUDGET bar —
+   early exits count as failed sessions.
+9. NEVER spend more than ~5 minutes reading without measuring — start a real
+   profile or micro-benchmark run.
+10. NEVER end a turn by announcing an action ("I will now call `make_flame`") —
+    emit the tool call itself in that same response. A turn that ends without a
+    tool call terminates the session; a promise is not progress.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

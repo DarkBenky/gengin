@@ -20,8 +20,22 @@ def _run(cmd, **kwargs):
 
 
 def recordPerf(duration: int = 10, cwd: str = "."):
-    """Run `make flame` for `duration` seconds; writes build/prof/flamegraph.perf.data."""
+    """Run `make flame` for `duration` seconds; writes build/prof/flamegraph.perf.data.
+
+    tools/flame.sh degrades gracefully (exit 0, no perf.data) when perf counters
+    are blocked; verify the artifact here so the failure is loud and actionable
+    instead of surfacing later as a confusing "Run make flame first".
+    """
     _run(["make", "flame", f"FLAME_SECONDS={duration}"], cwd=cwd)
+    if not os.path.exists(os.path.join(cwd, PERF_DATA)):
+        raise RuntimeError(
+            "make flame produced no perf data — perf counters are blocked "
+            "(kernel.perf_event_paranoid > 1). Enable them once with "
+            "`sudo sysctl kernel.perf_event_paranoid=1` (or run "
+            "llmOpt/scripts/enable-perf.sh which does it persistently), then "
+            "retry make_flame. Without perf counters, rely on make_bench "
+            "timings instead of flame profiling."
+        )
 
 
 def _ensureFlameGraph(cwd: str):
@@ -135,7 +149,11 @@ def getPerfData(cwd: str = ".") -> dict:
     """
     perf_data = os.path.join(cwd, PERF_DATA)
     if not os.path.exists(perf_data):
-        raise FileNotFoundError(f"No perf.data found in {cwd}. Run make flame first.")
+        raise FileNotFoundError(
+            f"No perf data at {perf_data}. Run make_flame() first; if it reports "
+            f"no data, perf counters are blocked (kernel.perf_event_paranoid > 1) "
+            f"— enable them via llmOpt/scripts/enable-perf.sh."
+        )
 
     folded = _getFoldedStacks(cwd)
     inclusive, exclusive, paths, total = _parseFolded(folded)

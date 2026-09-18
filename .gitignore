@@ -68,6 +68,7 @@ simulation/best_backprop_model_*.bin
 
 simulation/wandb/
 llmOpt/.env
+llmOpt/.env.bak*
 
 simulation/cSim/*.html
 simulation/cSim/flightControlLogs.csv

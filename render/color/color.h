@@ -4,6 +4,39 @@
 #include "../../object/format.h"
 #include <math.h>
 
+
+// TODO: implement something like this maybe openCl kernel for this is ideal as post processing step
+// type RGB struct {
+// 	R uint8
+// 	G uint8
+// 	B uint8
+// }
+
+// func MapPalette(rgb RGB, palette []RGB) RGB {
+// 	if len(palette) == 0 {
+// 		return rgb
+// 	}
+
+// 	best := palette[0]
+// 	bestDistance := uint32(^uint32(0))
+
+// 	for _, color := range palette {
+// 		dr := int32(rgb.R) - int32(color.R)
+// 		dg := int32(rgb.G) - int32(color.G)
+// 		db := int32(rgb.B) - int32(color.B)
+
+// 		distance := uint32(dr*dr + dg*dg + db*db)
+
+// 		if distance < bestDistance {
+// 			bestDistance = distance
+// 			best = color
+// 		}
+// 	}
+
+// 	return best
+// }
+
+
 Color PackColor(float r, float g, float b);
 Color PackColorF(float3 color);
 Color BlendColors(Color c1, Color c2, float t);

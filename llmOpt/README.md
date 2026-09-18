@@ -2,26 +2,17 @@
 
 Deterministic build/bench/profile/PR tools for the `gengin` CPU ray tracer,
 exposed over MCP (stdio) and driven by the [Hermes Agent](https://hermes-agent.nousresearch.com/docs)
-harness.  Editing, searching, and terminal work are done by Hermes's built-in
-tools; this server owns the domain pipeline: sandbox lifecycle, make/flame/bench,
-micro-benchmark sandbox, perf annotation, regression bisection, and clangd queries.
+harness.  Hermes does editing/search/terminal; this server owns the domain
+pipeline: sandbox lifecycle, make/flame/bench, micro-benchmarks, perf
+annotation, bisection, and clangd queries.
 
 ## Setup
 
-1. Install Hermes Agent (once):
+    curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+    pip install -r llmOpt/requirements-mcp.txt
+    llmOpt/scripts/setup-hermes.sh      # renders llmOpt/.hermes/{config.yaml,.env}
 
-       curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
-
-2. Install the MCP dependency:
-
-       pip install -r llmOpt/requirements-mcp.txt
-
-3. Render the project-scoped config:
-
-       llmOpt/scripts/setup-hermes.sh
-
-   This writes `llmOpt/.hermes/config.yaml` and `llmOpt/.hermes/.env` and points
-   `HERMES_HOME` there — the global `~/.hermes` config is never touched.
+`setup-hermes.sh` is project-scoped; the global `~/.hermes` config is never touched.
 
 ## Run
 
@@ -30,11 +21,51 @@ micro-benchmark sandbox, perf annotation, regression bisection, and clangd queri
     llmOpt/scripts/gengin-opt.sh local            # local llama.cpp server on :8012
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek         # direct DeepSeek API (DEEPSEEK_API_KEY)
-    llmOpt/scripts/gengin-opt.sh --headless       # unattended: scripted oneshot (-z), no approvals
+    llmOpt/scripts/gengin-opt.sh --headless       # unattended oneshot (-z)
 
-The launcher loads `prompts/optimize.md` as the session query.  In-session you
-can switch models with `/model custom:local:Qwen3.8-27B` or
-`/model openrouter:deepseek/deepseek-v4-flash-0731`.
+The launcher loads `prompts/optimize.md` as the session query; switch models
+in-session with `/model custom:local:Qwen3.8-27B`.
+
+## Changing keys
+
+### Local (this machine)
+
+All local secrets live in **`llmOpt/.env`**:
+
+| Variable | Purpose |
+|---|---|
+| `KEY` | OpenRouter API key for manual `gengin-opt.sh` runs |
+| `GITHUB_TOKEN` | Push / PR creation |
+| `DEEPSEEK_API_KEY` | Only needed for the `deepseek` preset |
+
+After editing, mirror them into the Hermes environment:
+
+    llmOpt/scripts/setup-hermes.sh
+
+### VM (supervised deployment)
+
+Everything is in **one root-only file**: `/etc/gengin-llmopt/secrets.env`
+
+    OPENROUTER_MANAGEMENT_KEY=sk-or-v1-...
+    GITHUB_TOKEN=ghp_...        # optional, enables PR creation
+
+View or rotate (this is the only place to edit):
+
+    sudo cat  /etc/gengin-llmopt/secrets.env
+    sudo nano /etc/gengin-llmopt/secrets.env
+
+Then restart whatever runs the supervisor:
+
+    sudo systemctl restart gengin-llmopt     # systemd mode
+    # tmux mode: restart the console — /opt/gengin/llmOpt/scripts/supervisor-console.sh
+
+Rules:
+
+- Never put the management key in `llmOpt/.env` on the VM: that file is
+  group-readable by the agent, which could then mint unlimited keys.
+- Per-session inference keys are created at session start and deleted at the
+  end — nothing to manage, no plaintext copy anywhere.
+- The same file feeds both systemd (`EnvironmentFile=`) and the tmux launcher.
 
 ## Tools (18)
 
@@ -50,8 +81,9 @@ can switch models with `/model custom:local:Qwen3.8-27B` or
 
 | File | Purpose |
 |---|---|
-| `mcp_server.py` | MCP server (stdio) — the 17 domain tools |
+| `mcp_server.py` | MCP server (stdio) — the domain tools |
 | `main.py` | Build/bench/flame/PR/bisect domain logic |
+| `supervisor.py` | Unattended commit-triggered supervisor (VM) |
 | `getFunc.py` | C function/struct index + perf line annotation |
 | `lsp_client.py` | clangd client (definition/references/diagnostics/call hierarchy) |
 | `gen_compile_commands.py` | Generates compile_commands.json for clangd |
@@ -60,6 +92,7 @@ can switch models with `/model custom:local:Qwen3.8-27B` or
 | `hermes/config.yaml.template` | Project Hermes config template |
 | `scripts/setup-hermes.sh` | Renders the template + secrets into `llmOpt/.hermes/` |
 | `scripts/gengin-opt.sh` | Session launcher with model selection |
+| `scripts/supervisor-console.sh` | Run the supervisor in a tmux console (VM) |
 | `codebase_context.md` | Persisted insights: architecture, wins, failures, hotspots |
 
 ## Sandbox
@@ -67,8 +100,7 @@ can switch models with `/model custom:local:Qwen3.8-27B` or
 All tools operate on `llmOpt/gengin/` — the repo root is never touched until
 `create_pr`.  `git_pull_project` refreshes the sandbox (clone + rsync of the
 gitignored `deps/`, `assets/`, `.flamegraph/`, `default.profdata`).  Secrets
-live in `llmOpt/.env` (`KEY`, `GITHUB_TOKEN`) and are mirrored into
-`llmOpt/.hermes/.env` by the setup script.
+are never in the checkout — see **Changing keys**.
 
 Benches open a MiniFB window, so the MCP server needs a display: the rendered
 config passes `DISPLAY=:2` (this machine's headless Xorg).  Override with
@@ -100,11 +132,9 @@ flowchart LR
 
 ### Configuration
 
-Copy `llmOpt/.env.example` to `llmOpt/.env` and edit.  The parser is strict:
-unknown or duplicate keys are rejected (the file is never shell-sourced).
-The management credential is NOT stored there — supply it via the
-`OPENROUTER_MANAGEMENT_KEY` environment variable or the systemd credential
-file (preferred).
+Copy `llmOpt/.env.example` to `llmOpt/.env` and edit (strict parser; unknown
+or duplicate keys are rejected; the file is never shell-sourced).  It holds
+tuning only — all secrets are stored elsewhere, see **Changing keys**.
 
 ### VM installation
 
@@ -113,23 +143,21 @@ git clone git@github.com:DarkBenky/gengin.git /opt/gengin
 sudo bash /opt/gengin/llmOpt/scripts/setup-vm.sh        # Ubuntu 22.04/24.04
 
 # The script creates the two users, installs Hermes as llmopt-agent, seeds
-# llmOpt/.env (AGENT_USER=llmopt-agent, MCP_VENV=...), and writes a PLACEHOLDER
-# management credential — replace it (never in Environment=):
-sudo printf 'OPENROUTER_MANAGEMENT_KEY=<management key>\n' \
-  > /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
-sudo chmod 600 /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
+# llmOpt/.env, and seeds the single secrets file — fill in the real keys:
+sudo nano /etc/gengin-llmopt/secrets.env
 
-# agent GitHub/SSH credentials (as llmopt-agent), then:
-sudo systemctl enable --now gengin-xvfb.service
-sudo systemctl enable --now gengin-llmopt.service
+# Then start it (systemd...):
+sudo systemctl enable --now gengin-xvfb.service gengin-llmopt.service
 journalctl -u gengin-llmopt.service -f
+
+# ...or run it in a tmux console instead (stop the unit first):
+tmux new -s llmopt
+/opt/gengin/llmOpt/scripts/supervisor-console.sh
 ```
 
-The management key reaches the supervisor either through the environment or
-through the systemd credential file (`$CREDENTIALS_DIRECTORY`, the unit uses
-`LoadCredential=`).  Inference-key isolation: the per-session Hermes home
-contains no credentials, and the temporary key is delivered only through the
-process environment.
+Session isolation: the per-session Hermes home contains no long-lived
+credentials; the temporary inference key is delivered only through the process
+environment and deleted at session end.
 
 ### Operation
 
@@ -161,32 +189,24 @@ Hermes home and artifacts in `llmOpt/run/<sessionId>/`.
 
 ### Security model
 
-- Two Unix identities: `llmopt-supervisor` (control plane + management key) and
-  `llmopt-agent` (checkout, sandbox, Hermes, GitHub push credential).  The
-  supervisor launches the agent through a fixed root-owned helper via one
-  narrow passwordless `sudoers` rule; the agent has no reciprocal sudo.
-- The supervisor runs from the system interpreter (`/usr/bin/python3`), never
-  from the agent-owned virtualenv: a modified venv would otherwise execute
-  agent-injected code with the management key at the next service restart.
-- The management key is exposed only to the supervisor process and is absent
-  from the Hermes environment (`/proc/<pid>/environ` verified).
-- Hermes filters the MCP child environment; the session variables
-  (GENGIN_TARGET_SHA, GENGIN_SESSION_RESULT_PATH, GITHUB_TOKEN, ...) are
-  delivered through the per-session `config.yaml` env block, where `${VAR}`
-  expands from the supervisor-built environment.  No secret is written to
-  that file.
-- Temporary keys carry a server-side USD limit, an expiration, and a unique
-  session name; deletion is attempted on every exit path, and the key is
-  deleted BEFORE the summary is written.
+- Two Unix identities: `llmopt-supervisor` (control plane + management key)
+  and `llmopt-agent` (checkout, sandbox, Hermes, GitHub push credential); the
+  agent launches through one narrow passwordless `sudoers` helper, with no
+  reciprocal sudo.
+- The supervisor runs from `/usr/bin/python3`, never from the agent-owned
+  virtualenv (a modified venv would run agent code with the management key).
+- Secrets: management key + `GITHUB_TOKEN` live in the root-only
+  `/etc/gengin-llmopt/secrets.env`; the management key never reaches the
+  Hermes/MCP environment; the per-session inference key is budget-capped,
+  expiring, and deleted on every exit path (before the summary is written).
 - `create_pr` rejects non-descendant bases, empty diffs, forbidden staged
-  paths (logs/state/secrets), and secret-looking tokens; it never force-pushes
+  paths (logs/state/secrets) and secret-looking tokens; it never force-pushes
   and never merges.
-- Rotate the management key by replacing the credential file and restarting
-  the service.  Inference keys are ephemeral by design.
+- Rotate keys by editing `secrets.env` and restarting — see **Changing keys**.
+  Inference keys are ephemeral by design.
 
 ### Single-user fallback
 
-Running the supervisor as one user is possible but weaker (the agent could
-read the management key).  If you do, keep the management credential
-chmod-600, run `llmOpt/scripts/setup-hermes.sh` manually, and treat the
+Running everything as one user works but is weaker (the agent could read the
+management key).  If you do, keep `secrets.env` chmod-600 and treat the
 `sudoers`/helper layer as absent.

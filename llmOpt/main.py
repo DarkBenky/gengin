@@ -5,6 +5,7 @@ sandbox); file editing is the driving harness's job.
 """
 
 import base64
+import errno
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import perf as perfLib
 import getFunc as gf
@@ -176,6 +178,22 @@ def _share_sandbox_with_group(sandbox, group):
     run(["find", sandbox, "-type", "d", "-exec", "chmod", "g+s", "{}", "+"])
 
 
+def _rename_dir_with_retry(src, dst, attempts=5, delay=0.5):
+    """Rename a directory across transient EBUSY (a process cwd holds it).
+
+    Keeping a shell open inside the sandbox blocks the atomic swap; holders
+    are usually short-lived, so retry briefly before giving up.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            os.rename(src, dst)
+            return
+        except OSError as exc:
+            if exc.errno != errno.EBUSY or attempt == attempts:
+                raise
+            time.sleep(delay)
+
+
 def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=None,
                      agent_group=None):
     """Prepare an exact-SHA sandbox and atomically replace the current one.
@@ -236,7 +254,7 @@ def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=N
 
         # Atomic swap: move current sandbox aside, move prepared into place.
         if os.path.exists(sandbox):
-            os.rename(sandbox, backup)
+            _rename_dir_with_retry(sandbox, backup)
         try:
             os.rename(prepare, sandbox)
         except BaseException:

@@ -20,11 +20,8 @@
 #   - installs the systemd units (substituting checkout/venv paths)
 #   - enables unprivileged perf counters (unless --skip-perf)
 #
-# It does NOT create the OpenRouter management credential; do that by hand:
-#   sudo mkdir -p /etc/systemd/credentials/gengin-llmopt
-#   sudo printf 'OPENROUTER_MANAGEMENT_KEY=<key>\n' \
-#     > /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
-#   sudo chmod 600 /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
+# It seeds the single secrets file if absent; review it by hand:
+#   sudo nano /etc/gengin-llmopt/secrets.env   # management key + GITHUB_TOKEN
 
 set -euo pipefail
 
@@ -272,16 +269,27 @@ fi
 "$VENV/bin/pip" install --quiet -r "$CHECKOUT/llmOpt/requirements-mcp.txt"
 chown -R llmopt-agent:llmopt-agent "$VENV"
 
-# --- systemd credential dir -------------------------------------------------
-mkdir -p "$CRED_DIR"
-chown root:root "$CRED_DIR"
-chmod 0700 "$CRED_DIR"
-if [[ ! -f "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY" ]]; then
-  printf 'REPLACE_ME_MANAGEMENT_KEY\n' > "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY"
-  chmod 0600 "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY"
-  log "WARNING: wrote a placeholder management credential — replace it before use:"
-  log "  sudo printf 'OPENROUTER_MANAGEMENT_KEY=<key>\\n' > $CRED_DIR/OPENROUTER_MANAGEMENT_KEY"
+# --- secrets: ONE root-only file (management key + optional GITHUB_TOKEN) ---
+# Consumed as EnvironmentFile= by the systemd unit and sourced by the console
+# launcher. It must stay root-only: llmOpt/ is group-readable by the agent,
+# which must never see the management key. Seeded from legacy locations.
+SECRETS=/etc/gengin-llmopt/secrets.env
+# Dir is traversable (0711) so the supervisor can stat the file for the
+# credential perms check; the file itself stays root-only 600 (content gate).
+mkdir -p /etc/gengin-llmopt
+chown root:root /etc/gengin-llmopt
+chmod 0711 /etc/gengin-llmopt
+if [[ ! -f "$SECRETS" ]]; then
+  mgmt="REPLACE_ME_MANAGEMENT_KEY"
+  [[ -f "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY" ]] && mgmt="$(cat "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY")"
+  gh=""
+  [[ -f /etc/gengin-llmopt/agent.env ]] && gh="$(sed -n 's/^GITHUB_TOKEN=//p' /etc/gengin-llmopt/agent.env | head -1)"
+  printf 'OPENROUTER_MANAGEMENT_KEY=%s\nGITHUB_TOKEN=%s\n' "$mgmt" "$gh" > "$SECRETS"
+  log "WARNING: seeded $SECRETS — review it before use:"
+  log "  sudo nano $SECRETS"
 fi
+chown root:root "$SECRETS"
+chmod 0600 "$SECRETS"
 
 # --- Hermes agent (as the agent user) ---------------------------------------
 if ! sudo -H -u llmopt-agent bash -lc 'command -v hermes >/dev/null' 2>/dev/null; then
@@ -329,8 +337,8 @@ sudo -u llmopt-agent mkdir -p ~/.ssh && sudo -u llmopt-agent chmod 700 ~/.ssh 2>
 log "provisioning complete"
 log "next steps:"
 log "  1. review llmOpt/.env (seeded from .env.example)"
-log "  2. create the management credential (see header)"
-log "  3. copy the agent's SSH key + GITHUB_TOKEN into the agent's environment"
+log "  2. review /etc/gengin-llmopt/secrets.env (management key + GITHUB_TOKEN)"
+log "  3. copy the agent's SSH key into the agent's environment"
 log "  4. sudo systemctl enable --now gengin-xvfb.service"
 log "  5. sudo systemctl enable --now gengin-llmopt.service"
 log "  6. journalctl -u gengin-llmopt.service -f"

@@ -18,6 +18,7 @@ Commands:
 Exit codes: 0 ok, 1 runtime failure, 2 invalid configuration, 3 corrupt state.
 """
 
+import errno
 import fcntl
 import json
 import os
@@ -262,10 +263,12 @@ def _require(values, key, errors):
 
 
 def _management_key_from_env_or_credential():
-    """Management key from the environment, else the systemd credential file.
+    """Management key from the environment, else a credential file.
 
-    LoadCredential= exposes the file at $CREDENTIALS_DIRECTORY/<name>; it does
-    not set an environment variable, so both sources are supported.
+    Sources, in order: $OPENROUTER_MANAGEMENT_KEY, then
+    $CREDENTIALS_DIRECTORY/OPENROUTER_MANAGEMENT_KEY (systemd LoadCredential
+    exposes the file there without setting an environment variable). The file
+    may be a raw key or dotenv-style KEY=VALUE lines (single secrets file).
     """
     key = os.environ.get("OPENROUTER_MANAGEMENT_KEY", "")
     if key:
@@ -275,9 +278,14 @@ def _management_key_from_env_or_credential():
         path = os.path.join(cred_dir, "OPENROUTER_MANAGEMENT_KEY")
         try:
             with open(path) as fh:
-                return fh.read().strip()
+                content = fh.read().strip()
         except OSError:
-            pass
+            return ""
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("OPENROUTER_MANAGEMENT_KEY="):
+                return line.split("=", 1)[1].strip().strip("'\"")
+        return content
     return ""
 
 
@@ -352,8 +360,8 @@ def load_config(require_management_key=True):
     management_key = _management_key_from_env_or_credential()
     if require_management_key and not management_key:
         errors.append(
-            "OPENROUTER_MANAGEMENT_KEY: credential not found (set the environment "
-            "variable or provide the systemd credential file)")
+            "OPENROUTER_MANAGEMENT_KEY: not found (set the environment variable "
+            "or provide the secrets/credential file)")
 
     if errors:
         return None, errors
@@ -811,14 +819,24 @@ def check_openrouter_credit(config):
 
 
 def check_credential_perms(config):
-    """The systemd credential file (if present) must not be agent-readable."""
-    path = "/etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY"
-    if not os.path.exists(path):
-        return ("credential_perms", True, "credential file not present (env-provided)")
-    mode = os.stat(path).st_mode
-    if mode & 0o077:
-        return ("credential_perms", False, f"{path} is readable beyond its owner")
-    return ("credential_perms", True, f"{path} mode {oct(mode & 0o777)}")
+    """Credential files (when present) must not be readable beyond root.
+
+    The single secrets file feeds the supervisor directly; the legacy systemd
+    credential location may still exist on older installs.
+    """
+    paths = (
+        "/etc/gengin-llmopt/secrets.env",
+        "/etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY",
+    )
+    present = [p for p in paths if os.path.exists(p)]
+    if not present:
+        return ("credential_perms", True, "no credential file (env-provided)")
+    for path in present:
+        mode = os.stat(path).st_mode
+        if mode & 0o077:
+            return ("credential_perms", False, f"{path} is readable beyond its owner")
+    return ("credential_perms", True,
+            "; ".join(f"{p} mode {oct(os.stat(p).st_mode & 0o777)}" for p in present))
 
 
 def check_mcp_python(config):
@@ -974,6 +992,13 @@ def run_once(config, state):
     try:
         prepare_sandbox(config, target, session_id)
     except Exception as exc:
+        if isinstance(exc, OSError) and exc.errno == errno.EBUSY:
+            # A process cwd (interactive shell, editor) can hold the sandbox
+            # directory; such holders clear on their own. Retry on the next
+            # poll instead of counting toward quarantine.
+            log("WARN", "sandbox.prepare.transient", sha=target, detail=str(exc))
+            save_state(config.state_dir, state)
+            return EXIT_RUNTIME
         failures = state["setupFailures"].get(target, 0) + 1
         state["setupFailures"][target] = failures
         log("ERROR", "sandbox.prepare.failed", sha=target, failures=failures, detail=str(exc))

@@ -9,9 +9,12 @@
 #
 # The OpenRouter management key is loaded from a systemd credential file
 # (not an Environment= line) so it is not visible through service introspection:
-#   sudo mkdir -p /etc/systemd/credentials/gengin-llmopt
-#   sudo printf 'OPENROUTER_MANAGEMENT_KEY=<key>\n' > /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
-#   sudo chmod 600 /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
+#   sudo install -d -m700 /etc/gengin-llmopt
+#   sudo tee /etc/gengin-llmopt/secrets.env >/dev/null <<'EOF'
+#   OPENROUTER_MANAGEMENT_KEY=<key>
+#   GITHUB_TOKEN=<token>      # optional, for PR creation
+#   EOF
+#   sudo chmod 600 /etc/gengin-llmopt/secrets.env
 #   sudo systemctl daemon-reload
 
 [Unit]
@@ -42,14 +45,11 @@ TimeoutStopSec=120
 UMask=0007
 StandardOutput=journal
 StandardError=journal
-# Management key via systemd credential (see header). Never in Environment=.
-# systemd exposes the file at $CREDENTIALS_DIRECTORY/OPENROUTER_MANAGEMENT_KEY;
-# the supervisor reads it from there when the env var is not set.
-LoadCredential=OPENROUTER_MANAGEMENT_KEY:/etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
-# Optional: agent GitHub token for PR creation. Root-owned, 0600:
-#   sudo install -m600 /dev/null /etc/gengin-llmopt/agent.env
-#   printf 'GITHUB_TOKEN=<token>\n' | sudo tee /etc/gengin-llmopt/agent.env
-EnvironmentFile=-/etc/gengin-llmopt/agent.env
+# All secrets live in one root-only file (see header): the OpenRouter
+# management key plus an optional GITHUB_TOKEN for PR creation. One edit point
+# for rotation; the supervisor also accepts OPENROUTER_MANAGEMENT_KEY directly
+# in the environment, and a legacy LoadCredential file still works.
+EnvironmentFile=-/etc/gengin-llmopt/secrets.env
 # Resource controls that do not destabilize benchmarks.
 LimitNOFILE=65536
 TasksMax=4096
@@ -62,7 +62,9 @@ TasksMax=4096
 # known_hosts). The narrow sudoers rule and the credential isolation provide
 # the boundary instead.
 ProtectSystem=full
-ReadWritePaths=__CHECKOUT__/llmOpt/state __CHECKOUT__/llmOpt/logs __CHECKOUT__/llmOpt/run __CHECKOUT__/llmOpt/gengin
+# NOTE: no ReadWritePaths here on purpose — systemd implements it with bind
+# mounts, which would make __CHECKOUT__/llmOpt/gengin a mountpoint; renaming a
+# mountpoint fails with EBUSY and breaks the supervisor's atomic sandbox swap.
 PrivateTmp=true
 
 [Install]
