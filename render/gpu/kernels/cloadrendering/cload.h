@@ -11,7 +11,9 @@ typedef struct {
 	CL_Buffer outputBuf;
 	CL_Buffer depthBuf; // scene depth buffer uploaded each frame
 	CL_Pipeline godRayPipeline;
+	CL_Pipeline godRaySrcPipeline;
 	CL_Buffer godRayBuf;
+	CL_Buffer godRaySrcBuf; // fused transmittance*isSky, one float per pixel
 	CL_Pipeline compositePipeline;
 	CL_Buffer framebufferBuf; // pinned uint32 buffer — upload framebuffer, composite on GPU, read back
 	CL_Pipeline blurPipeline;
