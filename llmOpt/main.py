@@ -5,9 +5,11 @@ sandbox); file editing is the driving harness's job.
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -36,6 +38,9 @@ os.environ.setdefault("DISPLAY", ":2")
 PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
 
+# Tracked files that are regenerated per checkout; not counted as tree dirt.
+_GENERATED_ARTIFACTS = {"compile_commands.json"}
+
 
 def run(cmd, **kwargs):
     """Run a command, echo its output to stderr, raise RuntimeError on failure.
@@ -56,24 +61,182 @@ def run(cmd, **kwargs):
     return result
 
 
-def git_pull_project():
-    """Clone the gengin repo into the sandbox and sync gitignored build inputs.
+def _llmopt_dir():
+    return os.path.dirname(os.path.abspath(__file__))
 
-    Destructive: removes the existing sandbox first.  The vendored deps
-    (deps/minifb, deps/cute_headers, deps/fsr1) are gitlink placeholders in a
-    fresh clone, so the parent checkout is the only source of the headers and
-    the prebuilt MiniFB static lib the Makefile links against.
+
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def generate_inputs_manifest(inputs_dir):
+    """Write inputs_dir/manifest.json: name, size, sha256 for every file.
+
+    Used by VM provisioning to record the exact prebuilt inputs a sandbox
+    replacement must reproduce. Returns the manifest hash (sha256 of the
+    canonical manifest body) for session summaries.
     """
-    root = os.path.dirname(os.path.abspath(__file__))
-    parent = os.path.dirname(root)
-    sandbox = os.path.join(root, "gengin")
+    inputs_dir = os.path.realpath(inputs_dir)
+    entries = []
+    for dirpath, _dirnames, filenames in os.walk(inputs_dir):
+        for name in sorted(filenames):
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, inputs_dir)
+            if rel == "manifest.json":
+                continue
+            entries.append({
+                "name": rel.replace(os.sep, "/"),
+                "size": os.path.getsize(full),
+                "sha256": _sha256_file(full),
+            })
+    entries.sort(key=lambda e: e["name"])
+    body = json.dumps(entries, sort_keys=True)
+    manifest_hash = hashlib.sha256(body.encode()).hexdigest()
+    with open(os.path.join(inputs_dir, "manifest.json"), "w") as f:
+        json.dump({"schemaVersion": 1, "files": entries}, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return manifest_hash
 
-    run(["rm", "-rf", sandbox])
-    run(["git", "clone", "git@github.com:DarkBenky/gengin.git", sandbox])
-    # copy gitignored build inputs and assets from the parent checkout
+
+def _sync_inputs(sandbox, inputs_dir):
+    """Copy manifest-verified inputs into the sandbox.
+
+    Every required file must exist with a matching size and sha256; a missing
+    or mismatched file is a hard failure (no partial copies).
+    """
+    inputs_dir = os.path.realpath(inputs_dir)
+    manifest_path = os.path.join(inputs_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        raise RuntimeError(f"inputs manifest not found: {manifest_path}")
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    for entry in manifest.get("files", []):
+        rel = entry["name"]
+        src = os.path.join(inputs_dir, rel)
+        dst = os.path.join(sandbox, rel)
+        if not os.path.isfile(src):
+            raise RuntimeError(f"required input missing: {rel}")
+        if os.path.getsize(src) != entry["size"] or _sha256_file(src) != entry["sha256"]:
+            raise RuntimeError(f"input hash mismatch: {rel}")
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
+
+
+def _sync_inputs_legacy(sandbox):
+    """Fallback: rsync gitignored build inputs from the parent checkout.
+
+    Used only when no GENGIN_INPUTS_DIR is configured (local development).
+    """
+    root = _llmopt_dir()
+    parent = os.path.dirname(root)
     for rel in ("deps", "assets", ".flamegraph"):
         run(["rsync", "-a", "--ignore-missing-args", f"{parent}/{rel}/", f"{sandbox}/{rel}/"])
     run(["rsync", "-a", "--ignore-missing-args", f"{parent}/default.profdata", f"{sandbox}/default.profdata"])
+
+
+def _structural_checks(sandbox):
+    """Verify expected source and asset files exist in the prepared sandbox."""
+    required = [
+        "main.c", "Makefile", "render/cpu/ray.c", "object/object.h",
+        "util/bench.h", "client/client.h", "deps/minifb/include/MiniFB.h",
+    ]
+    missing = [rel for rel in required if not os.path.exists(os.path.join(sandbox, rel))]
+    if missing:
+        raise RuntimeError(f"prepared sandbox missing required files: {missing}")
+
+
+def _is_ancestor(sha, branch, cwd):
+    """Return True if sha is reachable from origin/branch, else False/None."""
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", sha, f"origin/{branch}"],
+            capture_output=True, cwd=cwd,
+        )
+        return result.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return None
+
+
+def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=None):
+    """Prepare an exact-SHA sandbox and atomically replace the current one.
+
+    Clones the branch into a temporary sibling, checks out target_sha detached,
+    verifies HEAD matches exactly, syncs manifest-verified inputs, generates
+    compile_commands.json, runs structural checks, then swaps the prepared
+    sandbox into place. On any failure the temporary directory is removed and
+    the previous sandbox is preserved.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}", target_sha):
+        raise RuntimeError(f"invalid target sha: {target_sha!r}")
+
+    root = _llmopt_dir()
+    sandbox = os.path.realpath(os.path.join(root, "gengin"))
+    # The sandbox must be exactly the expected child of llmOpt.
+    if os.path.dirname(sandbox) != os.path.realpath(root):
+        raise RuntimeError(f"refusing to touch unexpected sandbox path: {sandbox}")
+
+    tag = session_id or "manual"
+    prepare = os.path.realpath(os.path.join(root, f"gengin.prepare-{tag}"))
+    backup = os.path.realpath(os.path.join(root, f"gengin.backup-{tag}"))
+    for path in (prepare, backup):
+        if os.path.exists(path):
+            shutil.rmtree(path)
+
+    try:
+        run(["git", "clone", "--branch", branch, "--no-checkout", repo_url, prepare])
+        # Ensure the target commit is present (it may not be the branch tip).
+        probe = subprocess.run(
+            ["git", "cat-file", "-e", f"{target_sha}^{{commit}}"],
+            capture_output=True, cwd=prepare,
+        )
+        if probe.returncode != 0:
+            run(["git", "fetch", "origin", target_sha], cwd=prepare)
+        run(["git", "checkout", "--detach", target_sha], cwd=prepare)
+
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=prepare
+        ).stdout.strip()
+        if head != target_sha:
+            raise RuntimeError(f"checkout mismatch: HEAD={head} expected={target_sha}")
+
+        descendant = _is_ancestor(target_sha, branch, prepare)
+
+        if inputs_dir:
+            _sync_inputs(prepare, inputs_dir)
+        else:
+            _sync_inputs_legacy(prepare)
+
+        _structural_checks(prepare)
+
+        # Atomic swap: move current sandbox aside, move prepared into place.
+        if os.path.exists(sandbox):
+            os.rename(sandbox, backup)
+        try:
+            os.rename(prepare, sandbox)
+        except BaseException:
+            if os.path.exists(backup):
+                os.rename(backup, sandbox)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
+
+        # Generate compile_commands.json against the FINAL path so clangd gets
+        # usable absolute paths (the committed copy points at another checkout).
+        try:
+            import gen_compile_commands
+            gen_compile_commands.generate(sandbox)
+        except Exception as exc:  # non-fatal: clangd degrades, build does not
+            print(f"[gen_compile_commands] {exc}", file=sys.stderr)
+
+        return {"targetSha": target_sha, "descendantOfBranch": descendant}
+    except BaseException:
+        shutil.rmtree(prepare, ignore_errors=True)
+        if os.path.exists(backup) and not os.path.exists(sandbox):
+            os.rename(backup, sandbox)
+        raise
 
 
 def buildProject():
@@ -227,6 +390,14 @@ def makeBench():
         BASELINE_RESULTS = _loadBaselineCache()
 
     if BASELINE_RESULTS is None:
+        _head, _dirty = _projectGitHead()
+        if _dirty:
+            raise RuntimeError(
+                "No valid clean baseline is available and the working tree is "
+                "dirty, so this run cannot be used as a baseline. Run make_bench "
+                "on a clean checkout first (or let the supervisor prepare the "
+                "clean baseline before agent edits)."
+            )
         BASELINE_RESULTS = bench_results_raw
         _saveBaselineCache(bench_results_raw)
         summary = ("Baseline established from this run — the next make_bench "
@@ -277,8 +448,95 @@ def makeFlame():
 BASELINE_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline_cache.json")
 
 
+def _openclFingerprint():
+    try:
+        out = subprocess.run(["clinfo", "-l"], capture_output=True, text=True, timeout=10).stdout
+        return hashlib.sha256(out.encode()).hexdigest() if out.strip() else "none"
+    except Exception:
+        return "unknown"
+
+
+def _mesaRenderer():
+    try:
+        out = subprocess.run(["glxinfo", "-B"], capture_output=True, text=True, timeout=10).stdout
+        for line in out.splitlines():
+            if "OpenGL renderer" in line:
+                return line.split(":", 1)[1].strip()
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+
+def environmentFingerprint():
+    """Hash of the environment inputs that determine benchmark results.
+
+    A cached baseline is only reusable when this fingerprint matches, so a VM
+    resize, compiler upgrade, OpenCL device change, input-manifest change, or
+    Makefile/flag change invalidates it. Best-effort: an unavailable probe
+    records a stable sentinel rather than failing.
+    """
+    parts = {}
+    head, _dirty = _projectGitHead()
+    parts["git_sha"] = head or "unknown"
+
+    inputs_dir = os.environ.get("GENGIN_INPUTS_DIR", "")
+    manifest = os.path.join(inputs_dir, "manifest.json") if inputs_dir else ""
+    if manifest and os.path.exists(manifest):
+        try:
+            with open(manifest) as f:
+                parts["input_manifest"] = hashlib.sha256(
+                    json.dumps(json.load(f), sort_keys=True).encode()).hexdigest()
+        except (OSError, json.JSONDecodeError):
+            parts["input_manifest"] = "unreadable"
+    else:
+        parts["input_manifest"] = "none"
+
+    makefile = os.path.join(PROJECT_DIR, "Makefile")
+    if os.path.exists(makefile):
+        with open(makefile, "rb") as f:
+            parts["makefile"] = hashlib.sha256(f.read()).hexdigest()
+    else:
+        parts["makefile"] = "none"
+
+    try:
+        parts["compiler"] = subprocess.run(
+            ["clang", "--version"], capture_output=True, text=True).stdout.splitlines()[0]
+    except Exception:
+        parts["compiler"] = "unknown"
+
+    try:
+        with open("/proc/cpuinfo") as f:
+            cpuinfo = f.read()
+        model = next((l.split(":", 1)[1].strip()
+                      for l in cpuinfo.splitlines() if l.startswith("model name")), "unknown")
+        parts["cpu"] = f"{model}|{os.cpu_count()}"
+    except Exception:
+        parts["cpu"] = "unknown"
+
+    try:
+        parts["kernel"] = os.uname().release
+    except Exception:
+        parts["kernel"] = "unknown"
+    try:
+        with open("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor") as f:
+            parts["governor"] = f.read().strip()
+    except Exception:
+        parts["governor"] = "unknown"
+
+    parts["opencl"] = _openclFingerprint()
+    parts["mesa"] = _mesaRenderer()
+    parts["bench"] = f"runs={BENCH_RUNS}|duration={os.environ.get('BENCH_DURATION', '10.0')}"
+
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
+
+
 def _projectGitHead():
-    """Return (head_hash, is_dirty) for PROJECT_DIR, or (None, True) on failure."""
+    """Return (head_hash, is_dirty) for PROJECT_DIR, or (None, True) on failure.
+
+    Expected generated artifacts (compile_commands.json is regenerated per
+    sandbox with machine-specific absolute paths) do not count as dirt; agent
+    source edits still do.
+    """
     try:
         head = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -291,18 +549,25 @@ def _projectGitHead():
              "--ignore-submodules=dirty"],
             capture_output=True, text=True, cwd=PROJECT_DIR,
         )
-        return head.stdout.strip(), bool(dirty.stdout.strip())
+        changed = [line for line in dirty.stdout.splitlines()
+                   if line[3:].strip() not in _GENERATED_ARTIFACTS]
+        return head.stdout.strip(), bool(changed)
     except Exception:
         return None, True
 
 
 def _loadBaselineCache():
-    """Return the cached baseline if it matches the current clean HEAD."""
+    """Return the cached clean-HEAD baseline if SHA and fingerprint match.
+
+    A dirty working tree does NOT block loading: the baseline was captured on
+    clean HEAD, so it stays valid after the agent edits the tree. Only a SHA
+    or environment-fingerprint mismatch invalidates it.
+    """
     if not os.path.exists(BASELINE_CACHE_FILE):
         return None
-    head, dirty = _projectGitHead()
-    if head is None or dirty:
-        return None  # uncommitted changes — cache cannot be trusted
+    head, _dirty = _projectGitHead()
+    if head is None:
+        return None
     try:
         with open(BASELINE_CACHE_FILE) as fh:
             cache = json.load(fh)
@@ -310,19 +575,33 @@ def _loadBaselineCache():
         return None
     if cache.get("head") != head:
         return None
+    if cache.get("fingerprint") and cache["fingerprint"] != environmentFingerprint():
+        return None
     return cache.get("baseline")
 
 
 def _saveBaselineCache(baseline):
-    """Persist the baseline keyed by the current clean HEAD."""
+    """Persist the baseline keyed by clean HEAD + environment fingerprint.
+
+    Only called from a clean tree; writes atomically.
+    """
     head, dirty = _projectGitHead()
     if head is None or dirty:
         return  # don't cache a baseline taken against a dirty tree
+    tmp = BASELINE_CACHE_FILE + f".tmp.{os.getpid()}"
     try:
-        with open(BASELINE_CACHE_FILE, "w") as fh:
-            json.dump({"head": head, "baseline": baseline}, fh)
+        with open(tmp, "w") as fh:
+            json.dump({"head": head, "fingerprint": environmentFingerprint(),
+                       "baseline": baseline}, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, BASELINE_CACHE_FILE)
     except OSError as e:
         print(f"[baseline-cache] save failed: {e}", file=sys.stderr)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 BENCH_FUNC_DIR = os.path.join(PROJECT_DIR, "bench")
@@ -587,43 +866,174 @@ def bisectRegression():
 # git / GitHub
 # ---------------------------------------------------------------------------
 
-def _github_create_pr(title, body, head, base="main"):
-    import urllib.request, json as _json, re as _re
-    token = os.environ.get("GITHUB_TOKEN", "")
-    if not token:
-        raise RuntimeError("GITHUB_TOKEN not set in environment or .env")
+def _githubRepo():
+    """Return (owner, repo) parsed from the sandbox origin remote URL."""
     res = subprocess.run(
         ["git", "remote", "get-url", "origin"],
         capture_output=True, text=True, cwd=PROJECT_DIR,
     )
     remote = res.stdout.strip()
-    m = _re.search(r'[:/]([^/]+/[^/]+?)(?:\.git)?$', remote)
+    m = re.search(r'[:/]([^/]+/[^/]+?)(?:\.git)?$', remote)
     if not m:
         raise RuntimeError(f"Cannot parse repo from remote URL: {remote}")
-    repo = m.group(1)
+    owner, _, repo = m.group(1).partition("/")
+    return owner, repo
+
+
+def _githubHeaders():
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        raise RuntimeError("GITHUB_TOKEN not set in environment or .env")
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _github_find_pr(branch):
+    """Return the open PR URL for branch, or None."""
+    import urllib.request, json as _json
+    owner, repo = _githubRepo()
+    url = (f"https://api.github.com/repos/{owner}/{repo}/pulls"
+           f"?head={owner}:{branch}&state=open")
+    req = urllib.request.Request(url, headers=_githubHeaders())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = _json.loads(r.read())
+        return data[0]["html_url"] if data else None
+    except Exception:
+        return None
+
+
+def _github_create_pr(title, body, head, base="main"):
+    import urllib.request, json as _json, urllib.error
+    owner, repo = _githubRepo()
     payload = _json.dumps({"title": title, "body": body, "head": head, "base": base}).encode()
     req = urllib.request.Request(
-        f"https://api.github.com/repos/{repo}/pulls",
+        f"https://api.github.com/repos/{owner}/{repo}/pulls",
         data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=_githubHeaders(),
     )
-    with urllib.request.urlopen(req) as r:
-        data = _json.loads(r.read())
-    return data["html_url"]
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = _json.loads(r.read())
+        return data["html_url"]
+    except urllib.error.HTTPError as e:
+        if e.code == 422:  # validation failed — likely an existing PR for this head
+            existing = _github_find_pr(head)
+            if existing:
+                return existing
+        raise
 
 
-def createPR(title, body, branch, commit_msg=None):
-    """Commit sandbox changes, push a branch, open a PR.  Returns the PR URL."""
+_TARGET_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_BRANCH_RE = re.compile(r"^llmopt/[0-9a-f]{8}/[A-Za-z0-9._-]+$")
+_FORBIDDEN_STAGING_RE = re.compile(
+    r"(^|/)(\.env|\.hermes|state|logs|run)(/|$)"
+    r"|(^|/)baseline_cache\.json$"
+    r"|(^|/)codebase_context\.md$"
+    r"|\.perf\.data$|\.profdata$|\.profraw$"
+    r"|^build/|^bench/results/|^\.flamegraph/"
+    r"|(^|/)(flamegraph|callgraph|icicle)\.svg$"
+)
+_SECRET_RE = re.compile(r"sk-or-v1-[0-9a-fA-F]{32,}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}")
+
+
+def _sandboxHead():
+    res = subprocess.run(["git", "rev-parse", "HEAD"],
+                         capture_output=True, text=True, cwd=PROJECT_DIR)
+    return res.stdout.strip() if res.returncode == 0 else ""
+
+
+def _branchExists(branch):
+    res = subprocess.run(["git", "rev-parse", "--verify", "--quiet", branch],
+                         capture_output=True, text=True, cwd=PROJECT_DIR)
+    return res.returncode == 0
+
+
+def _remoteBranchSha(branch):
+    res = subprocess.run(["git", "ls-remote", "origin", f"refs/heads/{branch}"],
+                         capture_output=True, text=True, cwd=PROJECT_DIR, timeout=120)
+    line = res.stdout.strip()
+    return line.split()[0] if line else None
+
+
+def createPR(title, body, branch="", commit_msg=None):
+    """Commit sandbox changes, push one focused branch, open a PR.
+
+    Guards: target-SHA ancestry, forbidden staging paths, secret patterns,
+    empty diff, and idempotent branch/PR reuse. Never force-pushes. Returns
+    the PR URL.
+    """
     commit_msg = commit_msg or title
-    run(["git", "checkout", "-b", branch], cwd=PROJECT_DIR)
+    target = os.environ.get("GENGIN_TARGET_SHA", "")
+    session_id = os.environ.get("GENGIN_SESSION_ID", "")
+
+    head = _sandboxHead()
+    if not head:
+        raise RuntimeError("cannot determine sandbox HEAD")
+
+    if target and _TARGET_SHA_RE.fullmatch(target):
+        rc = subprocess.run(["git", "merge-base", "--is-ancestor", target, head],
+                            capture_output=True, cwd=PROJECT_DIR)
+        if rc.returncode != 0:
+            raise RuntimeError(
+                f"sandbox HEAD {head[:12]} does not descend from target "
+                f"{target[:12]}; refusing to create a PR")
+
+    if not branch:
+        if not (target and session_id):
+            raise RuntimeError(
+                "branch name required outside supervised sessions "
+                "(set GENGIN_TARGET_SHA and GENGIN_SESSION_ID)")
+        branch = f"llmopt/{target[:8]}/{session_id.rsplit('-', 1)[-1]}"
+    if not _BRANCH_RE.fullmatch(branch):
+        raise RuntimeError(f"branch must match llmopt/<8-hex-sha>/<id>: got {branch!r}")
+
+    # Switch to (or create) the branch before staging so staged changes carry over.
+    if _branchExists(branch):
+        run(["git", "checkout", branch], cwd=PROJECT_DIR)
+    else:
+        run(["git", "checkout", "-b", branch], cwd=PROJECT_DIR)
+
     run(["git", "add", "-A"], cwd=PROJECT_DIR)
+    cached = subprocess.run(["git", "diff", "--cached", "--name-only"],
+                            capture_output=True, text=True, cwd=PROJECT_DIR).stdout.split()
+    forbidden = [f for f in cached if _FORBIDDEN_STAGING_RE.search(f)]
+    if forbidden:
+        run(["git", "reset", "-q", "--"] + forbidden, cwd=PROJECT_DIR)
+        print(f"[createPR] excluded from staging: {forbidden}", file=sys.stderr)
+    staged = [f for f in cached if f not in forbidden]
+    if not staged:
+        # Retry path: the branch may already carry the commit and an open PR.
+        existing = _github_find_pr(branch)
+        if existing:
+            print(f"PR already exists: {existing}", file=sys.stderr)
+            return existing
+        raise RuntimeError("empty source diff; refusing to create an empty commit or PR")
+
+    diff_text = subprocess.run(["git", "diff", "--cached", "-U0"],
+                               capture_output=True, text=True, cwd=PROJECT_DIR).stdout
+    if _SECRET_RE.search(diff_text):
+        raise RuntimeError("staged diff contains a secret-looking token; refusing to commit")
+
     run(["git", "commit", "-m", commit_msg], cwd=PROJECT_DIR)
-    run(["git", "push", "-u", "origin", branch], cwd=PROJECT_DIR)
+
+    # Push without force; tolerate an existing remote branch with identical content.
+    push = subprocess.run(["git", "push", "-u", "origin", branch],
+                          capture_output=True, text=True, cwd=PROJECT_DIR)
+    if push.returncode != 0:
+        remote_sha = _remoteBranchSha(branch)
+        local_sha = _sandboxHead()
+        if remote_sha and remote_sha == local_sha:
+            print("[createPR] remote branch already up to date", file=sys.stderr)
+        else:
+            raise RuntimeError(
+                f"push failed and remote branch differs (no force-push allowed):\n"
+                f"{push.stderr}")
+
     url = _github_create_pr(title, body, head=branch)
     print(f"PR created: {url}", file=sys.stderr)
     return url

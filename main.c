@@ -163,8 +163,10 @@ int main() {
 				 220.0f, 0.5f);					 // speed m/s, throttle 0-1
 
 	addFromRegistry(&request, &objectRegistry, &scene, f16Id);
+#ifndef BENCH_MODE
 	postObjects(&c, &request);
 	RequestData_Reset(&request);
+#endif
 
 	struct mfb_window *window = mfb_open_ex("my display", WIDTH, HEIGHT, WF_RESIZABLE);
 	if (!window) {
@@ -223,8 +225,10 @@ int main() {
 		ComputePrevPostionRotationScale(&scene);
 		ComputePrevCameraPos(&camera);
 
+#ifndef BENCH_MODE
 		// get current scene state from server
 		getObjects(&c, &scene, &matLib, &objectRegistry);
+#endif
 
 		benchFrameStart(&bench);
 		WNOW(wA);
@@ -260,8 +264,10 @@ int main() {
 
 		// post current scene
 		addAllFromRegistry(&request, &objectRegistry, &scene);
+#ifndef BENCH_MODE
 		postObjects(&c, &request);
 		RequestData_Reset(&request);
+#endif
 
 		RenderSetup(scene.objects, scene.count, &camera);
 		WNOW(wB);

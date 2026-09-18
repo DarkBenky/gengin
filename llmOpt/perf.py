@@ -3,7 +3,9 @@ import os
 from collections import defaultdict
 
 FLAMEGRAPH_DIR = ".flamegraph"
-PERF_DATA = "perf.data"
+# Authoritative perf artifact: `make flame` (via tools/flame.sh) writes the
+# data next to the flamegraph SVG, i.e. build/prof/flamegraph.perf.data.
+PERF_DATA = os.path.join("build", "prof", "flamegraph.perf.data")
 FOLDED_FILE = "perf_folded.txt"
 
 TOP_FUNCTIONS = 25
@@ -18,8 +20,8 @@ def _run(cmd, **kwargs):
 
 
 def recordPerf(duration: int = 10, cwd: str = "."):
-    """perf record for `duration` seconds, saves perf.data in cwd."""
-    _run(["make", "flame_record", f"PERF_DURATION={duration}"], cwd=cwd)
+    """Run `make flame` for `duration` seconds; writes build/prof/flamegraph.perf.data."""
+    _run(["make", "flame", f"FLAME_SECONDS={duration}"], cwd=cwd)
 
 
 def _ensureFlameGraph(cwd: str):
@@ -36,7 +38,7 @@ def _getFoldedStacks(cwd: str) -> str:
     perf_data = os.path.join(cwd, PERF_DATA)
 
     script = subprocess.run(
-        ["sudo", "perf", "script", "-f", "-i", PERF_DATA],
+        ["perf", "script", "-f", "-i", PERF_DATA],
         capture_output=True, text=True, cwd=cwd
     )
     if not script.stdout:

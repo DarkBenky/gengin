@@ -9,7 +9,10 @@ regression bisection, and clangd semantic queries.
 
 import json
 import os
+import re
+import subprocess
 import sys
+from datetime import datetime, timezone
 
 # Ensure the llmOpt directory is on the path so we can import sibling modules
 _llmOpt_dir = os.path.dirname(os.path.abspath(__file__))
@@ -120,24 +123,57 @@ def _symbolPosition(symbol: str, rel_path: str | None = None) -> tuple[str, int,
 # Build & profiling
 # ===================================================================
 
+def _targetSha():
+    """The commit the sandbox must be pinned to.
+
+    In supervised sessions the supervisor sets GENGIN_TARGET_SHA so the agent
+    can never rebase onto a later main commit. For manual use, fall back to
+    the sandbox's current HEAD.
+    """
+    sha = os.environ.get("GENGIN_TARGET_SHA", "")
+    if re.fullmatch(r"[0-9a-f]{40}", sha):
+        return sha
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=_gengin_dir,
+        ).stdout.strip()
+        if re.fullmatch(r"[0-9a-f]{40}", head):
+            return head
+    except (subprocess.SubprocessError, OSError):
+        pass
+    raise RuntimeError(
+        "GENGIN_TARGET_SHA is not set and the sandbox has no HEAD; "
+        "cannot determine the target commit"
+    )
+
+
 @mcp.tool()
 def git_pull_project() -> str:
-    """Clone the gengin repo into the llmOpt/gengin sandbox (destructive:
-    deletes the existing sandbox first), install system deps, sync
-    assets/profdata from the parent repo, and re-index source files.
-    Use to refresh the sandbox to a clean clone."""
+    """Re-prepare the llmOpt/gengin sandbox at the pinned target commit
+    (GENGIN_TARGET_SHA, or the sandbox HEAD for manual use), sync
+    manifest-verified inputs, and re-index source files. The replacement is
+    atomic: a failed preparation leaves the previous sandbox intact."""
+    repo_url = os.environ.get("GENGIN_REPO_URL", "git@github.com:DarkBenky/gengin.git")
+    branch = os.environ.get("GENGIN_TARGET_BRANCH", "main")
+    target = _targetSha()
+    inputs_dir = os.environ.get("GENGIN_INPUTS_DIR", "")
     old_cwd = os.getcwd()
     try:
         os.chdir(_llmOpt_dir)
         _main.PROJECT_DIR = "gengin"  # relative to llmOpt/
-        _main.git_pull_project()
+        _main.git_pull_project(
+            repo_url, branch, target,
+            inputs_dir=inputs_dir or None,
+            session_id=os.environ.get("GENGIN_SESSION_ID", "manual"),
+        )
         _main.PROJECT_DIR = _gengin_dir
     finally:
         os.chdir(old_cwd)
     _gf.init(base_dir=_gengin_dir)
     _main.BASELINE_RESULTS = None
     _main._clearEditStack()
-    return "Project pulled into llmOpt/gengin/ and indexed."
+    return f"Project prepared at {target} in llmOpt/gengin/ and indexed."
 
 
 @mcp.tool()
@@ -178,10 +214,50 @@ def make_flame() -> dict:
 
 
 @mcp.tool()
-def create_pr(title: str, body: str, branch: str, commit_msg: str = "") -> str:
-    """Commit sandbox changes, push a new branch, and open a GitHub PR via the
-    REST API (requires GITHUB_TOKEN).  Returns the PR URL."""
+def create_pr(title: str, body: str, branch: str = "", commit_msg: str = "") -> str:
+    """Commit sandbox changes, push one focused branch, and open a GitHub PR
+    via the REST API (requires GITHUB_TOKEN).  Guards reject empty diffs,
+    forbidden staged paths (logs/state/secrets), and non-descendant bases.
+    In supervised sessions the branch is derived automatically
+    (llmopt/<short-sha>/<session-id>); pass it explicitly only to reuse an
+    existing branch.  Returns the PR URL."""
     return _main.createPR(title, body, branch, commit_msg or title)
+
+
+_SESSION_STATUSES = ("pr_created", "no_change", "blocked", "failed")
+
+
+@mcp.tool()
+def report_session_result(status: str, summary: str, pr_url: str = "") -> str:
+    """Report the final session outcome to the supervisor. Call exactly once
+    before exit. status must be one of: pr_created, no_change, blocked, failed.
+    pr_url is required for pr_created and must be a GitHub pull URL."""
+    if status not in _SESSION_STATUSES:
+        return f"error: status must be one of {list(_SESSION_STATUSES)}, got {status!r}"
+    if status == "pr_created" and not pr_url.startswith("https://github.com/"):
+        return "error: pr_created requires a https://github.com/... pull URL"
+    if status != "pr_created" and pr_url:
+        return "error: pr_url is only valid with status=pr_created"
+
+    result_path = os.environ.get("GENGIN_SESSION_RESULT_PATH", "")
+    if not result_path:
+        return "error: GENGIN_SESSION_RESULT_PATH is not set (not a supervised session)"
+    payload = {
+        "schemaVersion": 1,
+        "status": status,
+        "summary": summary[:4000],
+        "prUrl": pr_url,
+        "targetSha": os.environ.get("GENGIN_TARGET_SHA", ""),
+        "reportedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    tmp = result_path + f".tmp.{os.getpid()}"
+    with open(tmp, "w") as fh:
+        json.dump(payload, fh, indent=2)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, result_path)
+    return f"session result recorded: {status}"
 
 
 @mcp.tool()

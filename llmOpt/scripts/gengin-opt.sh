@@ -21,9 +21,14 @@ PRESET=""
 HEADLESS=0
 DRY_RUN=0
 GOAL=""
+SUPERVISED=0
+MODEL=""
+QUERY_FILE_ARG=""
+USAGE_FILE_ARG=""
 
 usage() {
   echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
+  echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -39,12 +44,20 @@ while [[ $# -gt 0 ]]; do
       PROVIDER_ARGS=(--provider deepseek); shift ;;
     --model)
       [[ $# -ge 2 ]] || { echo "error: --model needs a value" >&2; exit 2; }
-      MODEL_ARGS=(-m "$2"); shift 2 ;;
+      MODEL="$2"; MODEL_ARGS=(-m "$2"); shift 2 ;;
     --goal)
       [[ $# -ge 2 ]] || { echo "error: --goal needs a value" >&2; exit 2; }
       GOAL="$2"; shift 2 ;;
     --headless)
       HEADLESS=1; shift ;;
+    --supervised)
+      SUPERVISED=1; shift ;;
+    --query-file)
+      [[ $# -ge 2 ]] || { echo "error: --query-file needs a value" >&2; exit 2; }
+      QUERY_FILE_ARG="$2"; shift 2 ;;
+    --usage-file)
+      [[ $# -ge 2 ]] || { echo "error: --usage-file needs a value" >&2; exit 2; }
+      USAGE_FILE_ARG="$2"; shift 2 ;;
     --dry-run)
       DRY_RUN=1; shift ;;
     -h|--help)
@@ -64,6 +77,45 @@ if [[ -n "$PRESET" && ${#MODEL_ARGS[@]} -eq 0 ]]; then
     deepseek)   MODEL_ARGS=(-m "${GENGIN_DEEPSEEK_MODEL:-deepseek-v4-flash}") ;;
     openrouter) MODEL_ARGS=(-m "${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}") ;;
   esac
+fi
+
+# --- supervised mode (launched by the supervisor, not a human) -------------
+# Requires OPENROUTER_API_KEY in the inherited environment (the temporary
+# capped key). Never reads KEY= from llmOpt/.env and never writes the key to
+# .hermes/.env. Requires explicit model, query path, and usage path.
+if [[ "$SUPERVISED" -eq 1 ]]; then
+  if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+    echo "error: supervised mode requires OPENROUTER_API_KEY in the environment" >&2
+    exit 2
+  fi
+  if [[ -z "$MODEL" || -z "$QUERY_FILE_ARG" || -z "$USAGE_FILE_ARG" ]]; then
+    echo "error: supervised mode requires --model, --query-file, and --usage-file" >&2
+    exit 2
+  fi
+  if [[ ! -f "$QUERY_FILE_ARG" ]]; then
+    echo "error: query file not found: $QUERY_FILE_ARG" >&2
+    exit 2
+  fi
+  # Use the supervisor-provided per-session home (isolated, credential-free).
+  # $HERMES_DIR is only a fallback for manual invocations.
+  HERMES_HOME_RESOLVED="${HERMES_HOME:-$HERMES_DIR}"
+  if [[ ! -d "$HERMES_HOME_RESOLVED" ]]; then
+    echo "error: HERMES_HOME not found: $HERMES_HOME_RESOLVED" >&2
+    exit 2
+  fi
+  export PYTHONUNBUFFERED=1
+  echo "=== gengin optimizer (supervised) ==="
+  echo "HERMES_HOME: $HERMES_HOME_RESOLVED"
+  echo "model:       $MODEL"
+  echo "query:       $QUERY_FILE_ARG"
+  echo "usage:       $USAGE_FILE_ARG"
+  echo
+  cd "$LLMOPT_DIR"
+  # No exec: the supervisor owns the process group and needs a stable wrapper
+  # to reap the child and preserve its exit code.
+  HERMES_HOME="$HERMES_HOME_RESOLVED" hermes -z "$(cat "$QUERY_FILE_ARG")" --yolo \
+    --usage-file "$USAGE_FILE_ARG" --provider openrouter -m "$MODEL"
+  exit $?
 fi
 
 if [[ ! -f "$PROMPT_FILE" ]]; then

@@ -1,0 +1,63 @@
+# gengin-llmopt commit-triggered optimizer supervisor.
+#
+# Watches origin/main, prepares an exact-SHA sandbox, creates a budget-capped
+# temporary OpenRouter key, supervises a Hermes session, and opens one PR per
+# validated optimization.
+#
+# This is a TEMPLATE. llmOpt/scripts/setup-vm.sh substitutes the __CHECKOUT__
+# and __VENV__ placeholders and installs it to /etc/systemd/system/.
+#
+# The OpenRouter management key is loaded from a systemd credential file
+# (not an Environment= line) so it is not visible through service introspection:
+#   sudo mkdir -p /etc/systemd/credentials/gengin-llmopt
+#   sudo printf 'OPENROUTER_MANAGEMENT_KEY=<key>\n' > /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
+#   sudo chmod 600 /etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
+#   sudo systemctl daemon-reload
+
+[Unit]
+Description=gengin-llmopt commit-triggered optimizer supervisor
+After=network-online.target gengin-xvfb.service
+Wants=network-online.target
+Requires=gengin-xvfb.service
+
+[Service]
+Type=simple
+User=llmopt-supervisor
+WorkingDirectory=__CHECKOUT__
+# Nonsensitive configuration is read from llmOpt/.env by the supervisor.
+# ExecStart uses the SYSTEM interpreter on purpose: the supervisor needs only
+# the standard library, and running it from the agent-writable venv would let
+# the agent inject code that later runs with the management credential.
+ExecStart=/usr/bin/python3 llmOpt/supervisor.py run
+Restart=on-failure
+RestartSec=30
+# Kill the whole cgroup (supervisor + Hermes + MCP + compiler descendants) if
+# the supervisor dies before it can clean up.
+KillMode=control-group
+# Must exceed TERMINATION_GRACE_SECONDS so the supervisor can escalate
+# SIGTERM -> SIGKILL and delete the temporary key before systemd kills it.
+TimeoutStopSec=120
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+# Management key via systemd credential (see header). Never in Environment=.
+# systemd exposes the file at $CREDENTIALS_DIRECTORY/OPENROUTER_MANAGEMENT_KEY;
+# the supervisor reads it from there when the env var is not set.
+LoadCredential=OPENROUTER_MANAGEMENT_KEY:/etc/systemd/credentials/gengin-llmopt/OPENROUTER_MANAGEMENT_KEY
+# Resource controls that do not destabilize benchmarks.
+LimitNOFILE=65536
+TasksMax=4096
+# Hardening: ProtectSystem=full keeps /usr /boot /efi /etc read-only while the
+# checkout under /opt (or wherever __CHECKOUT__ points) stays writable.
+# NOTE: NoNewPrivileges is deliberately NOT set — the two-user launch uses
+# `sudo -n -u llmopt-agent <helper>` to switch identity, and NO_NEW_PRIVS makes
+# setuid-root binaries (sudo) unable to gain privileges. ProtectHome is also
+# not set because the agent must write its own home (HERMES state, ssh
+# known_hosts). The narrow sudoers rule and the credential isolation provide
+# the boundary instead.
+ProtectSystem=full
+ReadWritePaths=__CHECKOUT__/llmOpt/state __CHECKOUT__/llmOpt/logs __CHECKOUT__/llmOpt/run __CHECKOUT__/llmOpt/gengin
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

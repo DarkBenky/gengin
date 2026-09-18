@@ -25,7 +25,9 @@ mcp_servers:
       PYTHONUNBUFFERED: "1"
       # Hermes filters the child environment, so the bench display must be
       # given explicitly.  :2 is this machine's headless Xorg (auth-free).
-      DISPLAY: "__DISPLAY__"
+      # The supervisor replaces the marker below with the session variables
+      # (GENGIN_TARGET_SHA etc.); the comment is inert for manual runs.
+      DISPLAY: "__DISPLAY__" # __SESSION_ENV__
     timeout: 600
     connect_timeout: 60
 

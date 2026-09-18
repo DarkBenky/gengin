@@ -160,30 +160,23 @@ _ANNOT_LINE_RE = re.compile(r'^\s*([\d.]+)\s*:\s*([0-9a-f]+):\s')
 def _perfAnnotateFunc(func_name, cwd=None):
     """Return {source_lineno: pct} for func_name using perf annotate + addr2line.
 
-    Requires perf.data and a binary built with -g in the same directory.
+    Uses the authoritative `make flame` artifacts: build/prof/flamegraph.perf.data
+    and the frame-pointer twin build/prof/main_flame.
     """
-    search = cwd or GENGIN
-    perf_cwd = None
-    for _ in range(4):
-        if os.path.exists(os.path.join(search, "perf.data")):
-            perf_cwd = search
-            break
-        parent = os.path.dirname(search)
-        if parent == search:
-            break
-        search = parent
-    if perf_cwd is None:
+    base = cwd or GENGIN
+    perf_data = os.path.join(base, "build", "prof", "flamegraph.perf.data")
+    if not os.path.exists(perf_data):
         return {}
 
-    binary = os.path.join(perf_cwd, "main")
+    binary = os.path.join(base, "build", "prof", "main_flame")
     if not os.path.exists(binary):
         return {}
 
     try:
         result = subprocess.run(
-            ["sudo", "perf", "annotate", "--stdio", "-s", func_name,
-             "-i", "perf.data", "-f"],
-            capture_output=True, text=True, cwd=perf_cwd, timeout=30,
+            ["perf", "annotate", "--stdio", "-s", func_name,
+             "-i", perf_data, "-f"],
+            capture_output=True, text=True, cwd=base, timeout=30,
         )
 
         # collect {addr: pct} from lines like "    4.17 :   124dd:  movss ..."

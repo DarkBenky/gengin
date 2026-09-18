@@ -1,0 +1,29 @@
+# Dedicated virtual display for the gengin-llmopt renderer.
+#
+# The renderer (MiniFB/X11 + Mesa software GL) needs a real X display on a
+# headless VM. This runs a persistent Xvfb on :99 with no TCP listeners.
+#
+# Install:
+#   sudo cp llmOpt/systemd/gengin-xvfb.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gengin-xvfb.service
+#
+# The optimizer service (gengin-llmopt.service) orders After= this unit.
+
+[Unit]
+Description=gengin-llmopt virtual X display (:99)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+# Run as the agent identity so the renderer (launched as llmopt-agent) can
+# connect to the display. Adjust if you run single-user mode.
+User=llmopt-agent
+ExecStart=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp
+Restart=on-failure
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

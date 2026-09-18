@@ -38,6 +38,10 @@ ifneq ($(wildcard $(PROFDATA)),)
 CFLAGS += -fprofile-use=$(PROFDATA) -fprofile-correction
 endif
 
+# Bench run length in seconds. Override for a short preflight smoke, e.g.
+# `make bench BENCH_DURATION=2`. The full production baseline uses the default.
+BENCH_DURATION ?= 10.0
+
 TARGET = $(MAIN_DIR)/main
 SRC = main.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboar/keyboar.c render/gpu/format.c render/gpu/kernels/cloadrendering/cload.c hexDump/hexDump.c simulation/cSim/import.c simulation/cSim/simulate.c
 
@@ -155,7 +159,7 @@ run: $(TARGET)
 
 bench: $(SRC)
 	@mkdir -p $(MAIN_DIR)
-	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=10.0 -o $(MAIN_DIR)/main_bench $^ $(LDFLAGS) $(LIBS)
+	$(CC) $(CFLAGS) -DBENCH_MODE -DBENCH_DURATION=$(BENCH_DURATION) -o $(MAIN_DIR)/main_bench $^ $(LDFLAGS) $(LIBS)
 	./$(MAIN_DIR)/main_bench
 	rm -f $(MAIN_DIR)/main_bench
 

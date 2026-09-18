@@ -38,6 +38,11 @@ llmOpt/gengin
 # llmOpt project-scoped Hermes Agent state (config, sessions, logs)
 llmOpt/.hermes/
 
+# llmOpt supervisor runtime (state, session logs, per-session run artifacts)
+llmOpt/state/
+llmOpt/logs/
+llmOpt/run/
+
 # python caches + runtime baseline cache
 __pycache__/
 *.pyc

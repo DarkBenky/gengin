@@ -78,9 +78,15 @@ speedup may be applied to the real code.
 ### Phase 5 — Persist & PR
 17. Append a dated entry to `codebase_context.md` (use `patch`): what changed,
     measured numbers, why it is safe, what failed and why.
-18. `create_pr(title, body, branch)` — one logical improvement per PR; the body
+18. `create_pr(title, body)` — one logical improvement per PR; the body
     states the measured speedup and the risk analysis.  Review the diff first.
-19. Move to the next hotspot.
+    The branch name is derived automatically; do NOT pass one.  Never merge.
+19. `report_session_result(status, summary, pr_url)` — call EXACTLY ONCE before
+    exit.  status: `pr_created` (with pr_url), `no_change` (no safe measurable
+    optimization found; leave the sandbox clean), `blocked` (environment
+    problem), or `failed`.  The supervisor uses this artifact as the outcome.
+20. Move to the next hotspot — or, if no further safe optimization is found,
+    report `no_change` and stop.
 
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
@@ -111,10 +117,18 @@ Apply directly in those rare cases and validate with `make_bench`.
 6. If 3 attempts on a function fail: move to the next hotspot.
 7. Keep changes focused — one logical improvement per PR.
 
+## BASELINE
+A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and
+environment fingerprint) was prepared BEFORE any edits.  The first `make_bench`
+loads and confirms it — report that it was loaded.  If `make_bench` returns a
+"no valid clean baseline" error, stop and report `blocked`; never accept a
+dirty run as the baseline.
+
 ## SANDBOX
 Everything runs in `llmOpt/gengin/`.  The parent repo is untouched until
-`create_pr`.  `git_pull_project` refreshes the sandbox to a clean clone
-(destructive — it discards sandbox changes).
+`create_pr`.  The sandbox is pinned to the target commit; do not check out or
+pull a different base.  `git_pull_project` re-prepares the sandbox at the
+pinned SHA (it discards sandbox changes).
 
 ## MODEL
 The model is chosen by the launcher (`gengin-opt.sh local|openrouter`) or at
