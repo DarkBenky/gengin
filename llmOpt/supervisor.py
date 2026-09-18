@@ -785,15 +785,22 @@ def check_remote(config):
 
 
 def check_openrouter_model(config):
-    """Configured model exists in the public catalog (no spending)."""
+    """Configured model exists in the public catalog (no spending).
+
+    Routing variant suffixes (`:floor`, `:free`, `:nitro`, ...) are accepted on
+    top of any catalog model.
+    """
     import openrouter_keys as ork
 
-    available = ork.model_available(config.openrouter_model)
+    model = config.openrouter_model
+    available = ork.model_available(model)
     if available is None:
         return ("openrouter_model", False, "could not fetch the model catalog")
     if available:
-        return ("openrouter_model", True, config.openrouter_model)
-    return ("openrouter_model", False, f"model not found: {config.openrouter_model}")
+        base, variant = ork._base_model_id(model)
+        detail = f"{base} (variant :{variant})" if variant else base
+        return ("openrouter_model", True, detail)
+    return ("openrouter_model", False, f"model not found: {model}")
 
 
 def check_openrouter_credit(config):

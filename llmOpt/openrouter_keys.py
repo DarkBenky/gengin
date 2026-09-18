@@ -241,19 +241,36 @@ class OpenRouterClient:
         return deleted
 
 
+VARIANT_SUFFIXES = {"free", "nitro", "floor", "online", "extended", "thinking"}
+
+
+def _base_model_id(model_id):
+    """Strip a known OpenRouter routing variant suffix (`:floor`, `:free`, ...).
+
+    Variants are applied per request and never appear in the public catalog.
+    Returns (base_id, variant); unknown suffixes are left untouched so typos
+    still fail the catalog check.
+    """
+    base, sep, variant = model_id.partition(":")
+    if sep and variant in VARIANT_SUFFIXES:
+        return base, variant
+    return model_id, ""
+
+
 def model_available(model_id, timeout=DEFAULT_TIMEOUT):
-    """Check the public model list for an exact id.
+    """Check the public model list for the id (routing variants allowed).
 
     Returns True/False, or None when the list cannot be fetched (the caller
     decides whether that is fatal).
     """
+    base, _variant = _base_model_id(model_id)
     try:
         req = urllib.request.Request(
             f"{BASE_URL}/models",
             headers={"User-Agent": "gengin-llmopt-supervisor/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read(MAX_BODY))
-        return any(m.get("id") == model_id for m in data.get("data", []))
+        return any(m.get("id") == base for m in data.get("data", []))
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError,
             UnicodeDecodeError):
         return None
