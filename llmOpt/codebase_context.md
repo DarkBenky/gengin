@@ -227,3 +227,27 @@ main()  [main.c]
 - Next planned experiment: a multi-threaded micro-benchmark for the RayTraceRowFunc blur loop (current stack-VLA version vs pre-allocated global buffers). Single-threaded wins regressed in the 32-threaded renderer, so any blur redesign must be proven under thread contention before integration.
 - Open task list from the last session (all unstarted): read RayTraceRowFunc blur code + BlurBuffer + Camera struct; build the MT micro-benchmark; apply global-buffer blur if proven; build + make_bench (avg_ms, p99, image_mse); PR on success.
 - The sandbox working tree carries a leftover `tmin-clamp-optimization` branch with uncommitted changes to render/cpu/ray.c and extra bench files; `git_pull_project` discards it.
+
+---
+
+## Session Insights (2026-09-18)
+
+**Summary**: Fresh `make_flame` profile surfaced `CalculateAmbientOcclusionV2Row` (render/cpu/AO.h) as a NEW top-4 hotspot (9.6% excl, 10.9% incl) that prior sessions never touched. Benchmarked 3 variants in bench/aoRow (MT, real thread pool, 1080x720): pre-rotated pattern table (+3.4%), interior/border loop split (+4.1%), combined (+11.4% micro-bench). Applied the combined variant and it SURVIVED the real 32-thread bench: avg_ms 17.85 -> 15.53 (+13.0%), p99 26.97 -> 18.91 (+29.9%), image_mse = 0.00, all frame hashes match. PR opened.
+
+### Confirmed Wins
+  - CalculateAmbientOcclusionV2Row: (1) pre-rotated sample pattern table AO_PRE_ROT[ROTATIONS][VARIATIONS][SAMPLES] built once in CalculateAmbientOcclusionV2Mp with the same float expression (drops 4 mul + 2 add per sample); (2) interior/border split: pixels inside a 64 px margin skip the 4-compare bounds check (guarantee: max |pattern| = 1.243 x pixelRadius<=48 = 59.7 px < 64). perf stat: -20.4% instructions, -12.3% cycles, cache-misses unchanged -> pure compute reduction, zero added memory pressure. Full bench +13.0% avg, image_mse 0.00.
+
+### Why it survived 32 threads (pre-mortem validated)
+  - Only +7 KB read-only shared const table (vs ~15 MB buffer working set); no VLAs, no new indirection/gathers, no extra working set; the interior guarantee is scene-independent (pure geometry), so it transfers to any scene. Same lesson as the blur-loop pending item: zero-memory-pressure compute reductions transfer; anything touching memory layout does not.
+
+### Gotchas recorded for next sessions
+  - The interior split MUST be gated on `width >= 2*AO_MARGIN` (not just rows): for width < 128 the column spans go negative/overlap and corrupt the previous row's pixels (adversarial review found this with a differential test at 50x200; latent bug, never triggers at 1080x720).
+  - "Bit-identical" is approximate: the combined variant lets clang vectorize the 8-sample loop incl. the occlusion reduction (fast-math reassociation), so <=2 ulp diffs on ~10% of pixels (max 1.19e-07). Image-level result: image_mse 0.00.
+  - The AO init flag in CalculateAmbientOcclusionV2Mp is safe only because that function is main-thread-only (verified: single call site ray.c:1099 + test mains).
+  - perf-stat note: `run_perf_stat` runs the bench binary WITHOUT args, so counters aggregate the whole suite; for per-variant counters run `perf stat ... build/bench/<name> <variant>` manually.
+  - bench/ files were deleted after validation per workflow (AO bench harness lives on in tests/AOBench.c, which exercises the real edited path).
+
+### Remaining Hotspots (fresh profile, post-AO)
+  - IntersectBVH 18.2% excl / 36.8% incl, rayTriangle 16.5% excl, RayTraceRowFunc 17.2% excl (structural), rayAABB_inv 7.5%, rayAABB_inv_x2_soa 5.7%, sampleFace 4.6% (fp->int conversion dominated), IntersectBVH_Shadow 2.4% excl / 5.5% incl, SampleEmission 1.3% excl / 5.0% incl.
+  - sampleFace hot lines are cvttss2si conversions + clamps; candidates: reuse (int) conversions across direct+reflection lookups, clamp-free face indexing if u,v provably in range. Image-risky, needs bench with real cubemap.
+  - SampleEmission (incl 5.0%) fans out into RayBoxItersect + RayBoxIntersectV4 + IntersectBVH_Shadow (~2.4% total in those calls); the AABB pre-filter loop there is the vectorization candidate the old TODO list names.

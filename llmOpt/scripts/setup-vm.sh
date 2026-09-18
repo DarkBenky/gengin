@@ -181,7 +181,8 @@ under "$run_root" "$query_file"  || { echo "agent-launch: query_file outside $ru
 under "$run_root" "$usage_file"  || { echo "agent-launch: usage_file outside $run_root" >&2; exit 2; }
 [[ -d "$hermes_home" && -f "$query_file" ]] \
   || { echo "agent-launch: hermes_home or query_file missing" >&2; exit 2; }
-[[ "$model" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "agent-launch: bad model" >&2; exit 2; }
+# Model ids may carry an OpenRouter routing variant suffix (`:floor`, `:free`).
+[[ "$model" =~ ^[A-Za-z0-9._:/-]+$ ]] || { echo "agent-launch: bad model" >&2; exit 2; }
 
 # Secrets arrive through the preserved environment (sudoers env_keep), never
 # via argv.
