@@ -65,7 +65,9 @@ Rules:
   group-readable by the agent, which could then mint unlimited keys.
 - Per-session inference keys are created at session start and deleted at the
   end — nothing to manage, no plaintext copy anywhere.
-- The same file feeds both systemd (`EnvironmentFile=`) and the tmux launcher.
+- The same file feeds both systemd (`EnvironmentFile=`) and the tmux launcher
+  (passed via stdin — never on a command line, which `ps` exposes to every
+  local user).
 
 ## Tools (18)
 

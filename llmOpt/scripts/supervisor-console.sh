@@ -16,8 +16,6 @@ set -euo pipefail
 
 SECRETS=/etc/gengin-llmopt/secrets.env
 [[ -f "$SECRETS" ]] || { echo "error: missing $SECRETS" >&2; exit 1; }
-OPENROUTER_MANAGEMENT_KEY="$(sed -n 's/^OPENROUTER_MANAGEMENT_KEY=//p' "$SECRETS" | head -1)"
-GITHUB_TOKEN="$(sed -n 's/^GITHUB_TOKEN=//p' "$SECRETS" | head -1)"
 
 CHECKOUT=/opt/gengin
 cd "$CHECKOUT"
@@ -27,7 +25,19 @@ echo "checkout: $CHECKOUT"
 echo "(Ctrl-b d detaches; stopping this pane stops the loop)"
 echo
 
-exec sudo -H -u llmopt-supervisor env \
-  OPENROUTER_MANAGEMENT_KEY="$OPENROUTER_MANAGEMENT_KEY" \
-  GITHUB_TOKEN="$GITHUB_TOKEN" \
-  bash -c 'umask 0007; exec /usr/bin/python3 llmOpt/supervisor.py run'
+# Secrets are fed through stdin, never through argv or the environment of any
+# world-readable process: `ps` shows command lines to every local user, and
+# the sandboxed agent must not be able to scrape the management key.
+exec sudo -H -u llmopt-supervisor bash -c '
+  OPENROUTER_MANAGEMENT_KEY=""
+  GITHUB_TOKEN=""
+  while IFS="=" read -r name value; do
+    case "$name" in
+      OPENROUTER_MANAGEMENT_KEY) OPENROUTER_MANAGEMENT_KEY="$value" ;;
+      GITHUB_TOKEN) GITHUB_TOKEN="$value" ;;
+    esac
+  done
+  export OPENROUTER_MANAGEMENT_KEY GITHUB_TOKEN
+  umask 0007
+  exec /usr/bin/python3 llmOpt/supervisor.py run
+' < "$SECRETS"
