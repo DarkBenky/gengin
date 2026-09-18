@@ -14,9 +14,12 @@ static float sampleDensity(
     float fy = uvw.y * (yRes - 1);
     float fz = uvw.z * (zRes - 1);
 
-    int ix = clamp((int)fx, 0, xRes - 2);
-    int iy = clamp((int)fy, 0, yRes - 2);
-    int iz = clamp((int)fz, 0, zRes - 2);
+    /* clamp((int)x, 0, hi) written as explicit bounds instead of OpenCL
+       clamp() — PoCL lowers the builtin to an external _cl_clamp* runtime
+       call; these branches compile to cmov on x86 (no mispredicts). */
+    int ix = (int)fx; if (ix < 0) ix = 0; else if (ix > xRes - 2) ix = xRes - 2;
+    int iy = (int)fy; if (iy < 0) iy = 0; else if (iy > yRes - 2) iy = yRes - 2;
+    int iz = (int)fz; if (iz < 0) iz = 0; else if (iz > zRes - 2) iz = zRes - 2;
 
     float u = fx - ix, v = fy - iy, w = fz - iz;
 
@@ -28,10 +31,14 @@ static float sampleDensity(
     float d001 = data[base + zStride],                 d101 = data[base + xStride + zStride];
     float d011 = data[base + yStride + zStride],       d111 = data[base + xStride + yStride + zStride];
 
-    return mix(
-        mix(mix(d000, d100, u), mix(d010, d110, u), v),
-        mix(mix(d001, d101, u), mix(d011, d111, u), v),
-        w);
+    /* mix(a,b,t) = a + (b - a) * t, inlined (PoCL extern-calls _cl_mixfff). */
+    float i00 = d000 + (d100 - d000) * u;
+    float i10 = d010 + (d110 - d010) * u;
+    float i01 = d001 + (d101 - d001) * u;
+    float i11 = d011 + (d111 - d011) * u;
+    float j0  = i00 + (i10 - i00) * v;
+    float j1  = i01 + (i11 - i01) * v;
+    return j0 + (j1 - j0) * w;
 }
 
 static float3 shadowMarch(
@@ -154,22 +161,36 @@ __kernel void renderClouds(
     float aspect = (float)screenWidth / (float)screenHeight;
     // rawRay is the unnormalized ray direction (same as CPU ray tracer)
     float3 rawRay = camForward + camRight * (ndcX * aspect * camFov) + camUp * (ndcY * camFov);
-    float rawRayLen = length(rawRay);
+    float rawRayLen = sqrt(rawRay.x*rawRay.x + rawRay.y*rawRay.y + rawRay.z*rawRay.z); /* length() */
     float3 rayDir = rawRay / rawRayLen;
 
     // Transform ray to object local space ([0,1]^3)
     float3 d = camPos - position;
-    float3 localOrigin = (float3)(dot(_invM0, d), dot(_invM1, d), dot(_invM2, d));
-    float3 localDir    = normalize((float3)(dot(_invM0, rayDir), dot(_invM1, rayDir), dot(_invM2, rayDir)));
+    float3 localOrigin = (float3)(_invM0.x*d.x + _invM0.y*d.y + _invM0.z*d.z,
+                                  _invM1.x*d.x + _invM1.y*d.y + _invM1.z*d.z,
+                                  _invM2.x*d.x + _invM2.y*d.y + _invM2.z*d.z);
+    // localDir computed unnormalized, then length() + division (normalize inlined)
+    float3 ld0 = (float3)(_invM0.x*rayDir.x + _invM0.y*rayDir.y + _invM0.z*rayDir.z,
+                          _invM1.x*rayDir.x + _invM1.y*rayDir.y + _invM1.z*rayDir.z,
+                          _invM2.x*rayDir.x + _invM2.y*rayDir.y + _invM2.z*rayDir.z);
+    float invLdLen = 1.0f / sqrt(ld0.x*ld0.x + ld0.y*ld0.y + ld0.z*ld0.z);
+    float3 localDir = ld0 * invLdLen;
     // lightDir points toward the light (same convention as CPU ray tracer)
-    float3 toLight = normalize(lightDir);
-    float3 localLight  = normalize((float3)(dot(_invM0, toLight), dot(_invM1, toLight), dot(_invM2, toLight)));
+    float invTlLen = 1.0f / sqrt(lightDir.x*lightDir.x + lightDir.y*lightDir.y + lightDir.z*lightDir.z);
+    float3 toLight = lightDir * invTlLen;
+    float3 lt0 = (float3)(_invM0.x*toLight.x + _invM0.y*toLight.y + _invM0.z*toLight.z,
+                          _invM1.x*toLight.x + _invM1.y*toLight.y + _invM1.z*toLight.z,
+                          _invM2.x*toLight.x + _invM2.y*toLight.y + _invM2.z*toLight.z);
+    float invLlLen = 1.0f / sqrt(lt0.x*lt0.x + lt0.y*lt0.y + lt0.z*lt0.z);
+    float3 localLight = lt0 * invLlLen;
 
     // Compute scale factor from local-space t to CPU-depth t:
     // CPU depth = dot(hitPos - camPos, unnormRay) = t_worldNorm * rawRayLen
     // local t -> worldNorm t: t_worldNorm = t_local / length(M_inv * rayDir)
-    float3 localDir_unnorm = (float3)(dot(_invM0, rayDir), dot(_invM1, rayDir), dot(_invM2, rayDir));
-    float localToCpuDepth = rawRayLen / length(localDir_unnorm); // converts local t to CPU depth units
+    float3 localDir_unnorm = (float3)(_invM0.x*rayDir.x + _invM0.y*rayDir.y + _invM0.z*rayDir.z,
+                                      _invM1.x*rayDir.x + _invM1.y*rayDir.y + _invM1.z*rayDir.z,
+                                      _invM2.x*rayDir.x + _invM2.y*rayDir.y + _invM2.z*rayDir.z);
+    float localToCpuDepth = rawRayLen / sqrt(localDir_unnorm.x*localDir_unnorm.x + localDir_unnorm.y*localDir_unnorm.y + localDir_unnorm.z*localDir_unnorm.z); // converts local t to CPU depth units
 
     // Convert scene depth to local-space t for clipping
     float sceneCpuDepth = sceneDepth[idx];
@@ -179,15 +200,18 @@ __kernel void renderClouds(
     float3 invDir = 1.0f / localDir;
     float3 t0 = (-0.5f - localOrigin) * invDir;
     float3 t1 = ( 0.5f - localOrigin) * invDir;
-    float tEntry = fmax(fmax(fmin(t0.x, t1.x), fmin(t0.y, t1.y)), fmin(t0.z, t1.z));
-    float tExit  = fmin(fmin(fmax(t0.x, t1.x), fmax(t0.y, t1.y)), fmax(t0.z, t1.z));
+    /* fmin/fmax inlined (handles NaN-lenient value selection the same way) */
+    float teA = (t0.x < t1.x) ? t0.x : t1.x, teB = (t0.y < t1.y) ? t0.y : t1.y, teC = (t0.z < t1.z) ? t0.z : t1.z;
+    float ta  = (teA > teB) ? teA : teB; float tEntry = (ta > teC) ? ta : teC;
+    float txA = (t0.x > t1.x) ? t0.x : t1.x, txB = (t0.y > t1.y) ? t0.y : t1.y, txC = (t0.z > t1.z) ? t0.z : t1.z;
+    float ttA = (txA < txB) ? txA : txB; float tExit = (ttA < txC) ? ttA : txC;
 
     if (tExit <= tEntry || tExit < 0.0f) {
         output[idx] = (float4)(0.0f, 0.0f, 0.0f, 1.0f); // no cloud hit: transmittance=1 (fully transparent)
         return;
     }
-    tEntry = fmax(tEntry, 0.0f);
-    tExit  = fmin(tExit, tDepth); // clip against scene geometry
+    tEntry = (tEntry > 0.0f) ? tEntry : 0.0f;
+    tExit  = (tExit < tDepth) ? tExit : tDepth; // clip against scene geometry
     if (tExit <= tEntry) {
         output[idx] = (float4)(0.0f, 0.0f, 0.0f, 1.0f); // fully occluded by geometry
         return;
@@ -195,8 +219,9 @@ __kernel void renderClouds(
 
     float stepSize   = (tExit - tEntry) / (float)CLOUD_STEPS;
     // cosTheta between view direction and toward-light: positive = forward scatter (viewer on same side as light)
-    float cosTheta   = -dot(rayDir, toLight);
-    float phase      = min(henyeyGreenstein(cosTheta, scatterG), 4.0f);
+    float cosTheta   = -(rayDir.x*toLight.x + rayDir.y*toLight.y + rayDir.z*toLight.z); /* dot() */
+    float hg = henyeyGreenstein(cosTheta, scatterG);
+    float phase      = (hg < 4.0f) ? hg : 4.0f; /* min(), hoisted to avoid double pow() */
     float3 transmittance = (float3)(1.0f, 1.0f, 1.0f);
     float3 scattered = (float3)(0.0f, 0.0f, 0.0f);
 
@@ -210,18 +235,22 @@ __kernel void renderClouds(
 
         float3 extinction     = dens * extinctionScale;
         float3 sampleTransmit = exp(-extinction * stepSize);
-        float3 shadowLight    = fmax(ambientLight, shadowMarch(buf, localPos, localLight, shadowDist, shadowExtinction));
+        /* fmax(ambientLight, shadowMarch) component-wise element min/max */
+        float3 sm = shadowMarch(buf, localPos, localLight, shadowDist, shadowExtinction);
+        float3 shadowLight = (float3)((ambientLight.x > sm.x) ? ambientLight.x : sm.x,
+                                      (ambientLight.y > sm.y) ? ambientLight.y : sm.y,
+                                      (ambientLight.z > sm.z) ? ambientLight.z : sm.z);
 
         // Energy-conserving single-scatter integral
         float3 luminance = baseColor * (shadowLight * phase);
         scattered += luminance * transmittance * (1.0f - sampleTransmit) / extinction;
 
         transmittance *= sampleTransmit;
-        if (all(transmittance < (float3)(0.005f))) break;
+        if (transmittance.x < 0.005f && transmittance.y < 0.005f && transmittance.z < 0.005f) break; /* all() */
     }
 
     // store luminance transmittance in .w for compositing; background * T + scattered per channel
-    float lumT = dot(transmittance, (float3)(0.2126f, 0.7152f, 0.0722f));
+    float lumT = transmittance.x * 0.2126f + transmittance.y * 0.7152f + transmittance.z * 0.0722f; /* dot() */
     output[idx] = (float4)(scattered.x, scattered.y, scattered.z, lumT);
 }
 
