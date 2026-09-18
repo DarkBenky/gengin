@@ -9,7 +9,7 @@
 #include "../render.h"
 #include "./AO.h"
 
-#define REFLECTION_RESOLUTION 4 // 1 = full, 2 = half, 4 = quarter, etc.
+#define REFLECTION_RESOLUTION 8 // 1 = full, 2 = half, 4 = quarter, 8 = eighth, etc.
 #define BLUR_RADIUS 3
 #define TOP_EMISSIVE_OBJECTS 3 // only consider the top N closest emissive objects for reflections to save ray casts
 #define NORMAL_MAP_STRENGTH 2   // tangent-space normal map intensity multiplier
