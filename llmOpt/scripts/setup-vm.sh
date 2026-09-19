@@ -58,6 +58,7 @@ esac
 
 [[ -d "$CHECKOUT" ]] || die "checkout not found: $CHECKOUT"
 [[ -f "$CHECKOUT/llmOpt/requirements-mcp.txt" ]] || die "not a gengin checkout: $CHECKOUT"
+log "provisioning checkout: $CHECKOUT"
 
 # --- packages ---------------------------------------------------------------
 log "installing packages"
@@ -329,11 +330,13 @@ if [[ "$SKIP_PERF" -eq 0 ]]; then
 fi
 
 # --- bot git identity (agent) ----------------------------------------------
+# sudo -H is required: otherwise HOME stays /root, so `git config --global`
+# writes nowhere and the ~/.ssh expansion points into root's home.
 log "configuring bot git identity for llmopt-agent"
-sudo -u llmopt-agent git config --global user.name "gengin-llmopt" 2>/dev/null || true
-sudo -u llmopt-agent git config --global user.email "gengin-llmopt@users.noreply.github.com" 2>/dev/null || true
+sudo -H -u llmopt-agent git config --global user.name "gengin-llmopt" 2>/dev/null || true
+sudo -H -u llmopt-agent git config --global user.email "gengin-llmopt@users.noreply.github.com" 2>/dev/null || true
 # SSH host checking must stay on; never set StrictHostKeyChecking=no.
-sudo -u llmopt-agent mkdir -p ~/.ssh && sudo -u llmopt-agent chmod 700 ~/.ssh 2>/dev/null || true
+sudo -H -u llmopt-agent install -d -m 700 /home/llmopt-agent/.ssh
 
 log "provisioning complete"
 log "next steps:"
