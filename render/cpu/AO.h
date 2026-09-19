@@ -131,33 +131,6 @@ static inline uint32_t fastHash(int x, int y)
     return h;
 }
 
-// Pre-rotated sample patterns: AO_PRE_ROT[r][v][k] = rotate(SAMPLES_PATTERN[v][k],
-// ROTATION_TABLE[r]). Built once by AO_BuildPreRotatedPatterns() using the exact
-// float expression the per-pixel loop used, so results stay identical (<=2 ulp,
-// fast-math reassociation) while the hot loop drops 4 multiplies + 2 adds per sample.
-static float2 AO_PRE_ROT[ROTATIONS][VARIATIONS][SAMPLES];
-
-static void AO_BuildPreRotatedPatterns(void) {
-	for (int r = 0; r < ROTATIONS; r++) {
-		const float ca = ROTATION_TABLE[r].x;
-		const float sa = ROTATION_TABLE[r].y;
-		for (int v = 0; v < VARIATIONS; v++) {
-			for (int k = 0; k < SAMPLES; k++) {
-				const float sx = SAMPLES_PATTERN[v][k].x;
-				const float sy = SAMPLES_PATTERN[v][k].y;
-				AO_PRE_ROT[r][v][k].x = sx * ca - sy * sa;
-				AO_PRE_ROT[r][v][k].y = sx * sa + sy * ca;
-			}
-		}
-	}
-}
-
-// Max |pattern[k]| over all 8x8 samples is 1.243 and pixelRadius is clamped to 48,
-// so the largest sample offset is 1.243*48 = 59.7 px. AO_MARGIN = 64 guarantees every
-// sample of a pixel inside [AO_MARGIN, w-AO_MARGIN) x [AO_MARGIN, h-AO_MARGIN) lands
-// in bounds -> the bounds checks can be skipped there.
-#define AO_MARGIN 64
-
 static void CalculateAmbientOcclusion(Camera *camera) {
 	// TODO: Apply blur pass
 	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
@@ -365,69 +338,6 @@ static void CalculateAmbientOcclusionRow(void *arg) {
 	}
 }
 
-__attribute__((always_inline)) static inline void AO_V2Row_Pixel(
-	Camera *restrict camera, const int row, const int j, const int width, const int height,
-	const float focalLengthPixels, const float bias2, const float worldRadius2,
-	const float invWorldRadius, const float worldRadius,
-	const int INTERIOR_ROW, const int INTERIOR_COL)
-{
-	const int idx = row * width + j;
-
-	if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) {
-		camera->ambientOcclusionBuffer[idx] = 1.0f;
-		return;
-	}
-
-	float3 normal = camera->normalBuffer[idx];
-	float3 position = camera->positionBuffer[idx];
-	float viewDepth = camera->depthBuffer[idx];
-
-	float pixelRadius = (focalLengthPixels * worldRadius) / viewDepth;
-	pixelRadius = Clamp(pixelRadius, 2.0f, 48.0f);
-
-	uint32_t h = fastHash(row, j);
-	const float2 *pattern = AO_PRE_ROT[(h >> 3) & (ROTATIONS - 1)][h % VARIATIONS];
-
-	float occlusion = 0.0f;
-	int validSamples = 0;
-
-	for (int k = 0; k < SAMPLES; k++) {
-		const float rx = pattern[k].x;
-		const float ry = pattern[k].y;
-
-		float sampleX = j + rx * pixelRadius;
-		float sampleY = row + ry * pixelRadius;
-
-		if (!INTERIOR_ROW || !INTERIOR_COL) {
-			if (sampleX < 0 || sampleX >= width ||
-				sampleY < 0 || sampleY >= height) {
-				continue;
-			}
-		}
-
-		int sampleIndex = (int)sampleY * width + (int)sampleX;
-
-		if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
-			continue;
-		}
-
-		float3 samplePos = camera->positionBuffer[sampleIndex];
-		float3 dir = Float3_Sub(samplePos, position);
-		float nd = Float3_Dot(normal, dir);
-		if (nd <= 0.0f) continue;
-
-		float dist2 = Float3_Dot(dir, dir);
-		if (dist2 < bias2 || dist2 > worldRadius2) continue;
-
-		float dist = sqrtf(dist2);
-		occlusion += (nd / dist) * (1.0f - dist * invWorldRadius);
-		validSamples++;
-	}
-
-	float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
-	camera->ambientOcclusionBuffer[idx] = ao;
-}
-
 static void CalculateAmbientOcclusionV2Row(void *arg) {
 	AmbientOcclusionTask *restrict task = arg;
 	Camera *restrict camera = task->camera;
@@ -443,24 +353,73 @@ static void CalculateAmbientOcclusionV2Row(void *arg) {
 	const float invWorldRadius = 1.0f / worldRadius;
 
 	for (int row = task->row; row < endRow; row++) {
-		// Interior path needs width >= 2*AO_MARGIN so the three column spans
-		// [0,M) / [M,w-M) / [w-M,w) never overlap or go negative.
-		const int interiorRow = (width >= 2 * AO_MARGIN) &&
-		                        (row >= AO_MARGIN && row < height - AO_MARGIN);
-		if (interiorRow) {
-			for (int j = 0; j < AO_MARGIN; j++)
-				AO_V2Row_Pixel(camera, row, j, width, height, focalLengthPixels,
-				               bias2, worldRadius2, invWorldRadius, worldRadius, 1, 0);
-			for (int j = AO_MARGIN; j < width - AO_MARGIN; j++)
-				AO_V2Row_Pixel(camera, row, j, width, height, focalLengthPixels,
-				               bias2, worldRadius2, invWorldRadius, worldRadius, 1, 1);
-			for (int j = width - AO_MARGIN; j < width; j++)
-				AO_V2Row_Pixel(camera, row, j, width, height, focalLengthPixels,
-				               bias2, worldRadius2, invWorldRadius, worldRadius, 1, 0);
-		} else {
-			for (int j = 0; j < width; j++)
-				AO_V2Row_Pixel(camera, row, j, width, height, focalLengthPixels,
-				               bias2, worldRadius2, invWorldRadius, worldRadius, 0, 0);
+		for (int j = 0; j < width; j++) {
+			const int idx = row * width + j;
+
+			if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) {
+				camera->ambientOcclusionBuffer[idx] = 1.0f;
+				continue;
+			}
+
+			float3 normal = camera->normalBuffer[idx];
+			float3 position = camera->positionBuffer[idx];
+			float viewDepth = camera->depthBuffer[idx];
+
+			float pixelRadius = (focalLengthPixels * worldRadius) / viewDepth;
+			pixelRadius = Clamp(pixelRadius, 2.0f, 48.0f);
+
+			uint32_t h = fastHash(row, j);
+			const float2 rotation = ROTATION_TABLE[(h >> 3) & (ROTATIONS - 1)];
+			float ca = rotation.x, sa = rotation.y;
+
+			float occlusion = 0.0f;
+			int validSamples = 0;
+
+			const float2 *pattern = SAMPLES_PATTERN[h % VARIATIONS];
+
+			for (int k = 0; k < SAMPLES; k++) {
+				float sx = pattern[k].x;
+				float sy = pattern[k].y;
+				float rx = sx * ca - sy * sa;
+				float ry = sx * sa + sy * ca;
+
+				float sampleX = j + rx * pixelRadius;
+				float sampleY = row + ry * pixelRadius;
+
+				if (sampleX < 0 || sampleX >= width ||
+					sampleY < 0 || sampleY >= height) {
+					continue;
+				}
+
+				int sampleIndex = (int)sampleY * width + (int)sampleX;
+
+				if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
+					continue;
+				}
+
+				float3 samplePos = camera->positionBuffer[sampleIndex];
+				float3 dir = Float3_Sub(samplePos, position);
+				float nd = Float3_Dot(normal, dir);
+				if (nd <= 0.0f) continue;
+
+				float dist2 = Float3_Dot(dir, dir);
+				if (dist2 < bias2 || dist2 > worldRadius2) continue;
+
+				float dist = sqrtf(dist2);
+				occlusion += (nd / dist) * (1.0f - dist * invWorldRadius);
+				validSamples++;
+			}
+
+			float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			camera->ambientOcclusionBuffer[idx] = ao;
+
+			// float3 baseColor = UnpackColor(camera->framebuffer[idx]);
+
+			// baseColor.x = baseColor.x * ao;
+			// baseColor.y = baseColor.y * ao;
+			// baseColor.z = baseColor.z * ao;
+
+			// camera->framebuffer[idx]= PackColorF(baseColor);
 		}
 	}
 }
@@ -486,13 +445,6 @@ static void CalculateAmbientOcclusionV2Mp(Camera *camera, ThreadPool *threadPool
 	// TODO: Apply blur pass
 	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
-
-	// Main-thread-only entry point: build the pre-rotated AO sample patterns once.
-	static int aoPreRotReady = 0;
-	if (!aoPreRotReady) {
-		AO_BuildPreRotatedPatterns();
-		aoPreRotReady = 1;
-	}
 
 	const int height = camera->screenHeight;
 	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
