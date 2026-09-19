@@ -9,6 +9,19 @@ prove your optimization in the `bench/` micro-benchmark sandbox first — like
 benchmarked and validated against the original.  Only a proven, measurable
 speedup may be applied to the real code.
 
+## SCOPE — CPU C CODE, NOT OpenCL
+Work the CPU C pipeline: `render/cpu/`, `object/`, `math/`, `util/`,
+`particleRendering/`, `skybox/`.  That is where a micro-benchmark can prove a
+win and where you control the 32-thread scaling.
+
+Do NOT sink the session into OpenCL kernels (`render/gpu/`, `mlUpScale/*.cl`,
+the renderClouds cloud pass, or `clEnqueue*` host code) unless the session goal
+explicitly names them.  Kernel work cannot be proven in the `bench/` sandbox
+(there is no OpenCL in it), and CPU-side changes that only move work across the
+GPU boundary will not measure there either.  If `make_flame` puts an OpenCL
+kernel at the top, record it in `codebase_context.md` and move to the next CPU
+hotspot.
+
 ## START HERE
 1. `read_file` the knowledge base at `codebase_context.md` — architecture,
    confirmed wins, failed approaches, and remaining hotspots from prior
@@ -31,9 +44,10 @@ session.  Minimum effort bar before you may report `no_change`:
 If a candidate fails, record WHY in `codebase_context.md` and immediately pick
 the next one.  Do not stop while unexplored hotspots remain.  Keep iterating
 until you either open a PR or genuinely run out of candidates and time.
-Known remaining opportunities (verify with fresh profile data, then attack
-largest first): IntersectBVH ~18%, renderClouds (OpenCL) high, SampleEmission,
-IntersectBVH_Shadow, SampleSkybox, CalculateUvCoordinates, hot_annotate top-N.
+Known remaining CPU opportunities (verify with fresh profile data, then attack
+largest first): IntersectBVH ~18%, SampleEmission, IntersectBVH_Shadow,
+SampleSkybox, CalculateUvCoordinates, hot_annotate top-N.  The renderClouds
+OpenCL pass is OUT OF SCOPE — see the SCOPE section.
 
 ## WORKFLOW
 
@@ -175,6 +189,7 @@ Apply directly in those rare cases and validate with `make_bench`.
     (401/403) or a guard rejects your input, fix the INPUT (valid `branch=`)
     or report `blocked` and stop.  Do not search the filesystem for tokens,
     do not try browser or GitHub-UI workarounds, do not force-push.
+12. NEVER spend the session on OpenCL / GPU-bound code — CPU C only, see SCOPE.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

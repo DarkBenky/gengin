@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] Add to agent prompt specific part that model should focus mainly on c part not open cl
+- [X] Add to agent prompt specific part that model should focus mainly on c part not open cl
 - [X] Add to agent prompt specific part of trying to inject ```restrict``` so compiler can be more aggressive and also add focus on alignment of strict for minimal cache misses
 - [ ] **high** Ambient Occlusion
   - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
