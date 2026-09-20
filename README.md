@@ -1,11 +1,12 @@
 # Tasks
 
+- [ ] Add debug build that enables to check the output of each buffer
 - [X] Add to agent prompt specific part that model should focus mainly on c part not open cl
 - [X] Add to agent prompt specific part of trying to inject ```restrict``` so compiler can be more aggressive and also add focus on alignment of strict for minimal cache misses
 - [ ] **high** Ambient Occlusion
   - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
     - [ ] Write test of each implementation
-    - [ ] implement blur pass + implement to main render pipline
+    - [ ] implement blur pass + implement to main render pipeline
 
 - [ ] **high** Overlap AO with the GPU cloud pass instead of running it inside RayTraceScene
   - [ ] Do not just delete the poolWait in RayTraceScene: the pool ring is sized WIDTH (1080) and 720 ray + 720 AO rows overflow it, silently dropping rows.
@@ -34,6 +35,7 @@
   - [ ] **low** test other algorithms like FSR2 ...
   - [ ] **low** try to implement own fsr2 like alogo
     - [ ] **low** create motion vectors
+    - [ ] **low** train model in pytorch and create open cl / c lib for loading and using cnn kernels / networks
 
 - [ ] **high** test if we can improve guidance
   - [ ] test lowering the dt for simulation when close to target
