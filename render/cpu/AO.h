@@ -2,6 +2,7 @@
 #include "../../math/vector3.h"
 #include "../../util/threadPool.h"
 #include "../color/color.h"
+#include <immintrin.h>
 #include <stdbool.h>
 
 #define MAX_FLOAT 3.402823466e+38F
@@ -424,6 +425,118 @@ static void CalculateAmbientOcclusionV2Row(void *arg) {
 	}
 }
 
+static void CalculateAmbientOcclusionV3Row(void *arg) {
+	AmbientOcclusionTask *restrict task = arg;
+	Camera *restrict camera = task->camera;
+
+	const int width = camera->screenWidth;
+	const int height = camera->screenHeight;
+	const int endRow = task->row + task->rows;
+	const float focalLengthPixels = (height * 0.5f) / camera->fovScale;
+	const float worldRadius = 20.5f;
+	const float bias = worldRadius * 0.02f;
+	const float bias2 = bias * bias;
+	const float worldRadius2 = worldRadius * worldRadius;
+	const float invWorldRadius = 1.0f / worldRadius;
+
+	for (int row = task->row; row < endRow; row++) {
+		const int rowBase = row * width;
+
+		// One SIMD sky test per 8-pixel block; the mask steers the whole block:
+		// all sky -> vector fill, mixed -> lanes kept, geometry lanes run the body.
+		for (int j = 0; j < width; j += 8) {
+			const int idx = rowBase + j;
+			const int lanes = (width - j < 8) ? width - j : 8;
+			unsigned skyMask;
+
+			if (lanes == 8) {
+				__m256 vals = _mm256_loadu_ps(&camera->depthBuffer[idx]);
+				__m256 gt = _mm256_cmp_ps(vals, _mm256_set1_ps(DEPTH_FAR), _CMP_GE_OQ);
+				__m256 lt = _mm256_cmp_ps(vals, _mm256_setzero_ps(), _CMP_LE_OQ);
+				skyMask = (unsigned)_mm256_movemask_ps(_mm256_or_ps(gt, lt));
+
+				if (skyMask == 0xFFu) {
+					_mm256_storeu_ps(&camera->ambientOcclusionBuffer[idx], _mm256_set1_ps(1.0f));
+					continue;
+				}
+			} else {
+				skyMask = 0;
+				for (int t = 0; t < lanes; t++) {
+					const float d = camera->depthBuffer[idx + t];
+					if (d >= DEPTH_FAR || d <= 0.0f) skyMask |= 1u << t;
+				}
+			}
+
+			for (int lane = 0; lane < lanes; lane++) {
+				if (skyMask & (1u << lane)) {
+					camera->ambientOcclusionBuffer[idx + lane] = 1.0f;
+					continue;
+				}
+
+				const int px = j + lane;
+				const int pidx = idx + lane;
+
+				float3 normal = camera->normalBuffer[pidx];
+				float3 position = camera->positionBuffer[pidx];
+				float viewDepth = camera->depthBuffer[pidx];
+
+				float pixelRadius = (focalLengthPixels * worldRadius) / viewDepth;
+				pixelRadius = Clamp(pixelRadius, 2.0f, 48.0f);
+
+				uint32_t h = fastHash(row, px);
+				const float2 rotation = ROTATION_TABLE[(h >> 3) & (ROTATIONS - 1)];
+				float ca = rotation.x, sa = rotation.y;
+
+				float occlusion = 0.0f;
+				int validSamples = 0;
+
+				const float2 *pattern = SAMPLES_PATTERN[h % VARIATIONS];
+
+				for (int k = 0; k < SAMPLES; k++) {
+					float sx = pattern[k].x;
+					float sy = pattern[k].y;
+					float rx = sx * ca - sy * sa;
+					float ry = sx * sa + sy * ca;
+
+					float sampleX = px + rx * pixelRadius;
+					float sampleY = row + ry * pixelRadius;
+
+					if (sampleX < 0 || sampleX >= width ||
+						sampleY < 0 || sampleY >= height) {
+						continue;
+					}
+
+					int sampleIndex = (int)sampleY * width + (int)sampleX;
+
+					if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
+						continue;
+					}
+
+					float3 samplePos = camera->positionBuffer[sampleIndex];
+					float3 dir = Float3_Sub(samplePos, position);
+					float nd = Float3_Dot(normal, dir);
+					if (nd <= 0.0f) continue;
+
+					float dist2 = Float3_Dot(dir, dir);
+					if (dist2 < bias2 || dist2 > worldRadius2) continue;
+
+					float dist = sqrtf(dist2);
+					occlusion += (nd / dist) * (1.0f - dist * invWorldRadius);
+					validSamples++;
+				}
+
+				float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+				camera->ambientOcclusionBuffer[pidx] = ao;
+			}
+		}
+	}
+}
+
+static void CalculateAmbientOcclusionV3(Camera *camera) {
+	AmbientOcclusionTask task = {0, camera->screenHeight, camera};
+	CalculateAmbientOcclusionV3Row(&task);
+}
+
 static void CalculateAmbientOcclusionMp(Camera *camera, ThreadPool *threadPool) {
 	// TODO: Apply blur pass
 	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
@@ -454,6 +567,23 @@ static void CalculateAmbientOcclusionV2Mp(Camera *camera, ThreadPool *threadPool
 		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
 		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
 		poolAdd(threadPool, CalculateAmbientOcclusionV2Row, &tasks[t]);
+	}
+	poolWait(threadPool);
+}
+
+static void CalculateAmbientOcclusionV3Mp(Camera *camera, ThreadPool *threadPool) {
+	// TODO: Apply blur pass
+	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
+	if (!camera || !threadPool) return;
+
+	const int height = camera->screenHeight;
+	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	AmbientOcclusionTask tasks[taskCount];
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * ROWS_PER_TASK;
+		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
+		poolAdd(threadPool, CalculateAmbientOcclusionV3Row, &tasks[t]);
 	}
 	poolWait(threadPool);
 }

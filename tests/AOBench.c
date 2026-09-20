@@ -56,11 +56,14 @@ int main(void) {
 	ThreadPool *pool = poolCreate(ncpu > 1 ? (int)ncpu - 1 : 1, HEIGHT);
 
 	float timesSt[SAMPLES], timesMp[SAMPLES], timesV2St[SAMPLES], timesV2Mp[SAMPLES];
+	float timesV3St[SAMPLES], timesV3Mp[SAMPLES];
 
 	CalculateAmbientOcclusion(&camera);
 	CalculateAmbientOcclusionMp(&camera, pool);
 	CalculateAmbientOcclusionV2(&camera);
 	CalculateAmbientOcclusionV2Mp(&camera, pool);
+	CalculateAmbientOcclusionV3(&camera);
+	CalculateAmbientOcclusionV3Mp(&camera, pool);
 
 	for (int s = 0; s < SAMPLES; s++) {
 		struct timespec t0, t1;
@@ -98,10 +101,30 @@ int main(void) {
 		             + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
+	for (int s = 0; s < SAMPLES; s++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		CalculateAmbientOcclusionV3(&camera);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timesV3St[s] = (float)(t1.tv_sec - t0.tv_sec)
+		             + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+
+	for (int s = 0; s < SAMPLES; s++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		CalculateAmbientOcclusionV3Mp(&camera, pool);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timesV3Mp[s] = (float)(t1.tv_sec - t0.tv_sec)
+		             + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+
 	PerformanceMetrics mSt = ComputePerformanceMetrics(timesSt, SAMPLES);
 	PerformanceMetrics mMps = ComputePerformanceMetrics(timesMp, SAMPLES);
 	PerformanceMetrics mV2St = ComputePerformanceMetrics(timesV2St, SAMPLES);
 	PerformanceMetrics mV2Mp = ComputePerformanceMetrics(timesV2Mp, SAMPLES);
+	PerformanceMetrics mV3St = ComputePerformanceMetrics(timesV3St, SAMPLES);
+	PerformanceMetrics mV3Mp = ComputePerformanceMetrics(timesV3Mp, SAMPLES);
 
 	printf("=== AOBench: AO over %dx%d, %d samples ===\n",
 	       WIDTH, HEIGHT, SAMPLES);
@@ -115,6 +138,11 @@ int main(void) {
 	printf("V2 Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
 	       mV2Mp.averageTime * 1e3f, mV2Mp.medianTime * 1e3f, mV2Mp.p99Time * 1e3f,
 	       mV2St.medianTime / mV2Mp.medianTime);
+	printf("V3 Single avg=%.3fms  median=%.3fms  p99=%.3fms\n",
+	       mV3St.averageTime * 1e3f, mV3St.medianTime * 1e3f, mV3St.p99Time * 1e3f);
+	printf("V3 Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
+	       mV3Mp.averageTime * 1e3f, mV3Mp.medianTime * 1e3f, mV3Mp.p99Time * 1e3f,
+	       mV3St.medianTime / mV3Mp.medianTime);
 
 	// V2's random rotation makes per-pixel AO differ by design; only check
 	// that V2 self-agrees ST vs MP, and V1 MP matches V1 ST.
@@ -133,6 +161,31 @@ int main(void) {
 			mismatches++;
 		}
 	}
+
+	// V3 is V2's math plus the all-sky chunk skip, so both V3 paths must
+	// reproduce V2 ST bit-for-bit (skipped pixels get the same 1.0).
+	int v3Mismatches = 0;
+	CalculateAmbientOcclusionV3(&camera);
+	for (int i = 0; i < WIDTH * HEIGHT; i++) {
+		if (fabsf(camera.tempBuffer_1[i] - camera.ambientOcclusionBuffer[i]) > 1e-4f) {
+			if (v3Mismatches < 5)
+				printf("V3 ST MISMATCH at %d: %.5f vs %.5f\n", i,
+				       camera.tempBuffer_1[i], camera.ambientOcclusionBuffer[i]);
+			v3Mismatches++;
+		}
+	}
+	CalculateAmbientOcclusionV3Mp(&camera, pool);
+	for (int i = 0; i < WIDTH * HEIGHT; i++) {
+		if (fabsf(camera.tempBuffer_1[i] - camera.ambientOcclusionBuffer[i]) > 1e-4f) {
+			if (v3Mismatches < 5)
+				printf("V3 MP MISMATCH at %d: %.5f vs %.5f\n", i,
+				       camera.tempBuffer_1[i], camera.ambientOcclusionBuffer[i]);
+			v3Mismatches++;
+		}
+	}
+	if (v3Mismatches)
+		printf("V3 CORRECTNESS FAIL: %d mismatching pixels\n", v3Mismatches);
+	mismatches += v3Mismatches;
 
 	CalculateAmbientOcclusion(&camera);
 	CalculateAmbientOcclusionMp(&camera, pool);
