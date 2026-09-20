@@ -79,6 +79,33 @@ if [[ -n "$PRESET" && ${#MODEL_ARGS[@]} -eq 0 ]]; then
   esac
 fi
 
+# --- best-effort harness self-update ---------------------------------------
+# Keep the Hermes Agent checkout at origin/main: a cheap `update --check` on
+# every launch, the full update only when commits are pending. Never fatal —
+# a failed or slow update leaves the current version in place.
+# GENGIN_SKIP_HARNESS_UPDATE=1 disables; GENGIN_HARNESS_UPDATE_TIMEOUT (seconds).
+maybe_update_hermes() {
+  [[ "${GENGIN_SKIP_HARNESS_UPDATE:-0}" == "1" ]] && return 0
+  command -v hermes >/dev/null 2>&1 || return 0
+  local log out budget
+  log="${HERMES_HOME:-$HERMES_DIR}/harness-update.log"
+  [[ -w "${log%/*}" ]] || log="/tmp/gengin-harness-update.log"
+  out="$(timeout 120 hermes update --check 2>&1)" || true
+  printf '%s\n' "$out" >>"$log" 2>/dev/null || true
+  case "$out" in
+    *"Update available"*|*"commits behind"*) ;;
+    *) return 0 ;;
+  esac
+  echo "[harness] update available — installing the latest Hermes Agent (log: $log)"
+  budget="${GENGIN_HARNESS_UPDATE_TIMEOUT:-420}"
+  if timeout "$budget" hermes update --yes >>"$log" 2>&1; then
+    echo "[harness] Hermes Agent updated"
+  else
+    echo "[harness] warning: harness update failed — continuing with the current version (log: $log)" >&2
+  fi
+  return 0
+}
+
 # --- supervised mode (launched by the supervisor, not a human) -------------
 # Requires OPENROUTER_API_KEY in the inherited environment (the temporary
 # capped key). Never reads KEY= from llmOpt/.env and never writes the key to
@@ -114,6 +141,7 @@ if [[ "$SUPERVISED" -eq 1 ]]; then
   echo "usage:       $USAGE_FILE_ARG"
   echo
   cd "$LLMOPT_DIR"
+  maybe_update_hermes
   # No exec: the supervisor owns the process group and needs a stable wrapper
   # to reap the child and preserve its exit code.
   HERMES_HOME="$HERMES_HOME_RESOLVED" hermes -z "$(cat "$QUERY_FILE_ARG")" --yolo \
@@ -195,6 +223,8 @@ if ! perf stat -e cycles true >/dev/null 2>&1; then
     echo "note: perf counters blocked — run $SCRIPT_DIR/enable-perf.sh once (needs sudo)" >&2
   fi
 fi
+
+maybe_update_hermes
 
 echo "=== gengin optimizer (Hermes) ==="
 echo "HERMES_HOME: $HERMES_DIR"

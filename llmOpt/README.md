@@ -26,6 +26,15 @@ annotation, bisection, and clangd queries.
 The launcher loads `prompts/optimize.md` as the session query; switch models
 in-session with `/model custom:local:Qwen3.8-27B`.
 
+### Harness updates
+
+Each launch keeps the Hermes Agent checkout at `origin/main`: a quick
+`hermes update --check` (a plain `git fetch`), and the full update when commits
+are pending — both best-effort, before the session starts.  Failures log to
+`<HERMES_HOME>/harness-update.log` (fallback `/tmp/gengin-harness-update.log`)
+and never block a session.  `GENGIN_SKIP_HARNESS_UPDATE=1` disables the
+auto-update; `GENGIN_HARNESS_UPDATE_TIMEOUT` (seconds, default 420) bounds it.
+
 ## Changing keys
 
 ### Local (this machine)
