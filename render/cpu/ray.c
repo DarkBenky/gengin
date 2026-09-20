@@ -642,6 +642,28 @@ static void RayTraceRowFunc(void *arg) {
 		}
 	}
 
+	// Previous-frame forward rotation rows, hoisted out of the pixel loop.
+	// The motion-vector transform used to call TransformPointTRS(), which evaluates
+	// 6 sinf/cosf per call -> 12 transcendental calls per geometry pixel. These are
+	// the same expressions Object_UpdateWorldBounds() caches as _fwdRot0/1/2, built
+	// once per row task instead of once per pixel.
+	float motPrevRot[objectCount][9];
+	for (int i = 0; i < objectCount; i++) {
+		const float3 pr = objects[i].prevRotation;
+		const float psx = sinf(pr.x), pcx = cosf(pr.x);
+		const float psy = sinf(pr.y), pcy = cosf(pr.y);
+		const float psz = sinf(pr.z), pcz = cosf(pr.z);
+		motPrevRot[i][0] = pcy * pcz;
+		motPrevRot[i][1] = psx * psy * pcz - pcx * psz;
+		motPrevRot[i][2] = pcx * psy * pcz + psx * psz;
+		motPrevRot[i][3] = pcy * psz;
+		motPrevRot[i][4] = psx * psy * psz + pcx * pcz;
+		motPrevRot[i][5] = pcx * psy * psz - psx * pcz;
+		motPrevRot[i][6] = -psy;
+		motPrevRot[i][7] = psx * pcy;
+		motPrevRot[i][8] = pcx * pcy;
+	}
+
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
 
@@ -930,8 +952,24 @@ static void RayTraceRowFunc(void *arg) {
 
 		// Motion vector: screen-UV delta from previous frame
 		{
-			float3 localPos = InverseTransformPointTRS(bestHitPos, obj->position, obj->rotation, obj->scale);
-			float3 prevWorldPos = TransformPointTRS(localPos, obj->prevPostion, obj->prevRotation, obj->prevScale);
+			// world -> local uses the rotation rows Object_UpdateWorldBounds already
+			// caches (the same rows IntersectBVH uses); local -> previous-frame world
+			// uses the hoisted previous rotation rows. No per-pixel sinf/cosf.
+			const float3 pw = {bestHitPos.x - obj->position.x,
+			                   bestHitPos.y - obj->position.y,
+			                   bestHitPos.z - obj->position.z};
+			const float3 localPos = {
+				obj->_invScale.x * pw.x + obj->_invScale.y * pw.y + obj->_invScale.z * pw.z,
+				obj->_invRotSin.x * pw.x + obj->_invRotSin.y * pw.y + obj->_invRotSin.z * pw.z,
+				obj->_invRotCos.x * pw.x + obj->_invRotCos.y * pw.y + obj->_invRotCos.z * pw.z};
+			const float *pr = motPrevRot[bestObj];
+			const float lpx = localPos.x * obj->prevScale.x;
+			const float lpy = localPos.y * obj->prevScale.y;
+			const float lpz = localPos.z * obj->prevScale.z;
+			const float3 prevWorldPos = {
+				pr[0] * lpx + pr[1] * lpy + pr[2] * lpz + obj->prevPostion.x,
+				pr[3] * lpx + pr[4] * lpy + pr[5] * lpz + obj->prevPostion.y,
+				pr[6] * lpx + pr[7] * lpy + pr[8] * lpz + obj->prevPostion.z};
 			float3 prevToPoint = Float3_Sub(prevWorldPos, prevPos);
 			float prevViewZ = Float3_Dot(prevToPoint, prevFwd);
 			if (prevViewZ > 1e-4f) {
