@@ -13,6 +13,10 @@
 #ifndef ROWS_PER_TASK
 #define ROWS_PER_TASK 2
 #endif
+// Columns handed to one pool task for the column blur; wider bands amortize the strided sweep's cache lines
+#ifndef COLUMNS_PER_TASK
+#define COLUMNS_PER_TASK 16
+#endif
 // TODO: Add option to use lower internal resolution
 
 static const float2 SAMPLES_PATTERN[VARIATIONS][SAMPLES] = {
@@ -95,8 +99,7 @@ static const float2 SAMPLES_PATTERN[VARIATIONS][SAMPLES] = {
 		{0.297f, 0.640f},
 		{-0.913f, -0.089f},
 		{0.048f, 0.352f},
-	}
-};
+	}};
 
 #define ROTATIONS 16
 
@@ -119,17 +122,35 @@ static const float2 ROTATION_TABLE[ROTATIONS] = {
 	{0.923879f, -0.382683f},
 };
 
+#define KERNEL_SIZE 5
+#define KERNEL_SIZE_HALF (KERNEL_SIZE / 2)
+static const float lineKernelvaluse[KERNEL_SIZE] = {
+	0.054488685f,
+	0.244201342f,
+	0.402619947f,
+	0.244201342f,
+	0.054488685f};
+
 static const float INV_VALID[SAMPLES + 1] = {
-	0.0f, 1.0f, 0.5f, 0.333333f, 0.25f, 0.2f, 0.166667f, 0.142857f, 0.125f,
+	0.0f,
+	1.0f,
+	0.5f,
+	0.333333f,
+	0.25f,
+	0.2f,
+	0.166667f,
+	0.142857f,
+	0.125f,
 };
 
-static inline uint32_t fastHash(int x, int y)
-{
-    uint32_t h = (uint32_t)x * 0x9E3779B1u
-               ^ (uint32_t)y * 0x85EBCA67u;
-    h ^= h >> 16; h *= 0x7FEB352Du; h ^= h >> 13;
-    h *= 0x846CA68Bu; h ^= h >> 16;
-    return h;
+static inline uint32_t fastHash(int x, int y) {
+	uint32_t h = (uint32_t)x * 0x9E3779B1u ^ (uint32_t)y * 0x85EBCA67u;
+	h ^= h >> 16;
+	h *= 0x7FEB352Du;
+	h ^= h >> 13;
+	h *= 0x846CA68Bu;
+	h ^= h >> 16;
+	return h;
 }
 
 static void CalculateAmbientOcclusion(Camera *camera) {
@@ -271,8 +292,8 @@ static void CalculateAmbientOcclusionV2(Camera *camera) {
 }
 
 typedef struct {
-	int row;	// first row of the band
-	int rows;	// rows in the band
+	int row;  // first row of the band
+	int rows; // rows in the band
 	Camera *camera;
 } AmbientOcclusionTask;
 
@@ -425,6 +446,110 @@ static void CalculateAmbientOcclusionV2Row(void *arg) {
 	}
 }
 
+static void CalculateAmbientOcclusionV2RowPlus(void *arg) {
+	AmbientOcclusionTask *restrict task = arg;
+	Camera *restrict camera = task->camera;
+
+	const int width = camera->screenWidth;
+	const int height = camera->screenHeight;
+	const int endRow = task->row + task->rows;
+	const float focalLengthPixels = (height * 0.5f) / camera->fovScale;
+	const float worldRadius = 20.5f;
+	const float bias = worldRadius * 0.02f;
+	const float bias2 = bias * bias;
+	const float worldRadius2 = worldRadius * worldRadius;
+	const float invWorldRadius = 1.0f / worldRadius;
+
+	float rowValues[width];
+
+	for (int row = task->row; row < endRow; row++) {
+		for (int j = 0; j < width; j++) {
+			const int idx = row * width + j;
+			const int lineNumber = endRow - row;
+
+			if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) {
+				rowValues[j] = 1.0f;
+				continue;
+			}
+
+			float3 normal = camera->normalBuffer[idx];
+			float3 position = camera->positionBuffer[idx];
+			float viewDepth = camera->depthBuffer[idx];
+
+			float pixelRadius = (focalLengthPixels * worldRadius) / viewDepth;
+			pixelRadius = Clamp(pixelRadius, 2.0f, 48.0f);
+
+			uint32_t h = fastHash(row, j);
+			const float2 rotation = ROTATION_TABLE[(h >> 3) & (ROTATIONS - 1)];
+			float ca = rotation.x, sa = rotation.y;
+
+			float occlusion = 0.0f;
+			int validSamples = 0;
+
+			const float2 *pattern = SAMPLES_PATTERN[h % VARIATIONS];
+
+			for (int k = 0; k < SAMPLES; k++) {
+				float sx = pattern[k].x;
+				float sy = pattern[k].y;
+				float rx = sx * ca - sy * sa;
+				float ry = sx * sa + sy * ca;
+
+				float sampleX = j + rx * pixelRadius;
+				float sampleY = row + ry * pixelRadius;
+
+				if (sampleX < 0 || sampleX >= width ||
+					sampleY < 0 || sampleY >= height) {
+					continue;
+				}
+
+				int sampleIndex = (int)sampleY * width + (int)sampleX;
+
+				if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
+					continue;
+				}
+
+				float3 samplePos = camera->positionBuffer[sampleIndex];
+				float3 dir = Float3_Sub(samplePos, position);
+				float nd = Float3_Dot(normal, dir);
+				if (nd <= 0.0f) continue;
+
+				float dist2 = Float3_Dot(dir, dir);
+				if (dist2 < bias2 || dist2 > worldRadius2) continue;
+
+				float dist = sqrtf(dist2);
+				occlusion += (nd / dist) * (1.0f - dist * invWorldRadius);
+				validSamples++;
+			}
+
+			float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			rowValues[j] = ao;
+
+			// float3 baseColor = UnpackColor(camera->framebuffer[idx]);
+
+			// baseColor.x = baseColor.x * ao;
+			// baseColor.y = baseColor.y * ao;
+			// baseColor.z = baseColor.z * ao;
+
+			// camera->framebuffer[idx]= PackColorF(baseColor);
+		}
+
+		// start from kernel size half and end early to avoid bound checks
+		for (int j = KERNEL_SIZE_HALF; j < width - KERNEL_SIZE_HALF; j++) {
+			const int idx = row * width + j;
+			float sum = 0.0f;
+			for (int k = 0; k < KERNEL_SIZE; k++) {
+				sum += rowValues[j + k - KERNEL_SIZE_HALF] * lineKernelvaluse[k];
+			}
+			camera->ambientOcclusionBuffer[idx] = sum;
+		}
+	}
+}
+
+static void CalculateAmbientOcclusionV2Plus(Camera *camera) {
+	AmbientOcclusionTask task = {0, camera->screenHeight, camera};
+	CalculateAmbientOcclusionV2RowPlus(&task);
+}
+
 static void CalculateAmbientOcclusionV3Row(void *arg) {
 	AmbientOcclusionTask *restrict task = arg;
 	Camera *restrict camera = task->camera;
@@ -532,6 +657,60 @@ static void CalculateAmbientOcclusionV3Row(void *arg) {
 	}
 }
 
+typedef struct {
+	int column;	 // first column of the band
+	int columns; // columns in the band
+	int width;
+	int height;
+	float *image;
+} ColumnBlurTask;
+
+static void ColumnBlurColumns(void *arg) {
+	ColumnBlurTask *restrict task = arg;
+	const int width = task->width;
+	const int height = task->height;
+	const int endColumn = task->column + task->columns;
+	float *restrict image = task->image;
+
+	float colValues[height];
+
+	for (int x = task->column; x < endColumn; x++) {
+		for (int y = 0; y < height; y++) {
+			colValues[y] = image[y * width + x];
+		}
+
+		// start from kernel size half and end early to avoid bound checks
+		for (int y = KERNEL_SIZE_HALF; y < height - KERNEL_SIZE_HALF; y++) {
+			float sum = 0.0f;
+			for (int i = 0; i < KERNEL_SIZE; i++) {
+				sum += colValues[y + i - KERNEL_SIZE_HALF] * lineKernelvaluse[i];
+			}
+			image[y * width + x] = sum;
+		}
+	}
+}
+
+static void columnBlur(int width, int height, float *restrict image) {
+	ColumnBlurTask task = {KERNEL_SIZE_HALF, width - 2 * KERNEL_SIZE_HALF, width, height, image};
+	ColumnBlurColumns(&task);
+}
+
+static void columnBlurMp(int width, int height, float *restrict image, ThreadPool *threadPool) {
+	// Same interior range as columnBlur(): the outer columns hold stale data.
+	const int firstColumn = KERNEL_SIZE_HALF;
+	const int endColumn = width - KERNEL_SIZE_HALF;
+	const int taskCount = (endColumn - firstColumn + COLUMNS_PER_TASK - 1) / COLUMNS_PER_TASK;
+	ColumnBlurTask tasks[taskCount];
+
+	for (int t = 0; t < taskCount; t++) {
+		const int column = firstColumn + t * COLUMNS_PER_TASK;
+		const int columns = endColumn - column < COLUMNS_PER_TASK ? endColumn - column : COLUMNS_PER_TASK;
+		tasks[t] = (ColumnBlurTask){column, columns, width, height, image};
+		poolAdd(threadPool, ColumnBlurColumns, &tasks[t]);
+	}
+	poolWait(threadPool);
+}
+
 static void CalculateAmbientOcclusionV3(Camera *camera) {
 	AmbientOcclusionTask task = {0, camera->screenHeight, camera};
 	CalculateAmbientOcclusionV3Row(&task);
@@ -569,6 +748,65 @@ static void CalculateAmbientOcclusionV2Mp(Camera *camera, ThreadPool *threadPool
 		poolAdd(threadPool, CalculateAmbientOcclusionV2Row, &tasks[t]);
 	}
 	poolWait(threadPool);
+}
+
+static void CalculateAmbientOcclusionV2PlusMp(Camera *camera, ThreadPool *threadPool) {
+	// TODO: Apply blur pass
+	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
+	if (!camera || !threadPool) return;
+
+	const int height = camera->screenHeight;
+	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	AmbientOcclusionTask tasks[taskCount];
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * ROWS_PER_TASK;
+		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
+		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlus, &tasks[t]);
+	}
+	poolWait(threadPool);
+}
+
+static void CalculateAmbientOcclusionV2PlusColumn(Camera *camera) {
+	AmbientOcclusionTask task = {0, camera->screenHeight, camera};
+	CalculateAmbientOcclusionV2RowPlus(&task);
+	columnBlur(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer);
+}
+
+static void CalculateAmbientOcclusionV2PlusColumnMp(Camera *camera, ThreadPool *threadPool) {
+	// TODO: Apply blur pass
+	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
+	if (!camera || !threadPool) return;
+
+	const int height = camera->screenHeight;
+	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	AmbientOcclusionTask tasks[taskCount];
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * ROWS_PER_TASK;
+		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
+		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlus, &tasks[t]);
+	}
+	poolWait(threadPool);
+	columnBlurMp(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool);
+}
+
+static void CalculateAmbientOcclusionV2PlusColumnSgMp(Camera *camera, ThreadPool *threadPool) {
+	// TODO: Apply blur pass
+	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
+	if (!camera || !threadPool) return;
+
+	const int height = camera->screenHeight;
+	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	AmbientOcclusionTask tasks[taskCount];
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * ROWS_PER_TASK;
+		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
+		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlus, &tasks[t]);
+	}
+	poolWait(threadPool);
+	columnBlur(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer);
 }
 
 static void CalculateAmbientOcclusionV3Mp(Camera *camera, ThreadPool *threadPool) {

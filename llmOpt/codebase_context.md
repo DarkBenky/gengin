@@ -223,6 +223,27 @@ main()  [main.c]
   - AVX2 batch AABB integrations with gather/scatter overhead. Despite strong micro-bench speedups, they regressed the real workload where AABB testing is not the dominant bottleneck.
   - Triangle data layout interleaving (AoS for vertices). Micro-bench showed no measurable improvement (1.00x) and introduces widespread structural plumbing changes.
 
+## Session Insights (2026-09-21)
+
+**Summary**: Fresh `make_flame` on HEAD 138e2e7. Three candidates profiled, micro-benchmarked (AO reduction under real 32-thread contention, sampleFace both ways), and measured with warm interleaved A/B on the full bench. All three REFUTED with measured evidence — no PR this session.
+
+### Fresh profile (HEAD 138e2e7)
+  - IntersectBVH 18.7% excl / 37.8% incl, rayTriangle 17.0% excl, RayTraceRowFunc 20.7% excl, rayAABB_inv 8.1%, AO_V2Row_Pixel 8.1% excl / 9.6% incl, sampleFace 3.7%, rayAABB_inv_x2_soa 5.8%, IntersectBVH_Shadow 2.4% excl / 5.6% incl, SampleEmission 1.3% excl / 5.1% incl.
+
+### REFUTED this session (do not retry)
+  - **AO_V2Row_Pixel rsqrt reduction.** Replaced `dist = sqrtf(dist2); occlusion += (nd/dist)*(1-dist*invWorldRadius)` with `invd = AO_Rsqrt(dist2)` (SSE rsqrtps + 1 Newton-Raphson) and `occlusion += (nd*invd)*(1-dist2*invd*invWorldRadius)`. Micro-bench (MT, 1280x720, real pool): **1.616x** on the AO function, maxDiff 1.79e-07, 0 pixels > 1e-5. But the full-frame warm interleaved A/B (8 rounds, medians 15.43 vs 15.33 ms) showed **no gain** — the 1.6x micro-bench win did NOT transfer. The make_bench "baseline" had been COLD (19.5 ms vs warm 15.4 ms) which made the first comparison show +19%; the warm A/B kills it. AO is memory-bound (scattered positionBuffer taps); the sqrt latency was hidden behind the tap loads. Same class as the 2026-06-01 "micro-bench wins regress/vanish in 32 threads" lesson.
+  - **sampleFace clamp removal.** The 4 clamps in `sampleFace` (skybox/skybox.c:88-89) are provably dead: `u,v = 0.5 + 0.5*(comp/maxAbs)` with |comp|<=maxAbs from SampleSkybox, so u,v in [0,1] exactly and (int)(t*(w-1)+0.5f) lands in [0,w-1]. Micro-bench (4M realistic dirs): **1.289x**, 0 mismatches. But the full-frame warm A/B: only **~1.5%** (medians 15.73 vs 15.50 ms) — below the 3% gate. The face-pixel load dominates; the branch removal doesn't cut the critical path at 3.7%-of-CPU share.
+  - **sampleFace roundps (SSE4.1).** Replacing add-0.5+`cvttss2si` with `roundps`-to-nearest-even: micro-bench **1.193x — SLOWER** than the clamp-free version. The scalar `+0.5` + truncate is what clang emits best; explicit roundps adds a vector-op latency. Also note: `roundps` returns a float; `_mm_cvttps_epi32` on it returns an INT vector — do NOT chain `_mm_cvtss_f32(_mm_cvttps_epi32(...))` (converts int→float); cast the rounded float directly.
+
+### Gotchas recorded for next sessions
+  - **make_bench baseline can be COLD**: the baseline run was 19.5 ms while every warm re-run is ~15.4 ms — the first make_bench of a session can include JIT/PGO/GPU-alloc warmup. A +19% "improvement" against that baseline is an artifact. ALWAYS re-seed the baseline warm (stash change, make_bench, pop) and/or run a manual warm interleaved A/B before trusting a make_bench delta > ~3%.
+  - The magic-number rsqrt (0x5f35b5bu trick + 1 NR) is NOT safe under -ffast-math: it diverges (NaN/inf) at the low end of the AO dist2 range (x=0.1681) because the compiler reassociates the NR expression. If an approximate rsqrt is ever needed, use `_mm_rsqrt_ps` (hardware) + NR, not the magic float-bit trick.
+  - `_MM_FROUND_TO_NEAREST_EVEN` needs the define `0x00` if immintrin.h doesn't expose it under the LSP's plain flags (the real build with -march=native is fine).
+
+### Status: sandbox clean, no PR. Remaining hotspots (IntersectBVH/rayTriangle/RayTraceRowFunc/rayAABB_inv) remain compiler-saturated per prior sessions; the out-of-scope OpenCL cloud pass dominates the frame and dilutes any further CPU-side win.
+
+---
+
 ## Pending Work (archived 2026-09, from the old planner board)
 - Next planned experiment: a multi-threaded micro-benchmark for the RayTraceRowFunc blur loop (current stack-VLA version vs pre-allocated global buffers). Single-threaded wins regressed in the 32-threaded renderer, so any blur redesign must be proven under thread contention before integration.
 - Open task list from the last session (all unstarted): read RayTraceRowFunc blur code + BlurBuffer + Camera struct; build the MT micro-benchmark; apply global-buffer blur if proven; build + make_bench (avg_ms, p99, image_mse); PR on success.

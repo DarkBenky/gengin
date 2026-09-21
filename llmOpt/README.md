@@ -18,7 +18,7 @@ annotation, bisection, and clangd queries.
 
     llmOpt/scripts/gengin-opt.sh                  # default model (OpenRouter flash)
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
-    llmOpt/scripts/gengin-opt.sh local            # local llama.cpp server on :8012
+    llmOpt/scripts/gengin-opt.sh local            # local llama.cpp server on :8013
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek         # direct DeepSeek API (DEEPSEEK_API_KEY)
     llmOpt/scripts/gengin-opt.sh --headless       # unattended oneshot (-z)

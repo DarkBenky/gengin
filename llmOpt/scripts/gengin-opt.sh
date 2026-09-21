@@ -3,7 +3,7 @@
 #
 #   gengin-opt.sh                       default model from .hermes/config.yaml
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
-#   gengin-opt.sh local [model]         local llama.cpp server on :8012
+#   gengin-opt.sh local [model]         local llama.cpp server on :8013
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report

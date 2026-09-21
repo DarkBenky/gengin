@@ -1096,7 +1096,7 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
-	CalculateAmbientOcclusionV2Mp(camera, threadPool);
+	CalculateAmbientOcclusionV2PlusColumnMp(camera, threadPool);
 }
 
 static void RayTraceColumnFunc(void *arg) {
