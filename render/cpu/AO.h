@@ -14,6 +14,7 @@
 #define ROWS_PER_TASK 2
 #endif
 // Columns handed to one pool task for the column blur; wider bands amortize the strided sweep's cache lines
+// Swept 2..64 columns/task on AOBench: 16 best (~6.2ms median), 2 worst (~7.9ms, 638 tiny tasks); 1 exceeds the pool ring
 #ifndef COLUMNS_PER_TASK
 #define COLUMNS_PER_TASK 16
 #endif
@@ -142,6 +143,30 @@ static const float INV_VALID[SAMPLES + 1] = {
 	0.142857f,
 	0.125f,
 };
+
+static uint32 s = 0;
+
+// NOTE: too slow makes it like 2 times slower
+// static inline uint32 fastHash(int x, int y) {
+//     uint32 state = s++;
+
+//     uint32 h =
+//         (uint32)x * 0x9E3779B1u ^
+//         (uint32)y * 0x85EBCA67u ^
+//         state;
+
+//     h ^= h >> 16;
+//     h *= 0x7FEB352Du;
+//     h ^= h >> 13;
+//     h *= 0x846CA68Bu;
+//     h ^= h >> 16;
+
+//     return h;
+// }
+
+static inline void fastHashReset(void) {
+	s = 0;
+}
 
 static inline uint32_t fastHash(int x, int y) {
 	uint32_t h = (uint32_t)x * 0x9E3779B1u ^ (uint32_t)y * 0x85EBCA67u;
@@ -773,6 +798,7 @@ static void CalculateAmbientOcclusionV2PlusColumn(Camera *camera) {
 	columnBlur(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer);
 }
 
+// TODO: Too slow we need to make some resolution based version
 static void CalculateAmbientOcclusionV2PlusColumnMp(Camera *camera, ThreadPool *threadPool) {
 	// TODO: Apply blur pass
 	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
