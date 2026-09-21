@@ -1,5 +1,6 @@
-# build outputs (all binaries, test/bench builds, prof, pgo)
-build/
+# build outputs (all binaries, test/bench builds, pgo); prof charts are tracked
+build/*
+!build/prof/
 
 # flamegraph tool clone
 .flamegraph/
@@ -12,6 +13,11 @@ flamegraph.svg
 callgraph.svg
 *.profraw
 *.profdata
+
+# prof charts are tracked; raw perf data and the profiled binary stay ignored
+!build/prof/*.svg
+build/prof/*.perf.data
+build/prof/main_flame
 
 # bench results
 bench/results/bench_results.json
