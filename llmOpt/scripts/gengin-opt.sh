@@ -166,6 +166,15 @@ if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
     export OPENROUTER_API_KEY="$KEY_VALUE"
   fi
 fi
+
+# OpenRouter traffic goes through the local filtering proxy (model.base_url in
+# the rendered Hermes config).  Warn early when it is not running.
+if [[ "$PRESET" != "local" && "$PRESET" != "deepseek" ]]; then
+  PROXY_PORT="${GENGIN_PROXY_PORT:-8787}"
+  if ! curl -fsS --max-time 2 "http://127.0.0.1:$PROXY_PORT/health" >/dev/null 2>&1; then
+    echo "warning: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT — start it with llmOpt/scripts/setup-openrouter-proxy.sh" >&2
+  fi
+fi
 if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
   DEEPSEEK_VALUE="$(grep -E '^DEEPSEEK_API_KEY=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
   if [[ -n "$DEEPSEEK_VALUE" ]]; then

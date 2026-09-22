@@ -314,7 +314,7 @@ fi
 
 # --- systemd units ----------------------------------------------------------
 log "installing systemd units"
-for unit in gengin-xvfb gengin-llmopt; do
+for unit in gengin-xvfb gengin-openrouter-proxy gengin-llmopt; do
   src="$CHECKOUT/llmOpt/systemd/$unit.service"
   sed -e "s|__CHECKOUT__|$CHECKOUT|g" -e "s|__VENV__|$VENV|g" "$src" \
     > "/etc/systemd/system/$unit.service"

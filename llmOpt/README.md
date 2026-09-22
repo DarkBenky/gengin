@@ -26,6 +26,31 @@ annotation, bisection, and clangd queries.
 The launcher loads `prompts/optimize.md` as the session query; switch models
 in-session with `/model custom:local:Qwen3.8-27B`.
 
+## OpenRouter proxy
+
+All OpenRouter traffic (Hermes and any other local tool pointed at it) goes
+through `llmOpt/proxy/openrouter_proxy.py` on `http://127.0.0.1:8787`:
+
+- injects `provider.quantizations` + `provider.allow_fallbacks: false` and
+  appends `:floor`, so cheap low-quantization endpoints are not silently
+  selected and provider reroutes stay bounded (one unfiltered retry, then a
+  one-hour cooldown per model after 3 failures);
+- passes a request through untouched when the caller made an explicit choice:
+  unknown model suffix (e.g. `xiaomi/mimo-v2.6-flash:xiaomi`),
+  `provider.only`/`provider.order` pins, or `:free` models.
+
+Install/refresh with `llmOpt/scripts/setup-openrouter-proxy.sh` (systemd user
+unit on the desktop; the VM gets a system unit from `setup-vm.sh`).  Hermes
+reaches the proxy through `model.base_url` in the rendered config — the
+`#10622` mirror path — which `setup-hermes.sh` and the supervisor wire up
+automatically; nothing to configure per run.
+
+Knobs (environment of the unit): `GENGIN_PROXY_PORT`,
+`GENGIN_PROXY_QUANTIZATIONS`, `GENGIN_PROXY_FLOOR=0`,
+`GENGIN_PROXY_ALLOW_FALLBACKS=1`, `GENGIN_PROXY_FAIL_THRESHOLD`,
+`GENGIN_PROXY_COOLDOWN_SECONDS`, `GENGIN_PROXY_LOG=<path>`.  Inspect live
+state with `curl 127.0.0.1:8787/status`.
+
 ### Harness updates
 
 Each launch keeps the Hermes Agent checkout at `origin/main`: a quick
@@ -78,15 +103,22 @@ Rules:
   (passed via stdin — never on a command line, which `ps` exposes to every
   local user).
 
-## Tools (18)
+## Tools (20)
 
 | Group | Tools |
 |---|---|
 | Build & profiling | `git_pull_project`, `build_project`, `make_bench`, `make_flame`, `create_pr`, `bisect_regression` |
 | Micro-bench sandbox | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench` |
+| Visual evidence | `compare_bench_frames`, `compare_images` |
 | Hotspot annotation | `hot_annotate_func`, `hot_annotate_file` |
 | clangd queries | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Session control | `report_session_result` (supervised sessions only) |
+
+Visual changes are opt-in: `make_bench(allow_visual_change=true)` switches the
+auto-restore gate from MSE to SSIM, `compare_bench_frames` writes
+`before | after | diff` composites + metrics under `screenshots/visual/`, and
+`create_pr(..., imageOutputChange=true, compareImagePaths=[...])` marks the PR
+with `[visual]`, enforces min SSIM >= 0.95 and embeds the evidence.
 
 ## Files
 
@@ -169,6 +201,21 @@ tmux new -s llmopt
 Session isolation: the per-session Hermes home contains no long-lived
 credentials; the temporary inference key is delivered only through the process
 environment and deleted at session end.
+
+### Changing the session model (VM)
+
+The supervised session model is `OPENROUTER_MODEL` in the checkout's
+`llmOpt/.env` — the systemd unit and the tmux console both read it, and
+the console itself takes no model flag:
+
+```bash
+sudo /root/gengin/llmOpt/scripts/set-openrouter-model.sh z-ai/glm-5.3-flash:floor
+```
+
+The helper rewrites the line (timestamped backup), keeps the
+supervisor-owned ownership/mode, and restarts `gengin-llmopt.service` when it
+is running — note that a restart terminates an in-flight session.  With the
+tmux console, restart it after the edit instead.
 
 ### Operation
 

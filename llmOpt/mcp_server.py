@@ -186,23 +186,71 @@ def build_project() -> str:
 
 
 @mcp.tool()
-def make_bench() -> str:
+def make_bench(allow_visual_change: bool = False) -> str:
     """Run `make bench` 5 times (median-aggregated) and compare against the
     baseline.  Returns JSON with `summary` (comparison; includes an
     auto-restore notice when a visual regression was detected), `bench_results`
-    (scalar metrics) and `raw_stdout_preview`.  The first call establishes the
-    baseline.  Auto-restores all sandbox changes on significant visual
-    regression (MSE thresholds).  Records an edit snapshot for
-    bisect_regression()."""
+    (scalar metrics), `visual` (per-frame SSIM/MSE when allow_visual_change)
+    and `raw_stdout_preview`.  The first call establishes the baseline.
+
+    Exact mode (default) auto-restores all sandbox changes on a significant
+    MSE regression.  Set allow_visual_change=True only for a deliberate
+    algorithm variation: the gate becomes SSIM (auto-restore below 0.85), the
+    change is kept when frames stay similar, and the metrics feed the visual
+    PR evidence.  Records an edit snapshot for bisect_regression()."""
     _main._captureEditSnapshot("edits before make_bench")
-    result = _main.makeBench()
+    result = _main.makeBench(allow_visual_change=allow_visual_change)
     results = {k: v for k, v in result["results"].items()
                if k not in ("frame_images", "frame_hashes")}
-    return json.dumps({
+    payload = {
         "summary": result["summary"],
         "bench_results": results,
         "raw_stdout_preview": (result["stdout"] or "")[:2000],
+    }
+    if result.get("visual"):
+        payload["visual"] = result["visual"]
+    return json.dumps(payload, indent=2)
+
+
+@mcp.tool()
+def compare_bench_frames(label: str) -> str:
+    """Compare the current bench frames against the pinned clean baseline and
+    write visual evidence: full-size `before | after | diff(x4)` PNG
+    composites plus metrics.json (MSE, RMSE, PSNR, SSIM, abs-diff stats)
+    under screenshots/visual/<label>/ in the sandbox.
+
+    Use after make_bench(allow_visual_change=true) for a visual PR, then pass
+    the composite paths to create_pr(compareImagePaths=[...]).  Returns JSON
+    with `out_dir` (sandbox-relative) and the metrics summary; `min_ssim` is
+    the PR gate (>= 0.95)."""
+    summary, out_dir = _main.compareBenchFrames(label)
+    rel = os.path.relpath(out_dir, _main.PROJECT_DIR)
+    per_frame = [
+        {k: f[k] for k in ("index", "ssim", "mse", "psnr",
+                           "pct_pixels_gt8", "composite")}
+        for f in summary.get("per_frame", [])
+    ]
+    return json.dumps({
+        "out_dir": rel,
+        "min_ssim": summary["min_ssim"],
+        "max_mse": summary["max_mse"],
+        "frames": summary["frames"],
+        "per_frame": per_frame,
     }, indent=2)
+
+
+@mcp.tool()
+def compare_images(before: str, after: str, label: str) -> str:
+    """Compare two image files (BMP or PNG; sandbox-relative or absolute
+    paths) and write a `before | after | diff(x4)` composite plus metrics.json
+    under screenshots/visual/<label>/.
+
+    Same metrics shape as compare_bench_frames.  Use for ad-hoc visual checks
+    (e.g. tests/img screenshots); pass the composite to
+    create_pr(compareImagePaths=[...]) when opening a visual PR."""
+    summary, out_dir = _main.compareImages(before, after, label)
+    rel = os.path.relpath(out_dir, _main.PROJECT_DIR)
+    return json.dumps({"out_dir": rel, "summary": summary}, indent=2)
 
 
 @mcp.tool()
@@ -214,16 +262,29 @@ def make_flame() -> dict:
 
 
 @mcp.tool()
-def create_pr(title: str, body: str, branch: str = "", commit_msg: str = "") -> str:
+def create_pr(title: str, body: str, imageOutputChange: bool,
+              branch: str = "", commit_msg: str = "",
+              compareImagePaths: list[str] | None = None) -> str:
     """Commit sandbox changes, push one focused branch, and open a GitHub PR
-    via the REST API (requires GITHUB_TOKEN).  Guards reject empty diffs,
-    forbidden staged paths (logs/state/secrets), and non-descendant bases.
-    In supervised sessions the branch is derived automatically
-    (llmopt/<short-sha>/<session-id>); pass it explicitly only to reuse an
-    existing branch or in a manual session, e.g. "llmopt/<8-hex-sha>/<topic>"
-    (7-40 hex accepted).  On credential errors (401/403) report `blocked`;
-    do not hunt for other credentials.  Returns the PR URL."""
-    return _main.createPR(title, body, branch, commit_msg or title)
+    via the REST API (requires GITHUB_TOKEN).
+
+    imageOutputChange is required: False for exact-match optimizations
+    (screenshots/ is never staged); True for a deliberate visual change —
+    then compareImagePaths must list the composite PNGs written by
+    compare_bench_frames / compare_images (each needs a sibling metrics.json
+    with min SSIM >= 0.95), the title is prefixed with "[visual] " and a
+    Visual evidence section is appended to the body.
+
+    Guards reject empty diffs, forbidden staged paths (logs/state/secrets),
+    and non-descendant bases.  In supervised sessions the branch is derived
+    automatically (llmopt/<short-sha>/<session-id>); pass it explicitly only
+    to reuse an existing branch or in a manual session, e.g.
+    "llmopt/<8-hex-sha>/<topic>" (7-40 hex accepted).  On credential errors
+    (401/403) report `blocked`; do not hunt for other credentials.  Returns
+    the PR URL."""
+    return _main.createPR(title, body, branch, commit_msg or title,
+                          image_output_change=imageOutputChange,
+                          compare_image_paths=compareImagePaths)
 
 
 _SESSION_STATUSES = ("pr_created", "no_change", "blocked", "failed")

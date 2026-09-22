@@ -19,8 +19,8 @@
 
 [Unit]
 Description=gengin-llmopt commit-triggered optimizer supervisor
-After=network-online.target gengin-xvfb.service
-Wants=network-online.target
+After=network-online.target gengin-xvfb.service gengin-openrouter-proxy.service
+Wants=network-online.target gengin-openrouter-proxy.service
 Requires=gengin-xvfb.service
 
 [Service]

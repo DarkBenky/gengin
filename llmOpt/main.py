@@ -388,6 +388,14 @@ def _benchSummary(current, baseline):
 
 BENCH_RUNS = 5  # number of bench runs to median-aggregate
 
+# Visual-change mode: deliberate algorithm variations (see prompts/optimize.md).
+# A visual PR needs min SSIM >= VISUAL_SSIM_MIN_FOR_PR; make_bench in visual
+# mode auto-restores below VISUAL_SSIM_RESTORE. Exact mode keeps the original
+# sampled-MSE gate untouched.
+VISUAL_SSIM_MIN_FOR_PR = 0.95
+VISUAL_SSIM_RESTORE = 0.85
+VISUAL_EVIDENCE_DIR = "screenshots/visual"
+
 
 def _median(values):
     s = sorted(v for v in values if v is not None)
@@ -397,17 +405,24 @@ def _median(values):
     return s[mid] if len(s) & 1 else (s[mid - 1] + s[mid]) * 0.5
 
 
-def makeBench():
+def makeBench(allow_visual_change=False):
     """Run `make bench` BENCH_RUNS times, median-aggregate, compare vs baseline.
 
-    Establishes the baseline on the first run.  Auto-restores the sandbox when
-    a significant visual regression is detected (max MSE >= 50 or avg >= 30),
-    so a change that broke rendering is never left applied.
+    Establishes the baseline on the first run.
 
-    Returns {summary: str, results: dict, stdout: str}.
+    Exact mode (default): auto-restores the sandbox when a significant visual
+    regression is detected (max MSE >= 50 or avg >= 30), so a change that broke
+    rendering is never left applied.
+
+    allow_visual_change=True: the caller is landing a deliberate algorithm
+    variation. The gate switches to SSIM (restore below VISUAL_SSIM_RESTORE)
+    and per-frame metrics are returned for the PR evidence.
+
+    Returns {summary: str, results: dict, stdout: str, visual: dict | None}.
     """
     global BASELINE_RESULTS
 
+    visual = None
     scalar_keys = ["frames", "avg_ms", "median_ms", "p99_ms"]
     runs = []
     last_stdout = ""
@@ -445,34 +460,221 @@ def makeBench():
     else:
         summary = _benchSummary(bench_results_raw, BASELINE_RESULTS)
 
-        base_imgs = BASELINE_RESULTS.get("frame_images") or []
-        curr_imgs = bench_results_raw.get("frame_images") or []
-        mse_values = []
-        for b64_b, b64_c in zip(base_imgs, curr_imgs):
-            if not b64_b or not b64_c:
-                continue
-            try:
-                raw_b = base64.b64decode(b64_b)
-                raw_c = base64.b64decode(b64_c)
-                n = min(len(raw_b), len(raw_c))
-                if n == 0:
+        if allow_visual_change:
+            visual = _visualMetrics(BASELINE_RESULTS, bench_results_raw)
+            if visual:
+                summary += (
+                    f"\n\nVisual-change mode: min SSIM={visual['min_ssim']:.4f}, "
+                    f"max MSE={visual['max_mse']:.2f} over {visual['frames']} frames "
+                    f"(auto-restore below SSIM {VISUAL_SSIM_RESTORE})."
+                )
+                if visual["min_ssim"] < VISUAL_SSIM_RESTORE:
+                    gf.restoreAll()
+                    _clearEditStack()
+                    summary += (
+                        "\n\n*** AUTO-RESTORED: visual change too large "
+                        f"(min SSIM={visual['min_ssim']:.4f} < {VISUAL_SSIM_RESTORE}). "
+                        "All changes have been reverted. Reduce the visual delta or "
+                        "verify the rendering is not broken. ***"
+                    )
+        else:
+            base_imgs = BASELINE_RESULTS.get("frame_images") or []
+            curr_imgs = bench_results_raw.get("frame_images") or []
+            mse_values = []
+            for b64_b, b64_c in zip(base_imgs, curr_imgs):
+                if not b64_b or not b64_c:
                     continue
-                step = 64
-                mse = sum((raw_b[i] - raw_c[i]) ** 2 for i in range(0, n, step)) / (n // step)
-                mse_values.append(mse)
-            except Exception:
-                pass
-        if mse_values and (max(mse_values) >= 50.0 or (sum(mse_values) / len(mse_values)) >= 30.0):
-            gf.restoreAll()
-            _clearEditStack()
-            summary += (
-                "\n\n*** AUTO-RESTORED: Significant visual regression detected "
-                f"(max MSE={max(mse_values):.1f}). All changes have been reverted. "
-                "The previous change likely broke rendering. Read the code more "
-                "carefully before re-applying. ***"
-            )
+                try:
+                    raw_b = base64.b64decode(b64_b)
+                    raw_c = base64.b64decode(b64_c)
+                    n = min(len(raw_b), len(raw_c))
+                    if n == 0:
+                        continue
+                    step = 64
+                    mse = sum((raw_b[i] - raw_c[i]) ** 2 for i in range(0, n, step)) / (n // step)
+                    mse_values.append(mse)
+                except Exception:
+                    pass
+            if mse_values and (max(mse_values) >= 50.0 or (sum(mse_values) / len(mse_values)) >= 30.0):
+                gf.restoreAll()
+                _clearEditStack()
+                summary += (
+                    "\n\n*** AUTO-RESTORED: Significant visual regression detected "
+                    f"(max MSE={max(mse_values):.1f}). All changes have been reverted. "
+                    "The previous change likely broke rendering. Read the code more "
+                    "carefully before re-applying. ***"
+                )
 
-    return {"summary": summary, "results": bench_results_raw, "stdout": last_stdout}
+    return {"summary": summary, "results": bench_results_raw,
+            "stdout": last_stdout, "visual": visual}
+
+
+def _visualMetrics(baseline, current):
+    """Per-frame SSIM/MSE between cached baseline frames and current frames.
+
+    numpy-based; called only in visual-change mode so the supervisor's system
+    interpreter (which has no numpy) never imports image_compare.
+    """
+    import image_compare
+
+    base_imgs = baseline.get("frame_images") or []
+    curr_imgs = current.get("frame_images") or []
+    width = current.get("frame_width") or baseline.get("frame_width")
+    height = current.get("frame_height") or baseline.get("frame_height")
+    if not (base_imgs and curr_imgs and width and height):
+        return None
+    n = min(len(base_imgs), len(curr_imgs))
+    frames_b = image_compare.frames_from_b64(base_imgs[:n], width, height)
+    frames_c = image_compare.frames_from_b64(curr_imgs[:n], width, height)
+    per_frame = [image_compare.metrics(b, c) for b, c in zip(frames_b, frames_c)]
+    return {
+        "frames": len(per_frame),
+        "min_ssim": min(f["ssim"] for f in per_frame),
+        "max_mse": max(f["mse"] for f in per_frame),
+        "mean_ssim": sum(f["ssim"] for f in per_frame) / len(per_frame),
+        "per_frame": per_frame,
+    }
+
+
+def compareBenchFrames(label):
+    """Compare the current bench frames against the cached baseline.
+
+    Writes full-size before|after|diff composites plus metrics.json under
+    <sandbox>/screenshots/visual/<label>/ and returns (summary, out_dir).
+    """
+    global BASELINE_RESULTS
+    import image_compare
+
+    if BASELINE_RESULTS is None:
+        BASELINE_RESULTS = _loadBaselineCache()
+    if BASELINE_RESULTS is None:
+        raise RuntimeError("no baseline cache; run make_bench first")
+
+    results_path = os.path.join(PROJECT_DIR, "bench", "results", "bench_results.json")
+    with open(results_path) as fh:
+        current = json.load(fh)
+    base_imgs = BASELINE_RESULTS.get("frame_images") or []
+    curr_imgs = current.get("frame_images") or []
+    width = current.get("frame_width") or BASELINE_RESULTS.get("frame_width")
+    height = current.get("frame_height") or BASELINE_RESULTS.get("frame_height")
+    if not (base_imgs and curr_imgs and width and height):
+        raise RuntimeError("bench results contain no frame_images; run make_bench first")
+    n = min(len(base_imgs), len(curr_imgs))
+    frames_b = image_compare.frames_from_b64(base_imgs[:n], width, height)
+    frames_c = image_compare.frames_from_b64(curr_imgs[:n], width, height)
+
+    hashes_b = BASELINE_RESULTS.get("frame_hashes") or []
+    hashes_c = current.get("frame_hashes") or []
+    equal = [hashes_b[i] == hashes_c[i]
+             for i in range(min(n, len(hashes_b), len(hashes_c)))]
+
+    try:
+        with open(BASELINE_CACHE_FILE) as fh:
+            cache_head = json.load(fh).get("head", "")
+    except (OSError, json.JSONDecodeError):
+        cache_head = ""
+    context = {"baseline_head": cache_head, "sandbox_head": _sandboxHead()}
+
+    out_dir = os.path.join(PROJECT_DIR, VISUAL_EVIDENCE_DIR, label)
+    summary = image_compare.compare_frames(
+        frames_b, frames_c, out_dir, label, context=context, hashes_equal=equal)
+    return summary, out_dir
+
+
+def compareImages(before, after, label):
+    """Compare two image files (BMP/PNG) and write the composite + metrics."""
+    import image_compare
+
+    def resolve(path):
+        if os.path.isfile(path):
+            return path
+        return os.path.join(PROJECT_DIR, path)
+
+    before_path, after_path = resolve(before), resolve(after)
+    for path in (before_path, after_path):
+        if not os.path.isfile(path):
+            raise RuntimeError(f"image not found: {path}")
+    out_dir = os.path.join(PROJECT_DIR, VISUAL_EVIDENCE_DIR, label)
+    summary = image_compare.compare_files(before_path, after_path, out_dir, label)
+    return summary, out_dir
+
+
+def _validateVisualEvidence(paths):
+    """Validate visual PR evidence; returns (resolved, dirs, min_ssim)."""
+    if not paths:
+        raise RuntimeError(
+            "imageOutputChange=true requires compareImagePaths (the "
+            "screenshots/visual/<label>/*.png composites written by "
+            "compare_bench_frames or compare_images)")
+    project = os.path.realpath(PROJECT_DIR)
+    resolved = []
+    for entry in paths:
+        path = next(
+            (c for c in (entry, os.path.join(PROJECT_DIR, entry)) if os.path.isfile(c)),
+            None)
+        if path is None:
+            raise RuntimeError(
+                f"compareImagePaths entry not found: {entry} (looked at "
+                f"'{entry}' and '{os.path.join(PROJECT_DIR, entry)}')")
+        rel = os.path.relpath(os.path.realpath(path), project).replace(os.sep, "/")
+        if not rel.startswith("screenshots/visual/"):
+            raise RuntimeError(
+                f"visual evidence must live under screenshots/visual/: {rel} "
+                "(write it with compare_bench_frames / compare_images)")
+        resolved.append(path)
+    dirs = sorted({os.path.dirname(p) for p in resolved})
+    min_ssim = None
+    for directory in dirs:
+        metrics_path = os.path.join(directory, "metrics.json")
+        if not os.path.isfile(metrics_path):
+            raise RuntimeError(f"metrics.json missing next to visual evidence: {directory}")
+        with open(metrics_path) as fh:
+            data = json.load(fh)
+        value = data.get("min_ssim")
+        if value is None:
+            raise RuntimeError(f"metrics.json in {directory} has no min_ssim")
+        value = float(value)
+        min_ssim = value if min_ssim is None else min(min_ssim, value)
+    if min_ssim < VISUAL_SSIM_MIN_FOR_PR:
+        raise RuntimeError(
+            f"visual change too large for a visual PR: min SSIM={min_ssim:.4f} "
+            f"< {VISUAL_SSIM_MIN_FOR_PR}. Improve the fidelity or land it as an "
+            "exact-match change")
+    return resolved, dirs, min_ssim
+
+
+def _visualEvidenceMarkdown(dirs, branch, min_ssim):
+    """Metrics table + inline composite images for a visual PR body."""
+    owner, repo = _githubRepo()
+    project = os.path.realpath(PROJECT_DIR)
+    lines = ["", "## Visual evidence", "",
+             "This PR changes the rendered image on purpose (algorithm "
+             f"variation). Minimum SSIM across captured frames: `{min_ssim:.4f}` "
+             f"(threshold {VISUAL_SSIM_MIN_FOR_PR}).", ""]
+    for directory in dirs:
+        with open(os.path.join(directory, "metrics.json")) as fh:
+            data = json.load(fh)
+        rel_dir = os.path.relpath(directory, project).replace(os.sep, "/")
+        lines += [f"### {data.get('label', rel_dir)}", "",
+                  "| frame | SSIM | MSE | PSNR | pixels>8 |",
+                  "|---|---|---|---|---|"]
+        for frame in data.get("per_frame", []):
+            psnr = "n/a" if frame.get("psnr") is None else f"{frame['psnr']:.1f}"
+            lines.append(
+                f"| {frame.get('index')} | {frame['ssim']:.4f} | {frame['mse']:.2f} "
+                f"| {psnr} | {frame.get('pct_pixels_gt8', 0.0):.2f}% |")
+        lines.append("")
+        for frame in data.get("per_frame", []):
+            name = frame.get("composite")
+            if not name:
+                continue
+            url = (f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/"
+                   f"{rel_dir}/{name}")
+            lines.append(
+                f"![{data.get('label', 'visual')} frame {frame.get('index')} "
+                f"(before | after | diff)]({url})")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def makeFlame():
@@ -1016,16 +1218,38 @@ def _remoteBranchSha(branch):
     return line.split()[0] if line else None
 
 
-def createPR(title, body, branch="", commit_msg=None):
+def createPR(title, body, branch="", commit_msg=None,
+             image_output_change=False, compare_image_paths=None):
     """Commit sandbox changes, push one focused branch, open a PR.
 
     Guards: target-SHA ancestry, forbidden staging paths, secret patterns,
-    empty diff, and idempotent branch/PR reuse. Never force-pushes. Returns
-    the PR URL.
+    empty diff, and idempotent branch/PR reuse. Never force-pushes.
+
+    image_output_change=True: the PR deliberately alters the rendered image
+    (algorithm variation). compareImagePaths must list the composites written
+    by compare_bench_frames / compare_images, each with a sibling metrics.json
+    whose min SSIM is >= VISUAL_SSIM_MIN_FOR_PR. The title is prefixed with
+    "[visual] " and a Visual evidence section (metrics table + inline images)
+    is appended to the body. screenshots/ is staged only for visual PRs.
+
+    Returns the PR URL.
     """
-    commit_msg = commit_msg or title
+    explicit_commit = commit_msg
     target = os.environ.get("GENGIN_TARGET_SHA", "")
     session_id = os.environ.get("GENGIN_SESSION_ID", "")
+
+    evidence_dirs = []
+    evidence_ssim = None
+    if image_output_change:
+        _paths, evidence_dirs, evidence_ssim = _validateVisualEvidence(
+            compare_image_paths)
+        if not title.startswith("[visual]"):
+            title = "[visual] " + title
+    elif compare_image_paths:
+        raise RuntimeError(
+            "compareImagePaths is only valid when imageOutputChange=true")
+
+    commit_msg = explicit_commit or title
 
     head = _sandboxHead()
     if not head:
@@ -1061,6 +1285,14 @@ def createPR(title, body, branch="", commit_msg=None):
     cached = subprocess.run(["git", "diff", "--cached", "--name-only"],
                             capture_output=True, text=True, cwd=PROJECT_DIR).stdout.split()
     forbidden = [f for f in cached if _FORBIDDEN_STAGING_RE.search(f)]
+    # screenshots/ are evidence, not source: exact-mode PRs never carry them,
+    # visual PRs carry only their screenshots/visual/<label>/ composites.
+    for f in cached:
+        if not f.startswith("screenshots/"):
+            continue
+        if not (image_output_change and f.startswith("screenshots/visual/")):
+            forbidden.append(f)
+    forbidden = sorted(set(forbidden))
     if forbidden:
         run(["git", "reset", "-q", "--"] + forbidden, cwd=PROJECT_DIR)
         print(f"[createPR] excluded from staging: {forbidden}", file=sys.stderr)
@@ -1092,6 +1324,10 @@ def createPR(title, body, branch="", commit_msg=None):
             raise RuntimeError(
                 f"push failed and remote branch differs (no force-push allowed):\n"
                 f"{push.stderr}")
+
+    if image_output_change:
+        body = (body.rstrip() + "\n" + _visualEvidenceMarkdown(
+            evidence_dirs, branch, evidence_ssim)).strip() + "\n"
 
     url = _github_create_pr(title, body, head=branch)
     print(f"PR created: {url}", file=sys.stderr)

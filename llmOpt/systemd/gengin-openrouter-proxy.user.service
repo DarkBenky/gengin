@@ -1,0 +1,23 @@
+# gengin OpenRouter filtering proxy (desktop, per-user unit).
+#
+# Template for llmOpt/scripts/setup-openrouter-proxy.sh, which substitutes
+# __PROXY__ with the absolute path to llmOpt/proxy/openrouter_proxy.py and
+# installs this file as ~/.config/systemd/user/gengin-openrouter-proxy.service.
+#
+# The proxy is stdlib-only; /usr/bin/python3 is deliberate so the unit never
+# depends on a virtualenv or the user's shell environment.
+[Unit]
+Description=gengin OpenRouter filtering proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 __PROXY__
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

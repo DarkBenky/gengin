@@ -69,6 +69,10 @@ if [[ -n "$PYTHON_BIN" ]] && ! "$PYTHON_BIN" -c 'import mcp' >/dev/null 2>&1; th
   echo "warning: 'mcp' package missing for $PYTHON_BIN" >&2
   echo "  install: $PYTHON_BIN -m pip install -r $LLMOPT_DIR/requirements-mcp.txt" >&2
 fi
+if [[ -n "$PYTHON_BIN" ]] && ! "$PYTHON_BIN" -c 'import numpy' >/dev/null 2>&1; then
+  echo "warning: 'numpy' missing for $PYTHON_BIN (image comparison tools)" >&2
+  echo "  install: $PYTHON_BIN -m pip install -r $LLMOPT_DIR/requirements-mcp.txt" >&2
+fi
 
 if command -v hermes >/dev/null 2>&1; then
   if HERMES_HOME="$HERMES_DIR" hermes config get model.default >/dev/null 2>&1; then

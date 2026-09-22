@@ -5,6 +5,12 @@
 model:
   provider: openrouter
   default: deepseek/deepseek-v4-flash-0731
+  # Every OpenRouter request is routed through the local filtering proxy
+  # (quantization allowlist, :floor, bounded provider reroutes). Hermes treats
+  # a config base_url under provider: openrouter as a deliberate mirror
+  # (#10622) and keeps selecting OPENROUTER_API_KEY for it.
+  # Start it with scripts/setup-openrouter-proxy.sh.
+  base_url: http://127.0.0.1:8787/api/v1
 
 provider_routing:
   sort: price

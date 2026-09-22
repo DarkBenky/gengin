@@ -125,13 +125,19 @@ the Phase 2/3 gate — no change purely for tidiness.
     - REGRESSED → `bisect_regression` to find the culprit edit.
     - VISUAL REGRESSION → the sandbox was auto-restored (MSE thresholds); read
       the notice and try a different approach.
+    - DELIBERATE image change → run `make_bench(allow_visual_change=true)` and
+      follow "ALGORITHM VARIATION (opt-in)" below.
 16. `delete_func_bench(func_name)` — clean up the bench files.
 
 ### Phase 5 — Persist & PR
 17. Append a dated entry to `codebase_context.md` (use `patch`): what changed,
     measured numbers, why it is safe, what failed and why.
-18. `create_pr(title, body)` — one logical improvement per PR; the body
-    states the measured speedup and the risk analysis.  Review the diff first.
+18. `create_pr(title, body, imageOutputChange)` — one logical improvement per
+    PR; `imageOutputChange` is REQUIRED — pass `false` for exact-match
+    optimizations, `true` only for a deliberate visual change (see ALGORITHM
+    VARIATION below; also pass `compareImagePaths=[...]` from
+    `compare_bench_frames`).  The body states the measured speedup and the
+    risk analysis.  Review the diff first.
     The branch name is derived automatically; do NOT pass one.  In a manual
     (unsupervised) session where the tool asks for one, pass
     `branch="llmopt/<8-hex-sha>/<topic>"` (from `git rev-parse HEAD`).
@@ -165,10 +171,38 @@ Apply directly in those rare cases and validate with `make_bench`.
 - `hot_annotate_func` / `hot_annotate_file` — perf-annotated source.
 
 ## VISUAL CORRECTNESS (make_bench output)
-- `image_mse` is the PRIMARY correctness metric: < 1.0 visually identical,
-  < 10.0 acceptable (float reordering), < 100.0 noticeable, >= 100 investigate.
+- `image_mse` is the PRIMARY correctness metric in exact mode: < 1.0 visually
+  identical, < 10.0 acceptable (float reordering), < 100.0 noticeable,
+  >= 100 investigate.
 - `frame_hashes` are INFORMATIONAL — any float reordering changes them even
   when the image is identical.  Never treat a hash mismatch as a failure.
+- In visual mode the gate is SSIM: `compare_bench_frames` reports per-frame
+  MSE/RMSE/PSNR/SSIM.  Target min SSIM >= 0.95; below 0.85 the run is
+  auto-restored.
+
+## ALGORITHM VARIATION (opt-in)
+Default is an exact-match optimization: output pixels must not change.  A
+change that can only win by altering the image slightly (sampling pattern,
+kernel shape, tone mapping, noise/dither, data layout) may be landed as a
+*visual* change, but only through this flow:
+
+1. `make_bench(allow_visual_change=true)` — the auto-restore gate switches
+   from MSE to SSIM and keeps the change when min SSIM >= 0.85.
+2. `compare_bench_frames("my-label")` — writes full-size
+   before | after | diff(x4) composites + metrics.json under
+   `screenshots/visual/my-label/` in the sandbox.  Inspect them: same scene and
+   subject, only the intended difference.
+3. `create_pr(title, body, imageOutputChange=true,
+   compareImagePaths=["screenshots/visual/my-label/frame_00.png", ...])` — the
+   tool rejects min SSIM < 0.95, prefixes the title with `[visual] ` and
+   appends the metrics table + evidence images.  Explain in the body WHY the
+   image changes and why that is acceptable.
+
+Rules: at most one deliberate visual change per PR; never a side effect of an
+"exact" optimization; exact PRs must pass `imageOutputChange=false` (the tool
+also strips `screenshots/` from their staging).  Example plays: AO sample
+pattern / rotation set, blur kernel shape, tone-map curve, dithering,
+stratified → blue-noise sampling, cheaper SDF for the skybox.
 
 ## ANTI-PATTERNS
 1. NEVER edit the main code without a micro-benchmark first.
@@ -190,6 +224,9 @@ Apply directly in those rare cases and validate with `make_bench`.
     or report `blocked` and stop.  Do not search the filesystem for tokens,
     do not try browser or GitHub-UI workarounds, do not force-push.
 12. NEVER spend the session on OpenCL / GPU-bound code — CPU C only, see SCOPE.
+13. NEVER use `allow_visual_change=true` as a workaround for a broken change —
+    it is only for a deliberate, explained algorithm variation (min SSIM
+    >= 0.95, evidence attached, `[visual]` PR).
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

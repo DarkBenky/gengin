@@ -1,0 +1,26 @@
+# gengin-llmopt OpenRouter filtering proxy (VM, system unit).
+#
+# Template for llmOpt/scripts/setup-vm.sh, which substitutes __CHECKOUT__ and
+# installs this file as /etc/systemd/system/gengin-openrouter-proxy.service.
+#
+# Hermes reaches the proxy through model.base_url in the rendered per-session
+# config.yaml; gengin-llmopt.service starts after this unit is up.
+[Unit]
+Description=gengin-llmopt OpenRouter filtering proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=llmopt-supervisor
+ExecStart=/usr/bin/python3 __CHECKOUT__/llmOpt/proxy/openrouter_proxy.py
+Restart=always
+RestartSec=5
+# Same hardening profile as the supervisor unit; the proxy writes nothing.
+ProtectSystem=full
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
