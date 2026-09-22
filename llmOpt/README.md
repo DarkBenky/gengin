@@ -83,7 +83,7 @@ View or rotate (this is the only place to edit):
 Then restart whatever runs the supervisor:
 
     sudo systemctl restart gengin-llmopt     # systemd mode
-    # tmux mode: restart the console — /opt/gengin/llmOpt/scripts/supervisor-console.sh
+    # tmux mode: restart the console — <checkout>/llmOpt/scripts/supervisor-console.sh
 
 Rules:
 
@@ -173,9 +173,11 @@ tuning only — all secrets are stored elsewhere, see **Changing keys**.
 
 ### VM installation
 
+Clone the repo anywhere and use that directory as `<checkout>`:
+
 ```bash
-git clone git@github.com:DarkBenky/gengin.git /opt/gengin
-sudo bash /opt/gengin/llmOpt/scripts/setup-vm.sh        # Ubuntu 22.04/24.04
+git clone git@github.com:DarkBenky/gengin.git <checkout>
+sudo bash <checkout>/llmOpt/scripts/setup-vm.sh --checkout <checkout>   # Ubuntu 22.04/24.04
 
 # The script creates the two users, installs Hermes as llmopt-agent, seeds
 # llmOpt/.env, and seeds the single secrets file — fill in the real keys:
@@ -187,7 +189,7 @@ journalctl -u gengin-llmopt.service -f
 
 # ...or run it in a tmux console instead (stop the unit first):
 tmux new -s llmopt
-/opt/gengin/llmOpt/scripts/supervisor-console.sh
+<checkout>/llmOpt/scripts/supervisor-console.sh
 ```
 
 Session isolation: the per-session Hermes home contains no long-lived
@@ -200,7 +202,7 @@ Sessions run the model from `OPENROUTER_MODEL` in the checkout's `llmOpt/.env`
 (no CLI flag):
 
 ```bash
-sudo /root/gengin/llmOpt/scripts/set-openrouter-model.sh z-ai/glm-5.3-flash:floor
+sudo <checkout>/llmOpt/scripts/set-openrouter-model.sh z-ai/glm-5.3-flash:floor
 ```
 
 It rewrites the line (timestamped backup) and restarts `gengin-llmopt.service`
