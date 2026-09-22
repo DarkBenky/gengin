@@ -28,31 +28,20 @@ in-session with `/model custom:local:Qwen3.8-27B`.
 
 ## OpenRouter proxy
 
-All OpenRouter traffic (Hermes and any other local tool pointed at it) goes
-through `llmOpt/proxy/openrouter_proxy.py` on `http://127.0.0.1:8787`:
+Hermes (and anything else pointed at it) reaches OpenRouter through
+`llmOpt/proxy/openrouter_proxy.py` on `127.0.0.1:8787`.  It injects
+`provider.quantizations` + `allow_fallbacks: false` and appends `:floor` —
+one unfiltered retry, then a 1 h cooldown per model — but passes requests
+through untouched when the caller pinned something: unknown suffix
+(`xiaomi/mimo-v2.6-flash:xiaomi/fp8`), `provider.only`/`order`, or `:free`.
 
-- injects `provider.quantizations` + `provider.allow_fallbacks: false` and
-  appends `:floor`, so cheap low-quantization endpoints are not silently
-  selected and provider reroutes stay bounded (one unfiltered retry, then a
-  one-hour cooldown per model after 3 failures);
-- passes a request through untouched when the caller made an explicit choice:
-  unknown model suffix (e.g. `xiaomi/mimo-v2.6-flash:xiaomi`),
-  `provider.only`/`provider.order` pins, or `:free` models.
-
-Install/refresh with `llmOpt/scripts/setup-openrouter-proxy.sh` (systemd user
-unit on the desktop).  On the VM there is nothing to enable: the system unit
-is started on demand — by `gengin-llmopt.service` (`Wants=`, so it follows the
-supervisor) or by `supervisor-console.sh`, which starts it before the loop and
-stops it again on exit when it had to spawn it.  Hermes reaches the proxy
-through `model.base_url` in the rendered config — the `#10622` mirror path —
-which `setup-hermes.sh` and the supervisor wire up automatically; nothing to
-configure per run.
-
-Knobs (environment of the unit): `GENGIN_PROXY_PORT`,
-`GENGIN_PROXY_QUANTIZATIONS`, `GENGIN_PROXY_FLOOR=0`,
-`GENGIN_PROXY_ALLOW_FALLBACKS=1`, `GENGIN_PROXY_FAIL_THRESHOLD`,
-`GENGIN_PROXY_COOLDOWN_SECONDS`, `GENGIN_PROXY_LOG=<path>`.  Inspect live
-state with `curl 127.0.0.1:8787/status`.
+Desktop: `llmOpt/scripts/setup-openrouter-proxy.sh` (user unit).  VM: nothing
+to enable — `gengin-llmopt.service` and `supervisor-console.sh` start it (the
+console also stops what it started); config wiring (`model.base_url`) is
+automatic.  Inspect: `curl 127.0.0.1:8787/status`.  Knobs:
+`GENGIN_PROXY_PORT`, `GENGIN_PROXY_QUANTIZATIONS`, `GENGIN_PROXY_FLOOR`,
+`GENGIN_PROXY_ALLOW_FALLBACKS`, `GENGIN_PROXY_FAIL_THRESHOLD`,
+`GENGIN_PROXY_COOLDOWN_SECONDS`, `GENGIN_PROXY_LOG`.
 
 ### Harness updates
 
@@ -117,11 +106,11 @@ Rules:
 | clangd queries | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Session control | `report_session_result` (supervised sessions only) |
 
-Visual changes are opt-in: `make_bench(allow_visual_change=true)` switches the
-auto-restore gate from MSE to SSIM, `compare_bench_frames` writes
-`before | after | diff` composites + metrics under `screenshots/visual/`, and
-`create_pr(..., imageOutputChange=true, compareImagePaths=[...])` marks the PR
-with `[visual]`, enforces min SSIM >= 0.95 and embeds the evidence.
+Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate),
+then `compare_bench_frames` writes `before | after | diff` composites + metrics
+to `screenshots/visual/`, and `create_pr(imageOutputChange=true,
+compareImagePaths=[...])` opens a `[visual]` PR (min SSIM 0.95, evidence
+embedded).
 
 ## Files
 
@@ -207,18 +196,16 @@ environment and deleted at session end.
 
 ### Changing the session model (VM)
 
-The supervised session model is `OPENROUTER_MODEL` in the checkout's
-`llmOpt/.env` — the systemd unit and the tmux console both read it, and
-the console itself takes no model flag:
+Sessions run the model from `OPENROUTER_MODEL` in the checkout's `llmOpt/.env`
+(no CLI flag):
 
 ```bash
 sudo /root/gengin/llmOpt/scripts/set-openrouter-model.sh z-ai/glm-5.3-flash:floor
 ```
 
-The helper rewrites the line (timestamped backup), keeps the
-supervisor-owned ownership/mode, and restarts `gengin-llmopt.service` when it
-is running — note that a restart terminates an in-flight session.  With the
-tmux console, restart it after the edit instead.
+It rewrites the line (timestamped backup) and restarts `gengin-llmopt.service`
+when it runs — that terminates an in-flight session; with the tmux console,
+restart the pane instead.
 
 ### Operation
 
