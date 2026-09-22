@@ -244,6 +244,27 @@ main()  [main.c]
 
 ---
 
+## Session Insights (2026-09-22)
+
+**Summary**: Fresh `make_flame` on HEAD 138e2e7. Found and removed per-pixel dead code in `RayTraceRowFunc`: writes to `camera->uvBuffer` (via `calculateUvCoordinates`, 1.1% excl in profile), `camera->triangleIdBuffer`, and `camera->motionVectorBuffer` (transform block ~3.4% of CPU per 2026-09-20) — all three buffers are write-only (grep-verified repo-wide: no .c/.h/.cl reader, no CL upload, bench hashes only the framebuffer). Also removed the now-dead per-row `motPrevRot[objectCount][9]` table, the hoisted prev-camera normalize block, and the sky-pixel zero-writes (row + column twins). Micro-bench (bench/deadpix): full block 0.02 ns/pixel measured degenerate; the real gate is the frame bench. Adversarial review PASS (all framebuffer/depth/reflect/bloom/normal/position/objectId writes byte-identical). make_bench: avg 19.471 -> 15.252 ms, p99 26.503 -> 18.559 ms, image_mse 0.00, all 10 frame hashes match. PR opened.
+
+### Confirmed Wins
+  - Dead per-pixel buffer writes in RayTraceRowFunc (ray.c:700-988 region): removed calculateUvCoordinates call, triangleIdBuffer write, motion-vector transform block, motPrevRot table build (30 trig/row), and prev-camera hoisted normalizes. No image change (MSE 0.00, hashes match). The baseline was COLD (19.47 ms vs warm ~15.2-15.4 ms) so the +21.7% avg is inflated; the true win is the removed CPU share (~4.5% of frame CPU per fresh profile: calculateUvCoordinates 1.1% + motion vector block ~3.4%).
+
+### REFUTED / artifacts this session (do not retry)
+  - **`Float3_Dot` 1.7% excl in the flame graph is a PROFILE ARTIFACT.** `make flame` builds `main_flame` with `-fno-inline-functions -fno-lto`, so the 2-line `Float3_Dot` in math/vector3.h appears as out-of-line calls (52 call sites, spills in the AO loop). The real binary inlines it everywhere. Do not "fix" this.
+  - Leftover `bench/uvtrs.*` from a prior session is broken (uv_cached validation fails 657/200000: it precomputes d00/d01/d11 per-triangle from T_V0/V1/V2 but validates per-pixel where triangles repeat; timing also degenerates to ~0 ns) — deleted.
+
+### Gotchas for next sessions
+  - `run_func_bench` builds via `make build/bench/<name>` which does NOT depend on the .h header — after editing a bench header, `rm -f build/bench/<name>` first or you benchmark a stale binary.
+  - Bench micro-loops that accumulate into a non-volatile global get eliminated by LTO (prints 0.00 ns) — make the sink `volatile`.
+  - The flame build (no-inline) misattributes inlined inline math to out-of-line symbols (Float3_Dot 1.7%, [unknown] 2.7%); cross-check any "un-inlined function" hotspot against the normal binary's symbols before investing.
+  - `hot_annotate_func` resolves the first textual definition, which can be a test-file copy (IntersectBVH resolved to tests/testSSR.c) — use `hot_annotate_file` for the real source.
+
+### Status: sandbox clean after PR. Remaining hotspots unchanged: IntersectBVH 18.4% excl / 37.4% incl, rayTriangle 16.9%, RayTraceRowFunc 20% excl (structural), rayAABB_inv 7.9%, rayAABB_inv_x2_soa 5.8% — all compiler-saturated per prior sessions.
+
+---
+
 ## Pending Work (archived 2026-09, from the old planner board)
 - Next planned experiment: a multi-threaded micro-benchmark for the RayTraceRowFunc blur loop (current stack-VLA version vs pre-allocated global buffers). Single-threaded wins regressed in the 32-threaded renderer, so any blur redesign must be proven under thread contention before integration.
 - Open task list from the last session (all unstarted): read RayTraceRowFunc blur code + BlurBuffer + Camera struct; build the MT micro-benchmark; apply global-buffer blur if proven; build + make_bench (avg_ms, p99, image_mse); PR on success.
