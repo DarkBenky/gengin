@@ -594,13 +594,8 @@ static void RayTraceRowFunc(void *arg) {
 	float aspect = camera->aspect;
 	float fovScale = camera->fovScale;
 
-	// prev camera state for motion vectors — normalize for orthonormal projection basis
-	float3 prevPos = camera->prevPosition;
-	float3 prevFwd = Float3_Normalize(camera->prevForward);
-	float3 prevRgt = Float3_Normalize(camera->prevRight);
-	float3 prevUp = Float3_Normalize(camera->prevUp);
-	float prevAsp = camera->prevAspect;
-	float prevFov = camera->prevFovScale;
+	// prev camera state was hoisted here for per-pixel motion vectors; motionVectorBuffer
+	// has no reader (grep-verified 2026-09-22) so the block was removed with it.
 
 	// precompute per-row ray base and per-pixel right step
 	float ndcY = 1.0f - (row + 0.5f) / (float)height * 2.0f;
@@ -642,27 +637,7 @@ static void RayTraceRowFunc(void *arg) {
 		}
 	}
 
-	// Previous-frame forward rotation rows, hoisted out of the pixel loop.
-	// The motion-vector transform used to call TransformPointTRS(), which evaluates
-	// 6 sinf/cosf per call -> 12 transcendental calls per geometry pixel. These are
-	// the same expressions Object_UpdateWorldBounds() caches as _fwdRot0/1/2, built
-	// once per row task instead of once per pixel.
-	float motPrevRot[objectCount][9];
-	for (int i = 0; i < objectCount; i++) {
-		const float3 pr = objects[i].prevRotation;
-		const float psx = sinf(pr.x), pcx = cosf(pr.x);
-		const float psy = sinf(pr.y), pcy = cosf(pr.y);
-		const float psz = sinf(pr.z), pcz = cosf(pr.z);
-		motPrevRot[i][0] = pcy * pcz;
-		motPrevRot[i][1] = psx * psy * pcz - pcx * psz;
-		motPrevRot[i][2] = pcx * psy * pcz + psx * psz;
-		motPrevRot[i][3] = pcy * psz;
-		motPrevRot[i][4] = psx * psy * psz + pcx * pcz;
-		motPrevRot[i][5] = pcx * psy * psz - psx * pcz;
-		motPrevRot[i][6] = -psy;
-		motPrevRot[i][7] = psx * pcy;
-		motPrevRot[i][8] = pcx * pcy;
-	}
+	// per-row previous-rotation table was removed with the dead motion-vector block.
 
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
@@ -726,7 +701,6 @@ static void RayTraceRowFunc(void *arg) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
 			camera->objectIdBuffer[idx] = -1;
 			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
-			camera->motionVectorBuffer[idx] = (float2){0.0f, 0.0f};
 			continue;
 		}
 
@@ -947,45 +921,10 @@ static void RayTraceRowFunc(void *arg) {
 		float roughGloss = 1.0f - roughness;
 		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, roughGloss * roughGloss};
 		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
-		camera->uvBuffer[idx] = calculateUvCoordinates(bestHitPos, v0, v1, v2);
-		camera->triangleIdBuffer[idx] = bestTri;
-
-		// Motion vector: screen-UV delta from previous frame
-		{
-			// world -> local uses the rotation rows Object_UpdateWorldBounds already
-			// caches (the same rows IntersectBVH uses); local -> previous-frame world
-			// uses the hoisted previous rotation rows. No per-pixel sinf/cosf.
-			const float3 pw = {bestHitPos.x - obj->position.x,
-			                   bestHitPos.y - obj->position.y,
-			                   bestHitPos.z - obj->position.z};
-			const float3 localPos = {
-				obj->_invScale.x * pw.x + obj->_invScale.y * pw.y + obj->_invScale.z * pw.z,
-				obj->_invRotSin.x * pw.x + obj->_invRotSin.y * pw.y + obj->_invRotSin.z * pw.z,
-				obj->_invRotCos.x * pw.x + obj->_invRotCos.y * pw.y + obj->_invRotCos.z * pw.z};
-			const float *pr = motPrevRot[bestObj];
-			const float lpx = localPos.x * obj->prevScale.x;
-			const float lpy = localPos.y * obj->prevScale.y;
-			const float lpz = localPos.z * obj->prevScale.z;
-			const float3 prevWorldPos = {
-				pr[0] * lpx + pr[1] * lpy + pr[2] * lpz + obj->prevPostion.x,
-				pr[3] * lpx + pr[4] * lpy + pr[5] * lpz + obj->prevPostion.y,
-				pr[6] * lpx + pr[7] * lpy + pr[8] * lpz + obj->prevPostion.z};
-			float3 prevToPoint = Float3_Sub(prevWorldPos, prevPos);
-			float prevViewZ = Float3_Dot(prevToPoint, prevFwd);
-			if (prevViewZ > 1e-4f) {
-				float prevViewX = Float3_Dot(prevToPoint, prevRgt);
-				float prevViewY = Float3_Dot(prevToPoint, prevUp);
-				float prevNdcX = prevViewX / (prevViewZ * prevAsp * prevFov);
-				float prevNdcY = prevViewY / (prevViewZ * prevFov);
-				float prevU = (prevNdcX + 1.0f) * 0.5f;
-				float prevV = (1.0f - prevNdcY) * 0.5f;
-				float currU = (x + 0.5f) / (float)width;
-				float currV = (row + 0.5f) / (float)height;
-				camera->motionVectorBuffer[idx] = (float2){currU - prevU, currV - prevV};
-			} else {
-				camera->motionVectorBuffer[idx] = (float2){0.0f, 0.0f};
-			}
-		}
+		// NOTE: uvBuffer / triangleIdBuffer / motionVectorBuffer are write-only
+		// (no reader in the codebase, no .cl consumer) — the per-pixel UV
+		// barycentrics + motion-vector transform they fed are dead work and
+		// were removed 2026-09-22.
 
 		// ray traced reflection only cast every REFLECTION_RESOLUTION columns
 		if (x % REFLECTION_RESOLUTION == 0) {
@@ -1248,7 +1187,6 @@ static void RayTraceColumnFunc(void *arg) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
 			camera->objectIdBuffer[idx] = -1;
 			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
-			camera->motionVectorBuffer[idx] = (float2){0.0f, 0.0f};
 			continue;
 		}
 
