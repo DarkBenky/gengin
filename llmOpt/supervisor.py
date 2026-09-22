@@ -788,7 +788,8 @@ def check_openrouter_model(config):
     """Configured model exists in the public catalog (no spending).
 
     Routing variant suffixes (`:floor`, `:free`, `:nitro`, ...) are accepted on
-    top of any catalog model.
+    top of any catalog model, and provider pins (`:xiaomi`, `:xiaomi/fp8`) are
+    matched against the base model's endpoint list.
     """
     import openrouter_keys as ork
 

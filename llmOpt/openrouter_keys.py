@@ -241,15 +241,18 @@ class OpenRouterClient:
         return deleted
 
 
-VARIANT_SUFFIXES = {"free", "nitro", "floor", "online", "extended", "thinking"}
+VARIANT_SUFFIXES = {"free", "batch", "nitro", "floor", "exacto", "online",
+                    "extended", "thinking"}
+CATALOG_VARIANTS = {"free", "batch", "thinking", "extended"}
+ROUTING_VARIANTS = {"nitro", "floor", "exacto", "online"}
 
 
 def _base_model_id(model_id):
-    """Strip a known OpenRouter routing variant suffix (`:floor`, `:free`, ...).
+    """Strip a known OpenRouter variant suffix (`:floor`, `:free`, ...).
 
-    Variants are applied per request and never appear in the public catalog.
-    Returns (base_id, variant); unknown suffixes are left untouched so typos
-    still fail the catalog check.
+    Variants are applied per request and routing ones never appear in the
+    public catalog.  Returns (base_id, variant); unknown suffixes are left
+    untouched.
     """
     base, sep, variant = model_id.partition(":")
     if sep and variant in VARIANT_SUFFIXES:
@@ -257,23 +260,68 @@ def _base_model_id(model_id):
     return model_id, ""
 
 
-def model_available(model_id, timeout=DEFAULT_TIMEOUT):
-    """Check the public model list for the id (routing variants allowed).
-
-    Returns True/False, or None when the list cannot be fetched (the caller
-    decides whether that is fatal).
-    """
-    base, _variant = _base_model_id(model_id)
+def _fetch_json(url, timeout):
     try:
         req = urllib.request.Request(
-            f"{BASE_URL}/models",
-            headers={"User-Agent": "gengin-llmopt-supervisor/1.0"})
+            url, headers={"User-Agent": "gengin-llmopt-supervisor/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read(MAX_BODY))
-        return any(m.get("id") == base for m in data.get("data", []))
+            return json.loads(resp.read(MAX_BODY))
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError,
             UnicodeDecodeError):
         return None
+
+
+def _pin_matches(pin, tags, providers):
+    """Whether a provider pin (`xiaomi` or `xiaomi/fp8`) fits a model's endpoints."""
+    needle = pin.lower()
+    if needle in tags:
+        return True
+    provider, _, quant = needle.partition("/")
+    provider_tags = {t for t in tags if t.startswith(provider + "/")}
+    if not provider_tags and provider not in providers:
+        return False
+    if quant and not any(quant in t for t in provider_tags):
+        return False
+    return True
+
+
+def model_available(model_id, timeout=DEFAULT_TIMEOUT):
+    """Check the model can serve a request: catalog id, variant, or provider pin.
+
+    `model:floor`-style routing suffixes and catalog variants resolve to
+    catalog entries; provider pins (`:xiaomi`, `:xiaomi/fp8`) are matched
+    against the base model's endpoint list — they are request-time modifiers
+    and never appear in the public catalog.  Returns True/False, or None when
+    the catalog or endpoint list cannot be fetched (the caller decides
+    whether that is fatal).
+    """
+    base, _, rest = model_id.partition(":")
+    suffixes = rest.split(":") if rest else []
+    pins = [s for s in suffixes if s not in CATALOG_VARIANTS | ROUTING_VARIANTS]
+    keep = [s for s in suffixes if s in CATALOG_VARIANTS]
+
+    catalog = _fetch_json(f"{BASE_URL}/models", timeout)
+    if catalog is None:
+        return None
+    ids = {m.get("id") for m in catalog.get("data", [])}
+
+    if not pins:
+        candidates = [model_id, base]
+        if keep:
+            candidates.append(":".join([base] + keep))
+        return any(c in ids for c in candidates)
+
+    if base not in ids:
+        return False
+    payload = _fetch_json(
+        f"{BASE_URL}/models/{urllib.parse.quote(base, safe='/')}/endpoints", timeout)
+    if payload is None:
+        return None
+    endpoints = (payload.get("data") or {}).get("endpoints") or []
+    tags = {str(e.get("tag") or "").lower() for e in endpoints}
+    providers = {str(e.get("provider_name") or e.get("name") or "").lower()
+                 for e in endpoints}
+    return all(_pin_matches(pin, tags, providers) for pin in pins)
 
 
 def key_expires_at(session_timeout_seconds, key_expiry_grace_seconds):
