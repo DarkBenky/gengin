@@ -71,7 +71,10 @@ MAX_BODY = 64 * 1024 * 1024
 # Only these suffixes are OpenRouter variants. Anything else in a model id is
 # treated as a caller-chosen pin and the request passes through untouched.
 CATALOG_VARIANTS = {"free", "batch", "thinking", "extended"}
-ROUTING_VARIANTS = {"nitro", "floor", "exacto", "online"}
+# `flex` is a service tier (cheaper, higher latency) rather than a routing
+# variant, but it is a caller-chosen routing intent all the same: appending
+# `:floor` on top of it is not what the caller asked for.
+ROUTING_VARIANTS = {"nitro", "floor", "exacto", "online", "flex"}
 KNOWN_VARIANTS = CATALOG_VARIANTS | ROUTING_VARIANTS
 
 _lock = threading.Lock()

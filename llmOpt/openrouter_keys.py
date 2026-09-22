@@ -242,9 +242,11 @@ class OpenRouterClient:
 
 
 VARIANT_SUFFIXES = {"free", "batch", "nitro", "floor", "exacto", "online",
-                    "extended", "thinking"}
+                    "extended", "thinking", "flex"}
 CATALOG_VARIANTS = {"free", "batch", "thinking", "extended"}
-ROUTING_VARIANTS = {"nitro", "floor", "exacto", "online"}
+# `flex` is a service tier (cheaper, higher latency), not a routing variant,
+# but the caller picks it the same way and it must not be read as a provider pin.
+ROUTING_VARIANTS = {"nitro", "floor", "exacto", "online", "flex"}
 
 
 def _base_model_id(model_id):
