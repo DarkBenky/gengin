@@ -316,10 +316,14 @@ fi
 log "installing systemd units"
 for unit in gengin-xvfb gengin-openrouter-proxy gengin-llmopt; do
   src="$CHECKOUT/llmOpt/systemd/$unit.service"
-  sed -e "s|__CHECKOUT__|$CHECKOUT|g" -e "s|__VENV__|$VENV|g" "$src" \
-    > "/etc/systemd/system/$unit.service"
-  chown root:root "/etc/systemd/system/$unit.service"
-  chmod 0644 "/etc/systemd/system/$unit.service"
+  # A failed sed used to leave a zero-length unit behind, which systemd reads
+  # as masked: the service silently exists but refuses to start.  Render to a
+  # temp file and only then replace the installed unit.
+  [[ -f "$src" ]] || die "missing unit template: $src"
+  tmp="$(mktemp)"
+  sed -e "s|__CHECKOUT__|$CHECKOUT|g" -e "s|__VENV__|$VENV|g" "$src" > "$tmp"
+  install -o root -g root -m 0644 "$tmp" "/etc/systemd/system/$unit.service"
+  rm -f "$tmp"
 done
 systemctl daemon-reload
 
