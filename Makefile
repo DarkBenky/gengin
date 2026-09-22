@@ -252,5 +252,8 @@ perf-report:
 	@if [ ! -f $(PROF_DIR)/flamegraph.perf.data ]; then echo "No perf data found, run 'make flame' first"; exit 1; fi
 	perf report -i $(PROF_DIR)/flamegraph.perf.data --no-children
 
+# Delete build outputs but keep tracked prof charts (build/prof/*.svg):
+# make_bench runs `make clean` on a clean checkout, and a deleted tracked
+# file would count as dirt and block the clean-baseline capture.
 clean:
-	rm -rf $(BUILD_DIR)
+	find $(BUILD_DIR) -type f ! -name '*.svg' -delete 2>/dev/null || true
