@@ -1,5 +1,19 @@
 # Tasks
 
+- [ ] Configure everywhere where I use open router not to use fp4 / int4 models
+
+```
+{
+  "model": "anthropic/claude-3.5-sonnet",
+  "messages": [
+    { "role": "user", "content": "Hello!" }
+    ],
+  "provider": {
+    "quantizations": ["fp8", "fp16", "bf16", "fp32"]
+  }
+}
+```
+
 - [ ] Add debug build that enables to check the output of each buffer
 - [X] Add to agent prompt specific part that model should focus mainly on c part not open cl
 - [X] Add to agent prompt specific part of trying to inject ```restrict``` so compiler can be more aggressive and also add focus on alignment of strict for minimal cache misses
