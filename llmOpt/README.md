@@ -40,10 +40,13 @@ through `llmOpt/proxy/openrouter_proxy.py` on `http://127.0.0.1:8787`:
   `provider.only`/`provider.order` pins, or `:free` models.
 
 Install/refresh with `llmOpt/scripts/setup-openrouter-proxy.sh` (systemd user
-unit on the desktop; the VM gets a system unit from `setup-vm.sh`).  Hermes
-reaches the proxy through `model.base_url` in the rendered config — the
-`#10622` mirror path — which `setup-hermes.sh` and the supervisor wire up
-automatically; nothing to configure per run.
+unit on the desktop).  On the VM there is nothing to enable: the system unit
+is started on demand — by `gengin-llmopt.service` (`Wants=`, so it follows the
+supervisor) or by `supervisor-console.sh`, which starts it before the loop and
+stops it again on exit when it had to spawn it.  Hermes reaches the proxy
+through `model.base_url` in the rendered config — the `#10622` mirror path —
+which `setup-hermes.sh` and the supervisor wire up automatically; nothing to
+configure per run.
 
 Knobs (environment of the unit): `GENGIN_PROXY_PORT`,
 `GENGIN_PROXY_QUANTIZATIONS`, `GENGIN_PROXY_FLOOR=0`,
