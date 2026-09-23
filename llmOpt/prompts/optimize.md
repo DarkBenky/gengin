@@ -51,7 +51,10 @@ until you either open a PR or genuinely run out of candidates and time.
 Candidates come from the `## Node map`, ranked by its flame percentages.  If
 that section is empty (first session on a fresh checkout), seed it from your
 own `make_flame` output — top 5 nodes, one row each — before choosing.  The
-renderClouds OpenCL pass is OUT OF SCOPE — see the SCOPE section.
+renderClouds OpenCL pass is OUT OF SCOPE — see the SCOPE section.  Expect
+those kernels at the top of the profile: the GPU pass dominates the frame, so
+frame-level CPU wins are small by construction — 1-3% on avg/median with
+`image_mse` 0.00 is a good CPU result and belongs in a PR.
 
 ## WORKFLOW
 
@@ -99,7 +102,13 @@ renderClouds OpenCL pass is OUT OF SCOPE — see the SCOPE section.
 9. Decision: `run_func_bench` shows a real win (>= 1% on ns/call, consistent
    across runs, correctness PASS) → Phase 3.  The cache-miss/branch-miss
    counters inform the pre-mortem — they do not veto a measured win on their
-   own.  Otherwise change strategy or move to the next hotspot.
+   own.  When the remaining doubt is the *representativeness* of the
+   micro-bench input (the pre-mortem's fourth failure mode) rather than a
+   mechanism you can name (working set, VLAs, extra indirection), APPLY the
+   change and run `make_bench`: the real scene, real cubemap, `image_mse` and
+   frame hashes are exactly the validation the micro-bench cannot give.
+   Dropping a measured win without a `make_bench` run is not allowed.
+   Otherwise change strategy or move to the next hotspot.
 
 ## COMPILER-ASSIST PLAYS (TRY THESE FIRST ON MEMORY-BOUND HOTSPOTS)
 A. `restrict` injection (aliasing contract):
@@ -131,6 +140,11 @@ the Phase 2/3 gate — no change purely for tidiness.
     multi-threaded micro-benchmark is the way to settle blur/VLA questions.
 
 ### Phase 4 — Apply & Validate
+Apply -> measure -> revert is the normal loop, not a failure: `patch` the
+change in, run `make_bench`, keep it when it is IMPROVED, and `patch` it back
+out when it does not clear the bar.  The sandbox only has to be clean at the
+END of the session.
+
 11. Edit with `patch` (targeted find-and-replace).  Use `write_file` only when
     replacing a whole file.  Never edit via terminal sed/awk.
 12. `lsp_diagnostics(rel_path)` — fast check before the ~30 s build.  (Hermes
