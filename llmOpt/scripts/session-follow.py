@@ -22,6 +22,7 @@ import time
 
 IDLE_RESET_SECONDS = 600   # an older DB is a finished session: wait for a new one
 HEARTBEAT_SECONDS = 30
+CONTEXT_ROWS = 8           # rows of history printed when attaching mid-session
 PREVIEW = 200
 
 
@@ -39,6 +40,11 @@ def newest_db(checkout):
 
 def session_id(path):
     return path.split(os.sep + "run" + os.sep)[1].split(os.sep)[0]
+
+
+def session_finished(checkout, sid):
+    """The supervisor writes logs/sessions/<id>.json when a session ends."""
+    return os.path.exists(os.path.join(checkout, "llmOpt", "logs", "sessions", sid + ".json"))
 
 
 def preview(text, limit=PREVIEW):
@@ -102,6 +108,8 @@ def main():
     parser.add_argument("checkout", nargs="?", default=default_checkout())
     parser.add_argument("--interval", type=float, default=2.0)
     parser.add_argument("--ticks", type=int, default=0, help="stop after N polls (0 = forever)")
+    parser.add_argument("--idle-reset", type=float, default=IDLE_RESET_SECONDS,
+                        help="treat a session quiet for this many seconds as finished")
     args = parser.parse_args()
 
     print("[follow] watching %s/llmOpt/run/*/hermes/state.db" % args.checkout, flush=True)
@@ -109,6 +117,7 @@ def main():
     last_id = 0
     last_event = time.time()
     heartbeat = time.time() - HEARTBEAT_SECONDS   # report state on the first poll
+    finished = set()
     ticks = 0
 
     while True:
@@ -119,13 +128,26 @@ def main():
                 print("[follow] waiting for the first session ...", flush=True)
                 heartbeat = time.time()
         else:
-            if path != current:
+            sid = session_id(path)
+            fresh = path != current
+            if fresh:
                 current, last_id = path, 0
-                print("[follow] session %s" % session_id(path), flush=True)
             try:
                 con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+                if fresh:
+                    newest = con.execute("select max(id) from messages").fetchone()
+                    last_id = max(0, int(newest[0] or 0) - CONTEXT_ROWS)
+                    if sid not in finished:
+                        print("[follow] session %s" % sid, flush=True)
                 activity = last_activity(con)
-                if last_id == 0 and activity and time.time() - activity > IDLE_RESET_SECONDS:
+                if sid in finished:
+                    pass
+                elif session_finished(args.checkout, sid) or (
+                        last_id and time.time() - last_event > args.idle_reset):
+                    finished.add(sid)
+                    print("[follow] session %s finished; waiting for the next one" % sid, flush=True)
+                    heartbeat = time.time()
+                elif last_id == 0 and activity and time.time() - activity > args.idle_reset:
                     if time.time() - heartbeat >= HEARTBEAT_SECONDS:
                         print("[follow] last session ended %d min ago, waiting for a new one"
                               % ((time.time() - activity) / 60), flush=True)
