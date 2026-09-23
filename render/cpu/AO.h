@@ -1,7 +1,6 @@
 #include "../../object/format.h"
 #include "../../math/vector3.h"
 #include "../../util/threadPool.h"
-#include "../color/color.h"
 #include <immintrin.h>
 #include <stdbool.h>
 
@@ -851,3 +850,5 @@ static void CalculateAmbientOcclusionV3Mp(Camera *camera, ThreadPool *threadPool
 	}
 	poolWait(threadPool);
 }
+
+// TODO: test open cl implementation
