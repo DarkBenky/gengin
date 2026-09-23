@@ -58,11 +58,11 @@ auto-update; `GENGIN_HARNESS_UPDATE_TIMEOUT` (seconds, default 420) bounds it.
 
 All local secrets live in **`llmOpt/.env`**:
 
-| Variable | Purpose |
-|---|---|
-| `KEY` | OpenRouter API key for manual `gengin-opt.sh` runs |
-| `GITHUB_TOKEN` | Push / PR creation |
-| `DEEPSEEK_API_KEY` | Only needed for the `deepseek` preset |
+| Variable           | Purpose                                            |
+|--------------------|----------------------------------------------------|
+| `KEY`              | OpenRouter API key for manual `gengin-opt.sh` runs |
+| `GITHUB_TOKEN`     | Push / PR creation                                 |
+| `DEEPSEEK_API_KEY` | Only needed for the `deepseek` preset              |
 
 After editing, mirror them into the Hermes environment:
 
@@ -97,14 +97,14 @@ Rules:
 
 ## Tools (20)
 
-| Group | Tools |
-|---|---|
-| Build & profiling | `git_pull_project`, `build_project`, `make_bench`, `make_flame`, `create_pr`, `bisect_regression` |
-| Micro-bench sandbox | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench` |
-| Visual evidence | `compare_bench_frames`, `compare_images` |
-| Hotspot annotation | `hot_annotate_func`, `hot_annotate_file` |
-| clangd queries | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
-| Session control | `report_session_result` (supervised sessions only) |
+| Group               | Tools                                                                                              |
+|---------------------|----------------------------------------------------------------------------------------------------|
+| Build & profiling   | `git_pull_project`, `build_project`, `make_bench`, `make_flame`, `create_pr`, `bisect_regression`  |
+| Micro-bench sandbox | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench`                        |
+| Visual evidence     | `compare_bench_frames`, `compare_images`                                                           |
+| Hotspot annotation  | `hot_annotate_func`, `hot_annotate_file`                                                           |
+| clangd queries      | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
+| Session control     | `report_session_result` (supervised sessions only)                                                 |
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate),
 then `compare_bench_frames` writes `before | after | diff` composites + metrics
@@ -114,21 +114,21 @@ embedded).
 
 ## Files
 
-| File | Purpose |
-|---|---|
-| `mcp_server.py` | MCP server (stdio) — the domain tools |
-| `main.py` | Build/bench/flame/PR/bisect domain logic |
-| `supervisor.py` | Unattended commit-triggered supervisor (VM) |
-| `getFunc.py` | C function/struct index + perf line annotation |
-| `lsp_client.py` | clangd client (definition/references/diagnostics/call hierarchy) |
-| `gen_compile_commands.py` | Generates compile_commands.json for clangd |
-| `perf.py` | perf.data → folded stacks → hotspot parser |
-| `prompts/optimize.md` | Session workflow (ISOLATION-FIRST loop) |
-| `hermes/config.yaml.template` | Project Hermes config template |
-| `scripts/setup-hermes.sh` | Renders the template + secrets into `llmOpt/.hermes/` |
-| `scripts/gengin-opt.sh` | Session launcher with model selection |
-| `scripts/supervisor-console.sh` | Run the supervisor in a tmux console (VM) |
-| `codebase_context.md` | Persisted insights: architecture, wins, failures, hotspots |
+| File                            | Purpose                                                          |
+|---------------------------------|------------------------------------------------------------------|
+| `mcp_server.py`                 | MCP server (stdio) — the domain tools                            |
+| `main.py`                       | Build/bench/flame/PR/bisect domain logic                         |
+| `supervisor.py`                 | Unattended commit-triggered supervisor (VM)                      |
+| `getFunc.py`                    | C function/struct index + perf line annotation                   |
+| `lsp_client.py`                 | clangd client (definition/references/diagnostics/call hierarchy) |
+| `gen_compile_commands.py`       | Generates compile_commands.json for clangd                       |
+| `perf.py`                       | perf.data → folded stacks → hotspot parser                       |
+| `prompts/optimize.md`           | Session workflow (ISOLATION-FIRST loop)                          |
+| `hermes/config.yaml.template`   | Project Hermes config template                                   |
+| `scripts/setup-hermes.sh`       | Renders the template + secrets into `llmOpt/.hermes/`            |
+| `scripts/gengin-opt.sh`         | Session launcher with model selection                            |
+| `scripts/supervisor-console.sh` | Run the supervisor in a tmux console (VM)                        |
+| `codebase_context.md`           | Persisted insights: architecture, wins, failures, hotspots       |
 
 ## Sandbox
 
