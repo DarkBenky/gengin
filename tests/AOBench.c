@@ -59,6 +59,7 @@ int main(void) {
 	float timesV2PlusSt[SAMPLES], timesV2PlusMp[SAMPLES];
 	float timesV2PlusColSt[SAMPLES], timesV2PlusColMp[SAMPLES];
 	float timesV2PlusColSgMp[SAMPLES];
+	float timesV2PlusColSkipMp[SAMPLES];
 	float timesV3St[SAMPLES], timesV3Mp[SAMPLES];
 
 	CalculateAmbientOcclusion(&camera);
@@ -70,6 +71,7 @@ int main(void) {
 	CalculateAmbientOcclusionV2PlusColumn(&camera);
 	CalculateAmbientOcclusionV2PlusColumnMp(&camera, pool);
 	CalculateAmbientOcclusionV2PlusColumnSgMp(&camera, pool);
+	CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(&camera, pool);
 	CalculateAmbientOcclusionV3(&camera);
 	CalculateAmbientOcclusionV3Mp(&camera, pool);
 
@@ -157,6 +159,15 @@ int main(void) {
 	for (int s = 0; s < SAMPLES; s++) {
 		struct timespec t0, t1;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
+		CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(&camera, pool);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timesV2PlusColSkipMp[s] = (float)(t1.tv_sec - t0.tv_sec)
+		                         + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+
+	for (int s = 0; s < SAMPLES; s++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV3(&camera);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
 		timesV3St[s] = (float)(t1.tv_sec - t0.tv_sec)
@@ -181,38 +192,43 @@ int main(void) {
 	PerformanceMetrics mV2PlusColSt = ComputePerformanceMetrics(timesV2PlusColSt, SAMPLES);
 	PerformanceMetrics mV2PlusColMp = ComputePerformanceMetrics(timesV2PlusColMp, SAMPLES);
 	PerformanceMetrics mV2PlusColSgMp = ComputePerformanceMetrics(timesV2PlusColSgMp, SAMPLES);
+	PerformanceMetrics mV2PlusColSkipMp = ComputePerformanceMetrics(timesV2PlusColSkipMp, SAMPLES);
 	PerformanceMetrics mV3St = ComputePerformanceMetrics(timesV3St, SAMPLES);
 	PerformanceMetrics mV3Mp = ComputePerformanceMetrics(timesV3Mp, SAMPLES);
 
 	printf("=== AOBench: AO over %dx%d, %d samples ===\n",
 	       WIDTH, HEIGHT, SAMPLES);
-	printf("V1 Single avg=%.3fms  median=%.3fms  p99=%.3fms\n",
-	       mSt.averageTime * 1e3f, mSt.medianTime * 1e3f, mSt.p99Time * 1e3f);
-	printf("V1 Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
-	       mMps.averageTime * 1e3f, mMps.medianTime * 1e3f, mMps.p99Time * 1e3f,
+	printf("%-20s %8s  %10s  %9s  %7s\n", "Benchmark", "avg(ms)", "median(ms)", "p99(ms)", "speedup");
+	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
+	       "V1 Single", mSt.averageTime * 1e3f, mSt.medianTime * 1e3f, mSt.p99Time * 1e3f, "-");
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V1 Multi", mMps.averageTime * 1e3f, mMps.medianTime * 1e3f, mMps.p99Time * 1e3f,
 	       mSt.medianTime / mMps.medianTime);
-	printf("V2 Single avg=%.3fms  median=%.3fms  p99=%.3fms\n",
-	       mV2St.averageTime * 1e3f, mV2St.medianTime * 1e3f, mV2St.p99Time * 1e3f);
-	printf("V2 Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
-	       mV2Mp.averageTime * 1e3f, mV2Mp.medianTime * 1e3f, mV2Mp.p99Time * 1e3f,
+	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
+	       "V2 Single", mV2St.averageTime * 1e3f, mV2St.medianTime * 1e3f, mV2St.p99Time * 1e3f, "-");
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V2 Multi", mV2Mp.averageTime * 1e3f, mV2Mp.medianTime * 1e3f, mV2Mp.p99Time * 1e3f,
 	       mV2St.medianTime / mV2Mp.medianTime);
-	printf("V2Plus Single avg=%.3fms  median=%.3fms  p99=%.3fms\n",
-	       mV2PlusSt.averageTime * 1e3f, mV2PlusSt.medianTime * 1e3f, mV2PlusSt.p99Time * 1e3f);
-	printf("V2Plus Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
-	       mV2PlusMp.averageTime * 1e3f, mV2PlusMp.medianTime * 1e3f, mV2PlusMp.p99Time * 1e3f,
+	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
+	       "V2Plus Single", mV2PlusSt.averageTime * 1e3f, mV2PlusSt.medianTime * 1e3f, mV2PlusSt.p99Time * 1e3f, "-");
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V2Plus Multi", mV2PlusMp.averageTime * 1e3f, mV2PlusMp.medianTime * 1e3f, mV2PlusMp.p99Time * 1e3f,
 	       mV2PlusSt.medianTime / mV2PlusMp.medianTime);
-	printf("V2PlusCol Single avg=%.3fms  median=%.3fms  p99=%.3fms\n",
-	       mV2PlusColSt.averageTime * 1e3f, mV2PlusColSt.medianTime * 1e3f, mV2PlusColSt.p99Time * 1e3f);
-	printf("V2PlusCol Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
-	       mV2PlusColMp.averageTime * 1e3f, mV2PlusColMp.medianTime * 1e3f, mV2PlusColMp.p99Time * 1e3f,
+	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
+	       "V2PlusCol Single", mV2PlusColSt.averageTime * 1e3f, mV2PlusColSt.medianTime * 1e3f, mV2PlusColSt.p99Time * 1e3f, "-");
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V2PlusCol Multi", mV2PlusColMp.averageTime * 1e3f, mV2PlusColMp.medianTime * 1e3f, mV2PlusColMp.p99Time * 1e3f,
 	       mV2PlusColSt.medianTime / mV2PlusColMp.medianTime);
-	printf("V2PlusColSg Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
-	       mV2PlusColSgMp.averageTime * 1e3f, mV2PlusColSgMp.medianTime * 1e3f, mV2PlusColSgMp.p99Time * 1e3f,
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V2PlusColSg Multi", mV2PlusColSgMp.averageTime * 1e3f, mV2PlusColSgMp.medianTime * 1e3f, mV2PlusColSgMp.p99Time * 1e3f,
 	       mV2PlusColSt.medianTime / mV2PlusColSgMp.medianTime);
-	printf("V3 Single avg=%.3fms  median=%.3fms  p99=%.3fms\n",
-	       mV3St.averageTime * 1e3f, mV3St.medianTime * 1e3f, mV3St.p99Time * 1e3f);
-	printf("V3 Multi  avg=%.3fms  median=%.3fms  p99=%.3fms  speedup=%.2fx\n",
-	       mV3Mp.averageTime * 1e3f, mV3Mp.medianTime * 1e3f, mV3Mp.p99Time * 1e3f,
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V2PlusColSkip Multi", mV2PlusColSkipMp.averageTime * 1e3f, mV2PlusColSkipMp.medianTime * 1e3f, mV2PlusColSkipMp.p99Time * 1e3f,
+	       mV2PlusColMp.medianTime / mV2PlusColSkipMp.medianTime);
+	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
+	       "V3 Single", mV3St.averageTime * 1e3f, mV3St.medianTime * 1e3f, mV3St.p99Time * 1e3f, "-");
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V3 Multi", mV3Mp.averageTime * 1e3f, mV3Mp.medianTime * 1e3f, mV3Mp.p99Time * 1e3f,
 	       mV3St.medianTime / mV3Mp.medianTime);
 
 	// The fastHash keeps global call state now: per-pixel patterns depend on the

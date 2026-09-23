@@ -17,7 +17,8 @@
 #ifndef COLUMNS_PER_TASK
 #define COLUMNS_PER_TASK 16
 #endif
-// TODO: Add option to use lower internal resolution
+
+#define PIXEL_SKIP 4
 
 static const float2 SAMPLES_PATTERN[VARIATIONS][SAMPLES] = {
 	{
@@ -569,6 +570,115 @@ static void CalculateAmbientOcclusionV2RowPlus(void *arg) {
 	}
 }
 
+static void CalculateAmbientOcclusionV2RowPlusSkip(void *arg) {
+	AmbientOcclusionTask *restrict task = arg;
+	Camera *restrict camera = task->camera;
+
+	const int width = camera->screenWidth;
+	const int height = camera->screenHeight;
+	const int endRow = task->row + task->rows;
+	const float focalLengthPixels = (height * 0.5f) / camera->fovScale;
+	const float worldRadius = 20.5f;
+	const float bias = worldRadius * 0.02f;
+	const float bias2 = bias * bias;
+	const float worldRadius2 = worldRadius * worldRadius;
+	const float invWorldRadius = 1.0f / worldRadius;
+	const float invSkip = 1.0f / PIXEL_SKIP;
+
+	float rowValues[width];
+
+	for (int row = task->row; row < endRow; row++) {
+		// Sample every PIXEL_SKIP-th column; the skipped pixels are lerped in place
+		// as soon as their right sample lands, so the blur pass below never reads
+		// unwritten entries and no clear/fill pass is needed.
+		for (int j = 0; j < width; j += PIXEL_SKIP) {
+			const int idx = row * width + j;
+
+			float ao;
+			if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) {
+				ao = 1.0f;
+			} else {
+				float3 normal = camera->normalBuffer[idx];
+				float3 position = camera->positionBuffer[idx];
+				float viewDepth = camera->depthBuffer[idx];
+
+				float pixelRadius = (focalLengthPixels * worldRadius) / viewDepth;
+				pixelRadius = Clamp(pixelRadius, 2.0f, 48.0f);
+
+				uint32_t h = fastHash(row, j);
+				const float2 rotation = ROTATION_TABLE[(h >> 3) & (ROTATIONS - 1)];
+				float ca = rotation.x, sa = rotation.y;
+
+				float occlusion = 0.0f;
+				int validSamples = 0;
+
+				const float2 *pattern = SAMPLES_PATTERN[h % VARIATIONS];
+
+				for (int k = 0; k < SAMPLES; k++) {
+					float sx = pattern[k].x;
+					float sy = pattern[k].y;
+					float rx = sx * ca - sy * sa;
+					float ry = sx * sa + sy * ca;
+
+					float sampleX = j + rx * pixelRadius;
+					float sampleY = row + ry * pixelRadius;
+
+					if (sampleX < 0 || sampleX >= width ||
+						sampleY < 0 || sampleY >= height) {
+						continue;
+					}
+
+					int sampleIndex = (int)sampleY * width + (int)sampleX;
+
+					if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
+						continue;
+					}
+
+					float3 samplePos = camera->positionBuffer[sampleIndex];
+					float3 dir = Float3_Sub(samplePos, position);
+					float nd = Float3_Dot(normal, dir);
+					if (nd <= 0.0f) continue;
+
+					float dist2 = Float3_Dot(dir, dir);
+					if (dist2 < bias2 || dist2 > worldRadius2) continue;
+
+					float dist = sqrtf(dist2);
+					occlusion += (nd / dist) * (1.0f - dist * invWorldRadius);
+					validSamples++;
+				}
+
+				ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			}
+
+			rowValues[j] = ao;
+
+			if (j >= PIXEL_SKIP) {
+				const float prev = rowValues[j - PIXEL_SKIP];
+				const float step = (ao - prev) * invSkip;
+				for (int t = 1; t < PIXEL_SKIP; t++) {
+					rowValues[j - PIXEL_SKIP + t] = prev + step * t;
+				}
+			}
+		}
+
+		// width rarely divides PIXEL_SKIP; replicate the last sample over the tail
+		const int lastSample = ((width - 1) / PIXEL_SKIP) * PIXEL_SKIP;
+		for (int j = lastSample + 1; j < width; j++) {
+			rowValues[j] = rowValues[lastSample];
+		}
+
+		// start from kernel size half and end early to avoid bound checks
+		for (int j = KERNEL_SIZE_HALF; j < width - KERNEL_SIZE_HALF; j++) {
+			const int idx = row * width + j;
+			float sum = 0.0f;
+			for (int k = 0; k < KERNEL_SIZE; k++) {
+				sum += rowValues[j + k - KERNEL_SIZE_HALF] * lineKernelvaluse[k];
+			}
+			camera->ambientOcclusionBuffer[idx] = sum;
+		}
+	}
+}
+
 static void CalculateAmbientOcclusionV2Plus(Camera *camera) {
 	AmbientOcclusionTask task = {0, camera->screenHeight, camera};
 	CalculateAmbientOcclusionV2RowPlus(&task);
@@ -811,6 +921,24 @@ static void CalculateAmbientOcclusionV2PlusColumnMp(Camera *camera, ThreadPool *
 		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
 		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
 		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlus, &tasks[t]);
+	}
+	poolWait(threadPool);
+	columnBlurMp(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool);
+}
+
+static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(Camera *camera, ThreadPool *threadPool) {
+	// TODO: Apply blur pass
+	// TODO: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
+	if (!camera || !threadPool) return;
+
+	const int height = camera->screenHeight;
+	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	AmbientOcclusionTask tasks[taskCount];
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * ROWS_PER_TASK;
+		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
+		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlusSkip, &tasks[t]);
 	}
 	poolWait(threadPool);
 	columnBlurMp(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool);
