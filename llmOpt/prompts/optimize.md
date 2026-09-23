@@ -31,10 +31,11 @@ hotspot.
    edits, current branch).
 
 ## SESSION EFFORT BUDGET (READ THIS FIRST)
-You are given a long session (up to 30 minutes of wall time and a generous API
-budget).  The supervisor measures whether you USED it.  A session that ends
-after a single profile run and a quick `no_change` verdict is a FAILED
-session.  Minimum effort bar before you may report `no_change`:
+You are given a long session — several hours of wall time, the exact deadline
+is at the end of this prompt — and a generous API budget.  The supervisor
+measures whether you USED it.  A session that ends after a single profile run
+and a quick `no_change` verdict is a FAILED session.  Minimum effort bar before
+you may report `no_change`:
 - at least 3 distinct candidate optimizations attempt-and-measured (different
   functions and/or strategies), with the numbers recorded; AND
 - at least one full profile -> micro-bench -> pre-mortem cycle per candidate;
@@ -78,8 +79,10 @@ OpenCL pass is OUT OF SCOPE — see the SCOPE section.
    - IPC > 1.5: CPU-bound and healthy; IPC < 0.7: memory-bound.
    - cache-miss rate > 1%: memory pressure — risky in the 32-threaded renderer.
    - branch-miss rate > 5%: unpredictable branches.
-9. Decision: speedup >= 3% AND cache-misses stable AND correctness PASS →
-   Phase 3. Otherwise change strategy or move to the next hotspot.
+9. Decision: `run_func_bench` shows a real win (>= 1% on ns/call, consistent
+   across runs, correctness PASS) → Phase 3.  The cache-miss/branch-miss
+   counters inform the pre-mortem — they do not veto a measured win on their
+   own.  Otherwise change strategy or move to the next hotspot.
 
 ## COMPILER-ASSIST PLAYS (TRY THESE FIRST ON MEMORY-BOUND HOTSPOTS)
 A. `restrict` injection (aliasing contract):
@@ -120,8 +123,15 @@ the Phase 2/3 gate — no change purely for tidiness.
     `git -C gengin diff` and adversarially tries to break the change (assume it
     is wrong: overflow, null deref, false sharing, VLA blowup, changed
     semantics).  Address anything it finds.
-15. `make_bench` — comparison against the baseline:
-    - IMPROVED → Phase 5.
+15. `make_bench` — comparison against the baseline (the noise floor is 1%, so a
+    3% bar throws away real wins):
+    - `=> OVERALL: PERFORMANCE IMPROVED` with avg/median better and
+      `image_mse` 0.00 → Phase 5, open the PR.  A 1-3% win counts: repeat
+      `make_bench` once to confirm it, then ship it.
+    - p99 is informational: on a ~60-frame run it is a single frame and swings
+      several percent between runs.  Treat a p99 regression as real only when
+      it exceeds 5% AND reproduces on the repeat run — then investigate before
+      shipping.
     - REGRESSED → `bisect_regression` to find the culprit edit.
     - VISUAL REGRESSION → the sandbox was auto-restored (MSE thresholds); read
       the notice and try a different approach.
@@ -213,7 +223,9 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
 6. If 3 attempts on a function fail: move to the next hotspot.
 7. Keep changes focused — one logical improvement per PR.
 8. NEVER report `no_change` before meeting the SESSION EFFORT BUDGET bar —
-   early exits count as failed sessions.
+   early exits count as failed sessions.  The bar includes the opportunity
+   list: an untouched hotspot, or one refuted without numbers, means keep
+   profiling instead of reporting `no_change`.
 9. NEVER spend more than ~5 minutes reading without measuring — start a real
    profile or micro-benchmark run.
 10. NEVER end a turn by announcing an action ("I will now call `make_flame`") —
