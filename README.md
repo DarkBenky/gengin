@@ -6,9 +6,11 @@
 - [ ] **high** Ambient Occlusion
   - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
     - [ ] Write test of each implementation
-    - [ ] implement blur pass + implement to main render pipeline
+    - [X] implement blur pass
+    - [ ] implement to main render pipeline
     - [ ] Implement resolution param now it is too slow for use
       - [ ] finetune after this change
+    - [ ] Test if open cl is fast enough even when using read backs
 
 - [ ] **high** Overlap AO with the GPU cloud pass instead of running it inside RayTraceScene
   - [ ] Do not just delete the poolWait in RayTraceScene: the pool ring is sized WIDTH (1080) and 720 ray + 720 AO rows overflow it, silently dropping rows.
