@@ -62,13 +62,27 @@ typedef struct BVHNode {
 		int triStart;  // leaf: start in triIndices
 	};
 	int triCount;  // 0 = internal, >0 = leaf
-	int _pad[2];   // pad to 64 bytes
+	int _pad[2];   // pad to 64 bytes; _pad[0] = leaf ordinal for leaves (leafSoa index)
 } BVHNode;        // 64 bytes — 1 per cache line
+
+// Triangles evaluated per SSE leaf payload (the lane count of bvh.leafSoa).
+// CreateObjectBVH splits until a leaf holds at most this many triangles; the
+// traversals fall back to the scalar leaf loop if a node exceeds it.
+#define BVH_LEAF_SIMD 4
 
 typedef struct BVH {
 	BVHNode *nodes;
 	int *triIndices; // reordered triangle indices
 	int nodeCount;
+	// Per-leaf SoA payload for the 4-wide SSE leaf triangle test: 48 floats per
+	// leaf, one __m128 per component across the (up to 4) triangles of the leaf.
+	// layout: [0..3] v0.x [4..7] v0.y [8..11] v0.z [12..15] pad
+	//         [16..19] e1.x [20..23] e1.y [24..27] e1.z [28..31] pad
+	//         [32..35] e2.x [36..39] e2.y [40..43] e2.z [44..47] pad
+	// with e1 = v2 - v1, e2 = v3 - v1 and lanes >= triCount zeroed (a == 0,
+	// which the triangle test rejects). Built once in CreateObjectBVH.
+	float *leafSoa;
+	int leafCount;
 } BVH;
 typedef struct EmissionMap {
 	float3 emissionMap[EMISSION_RESOLUTION][EMISSION_RESOLUTION]; // precomputed per-face emission for a 32x32 grid of world positions (for direct lighting)
