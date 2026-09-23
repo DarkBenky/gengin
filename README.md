@@ -52,7 +52,7 @@
       - [ ] Add sound to code base for planes missiles ...
     - [X] implement 3d sound
 
-- [ ] **Not Sure** atmosphere rendering on gpu
+- [ ] **Not Sure** clouds rendering on gpu
   - [ ] maybe we can pre bake for each voxel the sun reflection distance (trough how many voxels does the ray need to travel to sun)
     - [ ] we can also try to store for example 6 float for each voxel that will define the distance trough claud in each direction and we will interpolate
       - for better quality maybe more
@@ -104,7 +104,7 @@
     - [ ] **low/median** opportunity just 0.52% of run time
   - [ ] CalculateUvCoordinates
     - [ ] **medium** opportunity just 1.03% of run time
-- [ ] better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
+- [X] better instruction like if you make some rendering changes compare performance if performance drop by 10% it is bad and should not be added or should be done better ....
 
 - [ ] train model against moving target
 - [ ] disable trust control
