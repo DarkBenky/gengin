@@ -29,6 +29,9 @@ hotspot.
 2. `terminal`: `git -C gengin status --porcelain` and
    `git -C gengin log --oneline -3` to see the sandbox state (uncommitted
    edits, current branch).
+3. The `## Node map` section of that file is your candidate queue: take its
+   `untried` rows largest flame percent first.  Do not re-derive hotspots the
+   map already lists — re-profile only to check a row is still current.
 
 ## SESSION EFFORT BUDGET (READ THIS FIRST)
 You are given a long session — several hours of wall time, the exact deadline
@@ -40,15 +43,15 @@ you may report `no_change`:
   functions and/or strategies), with the numbers recorded; AND
 - at least one full profile -> micro-bench -> pre-mortem cycle per candidate;
   AND
-- the opportunity list below exhausted, or every entry refuted with measured
-  evidence.
+- every `untried` row of the `## Node map` (in `codebase_context.md`) tried
+  or refuted with measured evidence.
 If a candidate fails, record WHY in `codebase_context.md` and immediately pick
 the next one.  Do not stop while unexplored hotspots remain.  Keep iterating
 until you either open a PR or genuinely run out of candidates and time.
-Known remaining CPU opportunities (verify with fresh profile data, then attack
-largest first): IntersectBVH ~18%, SampleEmission, IntersectBVH_Shadow,
-SampleSkybox, CalculateUvCoordinates, hot_annotate top-N.  The renderClouds
-OpenCL pass is OUT OF SCOPE — see the SCOPE section.
+Candidates come from the `## Node map`, ranked by its flame percentages.  If
+that section is empty (first session on a fresh checkout), seed it from your
+own `make_flame` output — top 5 nodes, one row each — before choosing.  The
+renderClouds OpenCL pass is OUT OF SCOPE — see the SCOPE section.
 
 ## WORKFLOW
 
@@ -57,10 +60,24 @@ OpenCL pass is OUT OF SCOPE — see the SCOPE section.
 2. `hot_annotate_func(func)` — per-line perf percentages on the top hotspot.
 3. `lsp_definition` / `lsp_references` / `lsp_call_hierarchy` — exact AST
    location, every reference, and callers/callees before touching hot code.
-4. For an unfamiliar subsystem, delegate a read-only research pass:
-   `delegate_task(goal="Trace the call chain of ... and report which functions
-   do the most work; do not modify anything")`.
-5. Record findings in `codebase_context.md` before moving on.
+4. For an unfamiliar subsystem, delegate a read-only research pass — quote the
+   node-map row so the subagent is scoped, never send it to explore:
+   `delegate_task(goal="Verify the node-map row for IntersectBVH
+   (object/object.c): does the caller's bestT reach the traversal as an
+   initial bound? Report yes/no with file:line. Do not modify anything")`.
+5. Write the node map before moving on — a write-up, not a reading pass (1-2
+   tool calls, a few minutes).  After `make_flame` + `hot_annotate_func`,
+   refresh one row per top node under `## Node map` in `codebase_context.md`,
+   one line per node:
+
+   - `object/object.c IntersectBVH` — flame 18.4% excl / 37.4% incl | untried |
+     hypothesis: caller's bestT as initial traversal bound | verify: V1
+     semantics and every call site's bestT
+
+   Statuses: `untried`, `tried-failed(<ns/call numbers>, <date>)`,
+   `shipped(PR #n)`.  Every row carries a measured percentage and a file:line;
+   a row the fresh profile contradicts becomes `stale` rather than being
+   deleted.  Keep the map under ~30 rows and prune `shipped` rows.
 
 ### Phase 2 — Micro-Benchmark (MANDATORY)
 6. `create_func_bench(func_name, header_code, impl_code)`:
@@ -141,7 +158,9 @@ the Phase 2/3 gate — no change purely for tidiness.
 
 ### Phase 5 — Persist & PR
 17. Append a dated entry to `codebase_context.md` (use `patch`): what changed,
-    measured numbers, why it is safe, what failed and why.
+    measured numbers, why it is safe, what failed and why.  Update the node map
+    too: the row you shipped becomes `shipped(PR #n)`, the ones you refuted
+    become `tried-failed(<numbers>, <date>)`.
 18. `create_pr(title, body, imageOutputChange)` — one logical improvement per
     PR; `imageOutputChange` is REQUIRED — pass `false` for exact-match
     optimizations, `true` only for a deliberate visual change (see ALGORITHM
@@ -239,6 +258,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
 13. NEVER use `allow_visual_change=true` as a workaround for a broken change —
     it is only for a deliberate, explained algorithm variation (min SSIM
     >= 0.95, evidence attached, `[visual]` PR).
+14. NEVER let the node map become the work: annotation costs at most one
+    profile and a few minutes of writing between candidates.  A session that
+    ends with a beautiful map and no measurement is a failed session.  Never
+    send a subagent to "explore" — hand it the map row.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

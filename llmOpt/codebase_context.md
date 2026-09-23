@@ -107,6 +107,45 @@ main()  [main.c]
 - Per-task: mutex lock + cond_signal + mutex unlock (3 lock ops per task)
 - 720 tasks per RayTraceScene call = 2160 lock/unlock pairs per frame
 
+## Node map
+
+Session-maintained candidate queue.  One row per hotspot node:
+`path:line Func` — flame share from the most recent `make_flame` — status —
+hypothesis — what a verifier must check.  Statuses: `untried`,
+`tried-failed(<numbers>, <date>)`, `shipped(PR #n)`, `stale` (a fresh profile
+contradicts the row).  Work `untried` rows largest flame percent first; keep
+this under ~30 rows and prune `shipped` ones.  The percentages below are from
+the 2026-09-22 profile — re-profile before trusting them.
+
+- `object/object.c IntersectBVH` — 18.4% excl / 37.4% incl | untried |
+  hypothesis: thread the caller's `bestT` into the traversal as the initial
+  bound so the early-out fires from the first node (no extra instructions) |
+  verify: V1 semantics and every call site's bestT
+- `render/cpu/ray.c RayTraceRowFunc` — 20% excl (structural) | untried |
+  hypothesis: row-level work balance / blur-loop buffer redesign (the VLA
+  version already failed under 32 threads, 2026-09-20) | verify: must be proven
+  with a MULTI-THREADED bench — single-thread wins do not transfer
+- `object/object.c:490 rayTriangle` — 16.9% excl | untried | hypothesis:
+  integrate the fastest variant from tests/rayTriangle.h (V10 was the pick) |
+  verify: bit-identical image and still correct under -ffast-math
+- `render/cpu/ray.c:598 rayAABB_inv` (8-box frustum batch) — 7.9% excl |
+  untried | hypothesis: use `rayAABB_invV4_avx2` for the batch test (the code
+  sits commented out at that line) | verify: identical results to the scalar
+  loop
+- `rayAABB_inv_x2_soa` (BVH node traversal) — 5.8% excl, already SSE | untried
+  | verify: resolve the real source with `lsp_definition` first
+- `skybox/skybox.c sampleFace` — 4.6% excl (cvttss2si + clamps) | untried |
+  hypothesis: reuse the int conversions across the direct+reflection lookups,
+  drop clamps where u,v are provably in range | verify: image-risky, needs a
+  real-cubemap bench
+- `skybox/skybox.c SampleSkybox` — shared-reciprocal variant | tried-failed
+  (micro +13%, frame +1.1% avg / -4.3% p99, 2026-09-23) | note: that p99 was a
+  single-frame artifact — re-measure before rejecting it again
+- `object/object.c IntersectBVH_Shadow` — 2.4% excl / 5.5% incl | untried
+- `render/cpu/ray.c:756 SampleEmission` — 1.3% excl / 5.0% incl | untried |
+  hypothesis: vectorize the AABB pre-filter loop (fans out into RayBoxItersect
+  / RayBoxIntersectV4 / IntersectBVH_Shadow)
+
 ## Performance-Critical Functions
 
 ### 1. RayTraceRowFunc [render/cpu/ray.c]
