@@ -6,6 +6,10 @@
 #
 #   tmux new-session -d -s llmopt <checkout>/llmOpt/scripts/supervisor-console.sh
 #
+# Inside tmux it also opens an "agent session" pane (session-follow.sh) so the
+# model's turns and tool calls are visible while it works; `hermes -z` only
+# prints the final answer, so this pane alone would sit silent for hours.
+#
 # The OpenRouter filtering proxy is managed here, not enabled at boot: if it is
 # not already healthy it is started via the systemd unit when one is installed
 # (started, not enabled), otherwise as a background process owned by
@@ -42,6 +46,19 @@ proxy_healthy() {
   curl -fsS --max-time 2 "http://127.0.0.1:$PROXY_PORT/health" >/dev/null 2>&1
 }
 
+# A second pane shows the agent's session as it happens: `hermes -z` prints
+# only the final answer, so this pane would otherwise sit silent for hours.
+follow_pane() {
+  command -v tmux >/dev/null 2>&1 || return 0
+  [[ -n "${TMUX:-}" ]] || return 0
+  tmux list-panes -F '#{pane_title}' 2>/dev/null | grep -qx "agent session" && return 0
+  tmux split-window -v -l 35% -c "$CHECKOUT" \
+    "'$SCRIPT_DIR/session-follow.sh'; echo; echo '[follow] ended - Ctrl-b x closes this pane'; exec bash" \
+    2>/dev/null || return 0
+  tmux select-pane -T "agent session" 2>/dev/null || true
+  tmux select-pane -l 2>/dev/null || true
+}
+
 ensure_proxy() {
   proxy_healthy && return 0
   if systemctl list-unit-files gengin-openrouter-proxy.service >/dev/null 2>&1; then
@@ -75,6 +92,7 @@ echo
 
 ensure_proxy || exit 1
 echo
+follow_pane
 
 # Secrets are fed through stdin, never through argv or the environment of any
 # world-readable process: `ps` shows command lines to every local user, and
