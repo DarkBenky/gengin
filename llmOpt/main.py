@@ -687,6 +687,233 @@ def makeFlame():
 # baseline cache — skip the cold-start bench when project code is unchanged
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Flight-controller objective: the "change axis" used when the CPU node map is
+# exhausted.  Metrics come from simulation/cSim/flightBench.c (deterministic
+# scenario suite: static, drift, weave, step, jink targets).
+# ---------------------------------------------------------------------------
+
+FLIGHT_BENCH_BIN = os.path.join("build", "flightBench", "flightBench")
+FLIGHT_BASELINE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "flight_baseline.json")
+FLIGHT_TIER_REGRESSION_PCT = 10.0
+FLIGHT_COST_REGRESSION_PCT = 20.0
+
+
+def _flightBinary():
+    binary = os.path.join(PROJECT_DIR, FLIGHT_BENCH_BIN)
+    if not os.path.exists(binary):
+        run(["make", FLIGHT_BENCH_BIN], cwd=PROJECT_DIR)
+    return binary
+
+
+def _flightRun(args, timeout=900):
+    binary = _flightBinary()
+    try:
+        result = subprocess.run([binary] + args, capture_output=True, text=True,
+                                cwd=PROJECT_DIR, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"flightBench timed out after {timeout}s")
+    if result.returncode != 0:
+        raise RuntimeError("flightBench failed (exit %s): %s"
+                           % (result.returncode, (result.stderr or "").strip()[-400:]))
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"flightBench returned invalid JSON: {exc}")
+
+
+def _flightControllerClean():
+    """True when the controller under test is untouched in the sandbox."""
+    res = subprocess.run(
+        ["git", "status", "--porcelain", "--", "simulation/cSim/flightControl.c"],
+        capture_output=True, text=True, cwd=PROJECT_DIR)
+    return not res.stdout.strip()
+
+
+def _flightCacheRead():
+    if not os.path.exists(FLIGHT_BASELINE_FILE):
+        return {}
+    try:
+        with open(FLIGHT_BASELINE_FILE) as fh:
+            return json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _loadFlightBaseline(suite_hash):
+    cache = _flightCacheRead()
+    head, _dirty = _projectGitHead()
+    if head is None or cache.get("head") != head:
+        return None
+    if cache.get("fingerprint") and cache["fingerprint"] != environmentFingerprint():
+        return None
+    entry = cache.get("baseline") or {}
+    if entry.get("suiteHash") != suite_hash:
+        return None
+    return entry
+
+
+def _saveFlightBaseline(doc):
+    """Persist the flight baseline for the current HEAD + suite hash.
+
+    Unlike the frame baseline only the *controller* has to be clean: the suite
+    depends on flightControl.c + simulate.c, so edits elsewhere in the tree do
+    not invalidate it.
+    """
+    head, _dirty = _projectGitHead()
+    if head is None or not _flightControllerClean():
+        return False
+    cache = _flightCacheRead()
+    if cache.get("head") != head:
+        cache = {}
+    cache["head"] = head
+    cache["fingerprint"] = environmentFingerprint()
+    cache["baseline"] = {
+        "suiteHash": doc["suiteHash"],
+        "settings": doc["settings"],
+        "aggregate": doc["aggregate"],
+        "tiers": doc["tiers"],
+        "capturedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    tmp = FLIGHT_BASELINE_FILE + f".tmp.{os.getpid()}"
+    try:
+        with open(tmp, "w") as fh:
+            json.dump(cache, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, FLIGHT_BASELINE_FILE)
+    except OSError as exc:
+        print(f"[flight-baseline] save failed: {exc}", file=sys.stderr)
+        return False
+    return True
+
+
+def _flightSummary(doc, baseline):
+    agg = doc["aggregate"]
+    if baseline is None:
+        return ("No flight baseline for this suite yet - this run captured it "
+                "(suite %s)." % doc["suiteHash"])
+    base = baseline.get("aggregate") or {}
+    lines = [f"Flight comparison vs baseline (suite {doc['suiteHash']}):"]
+    improved = 0
+    regressed = 0
+    for key, better, label, tolerance in (
+            ("miss", "lower", "miss (m)", METRIC_NOISE_PCT),
+            ("hitRate", "higher", "hit rate", 0.0),
+            ("effort", "lower", "control effort", 5.0),
+            ("costUs", "lower", "cost (us/step)", FLIGHT_COST_REGRESSION_PCT)):
+        old = base.get(key)
+        new = agg.get(key)
+        if old is None or new is None or (better == "higher" and not old):
+            continue
+        if better == "lower":
+            delta = (old - new) / old * 100 if old else 0.0
+        else:
+            delta = (new - old) / old * 100 if old else 0.0  # positive = improvement
+        if abs(delta) <= tolerance:
+            tag = "unchanged (within tolerance)"
+        elif delta > 0:
+            tag = "IMPROVED"
+            improved += 1
+        else:
+            tag = "REGRESSED"
+            regressed += 1
+        lines.append(f"  {label:16s} baseline={old:.3f}  now={new:.3f}  ({delta:+.1f}%)  [{tag}]")
+
+    base_tiers = {t["tier"]: t for t in (baseline.get("tiers") or [])}
+    tier_regressions = []
+    for tier in doc["tiers"]:
+        old = base_tiers.get(tier["tier"])
+        if not old or not old.get("miss"):
+            continue
+        delta = (old["miss"] - tier["miss"]) / old["miss"] * 100
+        flag = ""
+        if delta < -FLIGHT_TIER_REGRESSION_PCT:
+            flag = "  [TIER REGRESSION]"
+            tier_regressions.append(tier["tier"])
+        lines.append(f"  {tier['tier']:16s} miss baseline={old['miss']:.1f}  now={tier['miss']:.1f}  ({delta:+.1f}%){flag}")
+
+    if agg.get("unstable"):
+        lines.append("=> OVERALL: UNSTABLE - the controller produced non-finite state")
+    elif tier_regressions:
+        lines.append("=> OVERALL: REGRESSED - tier(s) %s lost more than %.0f%%"
+                     % (", ".join(tier_regressions), FLIGHT_TIER_REGRESSION_PCT))
+    elif improved > regressed:
+        lines.append("=> OVERALL: IMPROVED")
+    elif regressed > improved:
+        lines.append("=> OVERALL: REGRESSED - revert (git checkout -- simulation/cSim/flightControl.c)")
+    else:
+        lines.append("=> OVERALL: no significant change")
+    return "\n".join(lines)
+
+
+def flightBench(steps=0, capture_baseline=False):
+    """Run the flight suite and compare against the pinned baseline."""
+    args = []
+    if steps:
+        args += ["--steps", str(steps)]
+    doc = _flightRun(args)
+    suite = doc["suiteHash"]
+    baseline = _loadFlightBaseline(suite)
+    captured = False
+    if capture_baseline or baseline is None:
+        if capture_baseline or steps == 0:
+            captured = _saveFlightBaseline(doc)
+            if captured:
+                baseline = _loadFlightBaseline(suite)
+    return {
+        "summary": _flightSummary(doc, baseline),
+        "suiteHash": suite,
+        "settings": doc["settings"],
+        "aggregate": doc["aggregate"],
+        "tiers": doc["tiers"],
+        "scenarios": doc["scenarios"],
+        "capturedBaseline": captured,
+        "baseline": None if baseline is None else {
+            "aggregate": baseline.get("aggregate"),
+            "capturedAt": baseline.get("capturedAt"),
+        },
+    }
+
+
+def flightScenarios():
+    """The suite definition plus whether a baseline exists for it."""
+    doc = _flightRun(["--steps", "1"])
+    return {
+        "settings": doc["settings"],
+        "suiteHash": doc["suiteHash"],
+        "baseline": _loadFlightBaseline(doc["suiteHash"]) is not None,
+        "tiers": [t["tier"] for t in doc["tiers"]],
+        "scenarios": [{"id": s["id"], "tier": s["tier"], "seed": s["seed"]}
+                      for s in doc["scenarios"]],
+    }
+
+
+def flightTrace(scenario, steps=0, label=""):
+    """Run one scenario and write its trajectory as CSV evidence."""
+    args = ["--trace", scenario]
+    if steps:
+        args += ["--steps", str(steps)]
+    doc = _flightRun(args)
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", label or scenario.replace(":", "_"))
+    out_dir = os.path.join(PROJECT_DIR, "bench", "results")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"flight_trace_{name}.csv")
+    rows = doc.get("trace") or []
+    with open(path, "w") as fh:
+        fh.write(doc.get("traceHeader", "trace") + "\n")
+        fh.write("\n".join(rows) + "\n")
+    return {
+        "scenario": doc["scenario"],
+        "settings": doc["settings"],
+        "csv": os.path.relpath(path, PROJECT_DIR),
+        "rows": len(rows),
+        "firstRows": rows[:3],
+        "lastRows": rows[-3:],
+    }
+
+
 BASELINE_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline_cache.json")
 
 

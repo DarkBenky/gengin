@@ -1165,6 +1165,7 @@ static void runSimulation(const Plane *initialPlane, float3 target, int simSteps
 	freeLogs(&logs);
 }
 
+#ifndef FLIGHT_BENCH
 // main testing loop to debug controller
 int main() {
 	Plane initialPlane;
@@ -1193,3 +1194,4 @@ int main() {
 
 	return 0;
 }
+#endif /* FLIGHT_BENCH */

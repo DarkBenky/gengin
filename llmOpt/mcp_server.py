@@ -288,6 +288,36 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
                           compare_image_paths=compareImagePaths)
 
 
+@mcp.tool()
+def flight_bench(steps: int = 0, capture_baseline: bool = False) -> str:
+    """Run the flight-controller suite (deterministic, ~20 s) and compare it
+    against the pinned baseline.  Metrics per tier - static, drift, weave, step,
+    jink (moving targets that change direction and speed) - plus an aggregate:
+    miss (closest-approach distance), hit rate against the hit radius, control
+    effort, and median controller cost in microseconds per step.  The first
+    call on a clean controller captures the baseline; pass capture_baseline=True
+    to re-capture it.  `steps` overrides the rollout length (a non-default
+    length has no baseline and only reports absolute numbers)."""
+    return json.dumps(_main.flightBench(steps=steps, capture_baseline=capture_baseline),
+                      indent=2)
+
+
+@mcp.tool()
+def flight_scenarios() -> str:
+    """List the flight suite: settings, tier list, scenario ids, and whether a
+    baseline exists for the current HEAD and suite hash."""
+    return json.dumps(_main.flightScenarios(), indent=2)
+
+
+@mcp.tool()
+def flight_trace(scenario: str, steps: int = 0, label: str = "") -> str:
+    """Run ONE flight scenario (id like "weave:2" from flight_scenarios) and
+    write its trajectory to bench/results/flight_trace_<label>.csv (inside the
+    sandbox, never staged), returning the metric block plus the first and last
+    rows.  Use it to see how a controller change actually flies."""
+    return json.dumps(_main.flightTrace(scenario, steps=steps, label=label), indent=2)
+
+
 _SESSION_STATUSES = ("pr_created", "no_change", "blocked", "failed")
 
 # A no_change that never ran a frame bench is the failure mode the proxy coach

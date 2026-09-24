@@ -759,7 +759,7 @@ def check_utc():
 
 
 def produce_baseline(sandbox):
-    """Produce the full clean baseline (5-run makeBench) and cache it.
+    """Produce the full clean baseline (5-run makeBench + flight suite).
 
     Called after preflight succeeds and before key creation. Requires a clean
     sandbox at the target SHA.
@@ -771,6 +771,13 @@ def produce_baseline(sandbox):
     gengin_main.BASELINE_RESULTS = None
     try:
         result = gengin_main.makeBench()
+        flight = None
+        try:
+            flight = gengin_main.flightBench(capture_baseline=True)
+        except (RuntimeError, OSError) as exc:
+            log("WARN", "flight_baseline.failed", detail=str(exc)[:200])
+        if result is not None and flight is not None:
+            return result
         return result
     finally:
         gengin_main.PROJECT_DIR = old
