@@ -5,7 +5,7 @@
 # optimizer. Run as root:  sudo bash llmOpt/scripts/setup-vm.sh [options]
 #
 # Options:
-#   --checkout DIR   path to the gengin checkout (default: /opt/gengin)
+#   --checkout DIR   path to the gengin checkout (default: the repo this script is in)
 #   --inputs DIR     stable ignored-inputs dir (default: /var/lib/gengin-llmopt/inputs)
 #   --venv DIR       python venv for the MCP server (default: /opt/gengin-llmopt/venv)
 #   --skip-perf      do not attempt to enable unprivileged perf counters
@@ -25,7 +25,11 @@
 
 set -euo pipefail
 
-CHECKOUT=/opt/gengin
+# Default to the checkout that contains this script (llmOpt/scripts/ -> repo
+# root): a hardcoded path silently provisioned a stale tree once the live
+# checkout moved.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CHECKOUT=$(cd "$SCRIPT_DIR/../.." && pwd)
 INPUTS=/var/lib/gengin-llmopt/inputs
 VENV=/opt/gengin-llmopt/venv
 SKIP_PERF=0
