@@ -1,0 +1,29 @@
+# Technique hints for the proxy's give-up coach.
+#
+#   id|family|text
+#
+# families: compute, memory, branch, layout, any
+# The proxy picks 1-2 hints from the family the model's own counters point at
+# (cache-miss >= 1% or IPC < 0.7 -> memory, branch-miss >= 5% -> branch,
+# IPC >= 1.5 -> compute), falls back to `any`, and never repeats a hint within
+# one conversation.  Hints are hypotheses: the model still has to prove them in
+# the micro-benchmark and through make_bench.
+compute-unroll|compute|Unroll the body of the hot loop by 2-4 and check whether the compiler was already doing it.
+compute-simd|compute|Vectorize the inner loop with SSE/AVX where the layout allows a 4- or 8-wide step.
+compute-recip|compute|Replace repeated divisions/reciprocals in the hot path with a precomputed multiply.
+compute-restrict|compute|Add C99 restrict to hot pointer parameters - verify every call site cannot alias first.
+compute-transcend|compute|Cheapen sinf/cosf/sqrtf/powf on the hot path; if the image changes, land it through the visual-PR flow.
+compute-precompute|compute|Precompute a per-frame table (or per-object constant) that the inner loop rebuilds every iteration.
+memory-align|memory|Align hot SoA arrays and per-thread buffers to 64 bytes so streams do not straddle cache lines.
+memory-gather|memory|Remove gathers/indirection from the innermost loop: stage the values into a small contiguous array first.
+memory-shrink|memory|Shrink the working set: pack the struct, use float instead of double, drop fields the loop never reads.
+memory-prefetch|memory|Prefetch the next node/row/cache line in the traversal before it is needed.
+memory-page|memory|Reorder indices/fields so the hottest stream stays inside one 4K page.
+branch-branchless|branch|Make the inner test branchless (min/max/select) instead of an unpredictable if.
+branch-hoist|branch|Hoist the sky-vs-geometry or material-type test out of the per-pixel loop.
+branch-rare|branch|Move the rare case off the hot path: collect it and handle it in a second pass.
+layout-soa|layout|Convert the hot arrays from AoS to SoA so the loop reads only the fields it needs.
+layout-false-sharing|layout|Put per-thread state on its own cache line and check the 32-thread run for false sharing.
+layout-bvh-linear|layout|Linearise the BVH node layout so a traversal walks contiguous memory.
+any-axis|any|If the flat search is stuck, change axis: an algorithmic change or a cheaper approximation of the same output.
+any-deadcode|any|Look for per-pixel work whose result nothing reads (a write-only buffer) before micro-optimising arithmetic.

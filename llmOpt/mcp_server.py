@@ -198,6 +198,7 @@ def make_bench(allow_visual_change: bool = False) -> str:
     algorithm variation: the gate becomes SSIM (auto-restore below 0.85), the
     change is kept when frames stay similar, and the metrics feed the visual
     PR evidence.  Records an edit snapshot for bisect_regression()."""
+    _SESSION_STATE["bench_calls"] += 1
     _main._captureEditSnapshot("edits before make_bench")
     result = _main.makeBench(allow_visual_change=allow_visual_change)
     results = {k: v for k, v in result["results"].items()
@@ -289,6 +290,13 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
 
 _SESSION_STATUSES = ("pr_created", "no_change", "blocked", "failed")
 
+# A no_change that never ran a frame bench is the failure mode the proxy coach
+# cannot reach (the give-up wording only appears after the report).  Refuse it
+# twice, then accept, so a stubborn model cannot loop forever.
+_NO_CHANGE_GUARD = os.environ.get("GENGIN_NO_CHANGE_GUARD", "1") != "0"
+_NO_CHANGE_REFUSAL_CAP = int(os.environ.get("GENGIN_NO_CHANGE_GUARD_MAX", "2") or 2)
+_SESSION_STATE = {"bench_calls": 0, "no_change_refusals": 0}
+
 
 @mcp.tool()
 def report_session_result(status: str, summary: str, pr_url: str = "") -> str:
@@ -301,6 +309,20 @@ def report_session_result(status: str, summary: str, pr_url: str = "") -> str:
         return "error: pr_created requires a https://github.com/... pull URL"
     if status != "pr_created" and pr_url:
         return "error: pr_url is only valid with status=pr_created"
+
+    if (status == "no_change" and _NO_CHANGE_GUARD
+            and _SESSION_STATE["bench_calls"] == 0
+            and _SESSION_STATE["no_change_refusals"] < _NO_CHANGE_REFUSAL_CAP):
+        _SESSION_STATE["no_change_refusals"] += 1
+        return (
+            "error: no_change refused - this session never ran make_bench. Pick the "
+            "best candidate you measured (>= 1% in run_func_bench), apply it with "
+            "patch, and validate with make_bench: the frame bench (real scene, "
+            "image_mse, frame hashes) is the validation a micro-bench cannot give, "
+            "and applying then reverting is the normal loop. Or work the next "
+            "untried row of the ## Node map in codebase_context.md. Refusal %d/%d."
+            % (_SESSION_STATE["no_change_refusals"], _NO_CHANGE_REFUSAL_CAP)
+        )
 
     result_path = os.environ.get("GENGIN_SESSION_RESULT_PATH", "")
     if not result_path:

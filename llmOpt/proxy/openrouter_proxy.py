@@ -22,6 +22,15 @@ made an explicit choice:
   - the request pins providers itself (``provider.only`` / ``provider.order``);
   - the body has no single string ``model`` (multi-model fallback arrays).
 
+Give-up coach (on by default): the model's own answer text is scanned for
+wording that reads like it is about to stop early, and for streaks of rejected
+candidates.  On a trigger, one supervisor reminder plus 1-2 technique hints
+(picked from hints.txt by the family the reported counters point at) is queued
+and injected as an extra user message into the *next* request of the same
+conversation - rate-limited per conversation and never repeating a hint.  A
+response that already carries a `report_session_result` tool call is skipped:
+that turn ends the session.  Decisions are logged as `coach key=... ...`.
+
 Standard library only (http.server + urllib), streaming-safe: response bodies
 are relayed with chunked transfer encoding as they arrive, so SSE completions
 are not buffered. Never logs bodies, headers or keys.
@@ -36,12 +45,20 @@ Env knobs (all optional):
   GENGIN_PROXY_FAIL_THRESHOLD=3
   GENGIN_PROXY_COOLDOWN_SECONDS=3600
   GENGIN_PROXY_TIMEOUT=300
+  GENGIN_PROXY_COACH=1
+  GENGIN_PROXY_COACH_MAX=3      # reminders per conversation
+  GENGIN_PROXY_COACH_COOLDOWN=180
+  GENGIN_PROXY_COACH_TEXT=...   # replace the default reminder text
+  GENGIN_PROXY_HINTS_FILE=<proxy dir>/hints.txt
   GENGIN_PROXY_LOG=-            # "-" = stderr, or an absolute file path
 """
 
 import copy
+import hashlib
 import json
 import os
+import random
+import re
 import sys
 import threading
 import time
@@ -65,6 +82,16 @@ ALLOW_FALLBACKS = os.environ.get("GENGIN_PROXY_ALLOW_FALLBACKS", "0") != "0"
 FAIL_THRESHOLD = int(os.environ.get("GENGIN_PROXY_FAIL_THRESHOLD", "3") or 3)
 COOLDOWN_SECONDS = float(os.environ.get("GENGIN_PROXY_COOLDOWN_SECONDS", "3600") or 3600)
 TIMEOUT = float(os.environ.get("GENGIN_PROXY_TIMEOUT", "300") or 300)
+COACH_ENABLED = os.environ.get("GENGIN_PROXY_COACH", "1") != "0"
+COACH_MAX = int(os.environ.get("GENGIN_PROXY_COACH_MAX", "3") or 3)
+COACH_COOLDOWN = float(os.environ.get("GENGIN_PROXY_COACH_COOLDOWN", "180") or 180)
+COACH_TEXT = os.environ.get("GENGIN_PROXY_COACH_TEXT") or (
+    "[supervisor] Do not stop here: the budget is not spent and the `## Node map` in "
+    "codebase_context.md is your candidate queue. Pick the next `untried` row (largest "
+    "flame percent first) and measure it. A candidate that won >= 1% in run_func_bench "
+    "must be applied and validated with make_bench before a no_change verdict is "
+    "acceptable - applying and reverting is the normal loop."
+)
 LOG_TARGET = os.environ.get("GENGIN_PROXY_LOG", "-")
 MAX_BODY = 64 * 1024 * 1024
 
@@ -79,7 +106,103 @@ KNOWN_VARIANTS = CATALOG_VARIANTS | ROUTING_VARIANTS
 
 _lock = threading.Lock()
 _model_state = {}  # model -> {"fails": int, "skip_until": float}
-_stats = {"requests": 0, "injected": 0, "skipped": 0, "retries": 0, "failures": 0}
+_stats = {
+    "requests": 0, "injected": 0, "skipped": 0, "retries": 0, "failures": 0,
+    "coach_detected": 0, "coach_injected": 0,
+}
+
+# "I am about to stop" and "that candidate failed" wording.  Patterns avoid
+# backslashes so they stay readable in a diff.
+GIVEUP_RE = re.compile(
+    r"no[_ ]?change"
+    r"|no (?:further|safe|remaining|more|other) (?:safe |measurable )?"
+    r"(?:optimization|candidate|win|gain|idea|approach|experiment|variant|change)"
+    r"|nothing (?:more|else|further) (?:left|to try|to do|worth)"
+    r"|(?:will|shall|going to|let me) (?:now )?(?:stop|wrap up|conclude|end the session)"
+    r"|(?:could not|couldn't|can(?:no|')t|cannot) find (?:any|a|another)"
+    r"|out of (?:ideas|candidates|options)",
+    re.IGNORECASE,
+)
+REJECT_RE = re.compile(
+    r"(?:slower|regress(?:ed|ion)|no win|no gain|did not (?:improve|help)|"
+    r"near noise|not worth|inconsistent)",
+    re.IGNORECASE,
+)
+IPC_RE = re.compile(r"IPC[^0-9]{0,12}([0-9]+(?:[.][0-9]+)?)", re.IGNORECASE)
+CACHE_RE = re.compile(r"cache[- ]miss[^0-9%]{0,24}([0-9]+(?:[.][0-9]+)?)[ ]*%", re.IGNORECASE)
+BRANCH_RE = re.compile(r"branch[- ]miss[^0-9%]{0,24}([0-9]+(?:[.][0-9]+)?)[ ]*%", re.IGNORECASE)
+REJECT_STREAK = 3
+_coach_state = {}   # conversation key -> pending/count/last/used/streak/family
+_hints_cache = {"mtime": 0.0, "items": []}
+
+
+def _coach_entry(key):
+    return _coach_state.setdefault(key, {
+        "pending": False, "count": 0, "last": 0.0, "seen": 0.0,
+        "used": set(), "streak": 0, "family": "",
+    })
+
+
+def _load_hints():
+    """(id, family, text) from hints.txt, re-read when the file changes."""
+    path = os.environ.get("GENGIN_PROXY_HINTS_FILE") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "hints.txt")
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return []
+    with _lock:
+        if mtime != _hints_cache["mtime"]:
+            items = []
+            try:
+                with open(path) as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = [part.strip() for part in line.split("|", 2)]
+                        if len(parts) == 3 and all(parts):
+                            items.append((parts[0], parts[1].lower(), parts[2]))
+            except OSError:
+                return []
+            _hints_cache.update({"mtime": mtime, "items": items})
+        return list(_hints_cache["items"])
+
+
+def _hint_family(text):
+    """The technique family the model's own counters point at."""
+    ipc = IPC_RE.search(text)
+    cache = CACHE_RE.search(text)
+    branch = BRANCH_RE.search(text)
+    if cache and float(cache.group(1)) >= 1.0:
+        return "memory"
+    if ipc and float(ipc.group(1)) < 0.7:
+        return "memory"
+    if branch and float(branch.group(1)) >= 5.0:
+        return "branch"
+    if ipc and float(ipc.group(1)) >= 1.5:
+        return "compute"
+    return ""
+
+
+def _pick_hints(family, used, limit=2):
+    hints = _load_hints()
+    if not hints:
+        return []
+    chosen = []
+
+    def take(pool):
+        pool = [hint for hint in pool if hint[0] not in used and hint not in chosen]
+        random.shuffle(pool)
+        chosen.extend(pool[:max(0, limit - len(chosen))])
+
+    if family:
+        take([hint for hint in hints if hint[1] == family])
+    if len(chosen) < limit:
+        take([hint for hint in hints if hint[1] == "any"])
+    if not chosen:
+        take(hints)
+    return chosen
 
 
 def _log_line(line):
@@ -110,6 +233,146 @@ def _record_result(model, ok):
         if state["fails"] >= FAIL_THRESHOLD:
             state["skip_until"] = time.time() + COOLDOWN_SECONDS
             state["fails"] = 0
+
+
+def _conversation_key(body):
+    """Digest of the session's system prompt: stable per session, nothing logged."""
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return ""
+    for role in ("system", "user"):
+        for message in messages:
+            if not isinstance(message, dict) or message.get("role") != role:
+                continue
+            content = message.get("content")
+            if isinstance(content, str) and content:
+                return hashlib.sha1(content.encode("utf-8", "ignore")).hexdigest()[:12]
+    return ""
+
+
+class _ResponseTap:
+    """Assistant text and tool-call fragments, streamed or not."""
+
+    TAIL = 4000
+
+    def __init__(self, streamed):
+        self.streamed = streamed
+        self.text = ""
+        self.tools = ""
+        self._raw = []
+        self._buffer = ""
+
+    def feed(self, chunk):
+        if self.streamed:
+            self._buffer += chunk.decode("utf-8", "ignore")
+            while "\n" in self._buffer:
+                line, self._buffer = self._buffer.split("\n", 1)
+                self._feed_line(line)
+        else:
+            self._raw.append(chunk)
+
+    def _feed_line(self, line):
+        line = line.strip()
+        if not line.startswith("data:"):
+            return
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            return
+        try:
+            data = json.loads(payload)
+        except ValueError:
+            return
+        for choice in data.get("choices") or []:
+            self._add(choice.get("delta") or choice.get("message") or {})
+
+    def _add(self, delta):
+        for field in ("content", "reasoning_content"):
+            piece = delta.get(field)
+            if isinstance(piece, str) and piece:
+                self.text = (self.text + piece)[-self.TAIL:]
+        for call in delta.get("tool_calls") or []:
+            fn = call.get("function") if isinstance(call, dict) else None
+            fn = fn if isinstance(fn, dict) else {}
+            self.tools = (self.tools + str(fn.get("name") or "")
+                          + str(fn.get("arguments") or ""))[-self.TAIL:]
+
+    def finish(self):
+        if not self.streamed:
+            try:
+                data = json.loads(b"".join(self._raw).decode("utf-8", "ignore") or "{}")
+            except ValueError:
+                data = {}
+            for choice in data.get("choices") or []:
+                message = choice.get("message") or {}
+                self._add({"content": message.get("content"),
+                           "reasoning_content": message.get("reasoning_content"),
+                           "tool_calls": message.get("tool_calls")})
+        return self.text, self.tools
+
+
+def _coach_observe(key, tap):
+    """Queue a reminder on a give-up, or after a streak of rejected candidates."""
+    text, tools = tap.finish()
+    if not (COACH_ENABLED and key and text):
+        return
+    gave_up = GIVEUP_RE.search(text)
+    with _lock:
+        state = _coach_entry(key)
+        if any(token in tools for token in ("patch", "make_bench", "create_pr")):
+            state["streak"] = 0
+        elif REJECT_RE.search(text):
+            state["streak"] += 1
+        streak = state["streak"]
+    if not gave_up and streak < REJECT_STREAK:
+        return
+    reason = "giveup" if gave_up else "streak=%d" % streak
+    with _lock:
+        _stats["coach_detected"] += 1
+    if "report_session_result" in tools:
+        _log_line(f"coach key={key} detected={reason} final=1 queued=0")
+        return
+    family = _hint_family(text)
+    with _lock:
+        state = _coach_entry(key)
+        state["pending"] = True
+        state["family"] = family
+        state["seen"] = time.time()
+        state["streak"] = 0
+    _log_line(f"coach key={key} detected={reason} family={family or '-'} queued=1")
+
+
+def _coach_take(body):
+    """Consume a queued reminder (+ technique hints) and return what to inject."""
+    if not COACH_ENABLED:
+        return ""
+    key = _conversation_key(body)
+    if not key:
+        return ""
+    now = time.time()
+    with _lock:
+        state = _coach_state.get(key)
+        if not state or not state.get("pending"):
+            return ""
+        state["pending"] = False
+        if state["count"] >= COACH_MAX or now - state["last"] < COACH_COOLDOWN:
+            return ""
+        state["count"] += 1
+        state["last"] = now
+        family, used = state.get("family", ""), state["used"]
+        _stats["coach_injected"] += 1
+        count = state["count"]
+    hints = _pick_hints(family, used)
+    with _lock:
+        for hint in hints:
+            used.add(hint[0])
+    text = COACH_TEXT
+    if hints:
+        text += ("\n\nTechnique hints - hypotheses to prove in the bench, not "
+                 "instructions; each still needs micro-bench -> apply -> make_bench:\n")
+        text += "".join("- %s\n" % hint[2] for hint in hints)
+    _log_line("coach key=%s injected=1 count=%d family=%s hints=%s"
+              % (key, count, family or "-", ",".join(hint[0] for hint in hints) or "-"))
+    return text
 
 
 def _parse_model(model):
@@ -222,11 +485,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.wfile.write(chunk)
         self.wfile.write(b"\r\n")
 
-    def _relay_body(self, resp, buffered=None):
+    def _relay_body(self, resp, buffered=None, tap=None):
         try:
             if buffered is not None:
                 if buffered:
                     self._write_chunk(buffered)
+                    if tap is not None:
+                        tap.feed(buffered)
                 self.wfile.write(b"0\r\n\r\n")
                 return True
             reader = getattr(resp, "read1", None) or resp.read
@@ -235,6 +500,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 self._write_chunk(chunk)
+                if tap is not None:
+                    tap.feed(chunk)
             self.wfile.write(b"0\r\n\r\n")
             return True
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
@@ -278,6 +545,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     "allow_fallbacks": ALLOW_FALLBACKS,
                     "fail_threshold": FAIL_THRESHOLD,
                     "cooldown_seconds": COOLDOWN_SECONDS,
+                    "coach": {
+                        "enabled": COACH_ENABLED,
+                        "max_per_session": COACH_MAX,
+                        "cooldown_seconds": COACH_COOLDOWN,
+                        "hints": len(_load_hints()),
+                    },
                 },
                 "stats": stats,
                 "models": models,
@@ -304,6 +577,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         original = copy.deepcopy(body)
         applied, skip_reason = _apply_filters(body, model)
+
+        # Coach note goes into this request only - never into `original`, so the
+        # unfiltered retry still carries the caller's own turn.
+        coach_note = ""
+        messages = body.get("messages")
+        if isinstance(messages, list):
+            coach_note = _coach_take(body)
+            if coach_note:
+                messages.append({"role": "user", "content": coach_note})
+
         started = time.monotonic()
 
         try:
@@ -367,17 +650,22 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if applied or skip_reason:
             with _lock:
                 _stats["injected" if applied else "skipped"] += 1
+        conversation = _conversation_key(body) if COACH_ENABLED else ""
         _log_line(
             f"POST {self.path} model={model} inject={'+'.join(applied) or '-'} "
-            f"skip={skip_reason or '-'} status={status} stream={1 if streamed else 0} "
+            f"skip={skip_reason or '-'} coach={1 if coach_note else 0} "
+            f"status={status} stream={1 if streamed else 0} "
             f"retry={1 if retried else 0} ms={elapsed_ms}"
         )
 
+        tap = _ResponseTap(streamed) if conversation else None
         try:
             self._send_upstream_status(_status_of(upstream), upstream.headers)
-            self._relay_body(upstream, buffered)
+            self._relay_body(upstream, buffered, tap)
         finally:
             upstream.close()
+        if tap is not None:
+            _coach_observe(conversation, tap)
 
     do_PUT = do_POST
     do_PATCH = do_POST
