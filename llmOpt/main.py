@@ -701,7 +701,7 @@ FLIGHT_COST_REGRESSION_PCT = 20.0
 
 
 def _flightBinary():
-    binary = os.path.join(PROJECT_DIR, FLIGHT_BENCH_BIN)
+    binary = os.path.abspath(os.path.join(PROJECT_DIR, FLIGHT_BENCH_BIN))
     if not os.path.exists(binary):
         run(["make", FLIGHT_BENCH_BIN], cwd=PROJECT_DIR)
     return binary
@@ -711,7 +711,7 @@ def _flightRun(args, timeout=900):
     binary = _flightBinary()
     try:
         result = subprocess.run([binary] + args, capture_output=True, text=True,
-                                cwd=PROJECT_DIR, timeout=timeout)
+                                cwd=os.path.abspath(PROJECT_DIR), timeout=timeout)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"flightBench timed out after {timeout}s")
     if result.returncode != 0:
