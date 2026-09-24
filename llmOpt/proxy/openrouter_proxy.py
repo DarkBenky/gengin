@@ -10,13 +10,17 @@ cheap-provider problem impossible by injection, not by trust:
     walk through provider fallbacks on a failure; the proxy itself retries
     exactly once without any injection, then backs off per model;
   - appends `:floor` (price-sorted routing) to the model id unless the caller
-    already chose a routing variant.
+    already chose a routing variant;
+  - translates a provider pin in the model id (``model:deepseek``,
+    ``model:xiaomi/fp8``) into `provider.order`, because OpenRouter only
+    documents a fixed slug variant set (`:nitro`, `:floor`, `:free`, ...) and
+    silently *ignores* anything else - an untranslated pin looks harmless and
+    still gets a 200, but the request is load-balanced by price across all
+    providers, which is exactly what the pin was meant to prevent.
 
-Skip rules — the request is passed through untouched when the caller clearly
+Skip rules - the request is passed through untouched when the caller clearly
 made an explicit choice:
 
-  - model id carries a suffix outside the known OpenRouter variant set
-    (e.g. ``xiaomi/mimo-v2.6-flash:xiaomi``);
   - model id carries ``:free`` (already the cheapest cluster; a quantization
     filter would exclude its endpoints);
   - the request pins providers itself (``provider.only`` / ``provider.order``);
@@ -42,6 +46,7 @@ Env knobs (all optional):
   GENGIN_PROXY_QUANTIZATIONS=int8,fp6,fp8,fp16,bf16,fp32,unknown
   GENGIN_PROXY_FLOOR=1
   GENGIN_PROXY_ALLOW_FALLBACKS=0
+  GENGIN_PROXY_PIN_FALLBACKS=0   # 0 = a provider pin is exclusive
   GENGIN_PROXY_FAIL_THRESHOLD=3
   GENGIN_PROXY_COOLDOWN_SECONDS=3600
   GENGIN_PROXY_TIMEOUT=300
@@ -78,6 +83,9 @@ QUANTIZATIONS = [
     if q.strip()
 ]
 ENABLE_FLOOR = os.environ.get("GENGIN_PROXY_FLOOR", "1") != "0"
+# A pinned provider is exclusive by default: `order` alone would still let
+# OpenRouter fall back to another provider when the pin is busy.
+PIN_FALLBACKS = os.environ.get("GENGIN_PROXY_PIN_FALLBACKS", "0") != "0"
 ALLOW_FALLBACKS = os.environ.get("GENGIN_PROXY_ALLOW_FALLBACKS", "0") != "0"
 FAIL_THRESHOLD = int(os.environ.get("GENGIN_PROXY_FAIL_THRESHOLD", "3") or 3)
 COOLDOWN_SECONDS = float(os.environ.get("GENGIN_PROXY_COOLDOWN_SECONDS", "3600") or 3600)
@@ -95,8 +103,10 @@ COACH_TEXT = os.environ.get("GENGIN_PROXY_COACH_TEXT") or (
 LOG_TARGET = os.environ.get("GENGIN_PROXY_LOG", "-")
 MAX_BODY = 64 * 1024 * 1024
 
-# Only these suffixes are OpenRouter variants. Anything else in a model id is
-# treated as a caller-chosen pin and the request passes through untouched.
+# OpenRouter slug variants: `:floor`/`:nitro`/`:free` and friends are
+# documented. Any other suffix in a model id is a caller-chosen provider or
+# endpoint pin (`:deepseek`, `:xiaomi/fp8`) - OpenRouter ignores unknown slug
+# suffixes, so those must be translated into the request's provider object.
 CATALOG_VARIANTS = {"free", "batch", "thinking", "extended"}
 # `flex` is a service tier (cheaper, higher latency) rather than a routing
 # variant, but it is a caller-chosen routing intent all the same: appending
@@ -376,13 +386,20 @@ def _coach_take(body):
 
 
 def _parse_model(model):
-    """(base, suffixes, has_unknown_suffix) for a model id."""
+    """(base, variants, pins) for a model id.
+
+    `variants` are documented OpenRouter slug variants.  `pins` are everything
+    else the caller appended - provider or endpoint slugs (`deepseek`,
+    `xiaomi/fp8`) that only work through the request's provider object.
+    """
     parts = model.split(":")
     if len(parts) == 1:
-        return model, [], False
-    base, suffixes = parts[0], parts[1:]
-    unknown = any(s and s not in KNOWN_VARIANTS for s in suffixes)
-    return base, suffixes, unknown
+        return model, [], []
+    base = parts[0]
+    suffixes = [s for s in parts[1:] if s]
+    return (base,
+            [s for s in suffixes if s in KNOWN_VARIANTS],
+            [s for s in suffixes if s not in KNOWN_VARIANTS])
 
 
 def _status_of(resp):
@@ -396,10 +413,8 @@ def _status_of(resp):
 def _should_skip(body, model):
     if isinstance(body.get("models"), list) and body["models"]:
         return "multi-model"
-    _, suffixes, unknown = _parse_model(model)
-    if unknown:
-        return "unknown-suffix"
-    if "free" in suffixes:
+    _, variants, _pins = _parse_model(model)
+    if "free" in variants:
         return "free-variant"
     provider = body.get("provider")
     if isinstance(provider, dict):
@@ -413,6 +428,7 @@ def _apply_filters(body, model):
     skip = _should_skip(body, model)
     if skip:
         return [], skip
+    base, variants, pins = _parse_model(model)
     status = _model_status(model)
     if time.time() < status["skip_until"]:
         return [], "cooldown"
@@ -420,19 +436,31 @@ def _apply_filters(body, model):
     applied = []
     provider = body.get("provider")
     provider = dict(provider) if isinstance(provider, dict) else {}
-    if not provider.get("quantizations"):
-        provider["quantizations"] = list(QUANTIZATIONS)
-        applied.append("quantizations")
-    if not ALLOW_FALLBACKS and "allow_fallbacks" not in provider:
-        provider["allow_fallbacks"] = False
-        applied.append("allow_fallbacks")
+    if pins:
+        # The pinned endpoint decides quantization, so neither the quantizations
+        # allowlist nor `:floor` is added on top of a pin - `:floor` would also
+        # make flex-tier endpoints eligible, i.e. the opposite of a pin.
+        provider["order"] = list(pins)
+        applied.append("pin:" + ",".join(pins))
+        if not PIN_FALLBACKS and "allow_fallbacks" not in provider:
+            provider["allow_fallbacks"] = False
+            applied.append("allow_fallbacks")
+    else:
+        if not provider.get("quantizations"):
+            provider["quantizations"] = list(QUANTIZATIONS)
+            applied.append("quantizations")
+        if not ALLOW_FALLBACKS and "allow_fallbacks" not in provider:
+            provider["allow_fallbacks"] = False
+            applied.append("allow_fallbacks")
     if provider:
         body["provider"] = provider
 
-    _, suffixes, _ = _parse_model(model)
-    if ENABLE_FLOOR and not any(s in ROUTING_VARIANTS for s in suffixes):
-        body["model"] = model + ":floor"
+    outgoing = base + "".join(":" + v for v in variants)
+    if ENABLE_FLOOR and not pins and not any(v in ROUTING_VARIANTS for v in variants):
+        outgoing += ":floor"
         applied.append("floor")
+    if outgoing != model:
+        body["model"] = outgoing
     return applied, ""
 
 
@@ -543,6 +571,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     "quantizations": QUANTIZATIONS,
                     "floor": ENABLE_FLOOR,
                     "allow_fallbacks": ALLOW_FALLBACKS,
+                    "pin_fallbacks": PIN_FALLBACKS,
                     "fail_threshold": FAIL_THRESHOLD,
                     "cooldown_seconds": COOLDOWN_SECONDS,
                     "coach": {

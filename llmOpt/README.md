@@ -32,16 +32,26 @@ Hermes (and anything else pointed at it) reaches OpenRouter through
 `llmOpt/proxy/openrouter_proxy.py` on `127.0.0.1:8787`.  It injects
 `provider.quantizations` + `allow_fallbacks: false` and appends `:floor` —
 one unfiltered retry, then a 1 h cooldown per model — but passes requests
-through untouched when the caller pinned something: unknown suffix
-(`xiaomi/mimo-v2.6-flash:xiaomi/fp8`), `provider.only`/`order`, or `:free`.
+through untouched when the caller pinned something itself:
+`provider.only`/`order`, or `:free`.
+
+A provider pin in the model id (`deepseek/deepseek-v4.1-flash:deepseek`,
+`xiaomi/mimo-v2.6-flash:xiaomi/fp8`) is a harness convention, not OpenRouter
+syntax: OpenRouter's slug only knows `:nitro`/`:floor`/`:free`-style variants
+and silently ignores anything else, so the request still succeeds but is load
+balanced by price across every provider.  The proxy therefore strips the pin
+from the slug and sends it as `provider.order` (exclusive unless
+`GENGIN_PROXY_PIN_FALLBACKS=1`), which is the only form OpenRouter honors.
+The preflight model check validates pins against the model's endpoint list.
 
 Desktop: `llmOpt/scripts/setup-openrouter-proxy.sh` (user unit).  VM: nothing
 to enable — `gengin-llmopt.service` and `supervisor-console.sh` start it (the
 console also stops what it started); config wiring (`model.base_url`) is
 automatic.  Inspect: `curl 127.0.0.1:8787/status`.  Knobs:
 `GENGIN_PROXY_PORT`, `GENGIN_PROXY_QUANTIZATIONS`, `GENGIN_PROXY_FLOOR`,
-`GENGIN_PROXY_ALLOW_FALLBACKS`, `GENGIN_PROXY_FAIL_THRESHOLD`,
-`GENGIN_PROXY_COOLDOWN_SECONDS`, `GENGIN_PROXY_LOG`.
+`GENGIN_PROXY_ALLOW_FALLBACKS`, `GENGIN_PROXY_PIN_FALLBACKS`,
+`GENGIN_PROXY_FAIL_THRESHOLD`, `GENGIN_PROXY_COOLDOWN_SECONDS`,
+`GENGIN_PROXY_LOG`.
 
 ### Harness updates
 

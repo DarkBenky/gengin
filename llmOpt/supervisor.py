@@ -801,7 +801,9 @@ def check_openrouter_model(config):
 
     Routing variant suffixes (`:floor`, `:free`, `:nitro`, ...) are accepted on
     top of any catalog model, and provider pins (`:xiaomi`, `:xiaomi/fp8`) are
-    matched against the base model's endpoint list.
+    matched against the base model's endpoint list.  Pins are a harness
+    convention: the proxy turns them into `provider.order`, because OpenRouter
+    ignores unknown slug suffixes.
     """
     import openrouter_keys as ork
 
@@ -810,8 +812,15 @@ def check_openrouter_model(config):
     if available is None:
         return ("openrouter_model", False, "could not fetch the model catalog")
     if available:
-        base, variant = ork._base_model_id(model)
-        detail = f"{base} (variant :{variant})" if variant else base
+        bare, _, rest = model.partition(":")
+        suffixes = [s for s in rest.split(":") if s]
+        variant = next((s for s in suffixes if s in ork.VARIANT_SUFFIXES), "")
+        pins = [s for s in suffixes if s not in ork.VARIANT_SUFFIXES]
+        detail = bare
+        if variant:
+            detail += f" (variant :{variant})"
+        if pins:
+            detail += f" (pin :{',:'.join(pins)} -> provider.order)"
         return ("openrouter_model", True, detail)
     return ("openrouter_model", False, f"model not found: {model}")
 
