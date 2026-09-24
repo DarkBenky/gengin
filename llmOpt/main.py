@@ -45,7 +45,7 @@ PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
 
 # Tracked files that are regenerated per checkout; not counted as tree dirt.
-_GENERATED_ARTIFACTS = {"compile_commands.json"}
+_GENERATED_ARTIFACTS = {"compile_commands.json", "flight_baseline.json"}
 
 
 def run(cmd, **kwargs):
@@ -1442,6 +1442,7 @@ _BRANCH_RE = re.compile(r"^llmopt/[0-9a-f]{7,40}/[A-Za-z0-9._-]+$")
 _FORBIDDEN_STAGING_RE = re.compile(
     r"(^|/)(\.env|\.hermes|state|logs|run)(/|$)"
     r"|(^|/)baseline_cache\.json$"
+    r"|(^|/)flight_baseline\.json$"
     r"|(^|/)codebase_context\.md$"
     r"|(^|/)\.cache(/|$)"
     r"|(^|/)perf_folded\.txt$"

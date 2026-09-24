@@ -50,10 +50,11 @@ llmOpt/state/
 llmOpt/logs/
 llmOpt/run/
 
-# python caches + runtime baseline cache
+# python caches + runtime baseline caches (both are machine-local, keyed by fingerprint)
 __pycache__/
 *.pyc
 llmOpt/baseline_cache.json
+llmOpt/flight_baseline.json
 
 # large binary assets
 assets/models/*.bin
