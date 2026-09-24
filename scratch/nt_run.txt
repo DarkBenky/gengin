@@ -1,0 +1,60 @@
+scene: 6 objects, 20582 triangles
+rays: 777600 (1080x720)
+  nodes/ray by object:  obj0(12288t)=13.25  obj1(12t)=0.29  obj2(12t)=0.12  obj3(12t)=0.12  obj4(7938t)=4.14  obj5(320t)=0.00
+  reference hits: 144342 / 777600 (18.6%)
+
+variant                                                            median        min   ns/ray
+V11 SAH(12) + node test A (shipped rayAABB_inv_x2_soa, control)    123.80ms    118.14ms   159.20
+   paired vs V2: median ratio 0.9508 (-4.92%), faster in 12/15 rounds
+   bvh 12180 nodes, 6093 leaves (3.38 tris/leaf), depth 15 [stack ok=yes] | per ray 10.27 nodes, 7.21 int tests, 3.07 leaves, 9.85 tri tests, stack 13/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V13 SAH(12) + node test C (SSE, shipped extract + folded bestT clamp)    123.92ms    119.13ms   159.37
+   paired vs V2: median ratio 0.9470 (-5.30%), faster in 13/15 rounds
+   bvh 12180 nodes, 6093 leaves (3.38 tris/leaf), depth 15 [stack ok=yes] | per ray 10.27 nodes, 7.21 int tests, 3.07 leaves, 9.85 tri tests, stack 13/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V12 SAH(12) + node test B (SSE, cheap extract + folded bestT clamp)    124.80ms    119.09ms   160.49
+   paired vs V2: median ratio 0.9582 (-4.18%), faster in 11/15 rounds
+   bvh 12180 nodes, 6093 leaves (3.38 tris/leaf), depth 15 [stack ok=yes] | per ray 10.27 nodes, 7.21 int tests, 3.07 leaves, 9.85 tri tests, stack 13/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V6 binned SAH(12) + leaf-cost term K=1.0, leaf<=4                 125.11ms    121.32ms   160.89
+   paired vs V2: median ratio 0.9656 (-3.44%), faster in 9/15 rounds
+   bvh 12054 nodes, 6030 leaves (3.41 tris/leaf), depth 15 [stack ok=yes] | per ray 10.27 nodes, 7.21 int tests, 3.07 leaves, 9.85 tri tests, stack 13/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V10 binned SAH(12) + leaf-cost term K=1.0, leaf<=8                125.17ms    121.81ms   160.97
+   paired vs V2: median ratio 0.9885 (-1.15%), faster in 10/15 rounds
+   bvh 7162 nodes, 3584 leaves (5.74 tris/leaf), depth 14 [stack ok=yes] | per ray 7.63 nodes, 5.52 int tests, 2.11 leaves, 11.76 tri tests, stack 12/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V7 binned SAH(12) + leaf-cost term K=0.5, leaf<=8                 125.60ms    121.55ms   161.53
+   paired vs V2: median ratio 0.9860 (-1.40%), faster in 8/15 rounds
+   bvh 7162 nodes, 3584 leaves (5.74 tris/leaf), depth 14 [stack ok=yes] | per ray 7.63 nodes, 5.52 int tests, 2.11 leaves, 11.76 tri tests, stack 12/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V5 binned SAH(12) + leaf-cost term K=0.5, leaf<=4                 126.55ms    119.99ms   162.75
+   paired vs V2: median ratio 0.9846 (-1.54%), faster in 9/15 rounds
+   bvh 12054 nodes, 6030 leaves (3.41 tris/leaf), depth 15 [stack ok=yes] | per ray 10.27 nodes, 7.21 int tests, 3.07 leaves, 9.85 tri tests, stack 13/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V9 binned SAH(12) + leaf-cost term K=0.25, leaf<=8                126.81ms    120.58ms   163.08
+   paired vs V2: median ratio 0.9782 (-2.18%), faster in 10/15 rounds
+   bvh 7162 nodes, 3584 leaves (5.74 tris/leaf), depth 14 [stack ok=yes] | per ray 7.63 nodes, 5.52 int tests, 2.11 leaves, 11.76 tri tests, stack 12/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V3 binned SAH(12), leaf<=8                                        127.53ms    120.44ms   164.01
+   paired vs V2: median ratio 0.9943 (-0.57%), faster in 10/15 rounds
+   bvh 7216 nodes, 3611 leaves (5.70 tris/leaf), depth 14 [stack ok=yes] | per ray 7.63 nodes, 5.52 int tests, 2.11 leaves, 11.76 tri tests, stack 12/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V2 binned SAH(12) + tie-break + depth cap, leaf<=4                130.24ms    121.87ms   167.50
+   bvh 12180 nodes, 6093 leaves (3.38 tris/leaf), depth 15 [stack ok=yes] | per ray 10.27 nodes, 7.21 int tests, 3.07 leaves, 9.85 tri tests, stack 13/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V14 SAH(12) + node test D (scalar dual box)                       131.64ms    126.87ms   169.29
+   paired vs V2: median ratio 1.0175 (+1.75%), faster in 4/15 rounds
+   bvh 12180 nodes, 6093 leaves (3.38 tris/leaf), depth 15 [stack ok=yes] | per ray 10.27 nodes, 7.21 int tests, 3.07 leaves, 9.85 tri tests, stack 13/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V8 binned SAH(12) + leaf-cost term K=0.5, leaf<=16                136.72ms    129.96ms   175.82
+   paired vs V2: median ratio 1.0291 (+2.91%), faster in 3/15 rounds
+   bvh 3492 nodes, 1749 leaves (11.77 tris/leaf), depth 12 [stack ok=yes] | per ray 4.97 nodes, 3.69 int tests, 1.28 leaves, 15.54 tri tests, stack 11/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V4 binned SAH(12), leaf<=2                                        139.88ms    128.91ms   179.89
+   paired vs V2: median ratio 1.0984 (+9.84%), faster in 2/15 rounds
+   bvh 21966 nodes, 10986 leaves (1.87 tris/leaf), depth 16 [stack ok=yes] | per ray 14.27 nodes, 9.33 int tests, 4.95 leaves, 9.40 tri tests, stack 14/64
+   VALIDATION vs V1: obj mismatches 0, tri mismatches 0, max |dt| 0.000e+00
+V1 midpoint (count/2 fallback) = CURRENT CHECKOUT RULE            219.45ms    212.19ms   282.22
+   paired vs V2: median ratio 1.7221 (+72.21%), faster in 0/15 rounds
+   bvh 12528 nodes, 6267 leaves (3.28 tris/leaf), depth 17 [stack ok=yes] | per ray 17.92 nodes, 11.89 int tests, 6.03 leaves, 18.87 tri tests, stack 13/64

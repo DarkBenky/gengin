@@ -1,0 +1,29 @@
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+[MiniFB] WARNING: X11MiniFB.c:640 (mfb_open_ex): X11MiniFB: LC_CTYPE locale is not configured for UTF-8; IME/dead-key input may be limited.
+Demo scene loaded. Total Tris: 20175
+[CL] device: pthread-AMD EPYC-Rome Processor
+[CL] kernel 'renderClouds' compiled ok
+[CL] kernel 'godRays' compiled ok
+[CL] kernel 'compositeFrame' compiled ok
+[CL] kernel 'blur' compiled ok
+
+Bench results (58 frames, 10.0 s)
+  avg    : 175.612 ms
+  median : 173.328 ms
+  p99    : 229.334 ms
+  saved  : bench/results/bench_results.json
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 1.686 MB scratch/perf.data (23187 samples) ]

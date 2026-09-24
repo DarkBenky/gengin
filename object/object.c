@@ -407,6 +407,185 @@ float3 ComputeCentroid(const Object *obj, const int *ObjectIdx, int ObjectsCount
 	return centroid;
 }
 
+#define BVH_SAH_BINS 12
+#define BVH_SAH_MAX_DEPTH 32
+#define TRI_CENTROID_AXIS(obj, t, ax) \
+	(((obj)->v1[(t)].ax + (obj)->v2[(t)].ax + (obj)->v3[(t)].ax) * 0.333333f)
+
+typedef struct BvhSahBin {
+	float mn[3];
+	float mx[3];
+	int count;
+} BvhSahBin;
+
+// Surface area of a bin's bounds (the SAH cost weight).
+static inline float BvhBinArea(const BvhSahBin *b) {
+	float ex = b->mx[0] - b->mn[0];
+	float ey = b->mx[1] - b->mn[1];
+	float ez = b->mx[2] - b->mn[2];
+	if (ex < 0.0f) ex = 0.0f;
+	if (ey < 0.0f) ey = 0.0f;
+	if (ez < 0.0f) ez = 0.0f;
+	return ex * ey + ey * ez + ez * ex;
+}
+
+// Split one BVH node's triangle range.  Binned SAH over the three axes
+// (BVH_SAH_BINS bins each), cost = surfaceArea(child) * triangleCount(child),
+// cheapest plane wins.  Returns the partition index (both sides non-empty).
+//
+// Two degenerate cases are handled explicitly:
+//  - exact cost ties (all candidate boxes have zero area, e.g. collinear or
+//    zero-area triangles) prefer the more balanced plane, otherwise the first
+//    candidate - the most unbalanced one - wins and the tree degenerates into a
+//    list, peeling one triangle per level;
+//  - no usable plane at all falls back to the original longest-axis
+//    AABB-midpoint rule.
+static int BVHSplitTriangles(const Object *obj, int *idx, int count, float3 mn, float3 mx, int depth) {
+	// Hard depth bound.  Past this depth always halve by count, so the tree depth
+	// is bounded by BVH_SAH_MAX_DEPTH + log2(count) and the fixed 64-entry node
+	// stacks in IntersectBVH / IntersectBVH_Shadow cannot overflow.
+	if (depth >= BVH_SAH_MAX_DEPTH) return count / 2;
+
+	float mnv[3] = {mn.x, mn.y, mn.z};
+	float extent[3] = {mx.x - mn.x, mx.y - mn.y, mx.z - mn.z};
+	float bestCost = FLT_MAX;
+	int bestMinor = 0;
+	int bestAxis = 0, bestK = -1;
+
+	BvhSahBin bins[BVH_SAH_BINS];
+	float leftArea[BVH_SAH_BINS + 1];
+	int leftCount[BVH_SAH_BINS + 1];
+
+	for (int axis = 0; axis < 3; axis++) {
+		// also rejects NaN extents (the float->int bin index below would be undefined)
+		if (!(extent[axis] > 1e-30f)) continue;
+
+		float scale = (float)BVH_SAH_BINS / extent[axis];
+		for (int b = 0; b < BVH_SAH_BINS; b++) {
+			bins[b].mn[0] = bins[b].mn[1] = bins[b].mn[2] = FLT_MAX;
+			bins[b].mx[0] = bins[b].mx[1] = bins[b].mx[2] = -FLT_MAX;
+			bins[b].count = 0;
+		}
+
+		for (int i = 0; i < count; i++) {
+			int t = idx[i];
+			float c = axis == 0 ? TRI_CENTROID_AXIS(obj, t, x)
+					: (axis == 1 ? TRI_CENTROID_AXIS(obj, t, y) : TRI_CENTROID_AXIS(obj, t, z));
+			// Clamp in float space before converting: MinF32/MaxF32 drop NaN
+			// operands, so a finite node extent can still meet a NaN centroid,
+			// and (int) on a NaN/out-of-range value is undefined.
+			float f = (c - mnv[axis]) * scale;
+			if (!(f > 0.0f)) f = 0.0f;
+			else if (f >= (float)BVH_SAH_BINS) f = (float)BVH_SAH_BINS - 0.5f;
+			int b = (int)f;
+
+			float3 p0 = obj->v1[t], p1 = obj->v2[t], p2 = obj->v3[t];
+			float tmn[3] = {
+				MinF32(MinF32(p0.x, p1.x), p2.x),
+				MinF32(MinF32(p0.y, p1.y), p2.y),
+				MinF32(MinF32(p0.z, p1.z), p2.z),
+			};
+			float tmx[3] = {
+				MaxF32(MaxF32(p0.x, p1.x), p2.x),
+				MaxF32(MaxF32(p0.y, p1.y), p2.y),
+				MaxF32(MaxF32(p0.z, p1.z), p2.z),
+			};
+			for (int k = 0; k < 3; k++) {
+				if (tmn[k] < bins[b].mn[k]) bins[b].mn[k] = tmn[k];
+				if (tmx[k] > bins[b].mx[k]) bins[b].mx[k] = tmx[k];
+			}
+			bins[b].count++;
+		}
+
+		// prefix sweep left -> right
+		BvhSahBin acc;
+		acc.mn[0] = acc.mn[1] = acc.mn[2] = FLT_MAX;
+		acc.mx[0] = acc.mx[1] = acc.mx[2] = -FLT_MAX;
+		acc.count = 0;
+		leftCount[0] = 0;
+		leftArea[0] = 0.0f;
+		for (int b = 0; b < BVH_SAH_BINS; b++) {
+			acc.count += bins[b].count;
+			for (int k = 0; k < 3; k++) {
+				if (bins[b].mn[k] < acc.mn[k]) acc.mn[k] = bins[b].mn[k];
+				if (bins[b].mx[k] > acc.mx[k]) acc.mx[k] = bins[b].mx[k];
+			}
+			leftCount[b + 1] = acc.count;
+			leftArea[b + 1] = acc.count > 0 ? BvhBinArea(&acc) : 0.0f;
+		}
+
+		// pair each left prefix with the right suffix
+		BvhSahBin accR;
+		accR.mn[0] = accR.mn[1] = accR.mn[2] = FLT_MAX;
+		accR.mx[0] = accR.mx[1] = accR.mx[2] = -FLT_MAX;
+		accR.count = 0;
+		for (int b = BVH_SAH_BINS - 1; b >= 1; b--) {
+			accR.count += bins[b].count;
+			for (int k = 0; k < 3; k++) {
+				if (bins[b].mn[k] < accR.mn[k]) accR.mn[k] = bins[b].mn[k];
+				if (bins[b].mx[k] > accR.mx[k]) accR.mx[k] = bins[b].mx[k];
+			}
+			int nL = leftCount[b];
+			int nR = accR.count;
+			if (nL == 0 || nR == 0) continue;
+			float cost = leftArea[b] * (float)nL + BvhBinArea(&accR) * (float)nR;
+			int minor = nL < nR ? nL : nR;
+			if (cost < bestCost || (cost == bestCost && minor > bestMinor)) {
+				bestCost = cost;
+				bestMinor = minor;
+				bestAxis = axis;
+				bestK = b;
+			}
+		}
+	}
+
+	if (bestK < 0) {
+		// no usable plane — original longest-axis AABB-midpoint rule
+		float dx = mx.x - mn.x, dy = mx.y - mn.y, dz = mx.z - mn.z;
+		int axis = (dx >= dy && dx >= dz) ? 0 : (dy >= dz ? 1 : 2);
+		float split = (axis == 0 ? mn.x + mx.x : (axis == 1 ? mn.y + mx.y : mn.z + mx.z)) * 0.5f;
+		int lo = 0, hi = count - 1;
+		while (lo <= hi) {
+			int t = idx[lo];
+			float c = axis == 0 ? TRI_CENTROID_AXIS(obj, t, x)
+					: (axis == 1 ? TRI_CENTROID_AXIS(obj, t, y) : TRI_CENTROID_AXIS(obj, t, z));
+			if (c <= split) {
+				lo++;
+			} else {
+				int tmp = idx[lo];
+				idx[lo] = idx[hi];
+				idx[hi] = tmp;
+				hi--;
+			}
+		}
+		int mid = lo;
+		if (mid == 0 || mid == count) mid = count / 2;
+		return mid;
+	}
+
+	// partition in place at the winning bin boundary (order inside each bin is
+	// irrelevant — only the two sets matter)
+	float scale = (float)BVH_SAH_BINS / extent[bestAxis];
+	float bound = mnv[bestAxis] + (float)bestK / scale;
+	int lo = 0, hi = count - 1;
+	while (lo <= hi) {
+		int t = idx[lo];
+		float c = bestAxis == 0 ? TRI_CENTROID_AXIS(obj, t, x)
+				: (bestAxis == 1 ? TRI_CENTROID_AXIS(obj, t, y) : TRI_CENTROID_AXIS(obj, t, z));
+		if (c < bound) {
+			lo++;
+		} else {
+			int tmp = idx[lo];
+			idx[lo] = idx[hi];
+			idx[hi] = tmp;
+			hi--;
+		}
+	}
+	int mid = lo;
+	if (mid == 0 || mid == count) mid = count / 2;
+	return mid;
+}
+
 void CreateObjectBVH(Object *obj, BVH *bvh) {
 	if (!obj || !bvh || obj->triangleCount == 0) return;
 
@@ -425,22 +604,19 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 	for (int i = 0; i < n; i++)
 		bvh->triIndices[i] = i;
 
-		// --- helpers as local macros to avoid polluting namespace ---
-#define TRI_CENTROID_AXIS(obj, t, ax) \
-	(((obj)->v1[(t)].ax + (obj)->v2[(t)].ax + (obj)->v3[(t)].ax) * 0.333333f)
-
 	// iterative build using an explicit work stack
 	typedef struct {
 		int nodeIdx;
 		int start;
 		int count;
+		int depth;
 	} WorkItem;
 	WorkItem stack[64];
 	int top = 0;
 
 	// allocate root
 	bvh->nodeCount = 1;
-	stack[top++] = (WorkItem){0, 0, n};
+	stack[top++] = (WorkItem){0, 0, n, 0};
 
 	while (top > 0) {
 		WorkItem w = stack[--top];
@@ -470,28 +646,10 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 			continue;
 		}
 
-		// longest axis median split
-		float dx = mx.x - mn.x, dy = mx.y - mn.y, dz = mx.z - mn.z;
-		int axis = (dx >= dy && dx >= dz) ? 0 : (dy >= dz ? 1 : 2);
-		float split = (axis == 0 ? mn.x + mx.x : (axis == 1 ? mn.y + mx.y : mn.z + mx.z)) * 0.5f;
-
-		// partition in-place around split centroid
-		int lo = 0, hi = w.count - 1;
-		while (lo <= hi) {
-			int t = idx[lo];
-			float c = axis == 0 ? TRI_CENTROID_AXIS(obj, t, x)
-								: (axis == 1 ? TRI_CENTROID_AXIS(obj, t, y) : TRI_CENTROID_AXIS(obj, t, z));
-			if (c <= split) {
-				lo++;
-			} else {
-				int tmp = idx[lo];
-				idx[lo] = idx[hi];
-				idx[hi] = tmp;
-				hi--;
-			}
-		}
-		int mid = lo;
-		if (mid == 0 || mid == w.count) mid = w.count / 2; // degenerate fallback
+		// split: binned SAH, or the longest-axis AABB-midpoint rule when no
+		// usable plane exists (see BVHSplitTriangles)
+		int mid = BVHSplitTriangles(obj, idx, w.count, mn, mx, w.depth);
+		if (mid <= 0 || mid >= w.count) mid = w.count / 2; // must partition
 
 		// compute AABB of left partition and store in this node's SoA as child0
 		float3 mn0 = {FLT_MAX, FLT_MAX, FLT_MAX}, mx0 = {FLT_MIN, FLT_MIN, FLT_MIN};
@@ -542,10 +700,9 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 		node->leftFirst = leftIdx;
 		node->triCount = 0;
 
-		stack[top++] = (WorkItem){leftIdx, w.start, mid};
-		stack[top++] = (WorkItem){leftIdx + 1, w.start + mid, w.count - mid};
+		stack[top++] = (WorkItem){leftIdx, w.start, mid, w.depth + 1};
+		stack[top++] = (WorkItem){leftIdx + 1, w.start + mid, w.count - mid, w.depth + 1};
 	}
-#undef TRI_CENTROID_AXIS
 	int nodeCount, triCount;
 	// getBvhStats(bvh, &nodeCount, &triCount);
 	// printf("BVH built with %d nodes %d triangles (%.2f%% overhead) %.2f average Triangles per node\n", nodeCount, triCount, 100.0f * nodeCount / triCount, (float)triCount / nodeCount);
