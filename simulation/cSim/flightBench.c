@@ -212,6 +212,13 @@ static int fbCompareDouble(const void *a, const void *b) {
 	return (da > db) - (da < db);
 }
 
+// Trace rows are emitted as JSON number arrays, so a non-finite plane state
+// would make the whole document unparseable - report 0.0 there instead (the
+// unstable flag already says the run diverged).
+static float fbSafe(float v) {
+	return isfinite(v) ? v : 0.0f;
+}
+
 typedef struct {
 	const Scenario *scenario;
 	int steps;
@@ -288,9 +295,9 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, FILE *trace)
 		if (trace != NULL) {
 			fprintf(trace, "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
 				(float)(step + 1) * dt,
-				ctrl.plane.position.x, ctrl.plane.position.y, ctrl.plane.position.z,
-				target.position.x, target.position.y, target.position.z,
-				out.Aileron, out.Elevator, out.Rudder, dist);
+				fbSafe(ctrl.plane.position.x), fbSafe(ctrl.plane.position.y), fbSafe(ctrl.plane.position.z),
+				fbSafe(target.position.x), fbSafe(target.position.y), fbSafe(target.position.z),
+				fbSafe(out.Aileron), fbSafe(out.Elevator), fbSafe(out.Rudder), fbSafe(dist));
 		}
 	}
 
@@ -379,7 +386,9 @@ int main(int argc, char **argv) {
 				return 2;
 			}
 			ScenarioResult r = fbRun(&scenarios[i], steps, dt, trace);
-			printf("{\"version\":1,\"steps\":%d,\"dt\":%.9f,\"hitRadius\":%.1f,\"suiteHash\":\"%08x\","
+			printf("{\"version\":1,\"settings\":{\"steps\":%d,\"dt\":%.9f,\"hitRadius\":%.1f,"
+				   "\"model\":\"F-16C\",\"loss\":\"V2PlusTuned2\",\"maxIterations\":128},"
+				   "\"suiteHash\":\"%08x\","
 				   "\"scenario\":{\"id\":\"%s\",\"tier\":\"%s\",\"seed\":%u,\"miss\":%.3f,\"finalDist\":%.3f,"
 				   "\"hit\":%s,\"tHit\":%.3f,\"effort\":%.4f,\"satSteps\":%d,\"unstable\":%d,\"costUs\":%.2f},"
 				   "\"traceHeader\":\"t,px,py,pz,tx,ty,tz,aileron,elevator,rudder,dist\",\"trace\":[",

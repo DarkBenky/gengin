@@ -894,14 +894,25 @@ def flightBench(steps=0, capture_baseline=False):
 def flightScenarios():
     """The suite definition plus whether a baseline exists for it."""
     doc = _flightRun(["--steps", "1"])
-    return {
+    suite = doc["suiteHash"]
+    baseline = _loadFlightBaseline(suite)
+    info = {
         "settings": doc["settings"],
-        "suiteHash": doc["suiteHash"],
-        "baseline": _loadFlightBaseline(doc["suiteHash"]) is not None,
+        "suiteHash": suite,
+        "baseline": baseline is not None,
         "tiers": [t["tier"] for t in doc["tiers"]],
         "scenarios": [{"id": s["id"], "tier": s["tier"], "seed": s["seed"]}
                       for s in doc["scenarios"]],
     }
+    if baseline is None:
+        cached = (_flightCacheRead().get("baseline") or {}).get("suiteHash")
+        if cached == suite:
+            info["baselineNote"] = ("a baseline is stored for this suite but pinned to "
+                                    "another HEAD or environment - flight_bench captures one")
+        else:
+            info["baselineNote"] = ("no baseline for this suite yet - flight_bench captures "
+                                    "one (flightControl.{c,h} must be clean)")
+    return info
 
 
 def flightTrace(scenario, steps=0, label=""):
@@ -917,10 +928,12 @@ def flightTrace(scenario, steps=0, label=""):
     rows = doc.get("trace") or []
     with open(path, "w") as fh:
         fh.write(doc.get("traceHeader", "trace") + "\n")
-        fh.write("\n".join(rows) + "\n")
+        for row in rows:
+            values = row if isinstance(row, list) else [row]
+            fh.write(",".join("" if v is None else f"{v:g}" for v in values) + "\n")
     return {
         "scenario": doc["scenario"],
-        "settings": doc["settings"],
+        "settings": doc.get("settings"),
         "csv": os.path.relpath(path, PROJECT_DIR),
         "rows": len(rows),
         "firstRows": rows[:3],
