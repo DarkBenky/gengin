@@ -199,6 +199,9 @@ void Object_Destroy(Object *obj) {
 	obj->bvh.nodes = NULL;
 	free(obj->bvh.triIndices);
 	obj->bvh.triIndices = NULL;
+	free(obj->bvh.leafSoa);
+	obj->bvh.leafSoa = NULL;
+	obj->bvh.leafCount = 0;
 	obj->bvh.nodeCount = 0;
 }
 
@@ -408,12 +411,19 @@ float3 ComputeCentroid(const Object *obj, const int *ObjectIdx, int ObjectsCount
 }
 
 void CreateObjectBVH(Object *obj, BVH *bvh) {
-	if (!obj || !bvh || obj->triangleCount == 0) return;
+	// cleared up front so a partially built / reused BVH can never be traversed
+	// with a stale payload pointer (the traversals fall back to the scalar leaf)
+	if (!bvh) return;
+	bvh->leafSoa = NULL;
+	bvh->leafCount = 0;
+	if (!obj || obj->triangleCount == 0) return;
 
 	int n = obj->triangleCount;
 	bvh->nodes = malloc(2 * n * sizeof(BVHNode));
 	bvh->triIndices = malloc(n * sizeof(int));
 	bvh->nodeCount = 0;
+	bvh->leafSoa = NULL;
+	bvh->leafCount = 0;
 	if (!bvh->nodes || !bvh->triIndices) {
 		free(bvh->nodes);
 		free(bvh->triIndices);
@@ -463,7 +473,7 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 			}
 		}
 
-		if (w.count <= 4) {
+		if (w.count <= BVH_LEAF_SIMD) { // keeps triCount <= BVH_LEAF_SIMD, the SSE payload's lane count
 			node->triStart = w.start;
 			node->triCount = w.count;
 			// soa[] unused for leaves — parent already stored our bounds
@@ -546,6 +556,38 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 		stack[top++] = (WorkItem){leftIdx + 1, w.start + mid, w.count - mid};
 	}
 #undef TRI_CENTROID_AXIS
+
+	// ---- per-leaf SoA triangle payload for the 4-wide SSE leaf test ----
+	// Same e1/e2 expressions as rayTriangle(); one pass over the leaves so the
+	// hot traversal never recomputes them and reads one contiguous 192 B block.
+	int leafCount = 0;
+	for (int i = 0; i < bvh->nodeCount; i++) {
+		if (bvh->nodes[i].triCount > 0) bvh->nodes[i]._pad[0] = leafCount++;
+		else bvh->nodes[i]._pad[0] = -1;
+	}
+	bvh->leafCount = leafCount;
+	bvh->leafSoa = NULL;
+	if (leafCount > 0) {
+		size_t leafBytes = sizeof(float) * 48 * (size_t)leafCount;
+		bvh->leafSoa = aligned_alloc(64, leafBytes);
+		if (bvh->leafSoa) {
+			memset(bvh->leafSoa, 0, leafBytes); // padding lanes: e1 == e2 == 0 -> rejected
+			for (int i = 0; i < bvh->nodeCount; i++) {
+				const BVHNode *node = &bvh->nodes[i];
+				if (node->triCount <= 0) continue;
+				float *ls = bvh->leafSoa + 48 * (size_t)node->_pad[0];
+				for (int l = 0; l < node->triCount; l++) {
+					int t = bvh->triIndices[node->triStart + l];
+					float3 v0 = obj->v1[t];
+					float3 e1 = {obj->v2[t].x - v0.x, obj->v2[t].y - v0.y, obj->v2[t].z - v0.z};
+					float3 e2 = {obj->v3[t].x - v0.x, obj->v3[t].y - v0.y, obj->v3[t].z - v0.z};
+					ls[0 + l] = v0.x;  ls[4 + l] = v0.y;  ls[8 + l] = v0.z;
+					ls[16 + l] = e1.x; ls[20 + l] = e1.y; ls[24 + l] = e1.z;
+					ls[32 + l] = e2.x; ls[36 + l] = e2.y; ls[40 + l] = e2.z;
+				}
+			}
+		}
+	}
 	int nodeCount, triCount;
 	// getBvhStats(bvh, &nodeCount, &triCount);
 	// printf("BVH built with %d nodes %d triangles (%.2f%% overhead) %.2f average Triangles per node\n", nodeCount, triCount, 100.0f * nodeCount / triCount, (float)triCount / nodeCount);
@@ -557,6 +599,9 @@ void DestroyObjectBVH(BVH *bvh) {
 	bvh->nodes = NULL;
 	free(bvh->triIndices);
 	bvh->triIndices = NULL;
+	free(bvh->leafSoa);
+	bvh->leafSoa = NULL;
+	bvh->leafCount = 0;
 	bvh->nodeCount = 0;
 }
 
@@ -592,6 +637,73 @@ static bool rayTriangle(float3 ro, float3 rd,
 	if (t < eps) return false;
 	*tOut = t;
 	return true;
+}
+
+// ---- 4-wide SSE leaf triangle test ----------------------------------------
+// Same Möller–Trumbore arithmetic as rayTriangle() above, but evaluated for the
+// (up to) 4 triangles of a BVH leaf at once out of the leaf's SoA payload
+// (bvh->leafSoa): lane = triangle, so every component is one __m128 and no
+// per-lane branch is needed. Invalid/padding lanes have e1 == e2 == 0 -> a == 0
+// -> rejected, so a leaf with 1..3 triangles is handled by the same code.
+// Returns the accept mask per lane; *tOut holds the per-lane t.
+static inline __m128 rayTriLeaf4Mask(const float *ls, float3 ro, float3 rd, __m128 *tOut) {
+	const __m128 eps = _mm_set1_ps(1e-7f);
+	const __m128 zero = _mm_setzero_ps();
+	const __m128 one = _mm_set1_ps(1.0f);
+	const __m128 sign = _mm_set1_ps(-0.0f);
+
+	const __m128 rdx = _mm_set1_ps(rd.x), rdy = _mm_set1_ps(rd.y), rdz = _mm_set1_ps(rd.z);
+	const __m128 rox = _mm_set1_ps(ro.x), roy = _mm_set1_ps(ro.y), roz = _mm_set1_ps(ro.z);
+
+	const __m128 v0x = _mm_load_ps(ls + 0),  v0y = _mm_load_ps(ls + 4),  v0z = _mm_load_ps(ls + 8);
+	const __m128 e1x = _mm_load_ps(ls + 16), e1y = _mm_load_ps(ls + 20), e1z = _mm_load_ps(ls + 24);
+	const __m128 e2x = _mm_load_ps(ls + 32), e2y = _mm_load_ps(ls + 36), e2z = _mm_load_ps(ls + 40);
+
+	const __m128 hx = _mm_sub_ps(_mm_mul_ps(rdy, e2z), _mm_mul_ps(rdz, e2y));
+	const __m128 hy = _mm_sub_ps(_mm_mul_ps(rdz, e2x), _mm_mul_ps(rdx, e2z));
+	const __m128 hz = _mm_sub_ps(_mm_mul_ps(rdx, e2y), _mm_mul_ps(rdy, e2x));
+
+	const __m128 a = _mm_add_ps(_mm_add_ps(_mm_mul_ps(e1x, hx), _mm_mul_ps(e1y, hy)), _mm_mul_ps(e1z, hz));
+	__m128 ok = _mm_cmpge_ps(_mm_andnot_ps(sign, a), eps); // |a| >= eps
+	const __m128 f = _mm_div_ps(one, a);
+
+	const __m128 sx = _mm_sub_ps(rox, v0x), sy = _mm_sub_ps(roy, v0y), sz = _mm_sub_ps(roz, v0z);
+	const __m128 u = _mm_mul_ps(f, _mm_add_ps(_mm_add_ps(_mm_mul_ps(sx, hx), _mm_mul_ps(sy, hy)), _mm_mul_ps(sz, hz)));
+	ok = _mm_and_ps(ok, _mm_and_ps(_mm_cmpge_ps(u, zero), _mm_cmple_ps(u, one)));
+
+	const __m128 qx = _mm_sub_ps(_mm_mul_ps(sy, e1z), _mm_mul_ps(sz, e1y));
+	const __m128 qy = _mm_sub_ps(_mm_mul_ps(sz, e1x), _mm_mul_ps(sx, e1z));
+	const __m128 qz = _mm_sub_ps(_mm_mul_ps(sx, e1y), _mm_mul_ps(sy, e1x));
+	const __m128 v = _mm_mul_ps(f, _mm_add_ps(_mm_add_ps(_mm_mul_ps(rdx, qx), _mm_mul_ps(rdy, qy)), _mm_mul_ps(rdz, qz)));
+	ok = _mm_and_ps(ok, _mm_and_ps(_mm_cmpge_ps(v, zero), _mm_cmple_ps(_mm_add_ps(u, v), one)));
+
+	const __m128 t = _mm_mul_ps(f, _mm_add_ps(_mm_add_ps(_mm_mul_ps(e2x, qx), _mm_mul_ps(e2y, qy)), _mm_mul_ps(e2z, qz)));
+	ok = _mm_and_ps(ok, _mm_cmpge_ps(t, eps)); // t >= eps
+
+	*tOut = t;
+	return ok;
+}
+
+// Closest-hit leaf test: returns the smallest accepted t below bestT, or
+// FLT_MAX when no triangle of the leaf is hit, plus the winning lane.
+static inline float rayTriangleLeaf4(const float *ls, float3 ro, float3 rd, float bestT, int *laneOut) {
+	__m128 t;
+	__m128 ok = rayTriLeaf4Mask(ls, ro, rd, &t);
+	ok = _mm_and_ps(ok, _mm_cmplt_ps(t, _mm_set1_ps(bestT)));
+
+	__m128 tin = _mm_blendv_ps(_mm_set1_ps(FLT_MAX), t, ok);
+	__m128 m1 = _mm_min_ps(tin, _mm_shuffle_ps(tin, tin, _MM_SHUFFLE(1, 0, 3, 2)));
+	__m128 m2 = _mm_min_ps(m1, _mm_shuffle_ps(m1, m1, _MM_SHUFFLE(2, 3, 0, 1)));
+	const float tmin = _mm_cvtss_f32(m2);
+	if (tmin >= FLT_MAX) return FLT_MAX;
+	*laneOut = __builtin_ctz(_mm_movemask_ps(_mm_cmpeq_ps(tin, _mm_set1_ps(tmin))));
+	return tmin;
+}
+
+// Any-hit leaf test (shadow rays): true when any lane of the leaf is hit.
+static inline bool rayTriangleLeaf4Any(const float *ls, float3 ro, float3 rd) {
+	__m128 t;
+	return _mm_movemask_ps(rayTriLeaf4Mask(ls, ro, rd, &t)) != 0;
 }
 
 static float rayAABB(float3 ro, float3 rd, float3 mn, float3 mx) {
@@ -648,12 +760,21 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 		const BVHNode *node = &bvh->nodes[stack[--top]];
 
 		if (node->triCount > 0) {
-			for (int i = 0; i < node->triCount; i++) {
-				int t = bvh->triIndices[node->triStart + i];
-				float hit;
-				if (rayTriangle(rayOrigin, rayDir, obj->v1[t], obj->v2[t], obj->v3[t], &hit) && hit < bestT) {
+			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
+				int lane = 0;
+				float hit = rayTriangleLeaf4(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir, bestT, &lane);
+				if (hit < bestT) {
 					bestT = hit;
-					*hitTriIdx = t;
+					*hitTriIdx = bvh->triIndices[node->triStart + lane];
+				}
+			} else {
+				for (int i = 0; i < node->triCount; i++) {
+					int t = bvh->triIndices[node->triStart + i];
+					float hit;
+					if (rayTriangle(rayOrigin, rayDir, obj->v1[t], obj->v2[t], obj->v3[t], &hit) && hit < bestT) {
+						bestT = hit;
+						*hitTriIdx = t;
+					}
 				}
 			}
 		} else {
@@ -707,11 +828,16 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 	while (top > 0) {
 		const BVHNode *node = &bvh->nodes[stack[--top]];
 		if (node->triCount > 0) {
-			for (int i = 0; i < node->triCount; i++) {
-				int ti = bvh->triIndices[node->triStart + i];
-				float hit;
-				if (rayTriangle(rayOrigin, rayDir, obj->v1[ti], obj->v2[ti], obj->v3[ti], &hit))
+			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
+				if (rayTriangleLeaf4Any(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir))
 					return true;
+			} else {
+				for (int i = 0; i < node->triCount; i++) {
+					int ti = bvh->triIndices[node->triStart + i];
+					float hit;
+					if (rayTriangle(rayOrigin, rayDir, obj->v1[ti], obj->v2[ti], obj->v3[ti], &hit))
+						return true;
+				}
 			}
 		} else {
 			float out[2];
