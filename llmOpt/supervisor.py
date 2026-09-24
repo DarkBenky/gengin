@@ -771,13 +771,18 @@ def produce_baseline(sandbox):
     gengin_main.BASELINE_RESULTS = None
     try:
         result = gengin_main.makeBench()
-        flight = None
         try:
             flight = gengin_main.flightBench(capture_baseline=True)
+            if flight.get("capturedBaseline"):
+                log("INFO", "flight_baseline.captured", suite=flight["suiteHash"],
+                    miss=round(flight["aggregate"]["miss"], 1),
+                    hitRate=round(flight["aggregate"]["hitRate"], 3),
+                    costUs=round(flight["aggregate"]["costUs"], 1))
+            else:
+                log("WARN", "flight_baseline.not_captured",
+                    detail=flight.get("summary", "")[:200].replace("\n", " | "))
         except (RuntimeError, OSError) as exc:
             log("WARN", "flight_baseline.failed", detail=str(exc)[:200])
-        if result is not None and flight is not None:
-            return result
         return result
     finally:
         gengin_main.PROJECT_DIR = old

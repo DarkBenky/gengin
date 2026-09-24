@@ -696,6 +696,8 @@ def makeFlame():
 FLIGHT_BENCH_BIN = os.path.join("build", "flightBench", "flightBench")
 FLIGHT_BASELINE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "flight_baseline.json")
+FLIGHT_CONTROLLER_FILES = ("simulation/cSim/flightControl.c",
+                           "simulation/cSim/flightControl.h")
 FLIGHT_TIER_REGRESSION_PCT = 10.0
 FLIGHT_COST_REGRESSION_PCT = 20.0
 
@@ -726,7 +728,8 @@ def _flightRun(args, timeout=900):
 def _flightControllerClean():
     """True when the controller under test is untouched in the sandbox."""
     res = subprocess.run(
-        ["git", "status", "--porcelain", "--", "simulation/cSim/flightControl.c"],
+        ["git", "status", "--porcelain", "--", FLIGHT_CONTROLLER_FILES[0],
+         FLIGHT_CONTROLLER_FILES[1]],
         capture_output=True, text=True, cwd=PROJECT_DIR)
     return not res.stdout.strip()
 
@@ -758,8 +761,8 @@ def _saveFlightBaseline(doc):
     """Persist the flight baseline for the current HEAD + suite hash.
 
     Unlike the frame baseline only the *controller* has to be clean: the suite
-    depends on flightControl.c + simulate.c, so edits elsewhere in the tree do
-    not invalidate it.
+    depends on flightControl.{c,h} + simulate.c, so edits elsewhere in the tree
+    do not invalidate it.
     """
     head, _dirty = _projectGitHead()
     if head is None or not _flightControllerClean():
@@ -789,12 +792,22 @@ def _saveFlightBaseline(doc):
     return True
 
 
-def _flightSummary(doc, baseline):
+def _flightSummary(doc, baseline, captured=False):
     agg = doc["aggregate"]
     if baseline is None:
-        return ("No flight baseline for this suite yet - this run captured it "
-                "(suite %s)." % doc["suiteHash"])
+        if captured:
+            return ("No flight baseline for this suite yet - this run captured it "
+                    "(suite %s)." % doc["suiteHash"])
+        return ("No flight baseline for this suite yet and none was captured: "
+                "%s is modified. Revert it to pin a baseline (suite %s)."
+                % (" / ".join(FLIGHT_CONTROLLER_FILES), doc["suiteHash"]))
     base = baseline.get("aggregate") or {}
+    base_steps = (baseline.get("settings") or {}).get("steps")
+    run_steps = (doc.get("settings") or {}).get("steps")
+    if base_steps and run_steps and base_steps != run_steps:
+        return ("Flight suite %s: this run used %s steps, the baseline was captured "
+                "at %s steps - re-run with %s steps to compare"
+                % (doc["suiteHash"], run_steps, base_steps, base_steps))
     lines = [f"Flight comparison vs baseline (suite {doc['suiteHash']}):"]
     improved = 0
     regressed = 0
@@ -859,11 +872,12 @@ def flightBench(steps=0, capture_baseline=False):
     captured = False
     if capture_baseline or baseline is None:
         if capture_baseline or steps == 0:
-            captured = _saveFlightBaseline(doc)
-            if captured:
-                baseline = _loadFlightBaseline(suite)
+            if _flightControllerClean():
+                captured = _saveFlightBaseline(doc)
+                if captured:
+                    baseline = _loadFlightBaseline(suite)
     return {
-        "summary": _flightSummary(doc, baseline),
+        "summary": _flightSummary(doc, baseline, captured),
         "suiteHash": suite,
         "settings": doc["settings"],
         "aggregate": doc["aggregate"],

@@ -48,6 +48,10 @@ you may report `no_change`:
 If a candidate fails, record WHY in `codebase_context.md` and immediately pick
 the next one.  Do not stop while unexplored hotspots remain.  Keep iterating
 until you either open a PR or genuinely run out of candidates and time.
+If the CPU node map is genuinely exhausted — every row `tried-failed` or
+`shipped` with numbers, no unexplored hotspot left — do NOT report
+`no_change` yet: switch to the SECOND OBJECTIVE below (the flight controller)
+and meet the same effort bar there.
 Candidates come from the `## Node map`, ranked by its flame percentages.  If
 that section is empty (first session on a fresh checkout), seed it from your
 own `make_flame` output — top 5 nodes, one row each — before choosing.  The
@@ -195,6 +199,58 @@ END of the session.
     is opened, or when the SESSION EFFORT BUDGET conditions are met and no
     safe candidate survives — then report `no_change`.
 
+## SECOND OBJECTIVE — FLIGHT CONTROLLER
+Use this when the CPU node map is exhausted (see SESSION EFFORT BUDGET): at
+most one switch per session, and only after the frame axis has real numbers.
+The target is the interceptor guidance law in `simulation/cSim/flightControl.c`
+(+ `flightControl.h`) — a per-frame iterative search over
+rudder/elevator/aileron that minimises a multi-step simulated loss against a
+moving target.  The metric is tactical: closest approach (miss distance) to the
+target, not frame time.
+
+1. `flight_scenarios()` — the fixed suite (20 scenarios, 5 tiers: `static`,
+   `drift`, `weave`, `step`, `jink`; the last three change direction and speed
+   mid-flight) and whether a baseline is pinned.
+2. `flight_bench()` — runs the suite, compares against the pinned baseline and
+   ends with `=> OVERALL: IMPROVED | REGRESSED | no significant change`.
+   Per tier it prints miss, hit rate (25 m radius), control effort, saturation
+   steps and the median controller cost in us/step.
+3. `flight_trace("weave:2")` — per-step trace of ONE scenario when a number
+   looks wrong; read the miss trajectory before theorising.
+
+The verdict policy, from the baseline run: IMPROVED needs miss to improve
+beyond 1% with no tier losing more than 10%, stability intact (no non-finite
+state), and per-step cost not worse than +20%.  A miss win that costs 3x more
+per frame is a regression, and a cheap controller that gives away miss distance
+is also a regression — the summary prints both sides, so read the whole block.
+Baseline numbers: aggregate miss ~374 m, hitRate 0.00, effort ~50.0, cost
+~4.0 ms/step; by tier static 404 / drift 271 / weave 272 / step 277 / jink 643.
+
+Leads worth trying (one logical change per attempt, measure every one):
+- `jink` is the weak tier (~643 m): the target fires 0.5-1.5 s impulses while
+  the loss simulates the target straight-line — a target-acceleration or
+  turn-rate term is the obvious missing piece.
+- `LOOKAHEAD_STEPS` (16, `flightControl.h`) vs `MAX_ITERATION_PER_AXIS` (128):
+  measured tradeoff is steep — 2 lookahead steps cut controller cost ~9x
+  (3.9 ms -> 0.43 ms/step) but cost 4% miss.  Find the knee, do not just trade.
+- The loss (`evaluateLossV2PlusTuned2`): alignment + alignment velocity +
+  running alignment + distance improvement + overshoot.  Are the weights
+  balanced for a *moving* target, or tuned for the static case?
+- Per-axis search: gradients for all three axes are computed together and
+  normalised as one vector, so one axis can starve the others; and
+  `learningRate *= 0.95` per iteration may converge too fast on 128 iterations.
+- The reported `*Loss` fields keep the best-so-far value, not the final one —
+  `LossAngle` (and any logic keyed on it) can be misleading.
+- hitRate is 0.00 at baseline: every scenario ends 88-650 m short.  Closing the
+  last tens of metres is the stretch goal, but a 25 m hit is not required for
+  IMPROVED.
+
+Discipline is the same as the frame axis: revert with
+`git checkout -- simulation/cSim/flightControl.c simulation/cSim/flightControl.h`
+when the verdict is not IMPROVED, update `codebase_context.md` (its
+`## Flight node map` section has the same row format), and open ONE PR titled
+for the controller with the before/after block quoted in the body.
+
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
 - requires OpenCL, minifb, or infrastructure that cannot be isolated;
@@ -204,7 +260,8 @@ Apply directly in those rare cases and validate with `make_bench`.
 ## EDITING & NAVIGATION TOOLS
 - `read_file` / `search_files` / `terminal` — read and search anything.
 - Prefer the domain tools (`make_flame`, `hot_annotate_*`, `create_func_bench`,
-  `run_func_bench`, `run_perf_stat`, `make_bench`, `create_pr`,
+  `run_func_bench`, `run_perf_stat`, `make_bench`, `flight_bench`,
+  `flight_scenarios`, `flight_trace`, `create_pr`,
   `report_session_result`) over ad-hoc terminal pipelines — they keep results
   in the run artifacts the supervisor audits.
 - `patch` — targeted edit (fuzzy matcher; returns a unified diff).  Preferred.
@@ -276,6 +333,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     profile and a few minutes of writing between candidates.  A session that
     ends with a beautiful map and no measurement is a failed session.  Never
     send a subagent to "explore" — hand it the map row.
+15. NEVER edit `simulation/cSim/flightBench.c` (the scenario suite) to move the
+    numbers — it changes the suite hash and invalidates the baseline instead of
+    showing a win.  The bench measures the controller; changing the test is not
+    an optimization.  Same for the hit radius and the loss used by the bench.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and
@@ -283,6 +344,10 @@ environment fingerprint) was prepared BEFORE any edits.  The first `make_bench`
 loads and confirms it — report that it was loaded.  If `make_bench` returns a
 "no valid clean baseline" error, stop and report `blocked`; never accept a
 dirty run as the baseline.
+The flight baseline (`llmOpt/flight_baseline.json`, same keying plus the suite
+hash) is captured at prepare time too.  `flight_bench` loads it on its own; if
+it says "none was captured", the controller files were modified — revert them to
+pin a baseline, never compare a modified controller against itself.
 
 ## SANDBOX
 Everything runs in `llmOpt/gengin/`.  The parent repo is untouched until

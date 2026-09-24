@@ -146,6 +146,46 @@ the 2026-09-22 profile — re-profile before trusting them.
   hypothesis: vectorize the AABB pre-filter loop (fans out into RayBoxItersect
   / RayBoxIntersectV4 / IntersectBVH_Shadow)
 
+## Flight node map
+
+Second objective, used when the CPU node map above is exhausted (see the
+prompt's SECOND OBJECTIVE section).  Score with `flight_bench()`, diagnose with
+`flight_trace("tier:seed")`, revert with
+`git checkout -- simulation/cSim/flightControl.{c,h}`.  Same row format as the
+CPU map.
+
+Pinned baseline (suite `eca29f54`, 2026-09-24): aggregate miss 373.5 m,
+hitRate 0.00, effort 50.0, cost 3964 us/step; per tier static 404.4 / drift
+271.2 / weave 271.8 / step 277.3 / jink 643.0.  Suite: 20 scenarios, 1800
+steps at 60 Hz, 25 m hit radius, F-16C model, loss `V2PlusTuned2`, 128
+iterations.
+
+- `simulation/cSim/flightControl.h:32 LOOKAHEAD_STEPS` — 16 | untried at the
+  knee | measured: 2 steps costs 4.1% miss (weave +11.5%, tier regression) but
+  pays 9.2x controller cost (3964 -> 432 us/step); the search runs per frame, so
+  the knee between 2 and 16 is real money | verify: `flight_bench`, no tier
+  losing >10%
+- `simulation/cSim/flightControl.c:525 evaluateLossV2PlusTuned2` — the loss
+  (alignment + alignment velocity + running alignment + distance improvement +
+  overshoot) | untried | hypothesis: weights fit the static/drift cases and the
+  internal simulation advances the target straight-line, so weave/step/jink are
+  scored against the wrong future | verify: no tier may be traded away
+- `simulation/cSim/flightControl.c:616 getControllerOutputV5` — all three axes'
+  gradients are normalised as ONE vector and updated together | untried |
+  hypothesis: one axis starves the others, and `learningRate *= 0.95` per
+  iteration over-converges by iteration 128 | verify: per-tier miss + effort
+- `simulation/cSim/flightControl.c:681` — `output.*Loss` keeps `bestAxisLoss`
+  (best-so-far) instead of the final value, so the reported `LossAngle` and the
+  momentum handoff can lie | untried | verify: is any decision keyed on
+  `LossAngle`?
+- `jink` tier, 643.0 m (0.5-1.5 s impulses, up to 60 m/s) — the weak tier |
+  untried | hypothesis: no target-acceleration/turn-rate term anywhere in the
+  controller; a lead/lag or turn-rate estimate is the missing piece | verify:
+  jink improves without static/drift regressing
+- `hitRate` 0.00, closest approach 88 m at baseline — stretch goal; the 25 m
+  hit is not required for an IMPROVED verdict, but crossing it would be the
+  first `shipped` row here
+
 ## Performance-Critical Functions
 
 ### 1. RayTraceRowFunc [render/cpu/ray.c]

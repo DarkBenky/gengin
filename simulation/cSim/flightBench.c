@@ -311,10 +311,9 @@ static uint32_t fbHash(uint32_t h, const void *data, size_t len) {
 	return h;
 }
 
-static uint32_t fbSuiteHash(const Scenario *scenarios, int count, int steps, float dt) {
+static uint32_t fbSuiteHash(const Scenario *scenarios, int count, float dt) {
 	uint32_t h = 2166136261u;
 	h = fbHash(h, "flightBench-v1", 14);
-	h = fbHash(h, &steps, sizeof(steps));
 	h = fbHash(h, &dt, sizeof(dt));
 	float hitRadius = FB_HIT_RADIUS;
 	h = fbHash(h, &hitRadius, sizeof(hitRadius));
@@ -384,7 +383,7 @@ int main(int argc, char **argv) {
 				   "\"scenario\":{\"id\":\"%s\",\"tier\":\"%s\",\"seed\":%u,\"miss\":%.3f,\"finalDist\":%.3f,"
 				   "\"hit\":%s,\"tHit\":%.3f,\"effort\":%.4f,\"satSteps\":%d,\"unstable\":%d,\"costUs\":%.2f},"
 				   "\"traceHeader\":\"t,px,py,pz,tx,ty,tz,aileron,elevator,rudder,dist\",\"trace\":[",
-				   steps, dt, FB_HIT_RADIUS, fbSuiteHash(scenarios, count, steps, dt),
+				   steps, dt, FB_HIT_RADIUS, fbSuiteHash(scenarios, count, dt),
 				   r.scenario->id, r.scenario->tier, r.scenario->seed, r.miss, r.finalDist,
 				   r.hit ? "true" : "false", r.tHit, r.effort, r.satSteps, r.unstable, r.costUs);
 			rewind(trace);
@@ -433,7 +432,7 @@ int main(int argc, char **argv) {
 	printf("  \"version\": 1,\n");
 	printf("  \"settings\": {\"steps\": %d, \"dt\": %.9f, \"hitRadius\": %.1f, \"model\": \"F-16C\", "
 		   "\"loss\": \"V2PlusTuned2\", \"maxIterations\": 128},\n", steps, dt, FB_HIT_RADIUS);
-	printf("  \"suiteHash\": \"%08x\",\n", fbSuiteHash(scenarios, count, steps, dt));
+	printf("  \"suiteHash\": \"%08x\",\n", fbSuiteHash(scenarios, count, dt));
 	printf("  \"scenarios\": [\n");
 	for (int i = 0; i < count; i++) {
 		const ScenarioResult *r = &results[i];

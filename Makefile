@@ -79,6 +79,7 @@ HEX_DUMP_SRC       = hexDump/hexDump.c
 TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c client/client.c util/threadPool.c
 FLIGHT_CONTROL_SRC = simulation/cSim/flightControl.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c
 FLIGHT_BENCH_SRC   = simulation/cSim/flightBench.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c
+FLIGHT_BENCH_HDR   = $(wildcard simulation/cSim/*.h) $(wildcard math/*.h) $(wildcard object/*.h)
 TEST_SOUND_SRC      = sound/soundTest.c
 TEST_SOUND3D_SRC    = sound/soundTest3d.c
 
@@ -146,9 +147,9 @@ flightController-debug: $(FLIGHT_CONTROL_SRC)
 flightBench: $(BUILD_DIR)/flightBench/flightBench
 	./$(BUILD_DIR)/flightBench/flightBench
 
-$(BUILD_DIR)/flightBench/flightBench: $(FLIGHT_BENCH_SRC)
+$(BUILD_DIR)/flightBench/flightBench: $(FLIGHT_BENCH_SRC) $(FLIGHT_BENCH_HDR)
 	@mkdir -p $(BUILD_DIR)/flightBench
-	$(CC) $(CFLAGS_BASE) -DFLIGHT_BENCH -Isimulation -I. -o $@ $^ $(LDFLAGS) -lpthread -lm
+	$(CC) $(CFLAGS_BASE) -DFLIGHT_BENCH -Isimulation -I. -o $@ $(filter %.c,$^) $(LDFLAGS) -lpthread -lm
 
 testSound: $(TEST_SOUND_SRC)
 	@mkdir -p $(BUILD_DIR)/testSound
