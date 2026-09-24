@@ -979,4 +979,5 @@ static void CalculateAmbientOcclusionV3Mp(Camera *camera, ThreadPool *threadPool
 	poolWait(threadPool);
 }
 
-// TODO: test open cl implementation
+// NOTE: test open cl implementation
+// No longer needed because cpu implementation is faster enough
