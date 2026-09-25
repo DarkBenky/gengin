@@ -617,7 +617,7 @@ static float rayAABB(float3 ro, float3 rd, float3 mn, float3 mx) {
 	return tmin;
 }
 
-void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld) {
+void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, float initialBestT, int *hitTriIdx, float3 *hitPosWorld) {
 	if (!obj || !bvh || !hitTriIdx || bvh->nodeCount == 0) return;
 	*hitTriIdx = -1;
 
@@ -639,7 +639,10 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 	// bias = ro * invDir: precomputed once per ray, avoids recomputing it 6x per BVH node
 	float3 bias = {rayOrigin.x * invDir.x, rayOrigin.y * invDir.y, rayOrigin.z * invDir.z};
 
-	float bestT = FLT_MAX;
+	// caller's current best hit as initial bound — prunes subtrees that cannot beat it
+	// (ray-parameter t is affine-invariant, so world/local t are directly comparable).
+	// FLT_MAX (or DEPTH_FAR) behaves exactly like the old unbounded traversal.
+	float bestT = initialBestT;
 	int stack[64];
 	int top = 0;
 	stack[top++] = 0;

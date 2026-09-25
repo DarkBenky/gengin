@@ -429,7 +429,7 @@ static void rayCollision(Object *restrict objects, int objectCount, float3 rayOr
 
 			int triIdx = -1;
 			float3 hitPosLocal;
-			IntersectBVH(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir, &triIdx, &hitPosLocal);
+			IntersectBVH(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir, bestT, &triIdx, &hitPosLocal);
 			if (triIdx < 0) continue;
 
 			float3 dv = {hitPosLocal.x - rayOrigin.x, hitPosLocal.y - rayOrigin.y, hitPosLocal.z - rayOrigin.z};
@@ -685,7 +685,7 @@ static void RayTraceRowFunc(void *arg) {
 
 			int triIdx = -1;
 			float3 hitPos = {0.0f, 0.0f, 0.0f};
-			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, &triIdx, &hitPos);
+			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, bestT, &triIdx, &hitPos);
 			if (triIdx < 0) continue;
 
 			float t = (hitPos.x - orig.x) * dx + (hitPos.y - orig.y) * dy + (hitPos.z - orig.z) * dz;
@@ -1171,7 +1171,7 @@ static void RayTraceColumnFunc(void *arg) {
 
 			int triIdx = -1;
 			float3 hitPos;
-			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, &triIdx, &hitPos);
+			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, bestT, &triIdx, &hitPos);
 			if (triIdx < 0) continue;
 
 			float t = (hitPos.x - orig.x) * dx + (hitPos.y - orig.y) * dy + (hitPos.z - orig.z) * dz;
