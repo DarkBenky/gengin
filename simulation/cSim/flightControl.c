@@ -529,13 +529,32 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	planeSetElevator01(&simPlane, values[1]);
 	planeSetAileron01(&simPlane, values[2]);
 
+	// Horizon at fixed cost.  The loss simulates ctrl->LookaheadSteps (=16)
+	// steps, so its horizon is 16 * dt = 0.27 s, which cannot see the turn a
+	// ~700 m turn radius needs: with the 0.27 s loss the interceptor flies past
+	// a *static* target (closest approach 214 m of a 275 m start) and thereafter
+	// only orbits, speed bleeding 188 -> 43 m/s with 72% of the steps saturated.
+	// Simulating a 1.07 s horizon inside the same 16 steps keeps the cost:
+	// measured on the suite, miss 373.6 -> 342.3 m (+8.4%), every tier at or
+	// better than baseline, cost +2%.  Buying the same 1.07 s horizon with 64
+	// fine steps - no coarse-step distortion at all - is worth a comparable
+	// +7.7% miss but costs 3.8x, over the +20% budget, so the coarse step is
+	// what fits.  Swept at fixed cost: 2x (0.53 s) +4.4%, 4x (1.07 s) +8.4%,
+	// 8x (2.13 s) +7.4% with the step tier -1.1%, so 4x is the peak.
+	// Known approximation: the coarser step also advances the predictor's
+	// surface-slew model 4x, so the planner assumes its surfaces reach the
+	// commanded deflection within the horizon while the plant still slews at dt.
+	// The plant, the suite, the rendered frame and the returned state are
+	// untouched: the loss only mutates a by-value copy of the plane.
+	const float simDeltaTime = deltaTime * 4.0f;
+
 	float currentDist = distanceToTarget(&ctrl->plane, target);
 	float minDist = currentDist;
 	float runningAlignment = 0.0f;
 	float runningAlignVel = 0.0f;
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
-		updatePlane(&simPlane, deltaTime, NULL);
+		updatePlane(&simPlane, simDeltaTime, NULL);
 		runningAlignment += alignmentLoss(&simPlane, target);
 		runningAlignVel += alignmentLossVelocity(&simPlane, target);
 		float d = distanceToTarget(&simPlane, target);
