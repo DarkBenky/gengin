@@ -8,8 +8,8 @@
     - [ ] Write test of each implementation
     - [X] implement blur pass
     - [ ] implement to main render pipeline
-    - [ ] Implement resolution param now it is too slow for use
-      - [ ] finetune after this change
+    - [X] Implement resolution param now it is too slow for use
+      - [X] finetune after this change
     - [ ] Test if open cl is fast enough even when using read backs
 
 - [ ] **high** Overlap AO with the GPU cloud pass instead of running it inside RayTraceScene
