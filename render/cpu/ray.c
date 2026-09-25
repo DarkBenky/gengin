@@ -11,6 +11,12 @@
 #include "../../util/threadPool.h"
 #include "../../image/imgMethods.h"
 
+// The top-emissive selection in RayTraceRowFunc / RayTraceColumnFunc is an
+// explicit 3-slot insertion network (no loop over TOP_EMISSIVE_OBJECTS), so a
+// change to that constant must be a compile error rather than an out-of-bounds
+// or silently truncated selection.
+_Static_assert(TOP_EMISSIVE_OBJECTS == 3, "top-emissive insertion network expects exactly 3 slots");
+
 static inline Color PackColorFast01(float3 color) {
 	uint8 r = (uint8)(color.x * 255.0f);
 	uint8 g = (uint8)(color.y * 255.0f);
@@ -996,38 +1002,50 @@ static void RayTraceRowFunc(void *arg) {
 			int inShadow = shadowHit >= 0;
 			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
 
-			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
+			float topEmissiveDistancesSq[TOP_EMISSIVE_OBJECTS];
 			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
-			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
+			memset(topEmissiveDistancesSq, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
 			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
 			for (int e = 0; e < emissiveObjectCount; e++) {
 				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
-				float dist = Float3_Length(toEmissive);
-				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
-					if (dist < topEmissiveDistances[t]) {
-						// insert into sorted list
-						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
-							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
-							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
-						}
-						topEmissiveDistances[t] = dist;
-						topEmissiveIndices[t] = emissiveObjectIndices[e];
-						break;
-					}
+				// Rank by squared distance: monotonically equivalent to ranking by
+				// length, so the selection needs no sqrt at all. The shift insert
+				// becomes a 3-register insertion network.
+				float distSq = Float3_Dot(toEmissive, toEmissive);
+				if (distSq < topEmissiveDistancesSq[0]) {
+					topEmissiveDistancesSq[2] = topEmissiveDistancesSq[1];
+					topEmissiveIndices[2] = topEmissiveIndices[1];
+					topEmissiveDistancesSq[1] = topEmissiveDistancesSq[0];
+					topEmissiveIndices[1] = topEmissiveIndices[0];
+					topEmissiveDistancesSq[0] = distSq;
+					topEmissiveIndices[0] = emissiveObjectIndices[e];
+				} else if (distSq < topEmissiveDistancesSq[1]) {
+					topEmissiveDistancesSq[2] = topEmissiveDistancesSq[1];
+					topEmissiveIndices[2] = topEmissiveIndices[1];
+					topEmissiveDistancesSq[1] = distSq;
+					topEmissiveIndices[1] = emissiveObjectIndices[e];
+				} else if (distSq < topEmissiveDistancesSq[2]) {
+					topEmissiveDistancesSq[2] = distSq;
+					topEmissiveIndices[2] = emissiveObjectIndices[e];
 				}
 			}
 
 			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
 			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
 				if (topEmissiveIndices[t] < 0) break; // fewer emitters than TOP_EMISSIVE_OBJECTS
+				// sqrtf(dot(v,v)) reproduces Float3_Length() exactly, so the falloff
+				// denominator below is unchanged
+				float dist = sqrtf(topEmissiveDistancesSq[t]);
 				float3 targetPos = objects[topEmissiveIndices[t]].position;
 				float3 toEmissive = Float3_Sub(targetPos, bestHitPos);
-				// NdotL: only surfaces facing the emitter receive light
-				float3 toEmissiveN = Float3_Normalize(toEmissive);
-				float NdotL = fabsf(n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z);
+				// NdotL: only surfaces facing the emitter receive light.
+				// Fold the normalise into one reciprocal instead of scaling all
+				// three components first — same guard as Float3_Normalize.
+				float NdotL = fabsf(n.x * toEmissive.x + n.y * toEmissive.y + n.z * toEmissive.z);
+				if (dist > 0.0f) NdotL *= 1.0f / dist;
 				if (NdotL <= 0.0f) continue;
 				float3 em = SampleEmission(objects, objectCount, bestHitPos, toEmissive, topEmissiveIndices[t], lib);
-				float falloff = NdotL / (topEmissiveDistances[t] * topEmissiveDistances[t] + 1e-6f);
+				float falloff = NdotL / (dist * dist + 1e-6f);
 				accumulatedEmission.x += em.x * falloff;
 				accumulatedEmission.y += em.y * falloff;
 				accumulatedEmission.z += em.z * falloff;
@@ -1499,38 +1517,50 @@ static void RayTraceColumnFunc(void *arg) {
 			int inShadow = shadowHit >= 0;
 			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
 
-			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
+			float topEmissiveDistancesSq[TOP_EMISSIVE_OBJECTS];
 			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
-			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
+			memset(topEmissiveDistancesSq, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
 			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
 			for (int e = 0; e < emissiveObjectCount; e++) {
 				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
-				float dist = Float3_Length(toEmissive);
-				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
-					if (dist < topEmissiveDistances[t]) {
-						// insert into sorted list
-						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
-							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
-							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
-						}
-						topEmissiveDistances[t] = dist;
-						topEmissiveIndices[t] = emissiveObjectIndices[e];
-						break;
-					}
+				// Rank by squared distance: monotonically equivalent to ranking by
+				// length, so the selection needs no sqrt at all. The shift insert
+				// becomes a 3-register insertion network.
+				float distSq = Float3_Dot(toEmissive, toEmissive);
+				if (distSq < topEmissiveDistancesSq[0]) {
+					topEmissiveDistancesSq[2] = topEmissiveDistancesSq[1];
+					topEmissiveIndices[2] = topEmissiveIndices[1];
+					topEmissiveDistancesSq[1] = topEmissiveDistancesSq[0];
+					topEmissiveIndices[1] = topEmissiveIndices[0];
+					topEmissiveDistancesSq[0] = distSq;
+					topEmissiveIndices[0] = emissiveObjectIndices[e];
+				} else if (distSq < topEmissiveDistancesSq[1]) {
+					topEmissiveDistancesSq[2] = topEmissiveDistancesSq[1];
+					topEmissiveIndices[2] = topEmissiveIndices[1];
+					topEmissiveDistancesSq[1] = distSq;
+					topEmissiveIndices[1] = emissiveObjectIndices[e];
+				} else if (distSq < topEmissiveDistancesSq[2]) {
+					topEmissiveDistancesSq[2] = distSq;
+					topEmissiveIndices[2] = emissiveObjectIndices[e];
 				}
 			}
 
 			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
 			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
 				if (topEmissiveIndices[t] < 0) break; // fewer emitters than TOP_EMISSIVE_OBJECTS
+				// sqrtf(dot(v,v)) reproduces Float3_Length() exactly, so the falloff
+				// denominator below is unchanged
+				float dist = sqrtf(topEmissiveDistancesSq[t]);
 				float3 targetPos = objects[topEmissiveIndices[t]].position;
 				float3 toEmissive = Float3_Sub(targetPos, bestHitPos);
-				// NdotL: only surfaces facing the emitter receive light
-				float3 toEmissiveN = Float3_Normalize(toEmissive);
-				float NdotL = fabsf(n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z);
+				// NdotL: only surfaces facing the emitter receive light.
+				// Fold the normalise into one reciprocal instead of scaling all
+				// three components first — same guard as Float3_Normalize.
+				float NdotL = fabsf(n.x * toEmissive.x + n.y * toEmissive.y + n.z * toEmissive.z);
+				if (dist > 0.0f) NdotL *= 1.0f / dist;
 				if (NdotL <= 0.0f) continue;
 				float3 em = SampleEmission(objects, objectCount, bestHitPos, toEmissive, topEmissiveIndices[t], lib);
-				float falloff = NdotL / (topEmissiveDistances[t] * topEmissiveDistances[t] + 1e-6f);
+				float falloff = NdotL / (dist * dist + 1e-6f);
 				accumulatedEmission.x += em.x * falloff;
 				accumulatedEmission.y += em.y * falloff;
 				accumulatedEmission.z += em.z * falloff;
