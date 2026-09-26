@@ -117,34 +117,56 @@ contradicts the row).  Work `untried` rows largest flame percent first; keep
 this under ~30 rows and prune `shipped` ones.  The percentages below are from
 the 2026-09-22 profile — re-profile before trusting them.
 
-- `object/object.c IntersectBVH` — 18.4% excl / 37.4% incl | untried |
+- `render/cpu/ray.c:720 RayTraceRowFunc (hasTexture block)` — 6 sinf/cosf per
+  textured pixel via InverseTransformPointTRS (2026-09-26 profile; trig trap,
+  not a direct flame row) | shipped(PR #38)
+  hypothesis: use the cached inverse TRS rows (obj->_invScale/_invRotSin/
+  _invRotCos, same as IntersectBVH) — micro 8.74x (19.6 -> 2.2 ns/call),
+  maxDiff 6.25e-2 (float reorder), 2M-case UV diff: 0 quantization flips;
+  frame +0.7-0.9% avg / +0.8-0.9% median over two runs, image_mse 0.00
+
+- `object/object.c IntersectBVH` — flame 19.0% excl / 38.4% incl (2026-09-26 profile, row current) | shipped(PR #37)
   hypothesis: thread the caller's `bestT` into the traversal as the initial
-  bound so the early-out fires from the first node (no extra instructions) |
-  verify: V1 semantics and every call site's bestT
-- `render/cpu/ray.c RayTraceRowFunc` — 20% excl (structural) | untried |
-  hypothesis: row-level work balance / blur-loop buffer redesign (the VLA
-  version already failed under 32 threads, 2026-09-20) | verify: must be proven
-  with a MULTI-THREADED bench — single-thread wins do not transfer
-- `object/object.c:490 rayTriangle` — 16.9% excl | untried | hypothesis:
-  integrate the fastest variant from tests/rayTriangle.h (V10 was the pick) |
-  verify: bit-identical image and still correct under -ffast-math
-- `render/cpu/ray.c:598 rayAABB_inv` (8-box frustum batch) — 7.9% excl |
-  untried | hypothesis: use `rayAABB_invV4_avx2` for the batch test (the code
-  sits commented out at that line) | verify: identical results to the scalar
-  loop
-- `rayAABB_inv_x2_soa` (BVH node traversal) — 5.8% excl, already SSE | untried
-  | verify: resolve the real source with `lsp_definition` first
-- `skybox/skybox.c sampleFace` — 4.6% excl (cvttss2si + clamps) | untried |
-  hypothesis: reuse the int conversions across the direct+reflection lookups,
-  drop clamps where u,v are provably in range | verify: image-risky, needs a
-  real-cubemap bench
+  bound (verified 2026-09-25: ray param t is affine-invariant, all 4 call sites
+  pass a valid bound) — micro 1.515x, 32% fewer node pops, frame +1.0% median
+- `render/cpu/ray.c RayTraceRowFunc` — 19.9% excl (2026-09-25 profile; structural) |
+  refuted-structural (2026-09-25) | the 7-tap box blur (ray.c:997) is the only
+  remaining lever and it has NO exact-mode win available: any reassociation
+  (prefix sums, running sums) changes float accumulation order → non-identical
+  pixels → exact PR gate fails; MT redesign needed and prior single-thread wins
+  regressed at 32 threads (2026-06-01, 2026-09-20)
+- `object/object.c:576 rayTriangle` — 17.5% excl (2026-09-25 profile) | tried-failed
+  (V10-FMA micro 1.095x / 0 mismatches, frame median -0.1% = within noise,
+  2026-09-25) | confirms compiler-saturated: fmaf folding is already what
+  clang emits; eager-division refuted 2026-09-20
+- `render/cpu/ray.c:683 rayAABB_inv` (object world-AABB pre-filter) — 9.0% excl
+  | tried-failed (V4_avx2 8-wide = 0.59x SLOWER, V5_sse_x4 = 0.50x vs scalar,
+  0 mismatches, 2026-09-25; staged SoA + 4-wide SSE also 0.998-0.999x
+  2026-09-20) | the 5 independent slab tests pipeline at ~3 cyc/test; the AoS→
+  SoA transpose per 8-box group costs more than the SIMD saves
+- `rayAABB_inv_x2_soa` (BVH node traversal, object.h:193) — 6.0% excl, already
+  SSE | refuted (2026-09-25): real source confirmed = object.h:193 (not a test
+  copy); a 4-child AVX2 test needs 2 pair-swaps per 256-bit lane group — the
+  0x331 shuffle cannot pair (0,1),(2,3),(4,5),(6,7) at once — so no fewer ops
+  than the 2 SSE calls it replaces
+- `skybox/skybox.c sampleFace` — 3.8% excl (2026-09-25) | tried-failed (clamp
+  removal micro 1.289x → warm A/B ~1.5% < 3% gate; roundps 0.84x; 2026-09-21)
 - `skybox/skybox.c SampleSkybox` — shared-reciprocal variant | tried-failed
-  (micro +13%, frame +1.1% avg / -4.3% p99, 2026-09-23) | note: that p99 was a
-  single-frame artifact — re-measure before rejecting it again
-- `object/object.c IntersectBVH_Shadow` — 2.4% excl / 5.5% incl | untried
-- `render/cpu/ray.c:756 SampleEmission` — 1.3% excl / 5.0% incl | untried |
-  hypothesis: vectorize the AABB pre-filter loop (fans out into RayBoxItersect
-  / RayBoxIntersectV4 / IntersectBVH_Shadow)
+  (micro +13%, frame +1.1% avg / -4.3% p99, 2026-09-23)
+- `object/object.c IntersectBVH_Shadow` — 2.5% excl / 5.5% incl (2026-09-25) |
+  tried-failed (maxT bound: micro 1.095x + found a real over-occlusion bug —
+  hits past the emitter counted; but frame -1.1% median REGRESSION, 2026-09-25.
+  In the demo scene the shadow path has few AABB-passing candidates and loose
+  bounds, so the extra per-node bestT comparisons cost more than the pruning
+  saves. Micro-bench input not representative.)
+- `render/cpu/ray.c:829 SampleEmission` — 1.3% excl / 5.2% incl (2026-09-25) |
+  tried-failed via its callee IntersectBVH_Shadow (above); the AABB pre-filter
+  loop itself is 1.3% — below the gate even at 2x
+- `render/cpu/AO.h AO_V2Row_Pixel` — 8.4% excl / 9.6% incl (2026-09-26 profile) |
+  tried-failed (2026-09-21): rsqrt reduction micro 1.616x MT, maxDiff 1.79e-07,
+  0 px > 1e-5, but full-frame warm A/B showed no gain — memory-bound on
+  scattered positionBuffer taps, sqrt latency hidden. Pattern table + interior
+  split already shipped PR (2026-09-18, +13% frame)
 
 ## Flight node map
 
@@ -341,6 +363,54 @@ iterations.
   - `hot_annotate_func` resolves the first textual definition, which can be a test-file copy (IntersectBVH resolved to tests/testSSR.c) — use `hot_annotate_file` for the real source.
 
 ### Status: sandbox clean after PR. Remaining hotspots unchanged: IntersectBVH 18.4% excl / 37.4% incl, rayTriangle 16.9%, RayTraceRowFunc 20% excl (structural), rayAABB_inv 7.9%, rayAABB_inv_x2_soa 5.8% — all compiler-saturated per prior sessions.
+
+---
+
+## Session Insights (2026-09-25, part 1 — IntersectBVH bestT shipped)
+
+**Summary**: Fresh `make_flame` on HEAD 1c4723a (post dead-pixel-buffers PR). Node map confirmed current (IntersectBVH 19.2% excl / 39.1% incl is top). Shipped the long-pending IntersectBVH initial-bound threading: micro-bench 1.515x with 0 mismatches, frame bench +0.9-1.0% avg / +1.0% median across two runs, image_mse 0.00, all 10 frame hashes match. PR opened (merged as a5470bf).
+
+### Confirmed Wins
+  - **IntersectBVH initial `bestT` bound** (object/object.c:620). All four call sites (ray.c:432/688/1174, testSSR.c:58) already carry a per-pixel `bestT` that is a valid upper bound on the hit distance for the object being tested (the world-AABB pre-filter rejects `tAABB >= bestT`, and objects are tested in loop order with `bestT` monotonically narrowing). Threading it in as the traversal's initial bound prunes subtrees from the first node. Ray parameter `t` is affine-invariant under the world→local transform, so the caller's world-space bound is directly comparable to local hit `t`. Micro: V2 (bound) **1.515x** (251.28 → 165.92 ns/call), node pops 6.45M → 4.38M (−32%), 0 mismatches. Frame: +0.9%/+1.0% and +0.6%/+0.5% avg/median over two runs, image_mse 0.00, all frame hashes match.
+
+### REFUTED (do not retry)
+  - **IntersectBVH near-first child ordering (V3)** — pushing the near child last so it is popped first measured **1.10x SLOWER than V2**. The existing far-first ordering already yields the best `bestT` quickly enough; reordering adds mispredicts without saving a node.
+
+### Gotchas
+  - **`make_bench` baseline keyed to pre-PR SHA** → "No valid clean baseline" on a dirty tree. Reseed the legit way: `git stash push -- <edited files>` → `make_bench` (establishes warm baseline) → `git stash pop`.
+  - A `float bestT = initialBestT` where `initialBestT` can be `DEPTH_FAR` (1e30) is fine — identical to the old `FLT_MAX` start for all reachable hit `t`.
+  - Micro-bench `hitT` output returns the initial bound (not FLT_MAX) when nothing is found — a harness artifact, not a semantic difference. Validate on (effective tri, t).
+
+---
+
+## Session Insights (2026-09-25, part 2 — all remaining CPU candidates refuted)
+
+**Summary**: Fresh `make_flame` on HEAD a5470bf. Node map current. Worked the untried rows largest-first with full profile → micro-bench → pre-mortem → apply/validate cycles. **All refuted with measured evidence — no PR this session.** The CPU node map is now exhausted: every row is shipped, tried-failed, or the one structural row that has no exact-mode lever.
+
+### REFUTED this session (do not retry)
+  - **rayTriangle V10 (FMA-folded dots)** — the top untried row (17.5% excl). Micro-bench of all tests/rayTriangle.h variants (1.2M ray/tri pairs, ~30% hit): V10_fma 1.095x, V9_hint 1.092x, V8 1.089x, V4 1.074x, V5 1.069x, V6 1.060x, V7_sse 1.050x vs V1; 0 mismatches (maxDiffT 2.3e-5 = fmaf rounding). Applied V10 to object/object.c, built, make_bench vs reseeded warm baseline (14.713/14.618 ms): **median 14.639 = -0.1% (within noise), image_mse 0.00, all 10 frame hashes match** → reverted. clang already emits FMA for the dot products under -ffast-math; the micro delta is the function in isolation, not the OoO context of the BVH leaf loop.
+  - **rayAABB_inv AVX2/SSE batch (the "8-box frustum batch" row)** — micro-bench (24 boxes/ray, 200K rays): scalar loop 11.18 ns/ray, **V4_avx2 8-wide 0.59x SLOWER, V5_sse_x4 0.50x SLOWER**, 0 mismatches (identical t). The AoS→SoA transpose per 8-box group costs more than the SIMD saves at 24 boxes. Confirms the 2026-09-20 staged-SoA/SSE refutation (0.998-0.999x). The 5 independent slab tests already pipeline at ~3 cyc/test.
+  - **IntersectBVH_Shadow maxT bound** (2.5% excl / 5.5% incl) — the proven IntersectBVH bestT pattern applied to the shadow traversal. Micro-bench (200K rays × 60 objects, SampleEmission-style): V2 (bound) **1.095x faster** AND validation exposed a real over-occlusion bug (V1 counts hits *beyond* the emitter as occluders: 3766 vs 2408 occluded rays; V2-only=true 0 = no false occlusion). Applied `emitTMax` bound to SampleEmission + `DEPTH_FAR` to rayCollision (bit-exact: all 10 frame hashes match, image_mse 0.00), but make_bench showed **median 14.774 = -1.1% REGRESSION** → reverted. Root cause: the demo scene's shadow path has very few AABB-passing candidates and loose bounds, so the extra per-node `bestT` comparisons cost more than the pruning saves. Classic "micro-bench input not representative" failure mode. (The over-occlusion bug itself is real but sub-1% and needs a visual change to fix — not worth a [visual] PR for a shadow-lighting correction on a scene where it's nearly invisible.)
+  - **rayAABB_inv_x2_soa → AVX2 4-child** (5.8% excl) — real source confirmed object.h:193 (SSE, not a test copy). A 4-child 256-bit test needs 2 pair-swaps per lane group (the 0x331 shuffle cannot pair (0,1),(2,3),(4,5),(6,7) at once) → no fewer ops than the 2 SSE calls it replaces. Not pursued to a binary; structurally a wash.
+  - **RayTraceRowFunc blur/structural (19.9% excl)** — the 7-tap box blur (ray.c:997) is the only remaining lever and has NO exact-mode win: any reassociation (prefix sums, running sums, global buffers) changes float accumulation order → non-identical pixels → exact PR gate fails, and it needs an MT micro-bench (single-thread wins regressed at 32 threads, 2026-06-01/09-20). A tile-pipeline redesign is out of scope for one safe change.
+
+### Environment notes
+  - **Flight second objective is UNAVAILABLE in this checkout**: `make build/flightBench/flightBench` has no rule, `simulation/cSim/flightBench.c` does not exist, and there is no `flight_baseline.json` (only the `flightController` dev tool builds). The scenario suite + baseline harness were not included in the pinned target commit. Cannot switch to the flight objective.
+  - Reseeded the frame baseline warm (14.713/14.618 ms) before each make_bench comparison — it is keyed to a5470bf and WARM; trust it.
+  - bench/ harnesses compile with the full project CFLAGS (-O3 -march=native -flto -ffast-math), so micro numbers are representative of the real build's codegen; the `bench/` Make rule does NOT depend on the .h — `rm build/bench/<name>` after editing the header.
+
+### Status: sandbox clean (bench files deleted, tracked tree at a5470bf). CPU node map EXHAUSTED — every row shipped/tried-failed. No safe measurable CPU optimization remains in scope (OpenCL cloud pass out of scope; flight harness absent).
+
+---
+
+## Session Insights (2026-09-26 — textured-pixel UV transform shipped)
+
+**Summary**: Fresh `make_flame` on HEAD a5470bf (CPU node map rows current; AO row added at 8.4% excl / 9.6% incl, already tried-failed 2026-09-21). Frame baseline loaded and confirmed at 14.713/14.618 ms (warm, keyed to a5470bf); clean tree re-measures 14.29-14.39 ms. Flight second objective re-verified UNAVAILABLE (no `build/flightBench/flightBench` rule at this pinned SHA). Shipped: the per-pixel textured-UV world->local transform in `RayTraceRowFunc`/`RayTraceColumnFunc` (ray.c:720, 1208) no longer calls `InverseTransformPointTRS` (6 sinf/cosf per textured pixel) — it multiplies by the cached inverse TRS rows `obj->_invScale/_invRotSin/_invRotCos` that `Object_UpdateWorldBounds` builds once per frame (same rows IntersectBVH uses). Micro-bench 8.74x (19.6 -> 2.2 ns/call, maxDiff 6.25e-2 = float reorder), adversarial review PASS with a 2M-case UV quantization differential (0 of 2,000,000 16-bit UV flips; max localHit delta 7.6e-6). make_bench twice: +0.7%/+0.9% and +0.6%/+0.8% avg/median, p99 +1.0%/+1.5%, image_mse 0.00, all 10 frames visually identical (hashes differ = float reordering, informational only). PR opened.
+
+### Gotchas
+- The 3rd `InverseTransformPointTRS` call in ray.c (column-twin motion-vector block, ~line 1424) transforms against PREVIOUS-frame TRS (`prevPostion/prevRotation/prevScale`) — the cached current-frame rows cannot serve it; left untouched (that block is dead code anyway, removed 2026-09-22 in the row twin only; the column twin is off the hot path).
+- `create_func_bench` mangles tabs in the submitted code: if the harness comes out with `float3` typos or literal `\\t` strings, `write_file` the bench files directly with spaces.
+- A wrong row-construction in the bench (forward R = Rz*Ry*Rx, not Rz(-rz)*Ry(-ry)*Rx(-rx)) silently shows as 100% validation mismatches with huge maxDiff — verify row math against the VERBATIM Object_UpdateWorldBounds expressions before trusting a micro win.
 
 ---
 
