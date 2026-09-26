@@ -716,8 +716,14 @@ static void RayTraceRowFunc(void *arg) {
 		bool hasTexture = obj->hasTexture;
 
 		if (hasTexture) {
-			// barycentric needs local-space coords — transform world hit back to local
-			float3 localHit = InverseTransformPointTRS(bestHitPos, obj->position, obj->rotation, obj->scale);
+			// barycentric needs local-space coords — transform world hit back to local.
+			// Use the cached inverse TRS rows (same as IntersectBVH) instead of
+			// InverseTransformPointTRS, which re-derives 6 sinf/cosf per pixel.
+			float3 lt = {bestHitPos.x - obj->position.x, bestHitPos.y - obj->position.y, bestHitPos.z - obj->position.z};
+			float3 localHit = {
+				obj->_invScale.x * lt.x + obj->_invScale.y * lt.y + obj->_invScale.z * lt.z,
+				obj->_invRotSin.x * lt.x + obj->_invRotSin.y * lt.y + obj->_invRotSin.z * lt.z,
+				obj->_invRotCos.x * lt.x + obj->_invRotCos.y * lt.y + obj->_invRotCos.z * lt.z};
 			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, obj->uvs[bestTri]);
 		}
 
@@ -1202,8 +1208,14 @@ static void RayTraceColumnFunc(void *arg) {
 		bool hasTexture = obj->hasTexture;
 
 		if (hasTexture) {
-			// barycentric needs local-space coords — transform world hit back to local
-			float3 localHit = InverseTransformPointTRS(bestHitPos, obj->position, obj->rotation, obj->scale);
+			// barycentric needs local-space coords — transform world hit back to local.
+			// Use the cached inverse TRS rows (same as IntersectBVH) instead of
+			// InverseTransformPointTRS, which re-derives 6 sinf/cosf per pixel.
+			float3 lt = {bestHitPos.x - obj->position.x, bestHitPos.y - obj->position.y, bestHitPos.z - obj->position.z};
+			float3 localHit = {
+				obj->_invScale.x * lt.x + obj->_invScale.y * lt.y + obj->_invScale.z * lt.z,
+				obj->_invRotSin.x * lt.x + obj->_invRotSin.y * lt.y + obj->_invRotSin.z * lt.z,
+				obj->_invRotCos.x * lt.x + obj->_invRotCos.y * lt.y + obj->_invRotCos.z * lt.z};
 			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, obj->uvs[bestTri]);
 		}
 
