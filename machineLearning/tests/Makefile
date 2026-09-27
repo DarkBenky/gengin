@@ -2,7 +2,7 @@
 # libOpenCL/libcuda stubs break the ICD loader (no platforms, segfaults). The RPATH
 # below (old-style DT_RPATH, searched before LD_LIBRARY_PATH) pins the system OpenCL.
 CC = /usr/bin/clang
-CFLAGS = -O3 -Wall
+CFLAGS = -O3 -Wall -march=native
 LDFLAGS = -Wl,--disable-new-dtags -Wl,-rpath,/usr/lib/x86_64-linux-gnu --ld-path=/usr/bin/ld
 
 mnist: main.c loadMNIST.h ../../render/gpu/format.c ../kernelGen.h ../ccnKernel2d.cl

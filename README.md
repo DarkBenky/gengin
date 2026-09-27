@@ -3,7 +3,12 @@
 - [ ] Collect images for upscaler
   - [ ] Train torch model for upscaler
   - [ ] Try to extract images directly from war thunder rendering pipeline
-- [ ] Crate open cl rendering kernels for alternative API for rendering and Hybrid approach 
+- [ ] Crate open cl rendering kernels for alternative API for rendering and Hybrid approach
+  - [ ] Plan: [todo/opencl-raster-hybrid-plan.md](todo/opencl-raster-hybrid-plan.md) — full design, pitfalls, phases
+  - [ ] Phase 1 — GPU raster API core (geometry + depth + material color), offscreen-parity vs ray tracer
+  - [ ] Phase 2 — textures + material table + base lighting match
+  - [ ] Phase 3 — (caller-owned) integration: toggle, near/far split, compositing
+  - [ ] Phase 4 — extras (normal maps, specular, culling, tile binning, GPU AO/skybox, async overlap)
 - [ ] Add debug build that enables to check the output of each buffer
 - [X] Add to agent prompt specific part that model should focus mainly on c part not open cl
 - [X] Add to agent prompt specific part of trying to inject ```restrict``` so compiler can be more aggressive and also add focus on alignment of strict for minimal cache misses
