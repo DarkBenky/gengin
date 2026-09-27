@@ -1,5 +1,6 @@
 # Tasks
-
+- [ ] improve missiles/planes guidence
+  - [ ] try to train reinforcement learning model for this 
 - [ ] Collect images for upscaler
   - [ ] Train torch model for upscaler
   - [ ] Try to extract images directly from war thunder rendering pipeline
