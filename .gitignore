@@ -60,6 +60,7 @@ llmOpt/flight_baseline.json
 assets/models/*.bin
 assets/models/map.obj
 assets/chars/*.bin
+machineLearning/tests/data/
 
 # generated images
 tools/*.png
