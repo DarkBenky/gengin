@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #define WIDTH 1080
 #define HEIGHT 720
@@ -106,6 +107,11 @@ typedef struct Camera {
 	float3 *bloomDst;
 	uvMap *uvBuffer;
 	float *depthBuffer;
+	
+	float maxDepth;
+	float minDepth;
+	pthread_mutex_t depthLock; // guards maxDepth/minDepth across worker threads
+
 	float *ambientOcclusionBuffer;
 	float2 *motionVectorBuffer;
 	Color *reflectCache;
@@ -118,6 +124,8 @@ typedef struct Camera {
 	int frameCounter;
 } Camera;
 
+void setMaxDepth(Camera *camera, float maxDepth); // locks the max depth checks if provided value is more then the current max depth
+void setMinDepth(Camera *camera, float minDepth); // locks the min depth checks if provided value is less then the current min depth
 void clearBuffers(Camera *camera);
 void initCamera(Camera *camera, int width, int height, float fov, float3 position, float3 forward, float3 lightDir);
 void destroyCamera(Camera *camera);

@@ -60,6 +60,9 @@ int main(void) {
 	float timesV2PlusColSt[SAMPLES], timesV2PlusColMp[SAMPLES];
 	float timesV2PlusColSgMp[SAMPLES];
 	float timesV2PlusColSkipMp[SAMPLES];
+	float timesV2PlusColSkipBetterMp[SAMPLES];
+	float timesWideSmooth[SAMPLES];
+	float timesApplyTotal[SAMPLES];
 	float timesV3St[SAMPLES], timesV3Mp[SAMPLES];
 
 	CalculateAmbientOcclusion(&camera);
@@ -72,6 +75,9 @@ int main(void) {
 	CalculateAmbientOcclusionV2PlusColumnMp(&camera, pool);
 	CalculateAmbientOcclusionV2PlusColumnSgMp(&camera, pool);
 	CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(&camera, pool);
+	CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(&camera, pool);
+	SmoothAmbientOcclusionWide(&camera, pool);
+	applyAmbientOcclusion(&camera, pool, 2.0f);
 	CalculateAmbientOcclusionV3(&camera);
 	CalculateAmbientOcclusionV3Mp(&camera, pool);
 
@@ -168,6 +174,33 @@ int main(void) {
 	for (int s = 0; s < SAMPLES; s++) {
 		struct timespec t0, t1;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
+		CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(&camera, pool);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timesV2PlusColSkipBetterMp[s] = (float)(t1.tv_sec - t0.tv_sec)
+		                               + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+
+	for (int s = 0; s < SAMPLES; s++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		SmoothAmbientOcclusionWide(&camera, pool);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timesWideSmooth[s] = (float)(t1.tv_sec - t0.tv_sec)
+		                   + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+
+	for (int s = 0; s < SAMPLES; s++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		applyAmbientOcclusion(&camera, pool, 2.0f);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		timesApplyTotal[s] = (float)(t1.tv_sec - t0.tv_sec)
+		                   + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+	}
+
+	for (int s = 0; s < SAMPLES; s++) {
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV3(&camera);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
 		timesV3St[s] = (float)(t1.tv_sec - t0.tv_sec)
@@ -193,6 +226,9 @@ int main(void) {
 	PerformanceMetrics mV2PlusColMp = ComputePerformanceMetrics(timesV2PlusColMp, SAMPLES);
 	PerformanceMetrics mV2PlusColSgMp = ComputePerformanceMetrics(timesV2PlusColSgMp, SAMPLES);
 	PerformanceMetrics mV2PlusColSkipMp = ComputePerformanceMetrics(timesV2PlusColSkipMp, SAMPLES);
+	PerformanceMetrics mV2PlusColSkipBetterMp = ComputePerformanceMetrics(timesV2PlusColSkipBetterMp, SAMPLES);
+	PerformanceMetrics mWideSmooth = ComputePerformanceMetrics(timesWideSmooth, SAMPLES);
+	PerformanceMetrics mApplyTotal = ComputePerformanceMetrics(timesApplyTotal, SAMPLES);
 	PerformanceMetrics mV3St = ComputePerformanceMetrics(timesV3St, SAMPLES);
 	PerformanceMetrics mV3Mp = ComputePerformanceMetrics(timesV3Mp, SAMPLES);
 
@@ -225,6 +261,13 @@ int main(void) {
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
 	       "V2PlusColSkip Multi", mV2PlusColSkipMp.averageTime * 1e3f, mV2PlusColSkipMp.medianTime * 1e3f, mV2PlusColSkipMp.p99Time * 1e3f,
 	       mV2PlusColMp.medianTime / mV2PlusColSkipMp.medianTime);
+	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
+	       "V2PlusColSkipBetter", mV2PlusColSkipBetterMp.averageTime * 1e3f, mV2PlusColSkipBetterMp.medianTime * 1e3f, mV2PlusColSkipBetterMp.p99Time * 1e3f,
+	       mV2PlusColSkipMp.medianTime / mV2PlusColSkipBetterMp.medianTime);
+	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
+	       "WideSmooth", mWideSmooth.averageTime * 1e3f, mWideSmooth.medianTime * 1e3f, mWideSmooth.p99Time * 1e3f, "-");
+	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
+	       "Total (AO+apply)", mApplyTotal.averageTime * 1e3f, mApplyTotal.medianTime * 1e3f, mApplyTotal.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
 	       "V3 Single", mV3St.averageTime * 1e3f, mV3St.medianTime * 1e3f, mV3St.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",

@@ -977,6 +977,9 @@ float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 
 	float emitTMin, emitTMax;
 	RayBoxItersect(emitter, position, direction, &emitTMin, &emitTMax);
 	if (emitTMin >= emitTMax || emitTMax < 0.0f) return (float3){0};
+	// inside-box origins clamp tMin to 0, so those boxes must not be excluded; the ray is scaled
+	// so the emitter center sits at t = 1, anything starting before that can still block
+	const float occluderMaxT = emitTMin > 0.0f ? emitTMin : 1.0f;
 
 	// occlusion: AABB pre-filter then precise BVH shadow check for potential blockers (scalar, kept for reference)
 	// for (int i = 0; i < objCount; i++) {
@@ -1003,7 +1006,8 @@ float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 
 		for (int j = 0; j < n; j++) {
 			int idx = i + j;
 			if (idx == queryObject) continue;
-			if (res.tMin[j] >= res.tMax[j] || res.tMin[j] <= 0.0f || res.tMin[j] >= emitTMin) continue;
+			// do not skip inside-box origins: a body has to block light to its own far side
+			if (res.tMin[j] >= res.tMax[j] || res.tMin[j] >= occluderMaxT) continue;
 			if (IntersectBVH_Shadow(&objs[idx], &objs[idx].bvh, position, direction))
 				return (float3){0};
 		}

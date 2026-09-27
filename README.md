@@ -3,11 +3,11 @@
 - [ ] Add debug build that enables to check the output of each buffer
 - [X] Add to agent prompt specific part that model should focus mainly on c part not open cl
 - [X] Add to agent prompt specific part of trying to inject ```restrict``` so compiler can be more aggressive and also add focus on alignment of strict for minimal cache misses
-- [ ] **high** Ambient Occlusion
-  - [ ] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
-    - [ ] Write test of each implementation
+- [X] **high** Ambient Occlusion -> **Note**: it works but it is kinda slow and it does not add a lot
+  - [X] [Ambient Occlusion tutorial video](https://www.youtube.com/watch?v=XAIfyLpxkfk)
+    - [X] Write test of each implementation
     - [X] implement blur pass
-    - [ ] implement to main render pipeline
+    - [X] implement to main render pipeline
     - [X] Implement resolution param now it is too slow for use
       - [X] finetune after this change
     - [ ] Test if open cl is fast enough even when using read backs
@@ -20,7 +20,7 @@
 - [ ] **High** Render atmosphere
   - [ ] [Atmosphere rendering](https://www.youtube.com/watch?v=DxfEbulyFcY)
 
-- [ ] **High** Light even when behind of geometry (***NOTE***: implement it can be cheaply added)
+- [x] **High** Light even when behind of geometry (***NOTE***: implement it can be cheaply added)
 
 - [ ] **low** two pass render to remove horizontal artifacts
   - [ ] Benchmark again current implementation
@@ -30,6 +30,7 @@
   - [X] test idea
   - [ ] implement
     - [ ] trick where we can use radar ui as mask so renderer will render less pixels
+    - [ ] implement so object can show on radar screen we can cheaply reuse the renderer buffer
 
 - **low** [ ] Support for transparent materials
 

@@ -50,6 +50,9 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->triangleIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
 	camera->motionVectorBuffer = (float2 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float2)));
 	camera->frameCounter = 0;
+	camera->maxDepth = 0.0f;
+	camera->minDepth = DEPTH_FAR;
+	pthread_mutex_init(&camera->depthLock, NULL);
 	clearBuffers(camera);
 }
 
@@ -92,6 +95,25 @@ void destroyCamera(Camera *camera) {
 	camera->triangleIdBuffer = NULL;
 	camera->motionVectorBuffer = NULL;
 	camera->frameCounter = 0;
+	pthread_mutex_destroy(&camera->depthLock);
+}
+
+void setMaxDepth(Camera *camera, float maxDepth) {
+	if (!camera) return;
+	pthread_mutex_lock(&camera->depthLock);
+	if (maxDepth > camera->maxDepth) {
+		camera->maxDepth = maxDepth;
+	}
+	pthread_mutex_unlock(&camera->depthLock);
+}
+
+void setMinDepth(Camera *camera, float minDepth) {
+	if (!camera) return;
+	pthread_mutex_lock(&camera->depthLock);
+	if (minDepth < camera->minDepth) {
+		camera->minDepth = minDepth;
+	}
+	pthread_mutex_unlock(&camera->depthLock);
 }
 
 void CameraMoveForward(Camera *camera, float amount) {

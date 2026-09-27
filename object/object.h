@@ -5,7 +5,7 @@
 #include <math.h>
 #include <immintrin.h>
 
-#define EMISSION_RESOLUTION 32
+#define EMISSION_RESOLUTION 16
 
 #include "format.h"
 #include "../load/loadObj.h"

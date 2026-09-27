@@ -1026,7 +1026,7 @@ static void RayTraceRowFunc(void *arg) {
 				float3 toEmissiveN = Float3_Normalize(toEmissive);
 				float NdotL = fabsf(n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z);
 				if (NdotL <= 0.0f) continue;
-				float3 em = SampleEmission(objects, objectCount, bestHitPos, toEmissive, topEmissiveIndices[t], lib);
+				float3 em = SampleEmission(objects, objectCount, sOrig, toEmissive, topEmissiveIndices[t], lib);
 				float falloff = NdotL / (topEmissiveDistances[t] * topEmissiveDistances[t] + 1e-6f);
 				accumulatedEmission.x += em.x * falloff;
 				accumulatedEmission.y += em.y * falloff;
@@ -1134,7 +1134,7 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
-	CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(camera, threadPool);
+	applyAmbientOcclusion(camera, threadPool, 0.45f);
 }
 
 static void RayTraceColumnFunc(void *arg) {
@@ -1529,7 +1529,7 @@ static void RayTraceColumnFunc(void *arg) {
 				float3 toEmissiveN = Float3_Normalize(toEmissive);
 				float NdotL = fabsf(n.x * toEmissiveN.x + n.y * toEmissiveN.y + n.z * toEmissiveN.z);
 				if (NdotL <= 0.0f) continue;
-				float3 em = SampleEmission(objects, objectCount, bestHitPos, toEmissive, topEmissiveIndices[t], lib);
+				float3 em = SampleEmission(objects, objectCount, sOrig, toEmissive, topEmissiveIndices[t], lib);
 				float falloff = NdotL / (topEmissiveDistances[t] * topEmissiveDistances[t] + 1e-6f);
 				accumulatedEmission.x += em.x * falloff;
 				accumulatedEmission.y += em.y * falloff;

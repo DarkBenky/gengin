@@ -17,8 +17,21 @@
 #ifndef COLUMNS_PER_TASK
 #define COLUMNS_PER_TASK 16
 #endif
+// Wide-smoothing stage: 8 samples per pixel is chunky at the sample disk scale, so the final look comes from
+// a heavily blurred low-resolution copy (box downsample, separable blur, bilinear upsample).
+// Fewer sampled pixels plus a wider kernel is what turns the blobs into a gradient
+#ifndef AO_SMOOTH_DOWNSCALE
+#define AO_SMOOTH_DOWNSCALE 4
+#endif
+#ifndef AO_SMOOTH_ROUNDS
+#define AO_SMOOTH_ROUNDS 2
+#endif
+// Row bands for the downsample/upsample tasks: these passes are tiny, so per-task overhead dominates
+#ifndef AO_SMOOTH_ROWS_PER_TASK
+#define AO_SMOOTH_ROWS_PER_TASK 16
+#endif
 
-#define PIXEL_SKIP 4
+#define PIXEL_SKIP 5
 
 static const float2 SAMPLES_PATTERN[VARIATIONS][SAMPLES] = {
 	{
@@ -178,6 +191,12 @@ static inline uint32_t fastHash(int x, int y) {
 	return h;
 }
 
+static inline float Clamp(float val, float lower, float upper) {
+	if (val < lower) return lower;
+	if (val > upper) return upper;
+	return val;
+}
+
 static void CalculateAmbientOcclusion(Camera *camera) {
 	// TODO: Apply blur pass
 	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
@@ -230,16 +249,10 @@ static void CalculateAmbientOcclusion(Camera *camera) {
 				validSamples++;
 			}
 
-			float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			camera->ambientOcclusionBuffer[idx] = ao;
 		}
 	}
-}
-
-static inline float Clamp(float val, float lower, float upper) {
-	if (val < lower) return lower;
-	if (val > upper) return upper;
-	return val;
 }
 
 static void CalculateAmbientOcclusionV2(Camera *camera) {
@@ -310,7 +323,7 @@ static void CalculateAmbientOcclusionV2(Camera *camera) {
 				validSamples++;
 			}
 
-			float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			camera->ambientOcclusionBuffer[idx] = ao;
 		}
 	}
@@ -379,7 +392,7 @@ static void CalculateAmbientOcclusionRow(void *arg) {
 				validSamples++;
 			}
 
-			float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			camera->ambientOcclusionBuffer[idx] = ao;
 		}
 	}
@@ -457,7 +470,7 @@ static void CalculateAmbientOcclusionV2Row(void *arg) {
 				validSamples++;
 			}
 
-			float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			camera->ambientOcclusionBuffer[idx] = ao;
 
 			// float3 baseColor = UnpackColor(camera->framebuffer[idx]);
@@ -546,7 +559,7 @@ static void CalculateAmbientOcclusionV2RowPlus(void *arg) {
 				validSamples++;
 			}
 
-			float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+			float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			rowValues[j] = ao;
 
 			// float3 baseColor = UnpackColor(camera->framebuffer[idx]);
@@ -647,7 +660,7 @@ static void CalculateAmbientOcclusionV2RowPlusSkip(void *arg) {
 					validSamples++;
 				}
 
-				ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+				ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			}
 
 			rowValues[j] = ao;
@@ -677,6 +690,139 @@ static void CalculateAmbientOcclusionV2RowPlusSkip(void *arg) {
 			camera->ambientOcclusionBuffer[idx] = sum;
 		}
 	}
+}
+
+static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
+	AmbientOcclusionTask *restrict task = arg;
+	Camera *restrict camera = task->camera;
+
+	const int width = camera->screenWidth;
+	const int height = camera->screenHeight;
+	const int endRow = task->row + task->rows;
+	const float focalLengthPixels = (height * 0.5f) / camera->fovScale;
+	const float worldRadius = 20.5f;
+	const float bias = worldRadius * 0.02f;
+	const float bias2 = bias * bias;
+	const float worldRadius2 = worldRadius * worldRadius;
+	const float invWorldRadius = 1.0f / worldRadius;
+	const float invSkip = 1.0f / PIXEL_SKIP;
+	const float depthRejectScale = 0.02f; // tune: smaller = stricter edge preservation
+
+	float rowValues[width];
+	float rowDepths[width];
+	float maxDepth = 0.0f;
+	float minDepth = MAX_FLOAT;
+
+	for (int row = task->row; row < endRow; row++) {
+		for (int j = 0; j < width; j += PIXEL_SKIP) {
+			const int idx = row * width + j;
+
+			float ao;
+			if (camera->depthBuffer[idx] >= DEPTH_FAR || camera->depthBuffer[idx] <= 0.0f) {
+				ao = 1.0f;
+			} else {
+				float3 normal = camera->normalBuffer[idx];
+				float3 position = camera->positionBuffer[idx];
+				float viewDepth = camera->depthBuffer[idx];
+
+				float pixelRadius = (focalLengthPixels * worldRadius) / viewDepth;
+				pixelRadius = Clamp(pixelRadius, 2.0f, 48.0f);
+
+				uint32_t h = fastHash(row, j);
+				const float2 rotation = ROTATION_TABLE[(h >> 3) & (ROTATIONS - 1)];
+				float ca = rotation.x, sa = rotation.y;
+
+				float occlusion = 0.0f;
+				int validSamples = 0;
+
+				const float2 *pattern = SAMPLES_PATTERN[h % VARIATIONS];
+
+				for (int k = 0; k < SAMPLES; k++) {
+					float sx = pattern[k].x;
+					float sy = pattern[k].y;
+					float rx = sx * ca - sy * sa;
+					float ry = sx * sa + sy * ca;
+
+					float sampleX = j + rx * pixelRadius;
+					float sampleY = row + ry * pixelRadius;
+
+					if (sampleX < 0 || sampleX >= width ||
+						sampleY < 0 || sampleY >= height) {
+						continue;
+					}
+
+					int sampleIndex = (int)sampleY * width + (int)sampleX;
+
+					if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
+						continue;
+					}
+
+					float3 samplePos = camera->positionBuffer[sampleIndex];
+					float3 dir = Float3_Sub(samplePos, position);
+					float nd = Float3_Dot(normal, dir);
+					if (nd <= 0.0f) continue;
+
+					float dist2 = Float3_Dot(dir, dir);
+					if (dist2 < bias2 || dist2 > worldRadius2) continue;
+
+					float dist = sqrtf(dist2);
+					occlusion += (nd / dist) * (1.0f - dist * invWorldRadius);
+					validSamples++;
+				}
+
+				ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
+				if (camera->depthBuffer[idx] < minDepth) {
+					minDepth = camera->depthBuffer[idx];
+				}
+				if (camera->depthBuffer[idx] > maxDepth) {
+					maxDepth = camera->depthBuffer[idx];
+				}
+			}
+
+			rowValues[j] = ao;
+			rowDepths[j] = camera->depthBuffer[idx];
+
+			if (j >= PIXEL_SKIP) {
+				const float prev = rowValues[j - PIXEL_SKIP];
+				const float step = (ao - prev) * invSkip;
+				const float prevDepth = rowDepths[j - PIXEL_SKIP];
+				const float stepDepth = (camera->depthBuffer[idx] - prevDepth) * invSkip;
+				for (int t = 1; t < PIXEL_SKIP; t++) {
+					rowValues[j - PIXEL_SKIP + t] = prev + step * t;
+					rowDepths[j - PIXEL_SKIP + t] = prevDepth + stepDepth * t;
+				}
+			}
+		}
+
+		// width rarely divides PIXEL_SKIP; replicate the last sample over the tail
+		const int lastSample = ((width - 1) / PIXEL_SKIP) * PIXEL_SKIP;
+		for (int j = lastSample + 1; j < width; j++) {
+			rowValues[j] = rowValues[lastSample];
+			rowDepths[j] = camera->depthBuffer[lastSample];
+		}
+
+		// start from kernel size half and end early to avoid bound checks
+		for (int j = KERNEL_SIZE_HALF; j < width - KERNEL_SIZE_HALF; j++) {
+			const int idx = row * width + j;
+			const float centerDepth = rowDepths[j];
+			const float invDepthThreshold = 1.0f / (centerDepth * depthRejectScale);
+
+			float sum = 0.0f;
+			float weightSum = 0.0f;
+			for (int k = 0; k < KERNEL_SIZE; k++) {
+				const int tapIdx = j + k - KERNEL_SIZE_HALF;
+				const float depthDiff = fabsf(rowDepths[tapIdx] - centerDepth);
+				const float depthWeight = Clamp(1.0f - depthDiff * invDepthThreshold, 0.0f, 1.0f);
+				const float w = lineKernelvaluse[k] * depthWeight;
+
+				sum += rowValues[tapIdx] * w;
+				weightSum += w;
+			}
+			camera->ambientOcclusionBuffer[idx] = weightSum > 1e-5f ? sum / weightSum : rowValues[j];
+		}
+	}
+	setMaxDepth(camera, maxDepth);
+	setMinDepth(camera, minDepth);
 }
 
 static void CalculateAmbientOcclusionV2Plus(Camera *camera) {
@@ -784,7 +930,7 @@ static void CalculateAmbientOcclusionV3Row(void *arg) {
 					validSamples++;
 				}
 
-				float ao = validSamples > 0 ? occlusion * INV_VALID[validSamples] : 1.0f;
+				float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 				camera->ambientOcclusionBuffer[pidx] = ao;
 			}
 		}
@@ -798,6 +944,15 @@ typedef struct {
 	int height;
 	float *image;
 } ColumnBlurTask;
+
+typedef struct {
+	int column;	 // first column of the band
+	int columns; // columns in the band
+	int width;
+	int height;
+	float *image;
+	float *DepthBuffer;
+} ColumnBlurTaskBetter;
 
 static void ColumnBlurColumns(void *arg) {
 	ColumnBlurTask *restrict task = arg;
@@ -824,6 +979,44 @@ static void ColumnBlurColumns(void *arg) {
 	}
 }
 
+static void ColumnBlurColumnsBetter(void *arg) {
+	ColumnBlurTaskBetter *restrict task = arg;
+	const int width = task->width;
+	const int height = task->height;
+	const int endColumn = task->column + task->columns;
+	float *restrict image = task->image;
+	float *restrict depthBuffer = task->DepthBuffer;
+	const float depthRejectScale = 0.02f; // tune: smaller = stricter edge preservation
+
+	float colValues[height];
+
+	for (int x = task->column; x < endColumn; x++) {
+		for (int y = 0; y < height; y++) {
+			colValues[y] = image[y * width + x];
+		}
+
+		// start from kernel size half and end early to avoid bound checks
+		for (int y = KERNEL_SIZE_HALF; y < height - KERNEL_SIZE_HALF; y++) {
+			const int centerIdx = y * width + x;
+			const float centerDepth = depthBuffer[centerIdx];
+			const float invDepthThreshold = 1.0f / (centerDepth * depthRejectScale);
+
+			float sum = 0.0f;
+			float weightSum = 0.0f;
+			for (int i = 0; i < KERNEL_SIZE; i++) {
+				const int tapY = y + i - KERNEL_SIZE_HALF;
+				const float depthDiff = fabsf(depthBuffer[tapY * width + x] - centerDepth);
+				const float depthWeight = Clamp(1.0f - depthDiff * invDepthThreshold, 0.0f, 1.0f);
+				const float w = lineKernelvaluse[i] * depthWeight;
+
+				sum += colValues[tapY] * w;
+				weightSum += w;
+			}
+			image[centerIdx] = weightSum > 1e-5f ? sum / weightSum : colValues[y];
+		}
+	}
+}
+
 static void columnBlur(int width, int height, float *restrict image) {
 	ColumnBlurTask task = {KERNEL_SIZE_HALF, width - 2 * KERNEL_SIZE_HALF, width, height, image};
 	ColumnBlurColumns(&task);
@@ -841,6 +1034,216 @@ static void columnBlurMp(int width, int height, float *restrict image, ThreadPoo
 		const int columns = endColumn - column < COLUMNS_PER_TASK ? endColumn - column : COLUMNS_PER_TASK;
 		tasks[t] = (ColumnBlurTask){column, columns, width, height, image};
 		poolAdd(threadPool, ColumnBlurColumns, &tasks[t]);
+	}
+	poolWait(threadPool);
+}
+
+static void columnBlurMpBetter(int width, int height, float *restrict image, ThreadPool *threadPool, float *restrict depthBuffer) {
+	// Same interior range as columnBlur(): the outer columns hold stale data.
+	const int firstColumn = KERNEL_SIZE_HALF;
+	const int endColumn = width - KERNEL_SIZE_HALF;
+	const int taskCount = (endColumn - firstColumn + COLUMNS_PER_TASK - 1) / COLUMNS_PER_TASK;
+	ColumnBlurTaskBetter tasks[taskCount];
+
+	for (int t = 0; t < taskCount; t++) {
+		const int column = firstColumn + t * COLUMNS_PER_TASK;
+		const int columns = endColumn - column < COLUMNS_PER_TASK ? endColumn - column : COLUMNS_PER_TASK;
+		tasks[t] = (ColumnBlurTaskBetter){column, columns, width, height, image, depthBuffer};
+		poolAdd(threadPool, ColumnBlurColumnsBetter, &tasks[t]);
+	}
+	poolWait(threadPool);
+}
+
+typedef struct {
+	int row;	 // first row of the band
+	int rows; // rows in the band
+	int width;
+	float *image;
+	float *DepthBuffer;
+} RowBlurTaskBetter;
+
+static void RowBlurRowsBetter(void *arg) {
+	RowBlurTaskBetter *restrict task = arg;
+	const int width = task->width;
+	const int endRow = task->row + task->rows;
+	float *restrict image = task->image;
+	float *restrict depthBuffer = task->DepthBuffer;
+	const float depthRejectScale = 0.02f; // tune: smaller = stricter edge preservation
+
+	float rowValues[width];
+	float rowDepths[width];
+
+	for (int y = task->row; y < endRow; y++) {
+		const int rowBase = y * width;
+		for (int x = 0; x < width; x++) {
+			rowValues[x] = image[rowBase + x];
+			rowDepths[x] = depthBuffer[rowBase + x];
+		}
+
+		// replicate over the outer columns: the AO passes never write them, so edge taps would read stale data
+		rowValues[0] = rowValues[1] = rowValues[KERNEL_SIZE_HALF];
+		rowValues[width - 2] = rowValues[width - 1] = rowValues[width - KERNEL_SIZE_HALF - 1];
+		rowDepths[0] = rowDepths[1] = rowDepths[KERNEL_SIZE_HALF];
+		rowDepths[width - 2] = rowDepths[width - 1] = rowDepths[width - KERNEL_SIZE_HALF - 1];
+
+		for (int x = KERNEL_SIZE_HALF; x < width - KERNEL_SIZE_HALF; x++) {
+			const float centerDepth = rowDepths[x];
+			const float invDepthThreshold = 1.0f / (centerDepth * depthRejectScale);
+
+			float sum = 0.0f;
+			float weightSum = 0.0f;
+			for (int i = 0; i < KERNEL_SIZE; i++) {
+				const int tapX = x + i - KERNEL_SIZE_HALF;
+				const float depthDiff = fabsf(rowDepths[tapX] - centerDepth);
+				const float depthWeight = Clamp(1.0f - depthDiff * invDepthThreshold, 0.0f, 1.0f);
+				const float w = lineKernelvaluse[i] * depthWeight;
+
+				sum += rowValues[tapX] * w;
+				weightSum += w;
+			}
+			image[rowBase + x] = weightSum > 1e-5f ? sum / weightSum : rowValues[x];
+		}
+	}
+}
+
+static void rowBlurMpBetter(int width, int height, float *restrict image, ThreadPool *threadPool, float *restrict depthBuffer) {
+	// Same interior row range as the column blur: the outer rows are never blurred vertically
+	const int firstRow = KERNEL_SIZE_HALF;
+	const int endRow = height - KERNEL_SIZE_HALF;
+	const int taskCount = (endRow - firstRow + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	RowBlurTaskBetter tasks[taskCount];
+
+	for (int t = 0; t < taskCount; t++) {
+		const int row = firstRow + t * ROWS_PER_TASK;
+		const int rows = endRow - row < ROWS_PER_TASK ? endRow - row : ROWS_PER_TASK;
+		tasks[t] = (RowBlurTaskBetter){row, rows, width, image, depthBuffer};
+		poolAdd(threadPool, RowBlurRowsBetter, &tasks[t]);
+	}
+	poolWait(threadPool);
+}
+
+typedef struct {
+	int row;	 // first row of the band (small buffer rows)
+	int rows;
+	int srcWidth;
+	const float *restrict src;
+	int dstWidth;
+	float *restrict dst;
+} DownsampleTask;
+
+typedef struct {
+	int row;	 // first row of the band (full-resolution rows)
+	int rows;
+	int dstWidth;
+	float *restrict dst;
+	int srcWidth;
+	int srcHeight;
+	const float *restrict src;
+} UpsampleTask;
+
+static void DownsampleAoRows(void *arg) {
+	DownsampleTask *restrict task = arg;
+	const int scale = AO_SMOOTH_DOWNSCALE;
+	const int srcWidth = task->srcWidth;
+	const int minX = KERNEL_SIZE_HALF;
+	const int maxX = srcWidth - KERNEL_SIZE_HALF - 1;
+	const float *restrict src = task->src;
+	const int dstWidth = task->dstWidth;
+	float *restrict dst = task->dst;
+	const int endRow = task->row + task->rows;
+	const float inv = 1.0f / (float)(scale * scale);
+
+	for (int oy = task->row; oy < endRow; oy++) {
+		const int sy = oy * scale;
+		for (int ox = 0; ox < dstWidth; ox++) {
+			const int sx = ox * scale;
+			float sum = 0.0f;
+			for (int y = 0; y < scale; y++) {
+				const float *restrict rowPtr = src + (sy + y) * srcWidth;
+				for (int x = 0; x < scale; x++) {
+					int px = sx + x;
+					if (px < minX) px = minX;
+					if (px > maxX) px = maxX;
+					sum += rowPtr[px];
+				}
+			}
+			dst[oy * dstWidth + ox] = sum * inv;
+		}
+	}
+}
+
+static void UpsampleAoRows(void *arg) {
+	UpsampleTask *restrict task = arg;
+	const int scale = AO_SMOOTH_DOWNSCALE;
+	const int dstWidth = task->dstWidth;
+	float *restrict dst = task->dst;
+	const int srcWidth = task->srcWidth;
+	const int srcHeight = task->srcHeight;
+	const float *restrict src = task->src;
+	const int endRow = task->row + task->rows;
+
+	for (int y = task->row; y < endRow; y++) {
+		const float fy = ((float)y + 0.5f) / (float)scale - 0.5f;
+		int y0 = (int)floorf(fy);
+		float ty = fy - (float)y0;
+		if (y0 < 0) { y0 = 0; ty = 0.0f; }
+		if (y0 >= srcHeight - 1) { y0 = srcHeight - 1; ty = 0.0f; }
+		int y1 = y0 + 1;
+		if (y1 >= srcHeight) y1 = srcHeight - 1;
+
+		for (int x = 0; x < dstWidth; x++) {
+			const float fx = ((float)x + 0.5f) / (float)scale - 0.5f;
+			int x0 = (int)floorf(fx);
+			float tx = fx - (float)x0;
+			if (x0 < 0) { x0 = 0; tx = 0.0f; }
+			if (x0 >= srcWidth - 1) { x0 = srcWidth - 1; tx = 0.0f; }
+			int x1 = x0 + 1;
+			if (x1 >= srcWidth) x1 = srcWidth - 1;
+
+			const float top = src[y0 * srcWidth + x0] + (src[y0 * srcWidth + x1] - src[y0 * srcWidth + x0]) * tx;
+			const float bot = src[y1 * srcWidth + x0] + (src[y1 * srcWidth + x1] - src[y1 * srcWidth + x0]) * tx;
+			dst[y * dstWidth + x] = top + (bot - top) * ty;
+		}
+	}
+}
+
+static void SmoothAmbientOcclusionWide(Camera *camera, ThreadPool *threadPool) {
+	const int width = camera->screenWidth;
+	const int height = camera->screenHeight;
+	const int smallW = (width + AO_SMOOTH_DOWNSCALE - 1) / AO_SMOOTH_DOWNSCALE;
+	const int smallH = (height + AO_SMOOTH_DOWNSCALE - 1) / AO_SMOOTH_DOWNSCALE;
+	const int smallCount = smallW * smallH;
+	if (smallW < KERNEL_SIZE || smallH < KERNEL_SIZE) return;
+
+	float smallAO[smallCount];
+	float smallDepth[smallCount];
+	// constant depth keeps the reused blur passes a plain Gaussian; the wide stage is intentionally not edge-gated
+	for (int i = 0; i < smallCount; i++) {
+		smallDepth[i] = 100.0f;
+	}
+
+	const int downTaskCount = (smallH + AO_SMOOTH_ROWS_PER_TASK - 1) / AO_SMOOTH_ROWS_PER_TASK;
+	DownsampleTask downTasks[downTaskCount];
+	for (int t = 0; t < downTaskCount; t++) {
+		const int row = t * AO_SMOOTH_ROWS_PER_TASK;
+		const int rows = smallH - row < AO_SMOOTH_ROWS_PER_TASK ? smallH - row : AO_SMOOTH_ROWS_PER_TASK;
+		downTasks[t] = (DownsampleTask){row, rows, width, camera->ambientOcclusionBuffer, smallW, smallAO};
+		poolAdd(threadPool, DownsampleAoRows, &downTasks[t]);
+	}
+	poolWait(threadPool);
+
+	for (int round = 0; round < AO_SMOOTH_ROUNDS; round++) {
+		rowBlurMpBetter(smallW, smallH, smallAO, threadPool, smallDepth);
+		columnBlurMpBetter(smallW, smallH, smallAO, threadPool, smallDepth);
+	}
+
+	const int upTaskCount = (height + AO_SMOOTH_ROWS_PER_TASK - 1) / AO_SMOOTH_ROWS_PER_TASK;
+	UpsampleTask upTasks[upTaskCount];
+	for (int t = 0; t < upTaskCount; t++) {
+		const int row = t * AO_SMOOTH_ROWS_PER_TASK;
+		const int rows = height - row < AO_SMOOTH_ROWS_PER_TASK ? height - row : AO_SMOOTH_ROWS_PER_TASK;
+		upTasks[t] = (UpsampleTask){row, rows, width, camera->ambientOcclusionBuffer, smallW, smallH, smallAO};
+		poolAdd(threadPool, UpsampleAoRows, &upTasks[t]);
 	}
 	poolWait(threadPool);
 }
@@ -942,6 +1345,81 @@ static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(Camera *camera, Thr
 	}
 	poolWait(threadPool);
 	columnBlurMp(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool);
+}
+
+static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(Camera *camera, ThreadPool *threadPool) {
+	if (!camera || !threadPool) return;
+
+	camera->maxDepth = FLT_MIN;
+	camera->minDepth = FLT_MAX;
+
+	const int height = camera->screenHeight;
+	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	AmbientOcclusionTask tasks[taskCount];
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * ROWS_PER_TASK;
+		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
+		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlusSkipBetterBlur, &tasks[t]);
+	}
+	poolWait(threadPool);
+	columnBlurMpBetter(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool, camera->depthBuffer);
+	SmoothAmbientOcclusionWide(camera, threadPool);
+}
+
+typedef struct {
+	int row;	 // first row of the band
+	int rows; // rows in the band
+	int width;
+	int height;
+	float *AOBuffer;
+	float strength; // 1 = full occlusion, >1 boosts contrast
+	uint32 *Framebuffer;
+} ApplyTask;
+
+static void ApplyAoRows(void *arg) {
+	ApplyTask *restrict task = arg;
+	const int width = task->width;
+	const int endRow = task->row + task->rows;
+	const int firstColumn = KERNEL_SIZE_HALF;
+	const int endColumn = width - KERNEL_SIZE_HALF;
+	const float strength = task->strength;
+	float *restrict aoBuffer = task->AOBuffer;
+	uint32 *restrict framebuffer = task->Framebuffer;
+
+	// Skip the outer columns: the AO passes never write them (stale data)
+	for (int y = task->row; y < endRow; y++) {
+		const int rowBase = y * width;
+		for (int x = firstColumn; x < endColumn; x++) {
+			const int idx = rowBase + x;
+			const float ao = Clamp(1.0f - (1.0f - aoBuffer[idx]) * strength, 0.0f, 1.0f);
+			const uint32 px = framebuffer[idx];
+			const uint32 r = (uint32)(((px >> 16) & 0xFFu) * ao);
+			const uint32 g = (uint32)(((px >> 8) & 0xFFu) * ao);
+			const uint32 b = (uint32)((px & 0xFFu) * ao);
+
+			framebuffer[idx] = (px & 0xFF000000u) | (r << 16) | (g << 8) | b;
+		}
+	}
+}
+
+static void applyAmbientOcclusion(Camera *camera, ThreadPool *threadPool, float strength) {
+	if (!camera || !threadPool) return;
+
+	CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(camera, threadPool);
+
+	const int width = camera->screenWidth;
+	const int height = camera->screenHeight;
+	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	ApplyTask tasks[taskCount];
+
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * ROWS_PER_TASK;
+		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		tasks[t] = (ApplyTask){row, rows, width, height, camera->ambientOcclusionBuffer, strength, camera->framebuffer};
+		poolAdd(threadPool, ApplyAoRows, &tasks[t]);
+	}
+	poolWait(threadPool);
 }
 
 static void CalculateAmbientOcclusionV2PlusColumnSgMp(Camera *camera, ThreadPool *threadPool) {
