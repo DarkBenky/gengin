@@ -138,6 +138,9 @@ static const float2 ROTATION_TABLE[ROTATIONS] = {
 
 #define KERNEL_SIZE 5
 #define KERNEL_SIZE_HALF (KERNEL_SIZE / 2)
+// Depth-reject scale of the two AVX2 blur helpers.  The scalar blur bodies
+// still spell the same literal out; a future tune must change both.
+#define AO_DEPTH_REJECT_SCALE 0.02f
 static const float lineKernelvaluse[KERNEL_SIZE] = {
 	0.054488685f,
 	0.244201342f,
@@ -692,6 +695,96 @@ static void CalculateAmbientOcclusionV2RowPlusSkip(void *arg) {
 	}
 }
 
+/* ------------------------------------------------------------------ *
+ *  AVX2 helpers for the two depth-weighted AO blur passes: the per-row
+ *  horizontal blur and the full-frame vertical (column) blur.  Both are the
+ *  same 5-tap depth-gated average, only the tap stride differs (1 for the row
+ *  blur, `width` for the column blur), so the arithmetic lives in one place.
+ * ------------------------------------------------------------------ */
+static inline __m256 aoAbs8(__m256 x) {
+	return _mm256_andnot_ps(_mm256_set1_ps(-0.0f), x);
+}
+
+/* Depth-weighted 5-tap blur of 8 lanes.  `values` and `depths` point at the
+ * CENTER tap; tap k = -2..+2 sits `stride` elements away.  Tap order, Clamp
+ * and the `weightSum > 1e-5f` fallback are the scalar expressions, lane by
+ * lane.  Deliberately not `restrict`: the column blur reads and writes the
+ * same buffer, so a store must not be reordered before these loads. */
+static inline __m256 aoBlurTap8(const float *values, int vstride,
+                                const float *depths, int dstride) {
+	const __m256 k0 = _mm256_set1_ps(lineKernelvaluse[0]);
+	const __m256 k1 = _mm256_set1_ps(lineKernelvaluse[1]);
+	const __m256 k2 = _mm256_set1_ps(lineKernelvaluse[2]);
+	const __m256 k3 = _mm256_set1_ps(lineKernelvaluse[3]);
+	const __m256 k4 = _mm256_set1_ps(lineKernelvaluse[4]);
+	const __m256 dscale = _mm256_set1_ps(AO_DEPTH_REJECT_SCALE);
+	const __m256 zero = _mm256_setzero_ps();
+	const __m256 one = _mm256_set1_ps(1.0f);
+	const __m256 eps = _mm256_set1_ps(1e-5f);
+
+	const __m256 cd = _mm256_loadu_ps(depths);
+	const __m256 invDepthThreshold = _mm256_div_ps(one, _mm256_mul_ps(cd, dscale));
+
+	__m256 sum = zero;
+	__m256 weightSum = zero;
+
+#define AO_BLUR_TAP(K, OFF)                                                                       \
+	{                                                                                             \
+		const __m256 tap = _mm256_max_ps(                                                         \
+		    zero,                                                                                 \
+		    _mm256_min_ps(_mm256_sub_ps(one,                                                      \
+		                                _mm256_mul_ps(aoAbs8(_mm256_sub_ps(                       \
+		                                                 _mm256_loadu_ps(depths + (OFF) * dstride),\
+		                                                 cd)),                                    \
+		                                              invDepthThreshold)),                        \
+		                  one));                                                                  \
+		const __m256 w = _mm256_mul_ps(k##K, tap);                                                \
+		sum = _mm256_add_ps(sum, _mm256_mul_ps(_mm256_loadu_ps(values + (OFF) * vstride), w));     \
+		weightSum = _mm256_add_ps(weightSum, w);                                                  \
+	}
+	AO_BLUR_TAP(0, -2)
+	AO_BLUR_TAP(1, -1)
+	AO_BLUR_TAP(2, 0)
+	AO_BLUR_TAP(3, 1)
+	AO_BLUR_TAP(4, 2)
+#undef AO_BLUR_TAP
+
+	return _mm256_blendv_ps(_mm256_loadu_ps(values), _mm256_div_ps(sum, weightSum),
+	                        _mm256_cmp_ps(weightSum, eps, _CMP_GT_OQ));
+}
+
+/* Horizontal blur of one row out of the caller's rowValues/rowDepths copies:
+ * 8 pixels per iteration, scalar remainder.  The copies are distinct objects
+ * from dstRow, so the store cannot perturb the taps. */
+static void aoRowBlurAvx8(const float *rowValues, const float *rowDepths,
+                          float *dstRow, int width) {
+	const float depthRejectScale = AO_DEPTH_REJECT_SCALE;
+	const int end = width - KERNEL_SIZE_HALF;
+	int j = KERNEL_SIZE_HALF;
+
+	for (; j + 8 <= end; j += 8) {
+		_mm256_storeu_ps(dstRow + j, aoBlurTap8(rowValues + j, 1, rowDepths + j, 1));
+	}
+	// scalar remainder, identical to the original loop body
+	for (; j < end; j++) {
+		const float centerDepth = rowDepths[j];
+		const float invDepthThreshold = 1.0f / (centerDepth * depthRejectScale);
+
+		float sum = 0.0f;
+		float weightSum = 0.0f;
+		for (int k = 0; k < KERNEL_SIZE; k++) {
+			const int tapIdx = j + k - KERNEL_SIZE_HALF;
+			const float depthDiff = fabsf(rowDepths[tapIdx] - centerDepth);
+			const float depthWeight = Clamp(1.0f - depthDiff * invDepthThreshold, 0.0f, 1.0f);
+			const float w = lineKernelvaluse[k] * depthWeight;
+
+			sum += rowValues[tapIdx] * w;
+			weightSum += w;
+		}
+		dstRow[j] = weightSum > 1e-5f ? sum / weightSum : rowValues[j];
+	}
+}
+
 static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
 	AmbientOcclusionTask *restrict task = arg;
 	Camera *restrict camera = task->camera;
@@ -706,7 +799,6 @@ static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
 	const float worldRadius2 = worldRadius * worldRadius;
 	const float invWorldRadius = 1.0f / worldRadius;
 	const float invSkip = 1.0f / PIXEL_SKIP;
-	const float depthRejectScale = 0.02f; // tune: smaller = stricter edge preservation
 
 	float rowValues[width];
 	float rowDepths[width];
@@ -801,25 +893,8 @@ static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
 			rowDepths[j] = camera->depthBuffer[lastSample];
 		}
 
-		// start from kernel size half and end early to avoid bound checks
-		for (int j = KERNEL_SIZE_HALF; j < width - KERNEL_SIZE_HALF; j++) {
-			const int idx = row * width + j;
-			const float centerDepth = rowDepths[j];
-			const float invDepthThreshold = 1.0f / (centerDepth * depthRejectScale);
-
-			float sum = 0.0f;
-			float weightSum = 0.0f;
-			for (int k = 0; k < KERNEL_SIZE; k++) {
-				const int tapIdx = j + k - KERNEL_SIZE_HALF;
-				const float depthDiff = fabsf(rowDepths[tapIdx] - centerDepth);
-				const float depthWeight = Clamp(1.0f - depthDiff * invDepthThreshold, 0.0f, 1.0f);
-				const float w = lineKernelvaluse[k] * depthWeight;
-
-				sum += rowValues[tapIdx] * w;
-				weightSum += w;
-			}
-			camera->ambientOcclusionBuffer[idx] = weightSum > 1e-5f ? sum / weightSum : rowValues[j];
-		}
+		// 8 pixels at a time, kernel size half to width - kernel size half
+		aoRowBlurAvx8(rowValues, rowDepths, camera->ambientOcclusionBuffer + row * width, width);
 	}
 	setMaxDepth(camera, maxDepth);
 	setMinDepth(camera, minDepth);
@@ -979,6 +1054,47 @@ static void ColumnBlurColumns(void *arg) {
 	}
 }
 
+/* Vertical blur of 8 adjacent columns.  `firstColumn..firstColumn+columnCount`
+ * is the band; only whole groups of 8 are handled here (the caller runs the
+ * scalar remainder).  The result of row y-2 is stored only after row y's taps
+ * have been read, which is what makes the in-place update equivalent to the
+ * scalar body's copy-the-column-first rule: output row y-1 and later never read
+ * source row y-2 again, and row y's fallback centre value is still pristine
+ * (row y is only written two iterations later).
+ * `noinline` keeps the caller's `restrict` (and its stack VLA) out of this
+ * block: the store into `image` must stay ordered after the tap loads. */
+__attribute__((noinline))
+static void aoColBlurAvx8(float *image, const float *depthBuffer, int width, int height,
+                          int firstColumn, int columnCount) {
+	const int last = height - KERNEL_SIZE_HALF;
+	if (height < KERNEL_SIZE) return; // no output row exists
+
+	for (int x = firstColumn; x + 8 <= firstColumn + columnCount; x += 8) {
+		__m256 prev1 = _mm256_setzero_ps();
+		__m256 prev2 = _mm256_setzero_ps();
+		int computed = 0;
+
+		for (int y = KERNEL_SIZE_HALF; y < last; y++) {
+			const float *centerTap = image + y * width + x;
+			float *center = image + y * width + x;
+			const __m256 res = aoBlurTap8(centerTap, width, depthBuffer + y * width + x, width);
+
+			if (computed >= 2) {
+				_mm256_storeu_ps(center - 2 * width, prev2);
+			}
+			prev2 = prev1;
+			prev1 = res;
+			computed++;
+		}
+		if (computed >= 2) {
+			_mm256_storeu_ps(image + (last - 2) * width + x, prev2);
+		}
+		if (computed >= 1) {
+			_mm256_storeu_ps(image + (last - 1) * width + x, prev1);
+		}
+	}
+}
+
 static void ColumnBlurColumnsBetter(void *arg) {
 	ColumnBlurTaskBetter *restrict task = arg;
 	const int width = task->width;
@@ -990,7 +1106,15 @@ static void ColumnBlurColumnsBetter(void *arg) {
 
 	float colValues[height];
 
-	for (int x = task->column; x < endColumn; x++) {
+	// 8 columns at a time (AVX2); the scalar per-column body below keeps
+	// handling any band remainder
+	const int bandColumns = endColumn - task->column;
+	const int vectorColumns = bandColumns - (bandColumns % 8);
+	if (vectorColumns > 0) {
+		aoColBlurAvx8(image, depthBuffer, width, height, task->column, vectorColumns);
+	}
+
+	for (int x = task->column + vectorColumns; x < endColumn; x++) {
 		for (int y = 0; y < height; y++) {
 			colValues[y] = image[y * width + x];
 		}
