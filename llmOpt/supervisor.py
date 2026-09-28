@@ -940,10 +940,18 @@ def check_github_token():
 
 def _open_pr_block(limit=10):
     """Open pull requests as query context: what is already in flight."""
+    # main.py resolves the GitHub remote through PROJECT_DIR, which points at the
+    # sandbox only while a session is being prepared; use the supervisor's own
+    # checkout so the lookup works whenever this renders.
+    import main as gengin_main
+    previous = gengin_main.PROJECT_DIR
+    gengin_main.PROJECT_DIR = REPO_ROOT
     try:
         prs = gengin_main.openPullRequests(limit=limit)
     except Exception:
-        return ""
+        prs = []
+    finally:
+        gengin_main.PROJECT_DIR = previous
     if not prs:
         return ""
     lines = ["Open pull requests - these changes are already proposed; do not"
