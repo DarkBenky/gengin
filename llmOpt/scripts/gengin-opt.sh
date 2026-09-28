@@ -5,6 +5,7 @@
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
 #   gengin-opt.sh local [model]         local llama.cpp server on :8013
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
+#   gengin-opt.sh ml [model] [$local|openrouter|deepseek]  ML layer objective
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report
 #   gengin-opt.sh --dry-run             print the resolved command and exit
@@ -21,6 +22,7 @@ PRESET=""
 HEADLESS=0
 DRY_RUN=0
 GOAL=""
+ML_MODE=0
 SUPERVISED=0
 MODEL=""
 QUERY_FILE_ARG=""
@@ -28,12 +30,17 @@ USAGE_FILE_ARG=""
 
 usage() {
   echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
+  echo "       $0 ml [model] [--goal TEXT] [--headless]   ML layer-kernel objective (local GPU)"
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     local)
+      PRESET=local
+      PROVIDER_ARGS=(--provider custom:local); shift ;;
+    ml)
+      ML_MODE=1
       PRESET=local
       PROVIDER_ARGS=(--provider custom:local); shift ;;
     openrouter|or)
@@ -154,6 +161,14 @@ if [[ ! -f "$PROMPT_FILE" ]]; then
   exit 1
 fi
 
+if [[ "$ML_MODE" == "1" ]]; then
+  PROMPT_FILE="$LLMOPT_DIR/prompts/optimize-ml.md"
+  if ! nvidia-smi -L >/dev/null 2>&1; then
+    echo "[ml] warning: no NVIDIA GPU detected - the layer bench needs a working OpenCL device" >&2
+  fi
+  echo "[ml] objective: machineLearning/generateKernel.py layer kernels (local GPU, suites smoke/core/edges)"
+fi
+
 if [[ ! -d "$HERMES_DIR" ]]; then
   echo "error: $HERMES_DIR not found — run $SCRIPT_DIR/setup-hermes.sh first" >&2
   exit 1
@@ -192,9 +207,12 @@ QUERY_FILE="$HERMES_DIR/cache/query-$(date +%s).md"
     echo "Session goal: $GOAL"
     echo
   fi
-  echo "Start now. Work the profile -> micro-benchmark -> pre-mortem -> apply -> validate -> PR loop."
+  if [[ "$ML_MODE" == "1" ]]; then
+    echo "Start now. Work the measure -> change the generator -> re-measure -> validate -> PR loop."
+  else
+    echo "Start now. Work the profile -> micro-benchmark -> pre-mortem -> apply -> validate -> PR loop."
+  fi
 } > "$QUERY_FILE"
-
 if [[ "$HEADLESS" -eq 1 ]]; then
   # `-z` is the scripted one-shot entry point (final answer only) and the only
   # form that supports --usage-file.

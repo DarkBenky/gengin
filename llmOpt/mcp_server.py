@@ -318,6 +318,53 @@ def flight_trace(scenario: str, steps: int = 0, label: str = "") -> str:
     return json.dumps(_main.flightTrace(scenario, steps=steps, label=label), indent=2)
 
 
+@mcp.tool()
+def ml_bench(generator: str = "", suite: str = "core", configs: str = "",
+             kind: str = "", reps: int = 0, capture_baseline: bool = False) -> str:
+    """Run the generated-layer benchmark (machineLearning/generateKernel.py vs a
+    seeded PyTorch reference).  Suites: smoke (4 cheap configs), core (24,
+    default), stress (9 large shapes), edges (10 awkward ones), chain (3
+    multi-layer graphs), all (50).  Every config is compared against
+    reference.bin before speed is reported; any deviation makes the verdict
+    correctness_failure, so fix the math first.  Speed is compared with the
+    pinned baseline for this suite and GPU: verdict is baseline_captured when
+    this run wrote the baseline (clean tree only), no_baseline when there is
+    none, otherwise improved/regressed/same.  `configs` is a comma separated
+    list of ids from ml_scenarios instead of the suite, `kind` filters to one
+    layer family, `reps` overrides the 20 reps, `quick=True` style fast
+    coverage is `--suite smoke --reps 8`."""
+    ids = [c.strip() for c in configs.split(",") if c.strip()] or None
+    return json.dumps(_main.mlBench(generator=generator, suite=suite, configs=ids,
+                                    kind=kind, reps=reps,
+                                    capture_baseline=capture_baseline), indent=2)
+
+
+@mcp.tool()
+def ml_scenarios() -> str:
+    """List the layer suites: per config id/kind/shape, the suite hash, whether
+    a baseline exists for it on this GPU, and the default reps/tolerances."""
+    return json.dumps(_main.mlScenarios(), indent=2)
+
+
+@mcp.tool()
+def ml_trace(config: str, reps: int = 0) -> str:
+    """Run ONE layer config (id from ml_scenarios) with 50 reps and return the
+    full row: init ms, median/p10/p90 ms, GFLOP/s, GB/s, the deviation against
+    the reference and the first bad element.  Use it when one config in a suite
+    looks suspicious."""
+    return json.dumps(_main.mlTrace(config, reps=reps), indent=2)
+
+
+@mcp.tool()
+def ml_parity(suite: str = "edges") -> str:
+    """Run the shape-parity suite: odd widths/heights, 1x1 taps, 5x5 and 9x9
+    kernels, channel and filter counts that are not multiples of four, pooling
+    with stride 2 and 3, dense 1..4096 and softmax with large logits.  Any
+    generation-time specialisation must keep all of these matching the
+    reference."""
+    return json.dumps(_main.mlBench(suite=suite), indent=2)
+
+
 _SESSION_STATUSES = ("pr_created", "no_change", "blocked", "failed")
 
 # A no_change that never ran a frame bench is the failure mode the proxy coach

@@ -17,6 +17,7 @@ import time
 
 import perf as perfLib
 import getFunc as gf
+import ml_bench as mlLib
 
 
 def _load_env(path):
@@ -45,7 +46,8 @@ PROJECT_DIR = "gengin"
 BASELINE_RESULTS = None
 
 # Tracked files that are regenerated per checkout; not counted as tree dirt.
-_GENERATED_ARTIFACTS = {"compile_commands.json", "flight_baseline.json"}
+_GENERATED_ARTIFACTS = {"compile_commands.json", "flight_baseline.json",
+                       "ml_baseline.json"}
 
 
 def run(cmd, **kwargs):
@@ -941,6 +943,39 @@ def flightTrace(scenario, steps=0, label=""):
     }
 
 
+def mlBench(generator="", suite="core", configs=None, kind="", reps=0, warmup=0,
+            capture_baseline=False, quick=False):
+    """Run the generated-layer suite and compare it against the pinned baseline."""
+    if quick:
+        suite = "smoke"
+    mlLib.setProjectDir(PROJECT_DIR)
+    try:
+        return mlLib.runBench(generator=generator or mlLib.GENERATOR_DEFAULT,
+                              suite=suite, configs=configs or None,
+                              kind=kind or None, reps=reps or mlLib.REPS_DEFAULT,
+                              warmup=warmup or mlLib.WARMUP_DEFAULT,
+                              capture_baseline=capture_baseline)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return {"summary": "error: %s" % exc, "verdict": "error", "rows": [],
+                "suite": "", "configs": 0}
+
+
+def mlScenarios():
+    """Suite inventory: config ids, shapes and baseline state per suite."""
+    mlLib.setProjectDir(PROJECT_DIR)
+    return mlLib.listConfigs()
+
+
+def mlTrace(config, generator="", reps=0):
+    """Run ONE layer config with more reps and return its full row."""
+    mlLib.setProjectDir(PROJECT_DIR)
+    try:
+        return mlLib.traceConfig(config, generator=generator or mlLib.GENERATOR_DEFAULT,
+                                 reps=reps)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return {"summary": "error: %s" % exc, "verdict": "error", "row": None}
+
+
 BASELINE_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline_cache.json")
 
 
@@ -1443,8 +1478,11 @@ _FORBIDDEN_STAGING_RE = re.compile(
     r"(^|/)(\.env|\.hermes|state|logs|run)(/|$)"
     r"|(^|/)baseline_cache\.json$"
     r"|(^|/)flight_baseline\.json$"
+    r"|(^|/)ml_baseline\.json$"
     r"|(^|/)codebase_context\.md$"
     r"|(^|/)\.cache(/|$)"
+    r"|(^|/)\.benchGen\.(cl|h)$"
+    r"|(^|/)\.benchShim\.c$"
     r"|(^|/)perf_folded\.txt$"
     r"|(^|/)compile_commands\.json$"
     r"|\.perf\.data$|\.profdata$|\.profraw$"

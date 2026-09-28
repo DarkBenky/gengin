@@ -51,6 +51,13 @@ def rel(path):
     return os.path.join(PROJECT_DIR, path)
 
 
+def setProjectDir(path):
+    """Point the harness at a checkout: the supervised sandbox or the repo root."""
+    global PROJECT_DIR, WORK_DIR
+    PROJECT_DIR = os.path.abspath(path)
+    WORK_DIR = os.path.join(PROJECT_DIR, "build", "mlbench")
+
+
 def run(cmd, cwd=None, timeout=600, check=True):
     result = subprocess.run(cmd, cwd=cwd or PROJECT_DIR, capture_output=True, text=True,
                             timeout=timeout)
@@ -823,8 +830,11 @@ def listConfigs():
     keys = {}
     for name in out:
         key = suite_hash(select_configs(suite=name))
+        entry = load_baseline(key) or {}
         keys[name] = {"suiteKey": key,
-                      "baseline": load_baseline(key, GENERATOR_DEFAULT) is not None}
+                      "baseline": bool(entry),
+                      "device": (entry.get("settings") or {}).get("device", ""),
+                      "generatorHash": entry.get("generatorHash", "")}
     return {"suites": out, "keys": keys, "defaults": {
         "reps": REPS_DEFAULT, "warmup": WARMUP_DEFAULT,
         "absTol": ABS_TOL_DEFAULT, "relTol": REL_TOL_DEFAULT},
