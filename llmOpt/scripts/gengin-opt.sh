@@ -210,12 +210,39 @@ if [[ -z "${GITHUB_TOKEN:-}" ]]; then
   fi
 fi
 
+# Open PRs are already-proposed changes; manual sessions get the same context the
+# supervisor injects.  Best effort: no token or no network leaves it empty.
+PR_BLOCK="$(LLMOPT_DIR="$LLMOPT_DIR" python3 - <<'PY' 2>/dev/null
+import os, sys
+sys.path.insert(0, os.environ["LLMOPT_DIR"])
+try:
+    import main
+    # main.PROJECT_DIR is relative at import time; the GitHub remote lives in the
+    # repository checkout, not in a subdirectory of the launcher.
+    main.PROJECT_DIR = os.path.abspath(os.path.join(os.environ["LLMOPT_DIR"], ".."))
+    prs = main.openPullRequests(limit=10)
+except Exception:
+    prs = []
+if prs:
+    print("Open pull requests - these changes are already proposed; do not")
+    print("re-implement one of them (see the prompt rules):")
+    for pr in prs:
+        files = ", ".join(pr.get("files") or []) or "(files unavailable)"
+        print("  #%s %s [%s] files: %s" % (pr.get("number"), (pr.get("title") or "")[:90],
+                                           pr.get("branch") or "?", files[:220]))
+    print()
+PY
+)" || PR_BLOCK=""
+
 mkdir -p "$HERMES_DIR/cache"
 QUERY_FILE="$HERMES_DIR/cache/query-$(date +%s).md"
 {
   cat "$PROMPT_FILE"
   echo
   echo "---"
+  if [[ -n "$PR_BLOCK" ]]; then
+    printf '%s\n' "$PR_BLOCK"
+  fi
   if [[ -n "$GOAL" ]]; then
     echo "Session goal: $GOAL"
     echo
