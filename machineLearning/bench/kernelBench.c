@@ -25,6 +25,8 @@
 #define ML_DEFAULT_REPS 20
 #define ML_DEFAULT_WARMUP 2
 #define ML_MAX_SHAPE 512
+#define ML_BATCH_TARGET_MS 0.05
+#define ML_MAX_INNER 4096
 
 typedef struct {
 	char id[ML_MAX_ID];
@@ -308,14 +310,15 @@ typedef struct {
 	int firstBad;
 	int outFloats;
 	int timed;
+        int innerReps;
 } MlResult;
 
 static int mlIndexForId(const char *id) {
-	for (int i = 0; i < kMlEntryCount; i++) {
-		if (strcmp(kMlEntries[i].id, id) == 0) {
-			return i;
-		}
-	}
+        for (int i = 0; i < kMlEntryCount; i++) {
+                if (strcmp(kMlEntries[i].id, id) == 0) {
+                        return i;
+                }
+        }
 	return -1;
 }
 
@@ -380,18 +383,37 @@ static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg
 		kMlRun[index](ctx, entry, &in.buf, &out.buf);
 	}
 	CL_Finish(ctx);
-	for (int i = 0; i < reps; i++) {
+	// Sub-microsecond layers are launch and event bound: batch dispatches per rep
+	// until a rep covers ML_BATCH_TARGET_MS so the numbers stop being noise.
+	int inner = 1;
+	{
 		CL_Finish(ctx);
 		double start = nowMs();
 		kMlRun[index](ctx, entry, &in.buf, &out.buf);
 		CL_Finish(ctx);
-		times[i] = nowMs() - start;
+		double probe = nowMs() - start;
+		if (probe > 0.0 && probe < ML_BATCH_TARGET_MS) {
+			inner = (int)(ML_BATCH_TARGET_MS / probe) + 1;
+			if (inner > ML_MAX_INNER) {
+				inner = ML_MAX_INNER;
+			}
+		}
+	}
+	for (int i = 0; i < reps; i++) {
+		CL_Finish(ctx);
+		double start = nowMs();
+		for (int j = 0; j < inner; j++) {
+			kMlRun[index](ctx, entry, &in.buf, &out.buf);
+		}
+		CL_Finish(ctx);
+		times[i] = (nowMs() - start) / (double)inner;
 	}
 	qsort(times, (size_t)reps, sizeof(double), mlCompareDouble);
 	res->medianMs = times[reps / 2];
 	res->p10Ms = times[reps / 10];
 	res->p90Ms = times[(reps * 9) / 10];
 	res->timed = reps;
+	res->innerReps = inner;
 	if (res->medianMs > 0.0) {
 		res->gflops = cfg->flops / (res->medianMs * 1e6);
 		res->gbps = cfg->bytes / (res->medianMs * 1e6);
@@ -558,10 +580,11 @@ int main(int argc, char **argv) {
 		printf("    {\"id\": \"%s\", \"kind\": \"%s\", \"shape\": \"%s\", \"ok\": %s, "
 		       "\"error\": \"%s\", \"initMs\": %.3f, \"medianMs\": %.6f, \"p10Ms\": %.6f, "
 		       "\"p90Ms\": %.6f, \"gflops\": %.4f, \"gbps\": %.4f, \"maxAbs\": %.3e, "
-		       "\"maxRel\": %.3e, \"firstBad\": %d, \"outFloats\": %d}%s\n",
+		       "\"maxRel\": %.3e, \"firstBad\": %d, \"outFloats\": %d, "
+		       "\"innerReps\": %d}%s\n",
 		       r->id, r->kind, r->shape, r->ok ? "true" : "false", r->error,
 		       r->initMs, r->medianMs, r->p10Ms, r->p90Ms, r->gflops, r->gbps,
-		       r->maxAbs, r->maxRel, r->firstBad, r->outFloats,
+		       r->maxAbs, r->maxRel, r->firstBad, r->outFloats, r->innerReps,
 		       (i + 1 < configCount) ? "," : "");
 	}
 	printf("  ],\n");

@@ -617,10 +617,7 @@ def _baseline_read():
 
 def load_baseline(suite_key, doc=None):
     """Pinned baseline for this suite key, or None when absent or from another device."""
-    cache = _baseline_read()
-    if cache.get("suite") != suite_key:
-        return None
-    entry = cache.get("baseline") or {}
+    entry = (_baseline_read().get("suites") or {}).get(suite_key) or {}
     if not entry.get("configs"):
         return None
     if doc is not None:
@@ -633,14 +630,23 @@ def load_baseline(suite_key, doc=None):
 
 
 def save_baseline(suite_key, generator, doc):
-    cache = {"suite": suite_key, "generator": generator,
-             "generatorHash": generator_hash(generator),
-             "capturedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-             "baseline": {"configs": doc["configs"], "settings": doc["settings"],
-                          "aggregate": doc["aggregate"]}}
+    cache = _baseline_read()
+    suites = cache.get("suites")
+    if not isinstance(suites, dict):
+        suites = {}
+    cache["version"] = 1
+    cache["suites"] = suites
+    suites[suite_key] = {
+        "generator": generator,
+        "generatorHash": generator_hash(generator),
+        "capturedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "configs": doc["configs"],
+        "settings": doc["settings"],
+        "aggregate": doc["aggregate"],
+    }
     tmp = BASELINE_FILE + ".tmp.%d" % os.getpid()
     with open(tmp, "w") as fh:
-        json.dump(cache, fh, indent=2)
+        json.dump(cache, fh, indent=2, sort_keys=True)
         fh.flush()
         os.fsync(fh.fileno())
     os.replace(tmp, BASELINE_FILE)
@@ -653,6 +659,13 @@ def _family(kind):
 # ---------------------------------------------------------------------------
 # verdict
 # ---------------------------------------------------------------------------
+
+def _spread(row):
+    median = row.get("medianMs") or 0.0
+    if median <= 0.0:
+        return 0.0
+    return (row.get("p90Ms", 0.0) - row.get("p10Ms", 0.0)) / median
+
 
 def summarize(doc, baseline, generator, previous_hash=None, captured=False):
     """Return (human text, verdict code)."""
@@ -672,10 +685,13 @@ def summarize(doc, baseline, generator, previous_hash=None, captured=False):
 
     base = {r["id"]: r for r in baseline.get("configs") or []}
     deltas = {}
+    bands = {}
     for row in rows:
         old = base.get(row["id"])
         if old and old.get("medianMs") and row.get("medianMs"):
             deltas[row["id"]] = (old["medianMs"] - row["medianMs"]) / old["medianMs"] * 100.0
+            spread = max(_spread(row), _spread(old))
+            bands[row["id"]] = max(3.0, 200.0 * spread)
     families = {}
     for row in rows:
         if row["id"] in deltas:
@@ -694,26 +710,33 @@ def summarize(doc, baseline, generator, previous_hash=None, captured=False):
         lines.append("  family geomean: " + ", ".join(
             "%s %+.1f%%" % (name, gain) for name, gain in sorted(fam_gain.items())))
     if deltas:
-        best = sorted(deltas.items(), key=lambda kv: -kv[1])[:4]
-        slow = sorted(deltas.items(), key=lambda kv: kv[1])[:4]
-        lines.append("  fastest movers: " + ", ".join("%s %+.1f%%" % kv for kv in best))
-        lines.append("  slowest movers: " + ", ".join("%s %+.1f%%" % kv for kv in slow))
+        best = [kv for kv in sorted(deltas.items(), key=lambda kv: -kv[1])
+                if kv[1] >= bands.get(kv[0], 3.0)][:4]
+        slow = [kv for kv in sorted(deltas.items(), key=lambda kv: kv[1])
+                if kv[1] <= -bands.get(kv[0], 3.0)][:4]
+        if best:
+            lines.append("  fastest movers: " + ", ".join("%s %+.1f%%" % kv for kv in best))
+        if slow:
+            lines.append("  slowest movers: " + ", ".join("%s %+.1f%%" % kv for kv in slow))
+        if not best and not slow:
+            lines.append("  every config within its noise band of the baseline")
     if failed:
         first = failed[0]
         lines.append("  CORRECTNESS: %d config(s) failed, first: %s (maxAbs %.3e, firstBad %d)"
                      % (len(failed), first["id"], first["maxAbs"], first["firstBad"]))
 
     hurt = [name for name, gain in fam_gain.items() if gain < -5.0]
-    worst_cfg = min(deltas.values(), default=0.0)
-    improved_fams = [name for name, gain in fam_gain.items() if gain > 1.0]
+    worst_cfg = min((deltas[k] for k in deltas if deltas[k] <= -bands.get(k, 3.0)), default=0.0)
+    improved_fams = [name for name, gain in fam_gain.items() if gain > 3.0]
     if failed:
         verdict, text = "correctness_failure", "CORRECTNESS FAILURE - fix the math before reading speed"
     elif worst_cfg < -10.0:
-        verdict, text = "regressed", "REGRESSED - one config lost %.1f%%" % worst_cfg
+        worst_id = min(deltas, key=lambda k: deltas[k])
+        verdict, text = "regressed", "REGRESSED - %s lost %.1f%%" % (worst_id, -worst_cfg)
     elif hurt:
         verdict, text = "regressed", "REGRESSED - family %s lost more than 5%%" % ",".join(hurt)
     elif len(improved_fams) >= 2:
-        verdict, text = "improved", "IMPROVED - %d families faster" % len(improved_fams)
+        verdict, text = "improved", "IMPROVED - %s faster (geomean %+.1f%%)" % (", ".join(sorted(improved_fams)), min(fam_gain.values()) if fam_gain else 0.0)
     else:
         verdict, text = "same", "no significant change"
     lines.append("=> OVERALL: %s" % text)
