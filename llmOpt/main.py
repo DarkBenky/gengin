@@ -948,8 +948,8 @@ def mlBench(generator="", suite="core", configs=None, kind="", reps=0, warmup=0,
     """Run the generated-layer suite and compare it against the pinned baseline."""
     if quick:
         suite = "smoke"
-    mlLib.setProjectDir(PROJECT_DIR)
     try:
+        mlLib.setProjectDir(PROJECT_DIR)
         return mlLib.runBench(generator=generator or mlLib.GENERATOR_DEFAULT,
                               suite=suite, configs=configs or None,
                               kind=kind or None, reps=reps or mlLib.REPS_DEFAULT,
@@ -962,14 +962,17 @@ def mlBench(generator="", suite="core", configs=None, kind="", reps=0, warmup=0,
 
 def mlScenarios():
     """Suite inventory: config ids, shapes and baseline state per suite."""
-    mlLib.setProjectDir(PROJECT_DIR)
-    return mlLib.listConfigs()
+    try:
+        mlLib.setProjectDir(PROJECT_DIR)
+        return mlLib.listConfigs()
+    except (RuntimeError, OSError) as exc:
+        return {"error": str(exc), "suites": {}, "keys": {}}
 
 
 def mlTrace(config, generator="", reps=0):
     """Run ONE layer config with more reps and return its full row."""
-    mlLib.setProjectDir(PROJECT_DIR)
     try:
+        mlLib.setProjectDir(PROJECT_DIR)
         return mlLib.traceConfig(config, generator=generator or mlLib.GENERATOR_DEFAULT,
                                  reps=reps)
     except (RuntimeError, ValueError, OSError) as exc:

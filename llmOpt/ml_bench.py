@@ -26,7 +26,8 @@ import sys
 import time
 
 LLMOPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(LLMOPT_DIR)
+DEFAULT_PROJECT_DIR = os.path.dirname(LLMOPT_DIR)
+PROJECT_DIR = DEFAULT_PROJECT_DIR
 
 GENERATOR_DEFAULT = "machineLearning/generateKernel.py"
 BENCH_DIR = "machineLearning/bench"
@@ -52,9 +53,20 @@ def rel(path):
 
 
 def setProjectDir(path):
-    """Point the harness at a checkout: the supervised sandbox or the repo root."""
+    """Point the harness at a checkout: the supervised sandbox or the repo root.
+
+    Relative paths resolve against llmOpt/ (the convention used by mcp_server:
+    PROJECT_DIR="gengin" means llmOpt/gengin).  A checkout that predates the
+    layer bench is an error, not a silent fallback to another tree."""
     global PROJECT_DIR, WORK_DIR
-    PROJECT_DIR = os.path.abspath(path)
+    resolved = (os.path.join(LLMOPT_DIR, path) if path and not os.path.isabs(path)
+                else os.path.abspath(path) if path else DEFAULT_PROJECT_DIR)
+    if not os.path.exists(os.path.join(resolved, BENCH_DIR, "kernelBench.c")):
+        if os.path.isdir(resolved) and os.path.isdir(os.path.join(resolved, "machineLearning")):
+            raise RuntimeError("%s has no %s - it predates the layer bench"
+                               % (resolved, BENCH_DIR))
+        resolved = DEFAULT_PROJECT_DIR
+    PROJECT_DIR = resolved
     WORK_DIR = os.path.join(PROJECT_DIR, "build", "mlbench")
 
 
