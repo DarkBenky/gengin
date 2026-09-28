@@ -51,6 +51,9 @@
   - [ ] **low** try to implement own fsr2 like alogo
     - [ ] **low** create motion vectors
     - [ ] **low** train model in pytorch and create open cl / c lib for loading and using cnn kernels / networks
+      - [X] generator support for upscaling blocks: `machineLearning/generateKernel.py pixelshuffle 14 14 1 2`
+            (torch.nn.PixelShuffle equivalent, valid x1/x2/x3/x4, checked against the PyTorch oracle by
+            `llmOpt/ml_bench.py --suite upscale`)
 
 - [ ] **high** test if we can improve guidance
   - [ ] test lowering the dt for simulation when close to target
@@ -188,6 +191,8 @@
 - [X] Implement optimized version of RayBoxIntersectV4
 
 - [X] create python llm optimization routine
+  - [X] second objective for the ML layer kernels: `llmOpt/scripts/gengin-opt.sh ml`
+        (see [llmOpt/README.md](llmOpt/README.md#ml-layer-objective-ml-mode))
 
 - [X] Server integration for multiplayer
 

@@ -22,9 +22,72 @@ annotation, bisection, and clangd queries.
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek         # direct DeepSeek API (DEEPSEEK_API_KEY)
     llmOpt/scripts/gengin-opt.sh --headless       # unattended oneshot (-z)
+    llmOpt/scripts/gengin-opt.sh ml               # ML layer kernels, local GPU (see below)
 
 The launcher loads `prompts/optimize.md` as the session query; switch models
-in-session with `/model custom:local:Qwen3.8-27B`.
+in-session with `/model custom:local:Qwen3.8-27B`.  The `ml` mode loads
+`prompts/optimize-ml.md` instead - see **ML layer objective** below.
+
+## ML layer objective (`ml` mode)
+
+Optimizes the OpenCL kernels that `machineLearning/generateKernel.py` emits for
+the CNN layers.  Desktop-only: it needs an OpenCL GPU, so the VM never runs it.
+
+    llmOpt/scripts/gengin-opt.sh ml
+    llmOpt/scripts/gengin-opt.sh ml Qwen3.8-27B --goal "speed up the conv interior path"
+    llmOpt/scripts/gengin-opt.sh ml --headless
+
+The session measures first, edits ONLY `machineLearning/generateKernel.py`, and
+re-measures before it opens one PR:
+
+    ml_bench(smoke) -> ml_bench(core) -> change -> re-measure -> ml_parity() -> PR
+
+The bench regenerates the kernels from the generator, compiles them with
+`/usr/bin/clang`, runs every config on the GPU and compares the output with a
+seeded PyTorch oracle (`machineLearning/bench/reference.py`) *before* it reports
+speed.  A wrong kernel is a hard failure, never a fast one.
+
+| Tool | Purpose |
+|------|---------|
+| `ml_bench(generator, suite, configs, kind, reps, capture_baseline)` | run a suite, compare with the pinned baseline |
+| `ml_scenarios()` | suites, config ids/shapes, baseline state, defaults |
+| `ml_trace(config, reps)` | one config, 50 reps: median/p10/p90, GFLOP/s, deviation |
+| `ml_parity()` | the `edges` suite - awkward shapes in one call |
+
+Suites: `smoke` (4), `core` (24), `stress` (9), `edges` (10), `chain` (3),
+`upscale` (12), `all` (62).  Verdicts: `baseline_captured`, `no_baseline`,
+`correctness_failure`, `improved`, `regressed`, `same` - speed only counts as
+better or worse when a config clears its own noise band.
+
+### Running the bench by hand
+
+    python3 llmOpt/ml_bench.py --list                    # suites, ids, baseline state
+    python3 llmOpt/ml_bench.py --suite core              # compare against the baseline
+    python3 llmOpt/ml_bench.py --suite core --capture    # pin it (clean tree only)
+    python3 llmOpt/ml_bench.py --configs conv:w28_h28_c1_k3_n16 --json
+
+Baselines live in `llmOpt/ml_baseline.json` (gitignored), one entry per suite
+hash and GPU; capturing requires the generator and the tracked artifacts to be
+unmodified, so commit before you capture.  `--kind conv|pool|dense|softmax|
+shuffle` narrows a run to one layer family.
+
+### Generating layers
+
+    python3 machineLearning/generateKernel.py conv 28 28 1 3 16
+    python3 machineLearning/generateKernel.py pool 28 28 16 2
+    python3 machineLearning/generateKernel.py dense 1568 128
+    python3 machineLearning/generateKernel.py softmax 10
+    python3 machineLearning/generateKernel.py pixelshuffle 14 14 1 2   # torch.nn.PixelShuffle(2)
+
+`pixelshuffle width height channels upscale` is `torch.nn.PixelShuffle(r)` for
+the channels-last tensors the other layers use: input `(H, W, channels*r^2)` ->
+output `(H*r, W*r, channels)` with
+`out[y*r + i][x*r + j][c] = in[y][x][c*r*r + i*r + j]`.  It appends the kernel
+plus `KGenPixelShuffle_w<w>_h<h>_c<c>_r<r>_Init/Forward/Run/Destroy` to
+`ccnKernel2d.cl` / `kernelGen.h`; the tracked files carry the demo
+`pixelshuffle 14 14 1 2`, the x2 upsample of the existing 14x14x4 conv output.
+`--out-cl` / `--out-hdr` / `--fresh` generate into scratch files instead (that
+is how the bench builds its own kernel set).
 
 ## OpenRouter proxy
 
@@ -105,11 +168,12 @@ Rules:
   (passed via stdin — never on a command line, which `ps` exposes to every
   local user).
 
-## Tools (20)
+## Tools (24)
 
 | Group               | Tools                                                                                              |
 |---------------------|----------------------------------------------------------------------------------------------------|
 | Build & profiling   | `git_pull_project`, `build_project`, `make_bench`, `make_flame`, `create_pr`, `bisect_regression`  |
+| ML layer kernels    | `ml_bench`, `ml_scenarios`, `ml_trace`, `ml_parity`                                                |
 | Micro-bench sandbox | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench`                        |
 | Visual evidence     | `compare_bench_frames`, `compare_images`                                                           |
 | Hotspot annotation  | `hot_annotate_func`, `hot_annotate_file`                                                           |
@@ -134,6 +198,9 @@ embedded).
 | `gen_compile_commands.py`       | Generates compile_commands.json for clangd                       |
 | `perf.py`                       | perf.data → folded stacks → hotspot parser                       |
 | `prompts/optimize.md`           | Session workflow (ISOLATION-FIRST loop)                          |
+| `prompts/optimize-ml.md`        | Session workflow for the ML layer objective (`ml` mode)           |
+| `ml_bench.py`                   | Layer suites, PyTorch gate, baselines, verdicts (CLI + library)   |
+| `ml_baseline.json`              | Pinned per-suite timings per GPU (generated, gitignored)          |
 | `hermes/config.yaml.template`   | Project Hermes config template                                   |
 | `scripts/setup-hermes.sh`       | Renders the template + secrets into `llmOpt/.hermes/`            |
 | `scripts/gengin-opt.sh`         | Session launcher with model selection                            |

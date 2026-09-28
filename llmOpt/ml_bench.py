@@ -363,6 +363,7 @@ SUITES = {
         shuffle(1, 1, 1, 3),
         shuffle(1, 1, 2, 2),
         shuffle(3, 2, 5, 2),
+        shuffle(14, 14, 1, 2),  # same block the tracked ccnKernel2d.cl carries
         # the real upscaling block: conv to C*r^2 channels, then shuffle
         chain(conv(14, 14, 4, 3, 16, act="relu"),
               shuffle(14, 14, 4, 2)),
