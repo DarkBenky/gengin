@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -8,6 +9,95 @@ from pathlib import Path
 KERNEL_FILE = Path(__file__).resolve().parent / "ccnKernel2d.cl"
 C_HEADER_FILE = Path(__file__).resolve().parent / "kernelGen.h"
 CORE_END_MARKER = "#endif // KERNELGEN_H"
+
+# Preamble written by --fresh: lets a bench generate a complete, self-contained
+# header/kernel pair into scratch paths instead of appending to the tracked ones.
+# Keep in sync with the tracked ccnKernel2d.cl / kernelGen.h preamble.
+SKELETON_CL = """enum ActivationFunction {
+    ReLU,
+    Sigmoid,
+    Tanh,
+    None,
+};
+"""
+
+SKELETON_H = """#ifndef KERNELGEN_H
+#define KERNELGEN_H
+
+#include "../render/gpu/format.h" // CL_Context, CL_Pipeline, CL_Buffer, CL_SetArg*, CL_Dispatch2D
+
+typedef enum { KGEN_RELU = 0, KGEN_SIGMOID = 1, KGEN_TANH = 2, KGEN_NONE = 3 } KGenActivation; // mirrors the enum in ccnKernel2d.cl
+
+typedef struct {
+	CL_Pipeline pip;
+	CL_Buffer weights;    // N*F*F*C floats
+	CL_Buffer inputBuf;   // scratch for the host-array _Run path
+	CL_Buffer outputBuf;
+	float *hostWeights;   // owned CPU copy, kept in sync by SetWeights/Mutate
+	CL_Buffer bias;       // N floats (one per filter)
+	int width;
+	int height;
+	int channels;
+	int filterSize;
+	size_t localX;
+	size_t localY;
+} KGenConvLayer;
+
+typedef struct {
+	CL_Pipeline pip;
+	CL_Buffer inputBuf;
+	CL_Buffer outputBuf;
+	int width;
+	int height;
+	int channels;
+	int poolSize;
+	int outWidth;
+	int outHeight;
+	size_t localX;
+	size_t localY;
+} KGenPoolLayer;
+
+typedef struct {
+	CL_Pipeline pip;
+	CL_Buffer weights;    // OUT*IN floats
+	CL_Buffer bias;       // OUT floats
+	CL_Buffer inputBuf;
+	CL_Buffer outputBuf;
+	float *hostWeights;
+	int inputFloats;
+	int outputFloats;
+	size_t local;
+} KGenDenseLayer;
+
+typedef struct {
+	CL_Pipeline pip;
+	CL_Buffer inputBuf;
+	CL_Buffer outputBuf;
+	int count;
+} KGenSoftmaxLayer;
+
+static inline void KGen_MutateWeights(float *weights, int count, float amount) {
+	for (int i = 0; i < count; i++)
+		weights[i] += amount * (2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f);
+}
+"""
+
+_QUIET = False
+
+
+def announce(message):
+    if not _QUIET:
+        print(message)
+
+
+def writeSkeleton(cl_path, hdr_path):
+    """Write the shared preamble into scratch output paths (see --fresh)."""
+    for path in (cl_path, hdr_path):
+        parent = path.parent
+        if parent and not parent.exists():
+            parent.mkdir(parents=True, exist_ok=True)
+    cl_path.write_text(SKELETON_CL)
+    hdr_path.write_text(SKELETON_H + "\n" + CORE_END_MARKER + "\n")
 
 
 def kernelName(width, height, channels, filterSize, filters=1):
@@ -686,69 +776,107 @@ def interactive():
     return mode, (width, height, channels, promptInt("poolSize"))
 
 
+def applyOutputOverrides(args):
+    """Point KERNEL_FILE / C_HEADER_FILE at the requested scratch paths."""
+    global KERNEL_FILE, C_HEADER_FILE
+    if args.out_cl:
+        KERNEL_FILE = Path(args.out_cl).resolve()
+    if args.out_hdr:
+        C_HEADER_FILE = Path(args.out_hdr).resolve()
+    if args.fresh:
+        writeSkeleton(KERNEL_FILE, C_HEADER_FILE)
+
+
 def emitConv(width, height, channels, filterSize, filters=1):
     name = kernelName(width, height, channels, filterSize, filters)
-    if appendKernel(KERNEL_FILE, name, generateKernel(width, height, channels, filterSize, filters)):
-        print(f"appended {name} to {KERNEL_FILE}")
-    else:
-        print(f"{name} already exists in {KERNEL_FILE}, nothing to do")
+    kernelAdded = appendKernel(KERNEL_FILE, name, generateKernel(width, height, channels, filterSize, filters))
+    announce(f"appended {name} to {KERNEL_FILE}" if kernelAdded
+             else f"{name} already exists in {KERNEL_FILE}, nothing to do")
 
     pref = cFunctionPrefix(width, height, channels, filterSize, filters)
-    if appendC(C_HEADER_FILE, f"{pref}_Init", generateC(width, height, channels, filterSize, filters)):
-        print(f"appended C helpers for {name} to {C_HEADER_FILE}")
-    else:
-        print(f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    cAdded = appendC(C_HEADER_FILE, f"{pref}_Init", generateC(width, height, channels, filterSize, filters))
+    announce(f"appended C helpers for {name} to {C_HEADER_FILE}" if cAdded
+             else f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    return {"kind": "conv", "kernel": name, "kernelAdded": kernelAdded, "cAdded": cAdded,
+            "inFloats": width * height * channels, "outFloats": width * height * filters,
+            "params": {"width": width, "height": height, "channels": channels,
+                       "filterSize": filterSize, "filters": filters}}
 
 
 def emitPool(width, height, channels, poolSize):
     name = poolKernelName(width, height, channels, poolSize)
-    if appendKernel(KERNEL_FILE, name, generateKernelPool(width, height, channels, poolSize)):
-        print(f"appended {name} to {KERNEL_FILE}")
-    else:
-        print(f"{name} already exists in {KERNEL_FILE}, nothing to do")
+    kernelAdded = appendKernel(KERNEL_FILE, name, generateKernelPool(width, height, channels, poolSize))
+    announce(f"appended {name} to {KERNEL_FILE}" if kernelAdded
+             else f"{name} already exists in {KERNEL_FILE}, nothing to do")
 
     pref = poolCPrefix(width, height, channels, poolSize)
-    if appendC(C_HEADER_FILE, f"{pref}_Init", generateCPool(width, height, channels, poolSize)):
-        print(f"appended C helpers for {name} to {C_HEADER_FILE}")
-    else:
-        print(f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    cAdded = appendC(C_HEADER_FILE, f"{pref}_Init", generateCPool(width, height, channels, poolSize))
+    announce(f"appended C helpers for {name} to {C_HEADER_FILE}" if cAdded
+             else f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    return {"kind": "pool", "kernel": name, "kernelAdded": kernelAdded, "cAdded": cAdded,
+            "inFloats": width * height * channels,
+            "outFloats": (width // poolSize) * (height // poolSize) * channels,
+            "params": {"width": width, "height": height, "channels": channels,
+                       "poolSize": poolSize}}
 
 
 def emitDense(inputFloats, outputFloats):
     name = denseKernelName(inputFloats, outputFloats)
-    if appendKernel(KERNEL_FILE, name, generateKernelDense(inputFloats, outputFloats)):
-        print(f"appended {name} to {KERNEL_FILE}")
-    else:
-        print(f"{name} already exists in {KERNEL_FILE}, nothing to do")
+    kernelAdded = appendKernel(KERNEL_FILE, name, generateKernelDense(inputFloats, outputFloats))
+    announce(f"appended {name} to {KERNEL_FILE}" if kernelAdded
+             else f"{name} already exists in {KERNEL_FILE}, nothing to do")
 
     pref = denseCPrefix(inputFloats, outputFloats)
-    if appendC(C_HEADER_FILE, f"{pref}_Init", generateCDense(inputFloats, outputFloats)):
-        print(f"appended C helpers for {name} to {C_HEADER_FILE}")
-    else:
-        print(f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    cAdded = appendC(C_HEADER_FILE, f"{pref}_Init", generateCDense(inputFloats, outputFloats))
+    announce(f"appended C helpers for {name} to {C_HEADER_FILE}" if cAdded
+             else f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    return {"kind": "dense", "kernel": name, "kernelAdded": kernelAdded, "cAdded": cAdded,
+            "inFloats": inputFloats, "outFloats": outputFloats,
+            "params": {"inputFloats": inputFloats, "outputFloats": outputFloats}}
 
 
 def emitSoftmax(count):
     name = softmaxKernelName(count)
-    if appendKernel(KERNEL_FILE, name, generateKernelSoftmax(count)):
-        print(f"appended {name} to {KERNEL_FILE}")
-    else:
-        print(f"{name} already exists in {KERNEL_FILE}, nothing to do")
+    kernelAdded = appendKernel(KERNEL_FILE, name, generateKernelSoftmax(count))
+    announce(f"appended {name} to {KERNEL_FILE}" if kernelAdded
+             else f"{name} already exists in {KERNEL_FILE}, nothing to do")
 
     pref = softmaxCPrefix(count)
-    if appendC(C_HEADER_FILE, f"{pref}_Init", generateCSoftmax(count)):
-        print(f"appended C helpers for {name} to {C_HEADER_FILE}")
-    else:
-        print(f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    cAdded = appendC(C_HEADER_FILE, f"{pref}_Init", generateCSoftmax(count))
+    announce(f"appended C helpers for {name} to {C_HEADER_FILE}" if cAdded
+             else f"C helpers for {name} already exist in {C_HEADER_FILE}, nothing to do")
+    return {"kind": "softmax", "kernel": name, "kernelAdded": kernelAdded, "cAdded": cAdded,
+            "inFloats": count, "outFloats": count, "params": {"count": count}}
+
+
+def addIoArgs(parser):
+    """Scratch-output options shared by every subcommand.
+
+    --out-cl/--out-hdr redirect generation (default: the tracked files next to
+    this script); --fresh rewrites the shared preamble first, so a bench can
+    measure exactly this generator's output instead of a stale tracked file;
+    --print-json replaces the human log with one machine-readable object.
+    """
+    parser.add_argument("--out-cl", metavar="PATH", default=None,
+                        help="write kernels to PATH instead of ./ccnKernel2d.cl")
+    parser.add_argument("--out-hdr", metavar="PATH", default=None,
+                        help="write C helpers to PATH instead of ./kernelGen.h")
+    parser.add_argument("--fresh", action="store_true",
+                        help="rewrite the shared preamble in both outputs first")
+    parser.add_argument("--print-json", action="store_true",
+                        help="print one JSON object instead of the human log")
 
 
 def main():
+    global _QUIET
     argv = sys.argv[1:]
     if argv and argv[0].lstrip("+-").isdigit():
         argv = ["conv"] + argv
 
     if not argv:
         mode, params = interactive()
+        emit = None
+        args = None
     else:
         parser = argparse.ArgumentParser(usage="%(prog)s conv|pool|dense|softmax ...")
         sub = parser.add_subparsers(dest="mode", required=True)
@@ -759,19 +887,23 @@ def main():
         p.add_argument("channels", type=int)
         p.add_argument("filterSize", type=int)
         p.add_argument("filters", type=int, nargs="?", default=1)
+        addIoArgs(p)
 
         p = sub.add_parser("pool", usage="%(prog)s pool width height channels poolSize")
         p.add_argument("width", type=int)
         p.add_argument("height", type=int)
         p.add_argument("channels", type=int)
         p.add_argument("poolSize", type=int)
+        addIoArgs(p)
 
         p = sub.add_parser("dense", usage="%(prog)s dense inputFloats outputFloats")
         p.add_argument("inputFloats", type=int)
         p.add_argument("outputFloats", type=int)
+        addIoArgs(p)
 
         p = sub.add_parser("softmax", usage="%(prog)s softmax count")
         p.add_argument("count", type=int)
+        addIoArgs(p)
 
         args = parser.parse_args(argv)
         if args.mode == "conv":
@@ -784,14 +916,25 @@ def main():
             params = (args.count,)
         mode = args.mode
 
+    if args is not None:
+        _QUIET = bool(args.print_json)
+        applyOutputOverrides(args)
+
     if mode == "conv":
-        emitConv(*params)
+        info = emitConv(*params)
     elif mode == "pool":
-        emitPool(*params)
+        info = emitPool(*params)
     elif mode == "dense":
-        emitDense(*params)
+        info = emitDense(*params)
     else:
-        emitSoftmax(*params)
+        info = emitSoftmax(*params)
+
+    if args is not None and args.print_json:
+        info["mode"] = mode
+        info["cl"] = str(KERNEL_FILE)
+        info["hdr"] = str(C_HEADER_FILE)
+        info["fresh"] = bool(args.fresh)
+        print(json.dumps(info))
 
 
 if __name__ == "__main__":

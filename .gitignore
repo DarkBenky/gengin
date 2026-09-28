@@ -55,6 +55,12 @@ __pycache__/
 *.pyc
 llmOpt/baseline_cache.json
 llmOpt/flight_baseline.json
+llmOpt/ml_baseline.json
+
+# generated kernel bench scratch (written by llmOpt/ml_bench.py)
+machineLearning/.benchGen.h
+machineLearning/.benchGen.cl
+machineLearning/.benchShim.c
 
 # large binary assets
 assets/models/*.bin
