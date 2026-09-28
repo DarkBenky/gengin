@@ -60,6 +60,19 @@ those kernels at the top of the profile: the GPU pass dominates the frame, so
 frame-level CPU wins are small by construction — 1-3% on avg/median with
 `image_mse` 0.00 is a good CPU result and belongs in a PR.
 
+## ALREADY IN FLIGHT (CHECK BEFORE YOU START)
+The session context lists the open pull requests with the files they touch.  A
+file, function or node covered there is NOT a candidate:
+- If your best idea is already covered by an open PR, pick a different row of
+  the `## Node map` instead.
+- If your data shows the best find duplicates an open PR, do NOT open another
+  pull request for it.  Report `no_change` (or `blocked`) and name that PR
+  number and its branch in the summary so the reviewer can see why.
+- Never open a second PR containing a change that is already in an open PR, and
+  never re-create a PR for a branch that already has one.
+- Duplicate PRs are a failure of the session, not a harmless extra: the same
+  AO-blur AVX2 change has been opened three times from three different SHAs.
+
 ## WORKFLOW
 
 ### Phase 1 — Profile & Plan

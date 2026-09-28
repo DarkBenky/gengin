@@ -1429,6 +1429,35 @@ def _githubHeaders():
     }
 
 
+def openPullRequests(limit=10):
+    """Open PRs as {number, title, branch, files}; [] when GitHub is unavailable."""
+    import urllib.request, json as _json
+    try:
+        owner, repo = _githubRepo()
+        url = (f"https://api.github.com/repos/{owner}/{repo}/pulls"
+               f"?state=open&per_page={int(limit)}&sort=updated&direction=desc")
+        req = urllib.request.Request(url, headers=_githubHeaders())
+        with urllib.request.urlopen(req, timeout=30) as r:
+            pulls = _json.loads(r.read())
+    except Exception:
+        return []
+    out = []
+    for pr in pulls if isinstance(pulls, list) else []:
+        files = []
+        try:
+            furl = (f"https://api.github.com/repos/{owner}/{repo}/pulls/"
+                    f"{pr.get('number')}/files?per_page=20")
+            freq = urllib.request.Request(furl, headers=_githubHeaders())
+            with urllib.request.urlopen(freq, timeout=30) as r:
+                files = [f.get("filename", "") for f in _json.loads(r.read())][:20]
+        except Exception:
+            files = []
+        out.append({"number": pr.get("number"), "title": pr.get("title", ""),
+                    "branch": (pr.get("head") or {}).get("ref", ""),
+                    "files": files})
+    return out
+
+
 def _github_find_pr(branch):
     """Return the open PR URL for branch, or None."""
     import urllib.request, json as _json

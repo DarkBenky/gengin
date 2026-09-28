@@ -938,6 +938,24 @@ def check_github_token():
         return ("github_token", True, f"WARN: token check failed: {e}")
 
 
+def _open_pr_block(limit=10):
+    """Open pull requests as query context: what is already in flight."""
+    try:
+        prs = gengin_main.openPullRequests(limit=limit)
+    except Exception:
+        return ""
+    if not prs:
+        return ""
+    lines = ["Open pull requests - these changes are already proposed; do not"
+             " re-implement one of them (see the prompt rules):"]
+    for pr in prs:
+        files = ", ".join(pr.get("files") or []) or "(files unavailable)"
+        lines.append("  #%s %s [%s] files: %s"
+                     % (pr.get("number"), (pr.get("title") or "")[:90],
+                        pr.get("branch") or "?", files[:220]))
+    return "\n".join(lines) + "\n\n"
+
+
 def run_preflight(config, sandbox=None):
     """Run all deterministic preflight checks. Returns (exit_code, results).
 
@@ -1558,6 +1576,7 @@ def run_session(config, state, target_sha):
         f"Target commit: {target_sha}\n"
         f"Deadline UTC: {deadline_at.strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
         f"Sandbox: llmOpt/gengin, already prepared at the target SHA\n\n"
+        + _open_pr_block() +
         "Do not pull or checkout a different base commit. Open at most one focused "
         "pull request. If no safe measurable optimization is found, leave the "
         "sandbox clean, state that conclusion, and exit. Never merge a pull request.\n"
