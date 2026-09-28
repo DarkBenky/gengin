@@ -5,7 +5,7 @@
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
 #   gengin-opt.sh local [model]         local llama.cpp server on :8013
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
-#   gengin-opt.sh ml [model] [$local|openrouter|deepseek]  ML layer objective
+#   gengin-opt.sh ml [local|openrouter|deepseek] [model]  ML layer objective
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report
 #   gengin-opt.sh --dry-run             print the resolved command and exit
@@ -30,7 +30,7 @@ USAGE_FILE_ARG=""
 
 usage() {
   echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
-  echo "       $0 ml [model] [--goal TEXT] [--headless]   ML layer-kernel objective (local GPU)"
+  echo "       $0 ml [local|openrouter|deepseek] [model] [--goal TEXT] [--headless]"
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
 }
 
@@ -39,10 +39,10 @@ while [[ $# -gt 0 ]]; do
     local)
       PRESET=local
       PROVIDER_ARGS=(--provider custom:local); shift ;;
+    # `ml` only selects the ML prompt; the provider comes from the preset words
+    # (in any order) and defaults to the local server when none was given.
     ml)
-      ML_MODE=1
-      PRESET=local
-      PROVIDER_ARGS=(--provider custom:local); shift ;;
+      ML_MODE=1; shift ;;
     openrouter|or)
       PRESET=openrouter
       PROVIDER_ARGS=(--provider openrouter); shift ;;
@@ -78,6 +78,10 @@ done
 
 # `--provider` is not accepted without `--model`; fall back to defaults
 # per preset (override with GENGIN_<PRESET>_MODEL or a bare model argument).
+if [[ "$ML_MODE" == "1" && ${#PROVIDER_ARGS[@]} -eq 0 ]]; then
+  PRESET=local
+  PROVIDER_ARGS=(--provider custom:local)
+fi
 if [[ -n "$PRESET" && ${#MODEL_ARGS[@]} -eq 0 ]]; then
   case "$PRESET" in
     local)      MODEL_ARGS=(-m "${GENGIN_LOCAL_MODEL:-Qwen3.8-27B}") ;;
@@ -166,7 +170,8 @@ if [[ "$ML_MODE" == "1" ]]; then
   if ! nvidia-smi -L >/dev/null 2>&1; then
     echo "[ml] warning: no NVIDIA GPU detected - the layer bench needs a working OpenCL device" >&2
   fi
-  echo "[ml] objective: machineLearning/generateKernel.py layer kernels (local GPU, suites smoke/core/edges)"
+  echo "[ml] objective: machineLearning/generateKernel.py layer kernels (suites smoke/core/edges/upscale)"
+  echo "[ml] provider: ${PRESET:-default} model: ${MODEL_ARGS[1]:-default}"
 fi
 
 if [[ ! -d "$HERMES_DIR" ]]; then

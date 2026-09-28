@@ -33,18 +33,25 @@ in-session with `/model custom:local:Qwen3.8-27B`.  The `ml` mode loads
 Optimizes the OpenCL kernels that `machineLearning/generateKernel.py` emits for
 the CNN layers.  Desktop-only: it needs an OpenCL GPU, so the VM never runs it.
 
-    llmOpt/scripts/gengin-opt.sh ml
-    llmOpt/scripts/gengin-opt.sh ml Qwen3.8-27B --goal "speed up the conv interior path"
-    llmOpt/scripts/gengin-opt.sh ml --headless
+    llmOpt/scripts/gengin-opt.sh ml                             # local server (ml default)
+    llmOpt/scripts/gengin-opt.sh ml local Qwen3.8-27B --goal "speed up the conv interior path"
+    llmOpt/scripts/gengin-opt.sh ml deepseek                    # direct DeepSeek API
+    llmOpt/scripts/gengin-opt.sh ml openrouter deepseek/deepseek-v4-pro
+    llmOpt/scripts/gengin-opt.sh ml --headless                  # unattended oneshot
+
+`ml` only swaps the session prompt for `prompts/optimize-ml.md`; the provider
+words work in any order (`deepseek ml` as well) and default to the local server
+when none is given.
 
 Two things a local `ml` run needs: a local model with at least a **64K context
-window** (Hermes refuses less - this machine's router serves the 7B at 32K by
-default, and the first request through it wakes the 27B profile at 262K), and a
-**sandbox at a commit that contains `machineLearning/bench/`** - refresh it first
-with the `git_pull_project` tool (or `main.git_pull_project(<origin-url>, "main",
-<sha>)`); a stale sandbox makes the ML tools answer
-`predates the layer bench`.  Baselines are shared with the repo checkout, so a
-session compares against the timings you pinned here.
+window** (Hermes refuses less - this machine's router serves the 7B at 32K and
+restores that fast profile once the 27B has idle-slept for 5 minutes; one request
+through `127.0.0.1:8013` wakes the 27B at 262K), and a **sandbox at a commit that
+contains `machineLearning/bench/`** - refresh it first with the `git_pull_project`
+tool (or `main.git_pull_project(<origin-url>, "main", <sha>)`); a stale sandbox
+makes the ML tools answer `predates the layer bench`.  Baselines are shared with
+the repo checkout, so a session compares against the timings you pinned here.
+`ml deepseek` needs neither and leaves the GPU to the kernel bench.
 
 The session measures first, edits ONLY `machineLearning/generateKernel.py`, and
 re-measures before it opens one PR:
