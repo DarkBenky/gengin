@@ -197,6 +197,14 @@ if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
   fi
 fi
 
+# create_pr runs inside the MCP server, which inherits this environment.
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  GITHUB_VALUE="$(grep -E '^GITHUB_TOKEN=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  if [[ -n "$GITHUB_VALUE" ]]; then
+    export GITHUB_TOKEN="$GITHUB_VALUE"
+  fi
+fi
+
 mkdir -p "$HERMES_DIR/cache"
 QUERY_FILE="$HERMES_DIR/cache/query-$(date +%s).md"
 {

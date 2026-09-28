@@ -37,6 +37,15 @@ the CNN layers.  Desktop-only: it needs an OpenCL GPU, so the VM never runs it.
     llmOpt/scripts/gengin-opt.sh ml Qwen3.8-27B --goal "speed up the conv interior path"
     llmOpt/scripts/gengin-opt.sh ml --headless
 
+Two things a local `ml` run needs: a local model with at least a **64K context
+window** (Hermes refuses less - this machine's router serves the 7B at 32K by
+default, and the first request through it wakes the 27B profile at 262K), and a
+**sandbox at a commit that contains `machineLearning/bench/`** - refresh it first
+with the `git_pull_project` tool (or `main.git_pull_project(<origin-url>, "main",
+<sha>)`); a stale sandbox makes the ML tools answer
+`predates the layer bench`.  Baselines are shared with the repo checkout, so a
+session compares against the timings you pinned here.
+
 The session measures first, edits ONLY `machineLearning/generateKernel.py`, and
 re-measures before it opens one PR:
 
