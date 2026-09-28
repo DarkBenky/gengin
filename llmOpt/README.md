@@ -55,7 +55,7 @@ speed.  A wrong kernel is a hard failure, never a fast one.
 | `ml_parity()` | the `edges` suite - awkward shapes in one call |
 
 Suites: `smoke` (4), `core` (24), `stress` (9), `edges` (10), `chain` (3),
-`upscale` (12), `all` (62).  Verdicts: `baseline_captured`, `no_baseline`,
+`upscale` (13), `all` (58, merged without duplicates).  Verdicts: `baseline_captured`, `no_baseline`,
 `correctness_failure`, `improved`, `regressed`, `same` - speed only counts as
 better or worse when a config clears its own noise band.
 

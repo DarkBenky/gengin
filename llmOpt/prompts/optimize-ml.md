@@ -31,7 +31,8 @@ Editing any of those invalidates the math and the verdict of every session.
 - `ml_bench(suite, reps, configs, kind, capture_baseline)` — the main loop.
   Suites: `smoke` (4 cheap configs, seconds), `core` (24, the default),
   `stress` (9 large shapes), `edges` (10 awkward shapes), `chain` (3
-  multi-layer graphs), `all` (50).  Every run regenerates the kernels, compiles
+  multi-layer graphs), `upscale` (13, pixel shuffle layers and conv->shuffle
+  blocks), `all` (58, every suite merged without duplicates).  Every run regenerates the kernels, compiles
   them, times each config and checks it against `reference.bin`.
   The `summary` field always starts with the correctness block: read it first.
 - `ml_trace(config, reps)` — one config with 50 reps, full row (init ms,

@@ -324,7 +324,8 @@ def ml_bench(generator: str = "", suite: str = "core", configs: str = "",
     """Run the generated-layer benchmark (machineLearning/generateKernel.py vs a
     seeded PyTorch reference).  Suites: smoke (4 cheap configs), core (24,
     default), stress (9 large shapes), edges (10 awkward ones), chain (3
-    multi-layer graphs), all (50).  Every config is compared against
+    multi-layer graphs), upscale (13, pixel shuffle and conv->shuffle blocks),
+    all (58, no duplicates).  Every config is compared against
     reference.bin before speed is reported; any deviation makes the verdict
     correctness_failure, so fix the math first.  Speed is compared with the
     pinned baseline for this suite and GPU: verdict is baseline_captured when

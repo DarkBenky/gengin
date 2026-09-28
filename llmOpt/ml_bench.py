@@ -375,8 +375,20 @@ SUITES = {
               conv(84, 84, 1, 5, 4, act="relu")),
     ],
 }
-SUITES["all"] = (SUITES["core"] + SUITES["stress"] + SUITES["edges"] + SUITES["chain"] +
-                 SUITES["upscale"])
+def _merge(*suite_names):
+    """Concatenate suites, keeping the first config for each id."""
+    merged, seen = [], set()
+    for name in suite_names:
+        for spec in SUITES[name]:
+            cid = config_id(spec)
+            if cid in seen:
+                continue
+            seen.add(cid)
+            merged.append(spec)
+    return merged
+
+
+SUITES["all"] = _merge("core", "stress", "edges", "chain", "upscale")
 
 
 def select_configs(suite="core", configs=None, kind=None):
@@ -405,6 +417,10 @@ def select_configs(suite="core", configs=None, kind=None):
                   if (spec["kind"] == kind or
                       (spec["kind"] == "chain" and any(l["kind"] == kind
                                                        for l in spec["layers"])))]
+        if not chosen:
+            raise ValueError("no %s configs in suite %s (suites carry only their own "
+                             "layers - try --suite all or --suite upscale)"
+                             % (kind, suite))
     resolved = []
     for index, (cid, spec) in enumerate(chosen):
         item = dict(spec)
@@ -924,7 +940,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--suite", default="core",
-                        help="smoke|core|stress|edges|chain|all (default core)")
+                        help="smoke|core|stress|edges|chain|upscale|all (default core)")
     parser.add_argument("--configs", default="", help="comma separated config ids")
     parser.add_argument("--kind", default="", help="filter by layer kind")
     parser.add_argument("--generator", default=GENERATOR_DEFAULT)
