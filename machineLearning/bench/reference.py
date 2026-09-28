@@ -51,6 +51,16 @@ def pool_forward(x, params):
     return y.squeeze(0).permute(1, 2, 0)
 
 
+def pixel_shuffle_forward(x, params):
+    """torch.nn.PixelShuffle(r) on a channels-last tensor: [H,W,C*r^2] -> [H*r,W*r,C]."""
+    r = params["upscale"]
+    c = params["channels"]
+    x_t = (x.view(params["height"], params["width"], c * r * r)
+           .permute(2, 0, 1).unsqueeze(0).contiguous())
+    y = F.pixel_shuffle(x_t, r)
+    return y.squeeze(0).permute(1, 2, 0).reshape(-1)
+
+
 def dense_forward(x, w, b, act):
     return activation(w @ x + b, act)
 
@@ -74,6 +84,8 @@ def run_layer(layer, x, weights, bias):
         return dense_forward(x, weights, bias, act)
     if kind == "softmax":
         return softmax_forward(x)
+    if kind == "shuffle":
+        return pixel_shuffle_forward(x, params)
     raise ValueError(f"unknown layer kind {kind!r}")
 
 
@@ -90,6 +102,9 @@ def make_input(kind, params, gen):
         count = params["inputFloats"]
     elif kind == "softmax":
         count = params["count"]
+    elif kind == "shuffle":
+        count = (params["width"] * params["height"] * params["channels"] *
+                 params["upscale"] ** 2)
     else:
         count = params["width"] * params["height"] * params["channels"]
     return torch.randn(count, generator=gen, dtype=torch.float32) * scale

@@ -119,6 +119,15 @@ def softmax(count, seed=None, absTol=None, relTol=None, inputScale=None):
             "accumulate": 0, "seed": seed, "absTol": absTol, "relTol": relTol}
 
 
+def shuffle(width, height, channels, upscale=2, seed=None, absTol=None, relTol=None):
+    """torch.nn.PixelShuffle(upscale): (H,W,C*r^2) -> (H*r,W*r,C), channels-last."""
+    return {"kind": "shuffle",
+            "params": {"width": width, "height": height, "channels": channels,
+                       "upscale": upscale},
+            "activation": ACTIVATIONS["none"], "accumulate": 0, "seed": seed,
+            "absTol": absTol, "relTol": relTol}
+
+
 def chain(*layers, seed=None, acc=0):
     return {"kind": "chain", "layers": list(layers), "accumulate": acc, "seed": seed}
 
@@ -136,6 +145,9 @@ def config_id(spec):
         parts = ["i%d" % params["inputFloats"], "o%d" % params["outputFloats"]]
     elif kind == "softmax":
         parts = ["n%d" % params["count"]]
+    elif kind == "shuffle":
+        parts = ["w%d" % params["width"], "h%d" % params["height"],
+                 "c%d" % params["channels"], "r%d" % params["upscale"]]
     else:
         parts = ["-".join(_layer_tag(layer) for layer in spec.get("layers") or [])]
     act = spec.get("activation", 0)
@@ -160,6 +172,9 @@ def _layer_tag(layer):
                                  params["poolSize"])
     if kind == "dense":
         return "d%d>%d" % (params["inputFloats"], params["outputFloats"])
+    if kind == "shuffle":
+        return "ps%dx%dx%dr%d" % (params["width"], params["height"],
+                                  params["channels"], params["upscale"])
     return "s%d" % params["count"]
 
 
@@ -176,6 +191,9 @@ def layer_output_floats(spec):
         return params["outputFloats"]
     if kind == "softmax":
         return params["count"]
+    if kind == "shuffle":
+        return ((params["width"] * params["upscale"]) * (params["height"] * params["upscale"]) *
+                params["channels"])
     raise ValueError("no output size for kind %r" % kind)
 
 
@@ -186,6 +204,9 @@ def layer_input_floats(spec):
         return params["inputFloats"]
     if kind == "softmax":
         return params["count"]
+    if kind == "shuffle":
+        r = params["upscale"]
+        return params["width"] * params["height"] * params["channels"] * r * r
     return params["width"] * params["height"] * params["channels"]
 
 
@@ -239,6 +260,12 @@ def config_work(spec):
         i, o = params["inputFloats"], params["outputFloats"]
         flops = 2.0 * i * o
         bytes_ = 4.0 * (i + o * i + o + o)
+    elif kind == "shuffle":
+        w, h, c, r = (params["width"], params["height"], params["channels"],
+                      params["upscale"])
+        out = (w * r) * (h * r) * c
+        flops = float(out)  # one store per output element: pure data movement
+        bytes_ = 4.0 * (w * h * c * r * r + out)
     else:
         n = params["count"]
         flops = 4.0 * n
@@ -325,8 +352,30 @@ SUITES = {
               dense(128, 10, act="none"),
               softmax(10)),
     ],
+    "upscale": [
+        # torch.nn.PixelShuffle: (H,W,C*r^2) -> (H*r,W*r,C), channels-last
+        shuffle(14, 14, 4, 2),
+        shuffle(28, 28, 1, 2),
+        shuffle(32, 32, 16, 2),
+        shuffle(10, 10, 3, 3),
+        shuffle(7, 7, 1, 4),
+        shuffle(16, 16, 8, 1),
+        shuffle(1, 1, 1, 3),
+        shuffle(1, 1, 2, 2),
+        shuffle(3, 2, 5, 2),
+        # the real upscaling block: conv to C*r^2 channels, then shuffle
+        chain(conv(14, 14, 4, 3, 16, act="relu"),
+              shuffle(14, 14, 4, 2)),
+        chain(conv(14, 14, 8, 3, 8, act="relu"),
+              shuffle(14, 14, 2, 2),
+              conv(28, 28, 2, 3, 1, act="none")),
+        chain(conv(28, 28, 1, 3, 9, act="relu"),
+              shuffle(28, 28, 1, 3),
+              conv(84, 84, 1, 5, 4, act="relu")),
+    ],
 }
-SUITES["all"] = SUITES["core"] + SUITES["stress"] + SUITES["edges"] + SUITES["chain"]
+SUITES["all"] = (SUITES["core"] + SUITES["stress"] + SUITES["edges"] + SUITES["chain"] +
+                 SUITES["upscale"])
 
 
 def select_configs(suite="core", configs=None, kind=None):
@@ -391,6 +440,10 @@ def _helper_names(spec):
         tag = "I%d_O%d" % (params["inputFloats"], params["outputFloats"])
         return ("KGenDense_i%d_o%d" % (params["inputFloats"], params["outputFloats"]),
                 "KGENDENSE_%s_WEIGHT_FLOATS" % tag, "KGENDENSE_%s_BIAS_FLOATS" % tag)
+    if kind == "shuffle":
+        return ("KGenPixelShuffle_w%d_h%d_c%d_r%d" % (params["width"], params["height"],
+                                                       params["channels"], params["upscale"]),
+                None, None)
     tag = "N%d" % params["count"]
     return "KGenSoftmax_n%d" % params["count"], None, None
 
@@ -406,6 +459,9 @@ def _generator_args(spec):
                 str(params["channels"]), str(params["poolSize"])]
     elif kind == "dense":
         args = ["dense", str(params["inputFloats"]), str(params["outputFloats"])]
+    elif kind == "shuffle":
+        args = ["pixelshuffle", str(params["width"]), str(params["height"]),
+                str(params["channels"]), str(params["upscale"])]
     else:
         args = ["softmax", str(params["count"])]
     return args
@@ -448,7 +504,8 @@ def write_shim(configs):
         for li, layer in enumerate(layers):
             prefix, weight_macro, bias_macro = _helper_names(layer)
             struct = {"conv": "KGenConvLayer", "pool": "KGenPoolLayer",
-                      "dense": "KGenDenseLayer", "softmax": "KGenSoftmaxLayer"}[layer["kind"]]
+                      "dense": "KGenDenseLayer", "softmax": "KGenSoftmaxLayer",
+                      "shuffle": "KGenPixelShuffleLayer"}[layer["kind"]]
             var = "s%d_%d" % (index, li)
             lines.append("static %s %s;" % (struct, var))
             states.append((layer, prefix, weight_macro, bias_macro, var))
@@ -672,7 +729,7 @@ def save_baseline(suite_key, generator, doc):
 
 
 def _family(kind):
-    return kind if kind in ("conv", "pool", "dense", "softmax", "chain") else "other"
+    return kind if kind in ("conv", "pool", "dense", "softmax", "shuffle", "chain") else "other"
 
 
 # ---------------------------------------------------------------------------

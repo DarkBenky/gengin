@@ -446,8 +446,18 @@ static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg
 	if (getenv("ML_DEBUG") != NULL) {
 		fprintf(stderr, "    %s got[0..3] = %.4f %.4f %.4f %.4f\n", cfg->id,
 		        got[0], got[1], got[2], got[3]);
-	}
-	float *want = (float *)mlAlloc((size_t)entry->outFloats * sizeof(float));
+	}	// ML_DEBUG_DUMP=<dir>: raw output of every config to <dir>/<id>.bin, so a
+	// caller can check an exact expected result instead of only a diff.
+	const char *dumpDir = getenv("ML_DEBUG_DUMP");
+	if (dumpDir != NULL && dumpDir[0] != '\0') {
+		char dumpPath[ML_MAX_PATH];
+		snprintf(dumpPath, sizeof(dumpPath), "%s/%s.bin", dumpDir, cfg->id);
+		FILE *dump = fopen(dumpPath, "wb");
+		if (dump != NULL) {
+			fwrite(got, sizeof(float), (size_t)entry->outFloats, dump);
+			fclose(dump);
+		}
+	}	float *want = (float *)mlAlloc((size_t)entry->outFloats * sizeof(float));
 	snprintf(path, sizeof(path), "%s/ref.bin", cfg->dataDir);
 	if (!mlReadFloats(path, want, entry->outFloats)) {
 		snprintf(res->error, sizeof(res->error), "missing reference %s", path);
