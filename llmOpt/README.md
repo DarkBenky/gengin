@@ -302,6 +302,34 @@ It rewrites the line (timestamped backup) and restarts `gengin-llmopt.service`
 when it runs — that terminates an in-flight session; with the tmux console,
 restart the pane instead.
 
+### Updating the VM checkout
+
+The supervisor runs from the checkout, so new code and prompts need a pull plus a
+restart.  Sessions append insights to `llmOpt/codebase_context.md` and it is never
+committed, so that file is usually dirty and will block the merge — park it first:
+
+```bash
+cd <checkout>
+cp llmOpt/codebase_context.md /tmp/codebase_context.vm-$(date +%F).md   # keep the insights
+git checkout -- llmOpt/codebase_context.md                             # or: git stash push -m vm -- llmOpt/codebase_context.md
+git pull
+git log --oneline -1                                                   # expect the newest commit
+diff <(git show HEAD:llmOpt/codebase_context.md) /tmp/codebase_context.vm-*.md | head -60
+```
+
+The diff shows what the VM knew that upstream does not; paste those rows back into
+`llmOpt/codebase_context.md` if they are worth keeping.  Then restart the process
+that runs the supervisor:
+
+```bash
+sudo systemctl restart gengin-llmopt        # systemd mode
+# tmux mode: Ctrl-C in the console pane, then <checkout>/llmOpt/scripts/supervisor-console.sh
+python3 llmOpt/supervisor.py --status       # sanity check
+```
+
+The MCP server is spawned per session, so it picks up changes automatically, and
+`prompts/*.md` is read per session too — the restart is for `supervisor.py` itself.
+
 ### Operation
 
 ```bash
