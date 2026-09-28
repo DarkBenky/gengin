@@ -273,6 +273,13 @@ def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=N
         except Exception as exc:  # non-fatal: clangd degrades, build does not
             print(f"[gen_compile_commands] {exc}", file=sys.stderr)
 
+        # codebase_context.md is a local knowledge base (gitignored, one copy per
+        # checkout), so hand the checkout's copy to every prepared sandbox.
+        context = os.path.join(_llmopt_dir(), "codebase_context.md")
+        target = os.path.join(sandbox, "llmOpt", "codebase_context.md")
+        if os.path.exists(context) and os.path.isdir(os.path.dirname(target)):
+            shutil.copy2(context, target)
+
         return {"targetSha": target_sha, "descendantOfBranch": descendant}
     except BaseException:
         shutil.rmtree(prepare, ignore_errors=True)

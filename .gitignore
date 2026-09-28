@@ -90,3 +90,6 @@ simulation/cSim/*.html
 simulation/cSim/flightControlLogs.csv
 simulation/cSim/flightDashboard.html
 simulation/cSim/flightPath3d.html
+
+# Local knowledge base: one per checkout, never shared through git.
+llmOpt/codebase_context.md
