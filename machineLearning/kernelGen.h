@@ -53,6 +53,26 @@ typedef struct {
 	int count;
 } KGenSoftmaxLayer;
 
+// PixelShuffle has its own block (see generateCPixelShuffle): it is emitted with
+// the kernels so the same text can be appended to an existing header, guarded so
+// the struct is defined exactly once either way.
+#ifndef KGEN_PIXELSHUFFLE_LAYER_DEFINED
+#define KGEN_PIXELSHUFFLE_LAYER_DEFINED
+typedef struct {
+	CL_Pipeline pip;
+	CL_Buffer inputBuf;
+	CL_Buffer outputBuf;
+	int width;        // input width (output width = width * upscale)
+	int height;       // input height (output height = height * upscale)
+	int channels;     // output channels (input channels = channels * upscale^2)
+	int upscale;
+	int outWidth;
+	int outHeight;
+	size_t localX;
+	size_t localY;
+} KGenPixelShuffleLayer;
+#endif
+
 static inline void KGen_MutateWeights(float *weights, int count, float amount) {
 	for (int i = 0; i < count; i++)
 		weights[i] += amount * (2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f);
@@ -1375,7 +1395,7 @@ static inline void KGen_w28_h28_c1_f3_n16_Forward(CL_Context *ctx, KGenConvLayer
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 32, 32, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 112, 32, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -1442,7 +1462,7 @@ static inline void KGenPool_w28_h28_c16_p2_Forward(CL_Context *ctx, KGenPoolLaye
 	}
 	CL_SetArgBuffer(&layer->pip, 0, input);
 	CL_SetArgBuffer(&layer->pip, 1, output);
-	CL_Dispatch2D(ctx, &layer->pip, 16, 16, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 64, 16, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -1534,7 +1554,7 @@ static inline void KGen_w14_h14_c16_f3_n32_Forward(CL_Context *ctx, KGenConvLaye
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 16, 16, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 112, 16, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -1601,7 +1621,7 @@ static inline void KGenPool_w14_h14_c32_p2_Forward(CL_Context *ctx, KGenPoolLaye
 	}
 	CL_SetArgBuffer(&layer->pip, 0, input);
 	CL_SetArgBuffer(&layer->pip, 1, output);
-	CL_Dispatch2D(ctx, &layer->pip, 16, 16, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 64, 16, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
