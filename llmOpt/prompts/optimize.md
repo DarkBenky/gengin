@@ -9,6 +9,14 @@ prove your optimization in the `bench/` micro-benchmark sandbox first — like
 benchmarked and validated against the original.  Only a proven, measurable
 speedup may be applied to the real code.
 
+## CODE STYLE — MATCH THE FILE, COMMENTS ONLY WHEN NECESSARY
+- The diff must read like it was written by the same author as the surrounding
+  code: same naming, indentation and idioms.  No reformatting of untouched
+  lines, no drive-by whitespace edits.
+- Comments only when really necessary, and then only to explain WHY — never to
+  restate WHAT the code does.  No banner dividers, no commented-out code, no
+  debug leftovers.  When in doubt, delete the comment.
+
 ## SCOPE — CPU C CODE, NOT OpenCL
 Work the CPU C pipeline: `render/cpu/`, `object/`, `math/`, `util/`,
 `particleRendering/`, `skybox/`.  That is where a micro-benchmark can prove a
@@ -192,23 +200,31 @@ END of the session.
     measured numbers, why it is safe, what failed and why.  Update the node map
     too: the row you shipped becomes `shipped(PR #n)`, the ones you refuted
     become `tried-failed(<numbers>, <date>)`.
-18. `create_pr(title, body, imageOutputChange)` — one logical improvement per
+18. Review the whole diff (`git -C gengin diff`) — the last step before the
+    PR, and the last step of every session, even one that ends in `no_change`:
+    - remove comments that are not really necessary, commented-out code and
+      debug leftovers; what stays must explain WHY, not WHAT — the diff has to
+      read like it was written by the same hand as the surrounding code
+      (style, naming, formatting, no reformatting of untouched lines);
+    - every hunk must belong to the change you measured — revert experiment
+      scaffolding and stray files before it ships.
+19. `create_pr(title, body, imageOutputChange)` — one logical improvement per
     PR; `imageOutputChange` is REQUIRED — pass `false` for exact-match
     optimizations, `true` only for a deliberate visual change (see ALGORITHM
     VARIATION below; also pass `compareImagePaths=[...]` from
     `compare_bench_frames`).  The body states the measured speedup and the
-    risk analysis.  Review the diff first.
+    risk analysis.
     The branch name is derived automatically; do NOT pass one.  In a manual
     (unsupervised) session where the tool asks for one, pass
     `branch="llmopt/<8-hex-sha>/<topic>"` (from `git rev-parse HEAD`).
     If it fails on credentials (401/403), report `blocked` and STOP — never
     hunt for tokens or use browser/GitHub-UI workarounds.
     Never merge.  Never force-push or rewrite branches.
-19. `report_session_result(status, summary, pr_url)` — call EXACTLY ONCE before
+20. `report_session_result(status, summary, pr_url)` — call EXACTLY ONCE before
     exit.  status: `pr_created` (with pr_url), `no_change` (no safe measurable
     optimization found; leave the sandbox clean), `blocked` (environment
     problem), or `failed`.  The supervisor uses this artifact as the outcome.
-20. Move to the next hotspot and repeat the cycle.  The session ends when a PR
+21. Move to the next hotspot and repeat the cycle.  The session ends when a PR
     is opened, or when the SESSION EFFORT BUDGET conditions are met and no
     safe candidate survives — then report `no_change`.
 
@@ -350,6 +366,9 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     numbers — it changes the suite hash and invalidates the baseline instead of
     showing a win.  The bench measures the controller; changing the test is not
     an optimization.  Same for the hit radius and the loss used by the bench.
+16. NEVER leave unnecessary comments in the diff — comments only when really
+    necessary, and then only WHY.  No commented-out code, no reformatting of
+    untouched lines: the change must read like the surrounding codebase.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

@@ -20,6 +20,14 @@ executed, and compared against a seeded PyTorch reference.  A change that is
 fast but wrong is a hard failure, and a change that only helps one shape while
 breaking `ml_parity` does not ship.
 
+## CODE STYLE — MATCH THE FILE, COMMENTS ONLY WHEN NECESSARY
+- The diff must read like it was written by the same author as the surrounding
+  code: same naming, indentation and idioms.  No reformatting of untouched
+  lines, no drive-by whitespace edits.
+- Comments only when really necessary, and then only to explain WHY — never to
+  restate WHAT the code does.  No banner dividers, no commented-out code, no
+  debug leftovers.  When in doubt, delete the comment.
+
 ## SCOPE — THE LAYER GENERATOR, NOT THE RENDERER
 In scope: `gengin/machineLearning/generateKernel.py` and, when a call-site
 change is genuinely required, the C callers it feeds
@@ -143,7 +151,14 @@ Do not re-derive what a previous session already recorded in
    `python3 gengin/machineLearning/generateKernel.py` (default args write
    `gengin/machineLearning/ccnKernel2d.cl` and `gengin/machineLearning/kernelGen.h`),
    then `make -C gengin` must still compile.
-10. `create_pr` with the "after" summaries in the body, both before/after
+10. Review the whole diff (`git -C gengin diff`) — the last step before the
+    PR, and the last step of every session, even one that ends in `no_change`:
+    - remove comments that are not really necessary, commented-out code and
+      debug leftovers; what stays must explain WHY, not WHAT;
+    - the change must read like the surrounding codebase — style, naming,
+      formatting — and every hunk must belong to the change you measured;
+    - revert experiment scaffolding before it ships.
+11. `create_pr` with the "after" summaries in the body, both before/after
     numbers for the families you moved, the suite you measured, and the device.
     Branch names must match the tool's convention
     (`llmopt/<7-40 hex sha>/<topic>`, e.g. `llmopt/<target-sha>/conv-interior`);
