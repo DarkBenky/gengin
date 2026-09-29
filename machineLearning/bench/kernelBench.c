@@ -303,6 +303,10 @@ typedef struct {
 	double medianMs;
 	double p10Ms;
 	double p90Ms;
+	double p99Ms;
+	double minMs;
+	double meanMs;
+	double maxMs;
 	double gflops;
 	double gbps;
 	double maxAbs;
@@ -324,6 +328,7 @@ static int mlIndexForId(const char *id) {
 
 static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg,
                         int warmup, int defaultReps, MlResult *res) {
+	memset(res, 0, sizeof(*res));
 	res->id = cfg->id;
 	res->shape = cfg->shape;
 	res->kind = cfg->kind;
@@ -412,6 +417,14 @@ static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg
 	res->medianMs = times[reps / 2];
 	res->p10Ms = times[reps / 10];
 	res->p90Ms = times[(reps * 9) / 10];
+	res->p99Ms = times[(reps * 99) / 100];
+	res->minMs = times[0];
+	res->maxMs = times[reps - 1];
+	double sumMs = 0.0;
+	for (int i = 0; i < reps; i++) {
+		sumMs += times[i];
+	}
+	res->meanMs = sumMs / (double)reps;
 	res->timed = reps;
 	res->innerReps = inner;
 	if (res->medianMs > 0.0) {
@@ -589,11 +602,13 @@ int main(int argc, char **argv) {
 		}
 		printf("    {\"id\": \"%s\", \"kind\": \"%s\", \"shape\": \"%s\", \"ok\": %s, "
 		       "\"error\": \"%s\", \"initMs\": %.3f, \"medianMs\": %.6f, \"p10Ms\": %.6f, "
-		       "\"p90Ms\": %.6f, \"gflops\": %.4f, \"gbps\": %.4f, \"maxAbs\": %.3e, "
+		       "\"p90Ms\": %.6f, \"p99Ms\": %.6f, \"minMs\": %.6f, \"meanMs\": %.6f, "
+		       "\"maxMs\": %.6f, \"gflops\": %.4f, \"gbps\": %.4f, \"maxAbs\": %.3e, "
 		       "\"maxRel\": %.3e, \"firstBad\": %d, \"outFloats\": %d, "
 		       "\"innerReps\": %d}%s\n",
 		       r->id, r->kind, r->shape, r->ok ? "true" : "false", r->error,
-		       r->initMs, r->medianMs, r->p10Ms, r->p90Ms, r->gflops, r->gbps,
+		       r->initMs, r->medianMs, r->p10Ms, r->p90Ms, r->p99Ms, r->minMs,
+		       r->meanMs, r->maxMs, r->gflops, r->gbps,
 		       r->maxAbs, r->maxRel, r->firstBad, r->outFloats, r->innerReps,
 		       (i + 1 < configCount) ? "," : "");
 	}
