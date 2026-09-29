@@ -19,12 +19,12 @@ BLOCKS = 8
 SCALE = 4
 HR_SIZE = 256
 SHOW_IMAGES = False
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 0.5e-4 # model is already trained on some samples so lr is lowered
 EPOCHS = 100
 DEVICE = 0
 PERC_WEIGHT = 0.175
 GRAM_WEIGHT = 0.0125
-LOAD_PATH = ""
+LOAD_PATH = f"sr_perc_{HR_SIZE // SCALE}-to-{HR_SIZE}.pt"
 SAVE_PATH = f"sr_perc_{HR_SIZE // SCALE}-to-{HR_SIZE}.pt"
 
 def isValidImage(path, minSize):
