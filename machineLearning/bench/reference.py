@@ -61,6 +61,16 @@ def pixel_shuffle_forward(x, params):
     return y.squeeze(0).permute(1, 2, 0).reshape(-1)
 
 
+def bilinear_forward(x, params):
+    """F.interpolate(mode="bilinear", align_corners=false): [H,W,C] -> [H*r,W*r,C]."""
+    r = params["upscale"]
+    c = params["channels"]
+    x_t = (x.view(params["height"], params["width"], c)
+           .permute(2, 0, 1).unsqueeze(0).contiguous())
+    y = F.interpolate(x_t, scale_factor=r, mode="bilinear")
+    return y.squeeze(0).permute(1, 2, 0).reshape(-1)
+
+
 def dense_forward(x, w, b, act):
     return activation(w @ x + b, act)
 
@@ -86,6 +96,8 @@ def run_layer(layer, x, weights, bias):
         return softmax_forward(x)
     if kind == "shuffle":
         return pixel_shuffle_forward(x, params)
+    if kind == "bilinear":
+        return bilinear_forward(x, params)
     raise ValueError(f"unknown layer kind {kind!r}")
 
 

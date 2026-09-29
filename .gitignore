@@ -96,3 +96,7 @@ llmOpt/codebase_context.md
 
 machineLearning/upscale/wandb
 machineLearning/upscale/*.pt
+
+# generated weight exports (100s of MB; regenerate with torchToJson.py on the checkpoint)
+machineLearning/sr_weights.json
+machineLearning/weights.json

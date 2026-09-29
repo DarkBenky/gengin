@@ -128,6 +128,16 @@ def shuffle(width, height, channels, upscale=2, seed=None, absTol=None, relTol=N
             "absTol": absTol, "relTol": relTol}
 
 
+def bilinear(width, height, channels, upscale=2, acc=0, seed=None, absTol=None,
+             relTol=None):
+    """Bilinear upscale, align_corners=false: (H,W,C) -> (H*r,W*r,C), channels-last."""
+    return {"kind": "bilinear",
+            "params": {"width": width, "height": height, "channels": channels,
+                       "upscale": upscale},
+            "activation": ACTIVATIONS["none"], "accumulate": acc, "seed": seed,
+            "absTol": absTol, "relTol": relTol}
+
+
 def chain(*layers, seed=None, acc=0):
     return {"kind": "chain", "layers": list(layers), "accumulate": acc, "seed": seed}
 
@@ -145,7 +155,7 @@ def config_id(spec):
         parts = ["i%d" % params["inputFloats"], "o%d" % params["outputFloats"]]
     elif kind == "softmax":
         parts = ["n%d" % params["count"]]
-    elif kind == "shuffle":
+    elif kind in ("shuffle", "bilinear"):
         parts = ["w%d" % params["width"], "h%d" % params["height"],
                  "c%d" % params["channels"], "r%d" % params["upscale"]]
     else:
@@ -175,6 +185,9 @@ def _layer_tag(layer):
     if kind == "shuffle":
         return "ps%dx%dx%dr%d" % (params["width"], params["height"],
                                   params["channels"], params["upscale"])
+    if kind == "bilinear":
+        return "bl%dx%dx%dr%d" % (params["width"], params["height"],
+                                  params["channels"], params["upscale"])
     return "s%d" % params["count"]
 
 
@@ -191,7 +204,7 @@ def layer_output_floats(spec):
         return params["outputFloats"]
     if kind == "softmax":
         return params["count"]
-    if kind == "shuffle":
+    if kind in ("shuffle", "bilinear"):
         return ((params["width"] * params["upscale"]) * (params["height"] * params["upscale"]) *
                 params["channels"])
     raise ValueError("no output size for kind %r" % kind)
@@ -266,6 +279,12 @@ def config_work(spec):
         out = (w * r) * (h * r) * c
         flops = float(out)  # one store per output element: pure data movement
         bytes_ = 4.0 * (w * h * c * r * r + out)
+    elif kind == "bilinear":
+        w, h, c, r = (params["width"], params["height"], params["channels"],
+                      params["upscale"])
+        out = (w * r) * (h * r) * c
+        flops = 7.0 * out  # 4 taps read, 3 lerps produced per output element
+        bytes_ = 4.0 * (w * h * c + out)
     else:
         n = params["count"]
         flops = 4.0 * n
@@ -373,6 +392,25 @@ SUITES = {
         chain(conv(28, 28, 1, 3, 9, act="relu"),
               shuffle(28, 28, 1, 3),
               conv(84, 84, 1, 5, 4, act="relu")),
+        # bilinear upscale, align_corners=false; acc=1 is the SR net's global skip
+        # (out += bilinear(lr), out seeded from prev.bin)
+        bilinear(14, 14, 3, 2),
+        bilinear(64, 64, 3, 2),
+        bilinear(128, 128, 3, 2),  # the kernel srnet.h uses
+        bilinear(32, 32, 8, 3),
+        bilinear(7, 7, 1, 4),
+        bilinear(1, 1, 3, 2),
+        bilinear(128, 128, 3, 2, acc=1),
+        shuffle(128, 128, 3, 2),  # the kernel srnet.h uses
+        # the SR net's conv variants (128x128, C=256): head, residual conv1,
+        # accumulate conv2 (x + conv2(relu(conv1(x)))), tail to 3*r^2
+        conv(128, 128, 3, 3, 256, act="relu"),
+        conv(128, 128, 256, 3, 256, act="relu"),
+        conv(128, 128, 256, 3, 256, act="none", acc=1),
+        conv(128, 128, 256, 3, 12, act="none"),
+        # the SR upscale tail: tail conv -> pixel shuffle
+        chain(conv(128, 128, 256, 3, 12, act="none"),
+              shuffle(128, 128, 3, 2)),
     ],
 }
 def _merge(*suite_names):
@@ -461,6 +499,10 @@ def _helper_names(spec):
         return ("KGenPixelShuffle_w%d_h%d_c%d_r%d" % (params["width"], params["height"],
                                                        params["channels"], params["upscale"]),
                 None, None)
+    if kind == "bilinear":
+        return ("KGenBilinear_w%d_h%d_c%d_r%d" % (params["width"], params["height"],
+                                                   params["channels"], params["upscale"]),
+                None, None)
     tag = "N%d" % params["count"]
     return "KGenSoftmax_n%d" % params["count"], None, None
 
@@ -478,6 +520,9 @@ def _generator_args(spec):
         args = ["dense", str(params["inputFloats"]), str(params["outputFloats"])]
     elif kind == "shuffle":
         args = ["pixelshuffle", str(params["width"]), str(params["height"]),
+                str(params["channels"]), str(params["upscale"])]
+    elif kind == "bilinear":
+        args = ["bilinear", str(params["width"]), str(params["height"]),
                 str(params["channels"]), str(params["upscale"])]
     else:
         args = ["softmax", str(params["count"])]
@@ -522,7 +567,8 @@ def write_shim(configs):
             prefix, weight_macro, bias_macro = _helper_names(layer)
             struct = {"conv": "KGenConvLayer", "pool": "KGenPoolLayer",
                       "dense": "KGenDenseLayer", "softmax": "KGenSoftmaxLayer",
-                      "shuffle": "KGenPixelShuffleLayer"}[layer["kind"]]
+                      "shuffle": "KGenPixelShuffleLayer",
+                      "bilinear": "KGenBilinearLayer"}[layer["kind"]]
             var = "s%d_%d" % (index, li)
             lines.append("static %s %s;" % (struct, var))
             states.append((layer, prefix, weight_macro, bias_macro, var))
@@ -567,6 +613,10 @@ def write_shim(configs):
                 accumulate = 1 if (last and spec.get("accumulate")) else 0
                 lines.append("    %s_Forward(ctx, &%s, %s, %s, %d, %d);"
                              % (prefix, var, src, dst, activation, accumulate))
+            elif layer["kind"] == "bilinear":
+                accumulate = 1 if (last and spec.get("accumulate")) else 0
+                lines.append("    %s_Forward(ctx, &%s, %s, %s, %d);"
+                             % (prefix, var, src, dst, accumulate))
             else:
                 lines.append("    %s_Forward(ctx, &%s, %s, %s);" % (prefix, var, src, dst))
         lines.append("    return 0;")
@@ -746,7 +796,8 @@ def save_baseline(suite_key, generator, doc):
 
 
 def _family(kind):
-    return kind if kind in ("conv", "pool", "dense", "softmax", "shuffle", "chain") else "other"
+    return kind if kind in ("conv", "pool", "dense", "softmax", "shuffle", "bilinear",
+                            "chain") else "other"
 
 
 # ---------------------------------------------------------------------------

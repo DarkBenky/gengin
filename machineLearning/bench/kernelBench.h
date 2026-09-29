@@ -14,7 +14,7 @@
 typedef struct {
 	const char *id;        // "conv:w28_h28_c1_k3_n16"
 	const char *shape;     // human readable shape, echoed into the JSON
-	const char *kind;      // conv | pool | dense | softmax | chain
+	const char *kind;      // conv | pool | dense | softmax | shuffle | bilinear | chain
 	int inFloats;
 	int outFloats;
 	int activation;        // KGenActivation value (see the generated header)

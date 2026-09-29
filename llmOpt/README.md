@@ -71,7 +71,7 @@ speed.  A wrong kernel is a hard failure, never a fast one.
 | `ml_parity()` | the `edges` suite - awkward shapes in one call |
 
 Suites: `smoke` (4), `core` (24), `stress` (9), `edges` (10), `chain` (3),
-`upscale` (13), `all` (58, merged without duplicates).  Verdicts: `baseline_captured`, `no_baseline`,
+`upscale` (26), `all` (71, merged without duplicates).  Verdicts: `baseline_captured`, `no_baseline`,
 `correctness_failure`, `improved`, `regressed`, `same` - speed only counts as
 better or worse when a config clears its own noise band.
 
@@ -85,7 +85,7 @@ better or worse when a config clears its own noise band.
 Baselines live in `llmOpt/ml_baseline.json` (gitignored), one entry per suite
 hash and GPU; capturing requires the generator and the tracked artifacts to be
 unmodified, so commit before you capture.  `--kind conv|pool|dense|softmax|
-shuffle` narrows a run to one layer family.
+shuffle|bilinear` narrows a run to one layer family.
 
 ### Generating layers
 
@@ -94,6 +94,7 @@ shuffle` narrows a run to one layer family.
     python3 machineLearning/generateKernel.py dense 1568 128
     python3 machineLearning/generateKernel.py softmax 10
     python3 machineLearning/generateKernel.py pixelshuffle 14 14 1 2   # torch.nn.PixelShuffle(2)
+    python3 machineLearning/generateKernel.py bilinear 128 128 3 2      # F.interpolate(mode="bilinear")
 
 `pixelshuffle width height channels upscale` is `torch.nn.PixelShuffle(r)` for
 the channels-last tensors the other layers use: input `(H, W, channels*r^2)` ->
@@ -104,6 +105,14 @@ plus `KGenPixelShuffle_w<w>_h<h>_c<c>_r<r>_Init/Forward/Run/Destroy` to
 `pixelshuffle 14 14 1 2`, the x2 upsample of the existing 14x14x4 conv output.
 `--out-cl` / `--out-hdr` / `--fresh` generate into scratch files instead (that
 is how the bench builds its own kernel set).
+
+`bilinear width height channels upscale` is the align-corners-free bilinear
+upscale of the SR net's global skip, for the same channels-last tensors:
+`(H, W, C)` -> `(H*r, W*r, C)`.  Its kernel takes an `accumulate` flag
+(`out += bilinear(in)`) - that is how `torchToJson.py --arch sr` wires the skip
+into the generated `srnet.h`.  The `upscale` suite measures it together with the
+SR net's real 128x128 layers (head/residual/tail convs, pixel shuffle, bilinear
+skip), so `ml` sessions tune exactly the kernels that toolchain emits.
 
 ## OpenRouter proxy
 

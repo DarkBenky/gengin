@@ -56,8 +56,8 @@ file, function or node covered there is NOT a candidate:
 - `ml_bench(suite, reps, configs, kind, capture_baseline)` — the main loop.
   Suites: `smoke` (4 cheap configs, seconds), `core` (24, the default),
   `stress` (9 large shapes), `edges` (10 awkward shapes), `chain` (3
-  multi-layer graphs), `upscale` (13, pixel shuffle layers and conv->shuffle
-  blocks), `all` (58, every suite merged without duplicates).  Every run regenerates the kernels, compiles
+  multi-layer graphs), `upscale` (26, pixel shuffle, bilinear upscale and the
+  SR net's 128x128 upscaler layers), `all` (71, every suite merged without duplicates).  Every run regenerates the kernels, compiles
   them, times each config and checks it against `reference.bin`.
   The `summary` field always starts with the correctness block: read it first.
 - `ml_trace(config, reps)` — one config with 50 reps, full row (init ms,
@@ -77,7 +77,7 @@ better or worse when a config clears its own noise band, so a `same` on a
    (`capture_baseline=True`) before you change anything.
 3. `read_file("gengin/machineLearning/generateKernel.py")` — the emitter you are
    tuning: `emitConv`, `emitPool`, `emitDense`, `emitSoftmax`,
-   `emitPixelShuffle` and the generation-time shape math around them.
+   `emitPixelShuffle`, `emitBilinear` and the generation-time shape math around them.
 4. Only then start changing code.
 
 ## CANDIDATE QUEUE (leads, verify before trusting)

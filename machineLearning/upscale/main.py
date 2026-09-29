@@ -1,4 +1,5 @@
 import glob
+import os
 import random
 
 import torch
@@ -6,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torchvision.io import decode_image
+from torchvision.models import vgg19, VGG19_Weights
 from PIL import Image
 
 import matplotlib.pyplot as plt
@@ -13,13 +15,17 @@ import wandb
 
 BATCH_SIZE = 16
 C = 256
-BLOCKS = 16
-SCALE = 2
+BLOCKS = 8
+SCALE = 4
 HR_SIZE = 256
 SHOW_IMAGES = False
 LEARNING_RATE = 1e-4
 EPOCHS = 100
 DEVICE = 0
+PERC_WEIGHT = 0.175
+GRAM_WEIGHT = 0.0125
+LOAD_PATH = ""
+SAVE_PATH = f"sr_perc_{HR_SIZE // SCALE}-to-{HR_SIZE}.pt"
 
 def isValidImage(path, minSize):
     try:
@@ -73,18 +79,51 @@ class ImageDataset(Dataset):
                            mode="bicubic", antialias=True)[0].clamp(0, 1)
         return lr, hr
 
+class VGGFeatures(nn.Module):
+    def __init__(self):
+        super().__init__()
+        vgg = vgg19(weights=VGG19_Weights.DEFAULT).features
+        self.slices = nn.ModuleList([vgg[:4], vgg[4:9], vgg[9:18], vgg[18:27]])
+        for p in self.parameters():
+            p.requires_grad = False
+        self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+    def forward(self, x):
+        x = (x - self.mean) / self.std
+        feats = []
+        for s in self.slices:
+            x = s(x)
+            feats.append(x)
+        return feats
+
+class ResBlock(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        return x + self.conv2(self.relu(self.conv1(x)))
+
+class SRNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.head = nn.Conv2d(3, C, kernel_size=3, padding=1)
+        self.relu = nn.ReLU()
+        self.blocks = nn.ModuleList([ResBlock(C) for _ in range(BLOCKS)])
+        self.tail = nn.Conv2d(C, 3 * SCALE**2, kernel_size=3, padding=1)
+        self.shuffle = nn.PixelShuffle(SCALE)
+
+    def forward(self, x):
+        x = self.relu(self.head(x))
+        for block in self.blocks:
+            x = block(x)
+        return self.shuffle(self.tail(x))
+
 def buildModel():
-    model = nn.Sequential()
-
-    model.append(nn.Conv2d(3, C, kernel_size=3, padding=1))
-    model.append(nn.ReLU())
-
-    for _ in range(BLOCKS):
-        model.append(nn.Conv2d(C, C, kernel_size=3, padding=1))
-        model.append(nn.ReLU())
-
-    model.append(nn.Conv2d(C, 3 * SCALE**2, 3, padding=1))
-    model.append(nn.PixelShuffle(SCALE))
+    model = SRNet()
 
     gpuCount = torch.cuda.device_count()
     print(f"CUDA devices: {gpuCount}")
@@ -97,6 +136,13 @@ def buildModel():
 
     modelStructure = str(model)
 
+    if os.path.exists(LOAD_PATH):
+        try:
+            model.load_state_dict(torch.load(LOAD_PATH, map_location="cpu"))
+            print(f"loaded {LOAD_PATH}")
+        except RuntimeError:
+            print(f"cannot load {LOAD_PATH}: incompatible with residual architecture, training from scratch")
+
     model = model.cuda(DEVICE)
     model = nn.DataParallel(model, device_ids=[DEVICE])
 
@@ -106,12 +152,30 @@ def buildModel():
 def sr(model, lr):
     return model(lr) + F.interpolate(lr, scale_factor=SCALE, mode="bilinear")
 
+def gramMatrix(f):
+    b, c, h, w = f.shape
+    f = f.reshape(b, c, h * w)
+    return f @ f.transpose(1, 2) / (c * h * w)
+
+def perceptualLoss(fOut, fTgt):
+    return sum(F.l1_loss(o, t) for o, t in zip(fOut, fTgt))
+
+def gramLoss(fOut, fTgt):
+    return sum(F.l1_loss(gramMatrix(o), gramMatrix(t)) for o, t in zip(fOut, fTgt)) * 1e3
+
 def buildComparison(lr, pred, hr, rows=4):
     previews = []
     for i in range(min(rows, lr.shape[0])):
         lrUp = F.interpolate(lr[i][None], size=hr.shape[-2:], mode="nearest")[0]
         previews.append(torch.cat([lrUp, pred[i].clamp(0, 1), hr[i]], dim=2))
     return torch.cat(previews, dim=1)
+
+def buildDifference(lr, pred, hr, rows=4, gain=5.0):
+    diffs = []
+    for i in range(min(rows, lr.shape[0])):
+        base = F.interpolate(lr[i][None], size=hr.shape[-2:], mode="bilinear")[0]
+        diffs.append(torch.cat([(base - hr[i]).abs(), (pred[i].clamp(0, 1) - hr[i]).abs()], dim=2))
+    return (torch.cat(diffs, dim=1) * gain).clamp(0, 1)
 
 if __name__ == "__main__":
     dataset = ImageDataset("/media/user/2TB/wt_screenshots")
@@ -128,9 +192,11 @@ if __name__ == "__main__":
         plt.show()
 
     model, modelSize, optimizer, modelStructure = buildModel()
+    vgg = VGGFeatures().cuda(DEVICE).eval()
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS * len(loader))
     wandb.init(project="sr-upscaler", config=dict(C=C, blocks=BLOCKS, scale=SCALE, device=DEVICE,
                lr=LEARNING_RATE, batch=BATCH_SIZE, params_M=modelSize,
+               perc_weight=PERC_WEIGHT, gram_weight=GRAM_WEIGHT,
                structure=modelStructure))
 
     print(f"From image {HR_SIZE // SCALE} x {HR_SIZE // SCALE} px to {HR_SIZE} x {HR_SIZE} px")
@@ -142,22 +208,33 @@ if __name__ == "__main__":
             lr, hr = lr.cuda(DEVICE, non_blocking=True), hr.cuda(DEVICE, non_blocking=True)
 
             out = sr(model, lr)
-            loss = F.l1_loss(out, hr)
+            fOut = vgg(out.clamp(0, 1))
+            with torch.no_grad():
+                fHr = vgg(hr)
+
+            l1 = F.l1_loss(out, hr)
+            perc = perceptualLoss(fOut, fHr)
+            gram = gramLoss(fOut, fHr) if GRAM_WEIGHT > 0 else torch.zeros((), device=out.device)
+            loss = l1 + PERC_WEIGHT * perc + GRAM_WEIGHT * gram
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
             scheduler.step()
 
-            if step % 50 == 0:
+            if step % 10 == 0:
                 psnr = -10 * torch.log10(F.mse_loss(out.detach().clamp(0, 1), hr))
-                wandb.log({"loss": loss.item(), "psnr": psnr.item(),
+                wandb.log({"loss": loss.item(), "l1": l1.item(), "perc": perc.item(),
+                           "gram": gram.item(), "psnr": psnr.item(),
                            "lr": scheduler.get_last_lr()[0]}, step=step)
+                print(f"step {step}, loss {loss.item():.4f}, l1 {l1.item():.4f}, perc {perc.item():.4f}, gram {gram.item():.4f}, psnr {psnr.item():.4f}, lr {scheduler.get_last_lr()[0]}")
 
             if step % 250 == 0:
                 grid = buildComparison(lr, out.detach(), hr)
                 wandb.log({"comparison": wandb.Image(grid.cpu())}, step=step)
+                diffGrid = buildDifference(lr, out.detach(), hr)
+                wandb.log({"difference": wandb.Image(diffGrid.cpu())}, step=step)
             step += 1
 
-        torch.save(model.module.state_dict(), "sr.pt")
+        torch.save(model.module.state_dict(), SAVE_PATH)
         print(f"epoch {epoch} done, loss {loss.item():.4f}")
