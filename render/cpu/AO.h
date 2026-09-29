@@ -30,6 +30,19 @@
 #ifndef AO_SMOOTH_ROWS_PER_TASK
 #define AO_SMOOTH_ROWS_PER_TASK 16
 #endif
+// Blur bands for the wide stage's 270x180 buffer.  A band there is ~1/16 the size of a full-resolution
+// one, so the pool hand-off costs more than the blur it feeds: the 212 tasks a frame needs today
+// (2 rounds x row+col band) measure 2.19 ms of pure hand-off against 0.24 ms for 22 empty tasks.
+// Coarser bands measure row blur 0.76 -> 0.21 ms and column blur 0.215 -> 0.147 ms with bit-identical
+// output (bench/aoWide).  The band size is an explicit argument now: the full-resolution column pass
+// (the only other caller) still passes COLUMNS_PER_TASK, and ROWS_PER_TASK still sizes the
+// full-resolution AO sample-pass tasks in the CalculateAmbientOcclusion*Mp helpers below.
+#ifndef AO_SMOOTH_BLUR_ROWS_PER_TASK
+#define AO_SMOOTH_BLUR_ROWS_PER_TASK 8
+#endif
+#ifndef AO_SMOOTH_BLUR_COLUMNS_PER_TASK
+#define AO_SMOOTH_BLUR_COLUMNS_PER_TASK 64
+#endif
 
 #define PIXEL_SKIP 5
 
@@ -1038,16 +1051,16 @@ static void columnBlurMp(int width, int height, float *restrict image, ThreadPoo
 	poolWait(threadPool);
 }
 
-static void columnBlurMpBetter(int width, int height, float *restrict image, ThreadPool *threadPool, float *restrict depthBuffer) {
+static void columnBlurMpBetter(int width, int height, float *restrict image, ThreadPool *threadPool, float *restrict depthBuffer, int columnsPerTask) {
 	// Same interior range as columnBlur(): the outer columns hold stale data.
 	const int firstColumn = KERNEL_SIZE_HALF;
 	const int endColumn = width - KERNEL_SIZE_HALF;
-	const int taskCount = (endColumn - firstColumn + COLUMNS_PER_TASK - 1) / COLUMNS_PER_TASK;
+	const int taskCount = (endColumn - firstColumn + columnsPerTask - 1) / columnsPerTask;
 	ColumnBlurTaskBetter tasks[taskCount];
 
 	for (int t = 0; t < taskCount; t++) {
-		const int column = firstColumn + t * COLUMNS_PER_TASK;
-		const int columns = endColumn - column < COLUMNS_PER_TASK ? endColumn - column : COLUMNS_PER_TASK;
+		const int column = firstColumn + t * columnsPerTask;
+		const int columns = endColumn - column < columnsPerTask ? endColumn - column : columnsPerTask;
 		tasks[t] = (ColumnBlurTaskBetter){column, columns, width, height, image, depthBuffer};
 		poolAdd(threadPool, ColumnBlurColumnsBetter, &tasks[t]);
 	}
@@ -1106,16 +1119,16 @@ static void RowBlurRowsBetter(void *arg) {
 	}
 }
 
-static void rowBlurMpBetter(int width, int height, float *restrict image, ThreadPool *threadPool, float *restrict depthBuffer) {
+static void rowBlurMpBetter(int width, int height, float *restrict image, ThreadPool *threadPool, float *restrict depthBuffer, int rowsPerTask) {
 	// Same interior row range as the column blur: the outer rows are never blurred vertically
 	const int firstRow = KERNEL_SIZE_HALF;
 	const int endRow = height - KERNEL_SIZE_HALF;
-	const int taskCount = (endRow - firstRow + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	const int taskCount = (endRow - firstRow + rowsPerTask - 1) / rowsPerTask;
 	RowBlurTaskBetter tasks[taskCount];
 
 	for (int t = 0; t < taskCount; t++) {
-		const int row = firstRow + t * ROWS_PER_TASK;
-		const int rows = endRow - row < ROWS_PER_TASK ? endRow - row : ROWS_PER_TASK;
+		const int row = firstRow + t * rowsPerTask;
+		const int rows = endRow - row < rowsPerTask ? endRow - row : rowsPerTask;
 		tasks[t] = (RowBlurTaskBetter){row, rows, width, image, depthBuffer};
 		poolAdd(threadPool, RowBlurRowsBetter, &tasks[t]);
 	}
@@ -1139,6 +1152,11 @@ typedef struct {
 	int srcWidth;
 	int srcHeight;
 	const float *restrict src;
+	// Per-column bilinear source pair + weight: the x mapping depends only on x and the fixed
+	// downscale, so it is built once per call instead of floorf()+two clamps per output pixel.
+	const int *restrict x0Tab;
+	const int *restrict x1Tab;
+	const float *restrict txTab;
 } UpsampleTask;
 
 static void DownsampleAoRows(void *arg) {
@@ -1180,6 +1198,9 @@ static void UpsampleAoRows(void *arg) {
 	const int srcWidth = task->srcWidth;
 	const int srcHeight = task->srcHeight;
 	const float *restrict src = task->src;
+	const int *restrict x0Tab = task->x0Tab;
+	const int *restrict x1Tab = task->x1Tab;
+	const float *restrict txTab = task->txTab;
 	const int endRow = task->row + task->rows;
 
 	for (int y = task->row; y < endRow; y++) {
@@ -1191,18 +1212,18 @@ static void UpsampleAoRows(void *arg) {
 		int y1 = y0 + 1;
 		if (y1 >= srcHeight) y1 = srcHeight - 1;
 
-		for (int x = 0; x < dstWidth; x++) {
-			const float fx = ((float)x + 0.5f) / (float)scale - 0.5f;
-			int x0 = (int)floorf(fx);
-			float tx = fx - (float)x0;
-			if (x0 < 0) { x0 = 0; tx = 0.0f; }
-			if (x0 >= srcWidth - 1) { x0 = srcWidth - 1; tx = 0.0f; }
-			int x1 = x0 + 1;
-			if (x1 >= srcWidth) x1 = srcWidth - 1;
+		const float *restrict s0 = src + y0 * srcWidth;
+		const float *restrict s1 = src + y1 * srcWidth;
+		float *restrict d = dst + y * dstWidth;
 
-			const float top = src[y0 * srcWidth + x0] + (src[y0 * srcWidth + x1] - src[y0 * srcWidth + x0]) * tx;
-			const float bot = src[y1 * srcWidth + x0] + (src[y1 * srcWidth + x1] - src[y1 * srcWidth + x0]) * tx;
-			dst[y * dstWidth + x] = top + (bot - top) * ty;
+		for (int x = 0; x < dstWidth; x++) {
+			const int x0 = x0Tab[x];
+			const int x1 = x1Tab[x];
+			const float tx = txTab[x];
+
+			const float top = s0[x0] + (s0[x1] - s0[x0]) * tx;
+			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
+			d[x] = top + (bot - top) * ty;
 		}
 	}
 }
@@ -1233,16 +1254,32 @@ static void SmoothAmbientOcclusionWide(Camera *camera, ThreadPool *threadPool) {
 	poolWait(threadPool);
 
 	for (int round = 0; round < AO_SMOOTH_ROUNDS; round++) {
-		rowBlurMpBetter(smallW, smallH, smallAO, threadPool, smallDepth);
-		columnBlurMpBetter(smallW, smallH, smallAO, threadPool, smallDepth);
+		rowBlurMpBetter(smallW, smallH, smallAO, threadPool, smallDepth, AO_SMOOTH_BLUR_ROWS_PER_TASK);
+		columnBlurMpBetter(smallW, smallH, smallAO, threadPool, smallDepth, AO_SMOOTH_BLUR_COLUMNS_PER_TASK);
 	}
 
 	const int upTaskCount = (height + AO_SMOOTH_ROWS_PER_TASK - 1) / AO_SMOOTH_ROWS_PER_TASK;
+	// Built once per frame for the whole width instead of recomputed per output pixel.
+	int upX0[width];
+	int upX1[width];
+	float upTx[width];
+	for (int x = 0; x < width; x++) {
+		const float fx = ((float)x + 0.5f) / (float)AO_SMOOTH_DOWNSCALE - 0.5f;
+		int x0 = (int)floorf(fx);
+		float tx = fx - (float)x0;
+		if (x0 < 0) { x0 = 0; tx = 0.0f; }
+		if (x0 >= smallW - 1) { x0 = smallW - 1; tx = 0.0f; }
+		int x1 = x0 + 1;
+		if (x1 >= smallW) x1 = smallW - 1;
+		upX0[x] = x0;
+		upX1[x] = x1;
+		upTx[x] = tx;
+	}
 	UpsampleTask upTasks[upTaskCount];
 	for (int t = 0; t < upTaskCount; t++) {
 		const int row = t * AO_SMOOTH_ROWS_PER_TASK;
 		const int rows = height - row < AO_SMOOTH_ROWS_PER_TASK ? height - row : AO_SMOOTH_ROWS_PER_TASK;
-		upTasks[t] = (UpsampleTask){row, rows, width, camera->ambientOcclusionBuffer, smallW, smallH, smallAO};
+		upTasks[t] = (UpsampleTask){row, rows, width, camera->ambientOcclusionBuffer, smallW, smallH, smallAO, upX0, upX1, upTx};
 		poolAdd(threadPool, UpsampleAoRows, &upTasks[t]);
 	}
 	poolWait(threadPool);
@@ -1363,7 +1400,7 @@ static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(Camera *c
 		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlusSkipBetterBlur, &tasks[t]);
 	}
 	poolWait(threadPool);
-	columnBlurMpBetter(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool, camera->depthBuffer);
+	columnBlurMpBetter(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool, camera->depthBuffer, COLUMNS_PER_TASK);
 	SmoothAmbientOcclusionWide(camera, threadPool);
 }
 
