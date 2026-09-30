@@ -632,6 +632,22 @@ typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 ta
 
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
+
+// Search step-size schedule for the momentum walk in getControllerOutputV5.
+// The walk's total travel is learningRate / (1 - SEARCH_STEP_DECAY): at the old
+// 0.95 that is lr0/(0.05) = 1.0 of the [0,1] box, i.e. the walk drifts a whole
+// box-width in the smoothed gradient direction and saturates against the walls;
+// measured on the pinned suite that overshoot costs control effort (the walk
+// ends ~2x farther from neutral than the loss minimum) and slightly worse miss.
+// 0.91 -> 0.56 of the box, closer to the loss minimum.
+// SEARCH_MIN_TAIL_WALK stops the walk once the *remaining* travel budget
+// learningRate/(1-SEARCH_STEP_DECAY) is below this value: past that point the
+// remaining iterations cannot move a commanded surface by more than 0.4%, so
+// they cost ~60% of the controller's per-frame time and buy nothing.  Measured
+// on the pinned suite: 128 -> 53 iterations.
+#define SEARCH_STEP_DECAY 0.91f
+#define SEARCH_MIN_TAIL_WALK 0.004f
+
 static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
 	ControllerOutput output = {0};
 
@@ -695,8 +711,11 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			values[axis] = fmaxf(0.0f, fminf(1.0f, values[axis]));
 		}
 
-		// Adaptive learning rate decay
-		learningRate *= 0.95f;
+		// Adaptive learning rate decay, plus the convergence exit documented
+		// above: stop once the walk's remaining travel budget cannot move a
+		// commanded surface by 0.4% any more.
+		learningRate *= SEARCH_STEP_DECAY;
+		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
 	}
 
 	output.Rudder = values[0];
