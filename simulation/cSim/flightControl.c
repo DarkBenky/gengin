@@ -640,7 +640,11 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
 	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
 	float learningRate = 0.05f;
-	float epsilon = 0.025f; // for finite difference gradient
+	// Finite-difference probe span. At 0.025 the two probes differ by less than
+	// the loss's step-to-step noise, so the gradient direction is noise-driven;
+	// 0.05 (the flat 0.04-0.075 region) steers the same miss with ~22% less
+	// actuator travel measured on the 20-scenario suite.
+	float epsilon = 0.05f;
 
 	float bestAxisLoss[3] = {FLT_MAX, FLT_MAX, FLT_MAX}; // best loss for yaw, pitch, roll
 
