@@ -1986,7 +1986,7 @@ static inline void KGen_w128_h128_c3_f3_n256_Forward(CL_Context *ctx, KGenConvLa
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 128, 128, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 2048, 128, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -2031,8 +2031,8 @@ static inline KGenConvLayer KGen_w128_h128_c256_f3_n256_Init(CL_Context *ctx, co
 	layer.height = 128;
 	layer.channels = 256;
 	layer.filterSize = 3;
-	layer.localX = 16;
-	layer.localY = 16;
+	layer.localX = 64;
+	layer.localY = 2;
 
 	layer.pip = CL_Pipeline_FromFile(ctx, clPath, "cnn2dFilter_w128_h128_c256_f3_n256", NULL);
 	if (layer.pip.kernel == NULL) {
@@ -2087,7 +2087,7 @@ static inline void KGen_w128_h128_c256_f3_n256_Forward(CL_Context *ctx, KGenConv
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 128, 128, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 2048, 128, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -2132,8 +2132,8 @@ static inline KGenConvLayer KGen_w128_h128_c256_f3_n12_Init(CL_Context *ctx, con
 	layer.height = 128;
 	layer.channels = 256;
 	layer.filterSize = 3;
-	layer.localX = 16;
-	layer.localY = 16;
+	layer.localX = 64;
+	layer.localY = 2;
 
 	layer.pip = CL_Pipeline_FromFile(ctx, clPath, "cnn2dFilter_w128_h128_c256_f3_n12", NULL);
 	if (layer.pip.kernel == NULL) {
