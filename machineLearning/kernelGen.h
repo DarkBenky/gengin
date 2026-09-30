@@ -657,7 +657,7 @@ static inline void KGen_w28_h28_c1_f3_n4_Forward(CL_Context *ctx, KGenConvLayer 
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 32, 32, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 112, 32, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -758,7 +758,7 @@ static inline void KGen_w14_h14_c4_f3_n4_Forward(CL_Context *ctx, KGenConvLayer 
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 16, 16, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 64, 16, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -1710,7 +1710,7 @@ static inline void KGenDense_i1568_o128_Forward(CL_Context *ctx, KGenDenseLayer 
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch1D(ctx, &layer->pip, 128, layer->local);
+	CL_Dispatch1D(ctx, &layer->pip, 8192, layer->local);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
