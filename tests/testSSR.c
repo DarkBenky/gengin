@@ -55,7 +55,7 @@ static void RenderRow(const Object *objects, int objectCount, const MaterialLib 
 			if (bmin >= bmax || bmin >= bestT) continue;
 			int tri = -1;
 			float3 hp;
-			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, &tri, &hp);
+			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, bestT, &tri, &hp);
 			if (tri < 0) continue;
 			float t = (hp.x - orig.x) * dx + (hp.y - orig.y) * dy + (hp.z - orig.z) * dz;
 			if (t > 0.0f && t < bestT) {

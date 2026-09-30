@@ -155,7 +155,7 @@ void Object_SetMetallic(Object *obj, MaterialLib *lib, float metallic);
 
 void CreateObjectBVH(Object *obj, BVH *bvh);
 void DestroyObjectBVH(BVH *bvh);
-void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, int *hitTriIdx, float3 *hitPosWorld);
+void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir, float initialBestT, int *hitTriIdx, float3 *hitPosWorld);
 bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 rayDir);
 void getBvhStats(const BVH *bvh, int *outNodeCount, int *outTriCount);
 
