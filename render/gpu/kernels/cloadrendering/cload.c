@@ -25,6 +25,7 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->ctx = CL_Context_Create();
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
 	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
+	cr->godRaySrcPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "buildGodRaySource", NULL);
 	cr->compositePipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "compositeFrame", NULL);
 	cr->blurPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "blur", NULL);
 
@@ -32,6 +33,7 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->outputBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 	cr->depthBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
 	cr->godRayBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
+	cr->godRaySrcBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_WRITE);
 	cr->framebufferBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(uint32), CL_MEM_READ_WRITE);
 	cr->outputBlurBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 }
@@ -101,10 +103,20 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 		float sdy = (ls.x * cam->up.x + ls.y * cam->up.y + ls.z * cam->up.z) / cam->fovScale;
 		float2 sunPos = {(sdx + 1.0f) * 0.5f, (1.0f - sdy) * 0.5f};
 
+		// Build the fused god-ray source (transmittance*isSky) from the post-blur
+		// output buffer + scene depth, then march against it single-gather.
+		cl_kernel gsrc = cr->godRaySrcPipeline.kernel;
+		int gsa = 0;
+		clSetKernelArg(gsrc, gsa++, sizeof(cl_mem), &cr->outputBuf.buf);
+		clSetKernelArg(gsrc, gsa++, sizeof(cl_mem), &cr->depthBuf.buf);
+		clSetKernelArg(gsrc, gsa++, sizeof(int), &cr->width);
+		clSetKernelArg(gsrc, gsa++, sizeof(int), &cr->height);
+		clSetKernelArg(gsrc, gsa++, sizeof(cl_mem), &cr->godRaySrcBuf.buf);
+		CL_Dispatch2D(&cr->ctx, &cr->godRaySrcPipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
+
 		cl_kernel gk = cr->godRayPipeline.kernel;
 		int ga = 0;
-		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->outputBuf.buf);
-		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->depthBuf.buf);
+		clSetKernelArg(gk, ga++, sizeof(cl_mem), &cr->godRaySrcBuf.buf);
 		clSetKernelArg(gk, ga++, sizeof(int), &cr->width);
 		clSetKernelArg(gk, ga++, sizeof(int), &cr->height);
 		clSetKernelArg(gk, ga++, sizeof(float2), &sunPos);
@@ -146,9 +158,11 @@ void CloudRenderer_Destroy(CloudRenderer *cr) {
 	CL_Buffer_Destroy(&cr->outputBuf);
 	CL_Buffer_Destroy(&cr->depthBuf);
 	CL_Buffer_Destroy(&cr->godRayBuf);
+	CL_Buffer_Destroy(&cr->godRaySrcBuf);
 	CL_Buffer_Destroy(&cr->framebufferBuf);
 	CL_Pipeline_Destroy(&cr->pipeline);
 	CL_Pipeline_Destroy(&cr->godRayPipeline);
+	CL_Pipeline_Destroy(&cr->godRaySrcPipeline);
 	CL_Pipeline_Destroy(&cr->compositePipeline);
 	CL_Context_Destroy(&cr->ctx);
 }
