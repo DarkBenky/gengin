@@ -18,6 +18,25 @@ static inline Color PackColorFast01(float3 color) {
 	return (Color)((r << 16) | (g << 8) | b);
 }
 
+// ---- Per-frame AVX2 AABB pre-filter batch -----------------------------------
+// RayTraceRowFunc's per-pixel object pre-filter does one rayAABB_inv per
+// frustum-pass object. This buffer holds the frustum-pass objects' world AABBs
+// in the transposed SoA layout the AVX2 batch wants, rebuilt once per frame by
+// RayTraceScene (main thread, before the row tasks are queued, and only after
+// the previous frame's poolWait() — the same static-table pattern the AO pass
+// uses for SAMPLES_PATTERN/ROTATION_TABLE), and read-only afterwards.
+//
+// Layout: [group][axis][8], 48 floats (192 B, three 64-byte lines) per group of
+// up to 8 boxes; axis order {mnx, mxx, mny, mxy, mnz, mxz}. One group is six
+// 32-byte loads + the same min/max tree as rayAABB_inv, evaluated for 8 boxes at
+// once — no per-pixel staging, no gather. Lanes past the group's box count hold
+// stale values and are never read: the kernel consumes lane (ci & 7) for
+// ci < passCount only, and it requires passCount <= RAY_AABB_SOA_BOXES.
+#define RAY_AABB_SOA_GROUPS 32   // 256 boxes
+#define RAY_AABB_SOA_BOXES (RAY_AABB_SOA_GROUPS * 8)
+static float s_aabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
+static int s_aabbSoaValid = 0;   // 0 -> the row kernel keeps the scalar pre-filter
+
 static inline Color BlendColors50(Color a, Color b) {
 	return ((a & 0x00FEFEFEu) + (b & 0x00FEFEFEu)) >> 1;
 }
@@ -575,6 +594,29 @@ static inline uvCoordinates calculateUvCoordinatesForTriangle(const float3 hitPo
 	};
 }
 
+// One candidate object inside RayTraceRowFunc's per-pixel pre-filter: if the ray
+// reaches the object's world AABB before the closest hit so far, traverse that
+// object's BVH and keep the closer hit.  Expanded twice (batched and scalar
+// pre-filter paths) so both visit objects in the same order with the same
+// decisions.  Requires in scope: objects, orig, dx, dy, dz, bestT, bestObj,
+// bestTri, bestHitPos.
+#define RAY_PRE_TRY_OBJECT(OBJIDX, TAABB)                                                     \
+	do {                                                                                      \
+		const int i_ = (OBJIDX);                                                              \
+		if ((TAABB) >= bestT) break;                                                          \
+		int triIdx_ = -1;                                                                     \
+		float3 hitPos_ = {0.0f, 0.0f, 0.0f};                                                  \
+		IntersectBVH(&objects[i_], &objects[i_].bvh, orig, (float3){dx, dy, dz}, bestT, &triIdx_, &hitPos_); \
+		if (triIdx_ < 0) break;                                                               \
+		float t_ = (hitPos_.x - orig.x) * dx + (hitPos_.y - orig.y) * dy + (hitPos_.z - orig.z) * dz; \
+		if (t_ > 0.0f && t_ < bestT) {                                                        \
+			bestT = t_;                                                                       \
+			bestObj = i_;                                                                     \
+			bestTri = triIdx_;                                                                \
+			bestHitPos = hitPos_;                                                             \
+		}                                                                                     \
+	} while (0)
+
 static void RayTraceRowFunc(void *arg) {
 	RayTraceTask *restrict task = arg;
 	int row = task->row;
@@ -596,6 +638,11 @@ static void RayTraceRowFunc(void *arg) {
 
 	// prev camera state was hoisted here for per-pixel motion vectors; motionVectorBuffer
 	// has no reader (grep-verified 2026-09-22) so the block was removed with it.
+
+	// The AVX2 pre-filter batch is only usable when this frame built one and the
+	// pass list fits its capacity; otherwise the row kernel stays on rayAABB_inv.
+	// Read once per row task, not per pixel.
+	const int useSoaBatch = s_aabbSoaValid && task->frustumPassCount <= RAY_AABB_SOA_BOXES;
 
 	// precompute per-row ray base and per-pixel right step
 	float ndcY = 1.0f - (row + 0.5f) / (float)height * 2.0f;
@@ -662,38 +709,42 @@ static void RayTraceRowFunc(void *arg) {
 
 		const int *restrict passIdx = task->frustumPassIndices;
 		const int passCount = task->frustumPassCount;
-		// int ci = 0;
-		// for (; ci + 8 <= passCount; ci += 8) {
-		// 	float3 mn8[8], mx8[8];
-		// 	for (int j = 0; j < 8; j++) {
-		// 		int i = passIdx[ci + j];
-		// 		mn8[j] = objects[i].worldBBmin;
-		// 		mx8[j] = objects[i].worldBBmax;
-		// 	}
-		// 	float out[8] __attribute__((aligned(32)));
-		// 	rayAABB_invV4_avx2(pixBias, pixInvDir, mn8, mx8, out);
-		// 	for (int j = 0; j < 8; j++) {
-		// 		if (out[j] >= bestT) continue;
-		// 		int i = passIdx[ci + j];
-		// 		// ... BVH intersect
-		// 	}
-		// }
-		for (int ci = 0; ci < passCount; ci++) {
-			int i = passIdx[ci];
-			float tAABB = rayAABB_inv(pixBias, pixInvDir, &objects[i].worldBBmin.x, &objects[i].worldBBmax.x);
-			if (tAABB >= bestT) continue;
-
-			int triIdx = -1;
-			float3 hitPos = {0.0f, 0.0f, 0.0f};
-			IntersectBVH(&objects[i], &objects[i].bvh, orig, (float3){dx, dy, dz}, bestT, &triIdx, &hitPos);
-			if (triIdx < 0) continue;
-
-			float t = (hitPos.x - orig.x) * dx + (hitPos.y - orig.y) * dy + (hitPos.z - orig.z) * dz;
-			if (t > 0.0f && t < bestT) {
-				bestT = t;
-				bestObj = i;
-				bestTri = triIdx;
-				bestHitPos = hitPos;
+		// Per-pixel object pre-filter. When RayTraceScene built the per-frame SoA
+		// batch, one AVX2 group covers up to 8 objects with six 32-byte loads of
+		// contiguous read-only data; otherwise (batch unavailable, or more objects
+		// than the batch holds) the scalar rayAABB_inv loop runs. Both paths
+		// evaluate the same expression tree per box and visit objects in the same
+		// order, so for the finite ray/AABB data the renderer produces they take
+		// the same decisions and the image is unchanged (verified bit-identical
+		// over the frame; a degenerate zero-length direction component, which the
+		// camera never produces, is unspecified under -ffast-math).
+		if (useSoaBatch) {
+			const __m256 bvx = _mm256_set1_ps(pixBias.x), bvy = _mm256_set1_ps(pixBias.y), bvz = _mm256_set1_ps(pixBias.z);
+			const __m256 ivx = _mm256_set1_ps(pixInvDir.x), ivy = _mm256_set1_ps(pixInvDir.y), ivz = _mm256_set1_ps(pixInvDir.z);
+			const __m256 farv = _mm256_set1_ps(FLT_MAX);
+			const int groups = (passCount + 7) >> 3;
+			for (int g = 0; g < groups; g++) {
+				const float *gp = s_aabbSoa + (size_t)g * 48;
+				__m256 tx0 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 0), ivx, bvx);
+				__m256 tx1 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 8), ivx, bvx);
+				__m256 ty0 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 16), ivy, bvy);
+				__m256 ty1 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 24), ivy, bvy);
+				__m256 tz0 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 32), ivz, bvz);
+				__m256 tz1 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 40), ivz, bvz);
+				__m256 tmn = _mm256_max_ps(_mm256_max_ps(_mm256_min_ps(tx0, tx1), _mm256_min_ps(ty0, ty1)), _mm256_min_ps(tz0, tz1));
+				__m256 tmx = _mm256_min_ps(_mm256_min_ps(_mm256_max_ps(tx0, tx1), _mm256_max_ps(ty0, ty1)), _mm256_max_ps(tz0, tz1));
+				float tA[8];
+				_mm256_storeu_ps(tA, _mm256_blendv_ps(tmn, farv, _mm256_cmp_ps(tmx, tmn, _CMP_LT_OQ)));
+				const int base = g << 3;
+				int end = passCount - base;
+				if (end > 8) end = 8;
+				for (int k = 0; k < end; k++)
+					RAY_PRE_TRY_OBJECT(passIdx[base + k], tA[k]);
+			}
+		} else {
+			for (int ci = 0; ci < passCount; ci++) {
+				const int i = passIdx[ci];
+				RAY_PRE_TRY_OBJECT(i, rayAABB_inv(pixBias, pixInvDir, &objects[i].worldBBmin.x, &objects[i].worldBBmax.x));
 			}
 		}
 
@@ -1072,6 +1123,27 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 	for (int i = 0; i < objectCount; i++) {
 		if (Frustum_TestAABB(&frustum, objects[i].worldBBmin, objects[i].worldBBmax))
 			frustumPassIndices[frustumPassCount++] = i;
+	}
+
+	// Transposed SoA copy of the frustum-pass AABBs for the row kernel's AVX2
+	// pre-filter (see s_aabbSoa at the top of this file). 5 objects x 6 stores, once
+	// per frame, on the main thread — no per-pixel cost.  Skipped (leaving the
+	// kernel on the scalar path) past the buffer's capacity so the layout can never
+	// be read out of bounds.
+	s_aabbSoaValid = 0;
+	if (frustumPassCount <= RAY_AABB_SOA_BOXES) {
+		for (int j = 0; j < frustumPassCount; j++) {
+			const Object *o = &objects[frustumPassIndices[j]];
+			float *gp = s_aabbSoa + (size_t)(j >> 3) * 48;
+			const int k = j & 7;
+			gp[0 * 8 + k] = o->worldBBmin.x;
+			gp[1 * 8 + k] = o->worldBBmax.x;
+			gp[2 * 8 + k] = o->worldBBmin.y;
+			gp[3 * 8 + k] = o->worldBBmax.y;
+			gp[4 * 8 + k] = o->worldBBmin.z;
+			gp[5 * 8 + k] = o->worldBBmax.z;
+		}
+		s_aabbSoaValid = 1;
 	}
 
 	for (int row = 0; row < camera->screenHeight; row++) {
