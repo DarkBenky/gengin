@@ -138,8 +138,9 @@ def bilinear(width, height, channels, upscale=2, acc=0, seed=None, absTol=None,
             "absTol": absTol, "relTol": relTol}
 
 
-def chain(*layers, seed=None, acc=0):
-    return {"kind": "chain", "layers": list(layers), "accumulate": acc, "seed": seed}
+def chain(*layers, seed=None, acc=0, absTol=None, relTol=None):
+    return {"kind": "chain", "layers": list(layers), "accumulate": acc, "seed": seed,
+            "absTol": absTol, "relTol": relTol}
 
 
 def config_id(spec):
@@ -412,6 +413,41 @@ SUITES = {
         chain(conv(128, 128, 256, 3, 12, act="none"),
               shuffle(128, 128, 3, 2)),
     ],
+    # the SR upscaler training shapes (machineLearning/upscale/main.py): the
+    # 64->256 scale-4 and 128->256 scale-2 nets at C=256, plus smaller-HR and
+    # narrower variants; re-derive the rows and re-capture if that script changes.
+    "srnet": [
+        conv(64, 64, 3, 3, 256, act="relu"),           # head
+        conv(64, 64, 256, 3, 256, act="relu"),         # residual conv1
+        conv(64, 64, 256, 3, 256, act="none", acc=1),  # residual conv2 + add
+        conv(64, 64, 256, 3, 48, act="none"),          # tail: 3 * scale^2
+        chain(conv(64, 64, 256, 3, 48, act="none"),
+              shuffle(64, 64, 3, 4)),
+        shuffle(64, 64, 3, 4),
+        bilinear(64, 64, 3, 4, acc=1),                 # global skip
+        chain(conv(64, 64, 3, 3, 256, act="relu"),
+              conv(64, 64, 256, 3, 256, act="relu"),
+              conv(64, 64, 256, 3, 256, act="none"),
+              absTol=1e-3),  # 3-deep C=256: fp32 sum-order noise composes past the 1e-4 floor
+        # 128->256 scale 2 (sr_perc_128-to-256.pt); ids match the upscale suite
+        conv(128, 128, 3, 3, 256, act="relu"),
+        conv(128, 128, 256, 3, 256, act="relu"),
+        conv(128, 128, 256, 3, 256, act="none", acc=1),
+        conv(128, 128, 256, 3, 12, act="none"),
+        chain(conv(128, 128, 256, 3, 12, act="none"),
+              shuffle(128, 128, 3, 2)),
+        shuffle(128, 128, 3, 2),
+        bilinear(128, 128, 3, 2, acc=1),
+        # smaller HR (LR 32, scale 4) and narrower C=128 variants
+        conv(32, 32, 3, 3, 256, act="relu"),
+        conv(32, 32, 256, 3, 256, act="relu"),
+        conv(32, 32, 256, 3, 256, act="none", acc=1),
+        conv(32, 32, 256, 3, 48, act="none"),
+        conv(64, 64, 3, 3, 128, act="relu"),
+        conv(64, 64, 128, 3, 128, act="relu"),
+        conv(64, 64, 128, 3, 128, act="none", acc=1),
+        conv(64, 64, 128, 3, 48, act="none"),
+    ],
 }
 def _merge(*suite_names):
     """Concatenate suites, keeping the first config for each id."""
@@ -426,7 +462,7 @@ def _merge(*suite_names):
     return merged
 
 
-SUITES["all"] = _merge("core", "stress", "edges", "chain", "upscale")
+SUITES["all"] = _merge("core", "stress", "edges", "chain", "upscale", "srnet")
 
 
 def select_configs(suite="core", configs=None, kind=None):
@@ -457,7 +493,7 @@ def select_configs(suite="core", configs=None, kind=None):
                                                        for l in spec["layers"])))]
         if not chosen:
             raise ValueError("no %s configs in suite %s (suites carry only their own "
-                             "layers - try --suite all or --suite upscale)"
+                             "layers - try --suite all or --suite upscale/srnet)"
                              % (kind, suite))
     resolved = []
     for index, (cid, spec) in enumerate(chosen):
@@ -821,7 +857,7 @@ def summarize(doc, baseline, generator, previous_hash=None, captured=False):
         lines.append("No baseline for this suite and device - this run captured it."
                      if captured else
                      "No baseline for this suite and device, and none was captured "
-                     "(the generator or the tracked kernels are modified).")
+                     "(pass capture_baseline=True on a clean tree to pin one).")
         lines.append("  configs: %d, passed the torch gate: %d, worst |diff| %.3e"
                      % (len(rows), len(rows) - len(failed), worst_diff))
         return "\n".join(lines), ("correctness_failure" if failed else
@@ -991,7 +1027,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--suite", default="core",
-                        help="smoke|core|stress|edges|chain|upscale|all (default core)")
+                        help="smoke|core|stress|edges|chain|upscale|srnet|all (default core)")
     parser.add_argument("--configs", default="", help="comma separated config ids")
     parser.add_argument("--kind", default="", help="filter by layer kind")
     parser.add_argument("--generator", default=GENERATOR_DEFAULT)

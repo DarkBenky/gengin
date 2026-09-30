@@ -325,7 +325,9 @@ def ml_bench(generator: str = "", suite: str = "core", configs: str = "",
     seeded PyTorch reference).  Suites: smoke (4 cheap configs), core (24,
     default), stress (9 large shapes), edges (10 awkward ones), chain (3
     multi-layer graphs), upscale (26, pixel shuffle, bilinear upscale and the
-    SR net's 128x128 upscaler layers), all (71, no duplicates).  Every config is compared against
+    SR net's 128x128 upscaler layers), srnet (23, the two SR upscaler training
+    nets: 64->256 scale 4 and 128->256 scale 2 at C=256, plus smaller-HR and
+    C=128 variants), all (87, no duplicates).  Every config is compared against
     reference.bin before speed is reported; any deviation makes the verdict
     correctness_failure, so fix the math first.  Speed is compared with the
     pinned baseline for this suite and GPU: verdict is baseline_captured when

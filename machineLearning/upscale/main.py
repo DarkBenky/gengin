@@ -16,7 +16,7 @@ import wandb
 BATCH_SIZE = 16
 C = 256
 BLOCKS = 8
-SCALE = 4
+SCALE = 2
 HR_SIZE = 256
 SHOW_IMAGES = False
 LEARNING_RATE = 0.5e-4 # model is already trained on some samples so lr is lowered

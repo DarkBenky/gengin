@@ -56,7 +56,7 @@ the repo checkout, so a session compares against the timings you pinned here.
 The session measures first, edits ONLY `machineLearning/generateKernel.py`, and
 re-measures before it opens one PR:
 
-    ml_bench(smoke) -> ml_bench(core) -> change -> re-measure -> ml_parity() -> PR
+    ml_bench(smoke) -> ml_bench(core) -> ml_bench(srnet) -> change -> re-measure -> ml_parity() -> PR
 
 The bench regenerates the kernels from the generator, compiles them with
 `/usr/bin/clang`, runs every config on the GPU and compares the output with a
@@ -71,7 +71,8 @@ speed.  A wrong kernel is a hard failure, never a fast one.
 | `ml_parity()` | the `edges` suite - awkward shapes in one call |
 
 Suites: `smoke` (4), `core` (24), `stress` (9), `edges` (10), `chain` (3),
-`upscale` (26), `all` (71, merged without duplicates).  Verdicts: `baseline_captured`, `no_baseline`,
+`upscale` (26), `srnet` (23, the SR upscaler training shapes), `all` (87,
+merged without duplicates).  Verdicts: `baseline_captured`, `no_baseline`,
 `correctness_failure`, `improved`, `regressed`, `same` - speed only counts as
 better or worse when a config clears its own noise band.
 
@@ -112,7 +113,9 @@ upscale of the SR net's global skip, for the same channels-last tensors:
 (`out += bilinear(in)`) - that is how `torchToJson.py --arch sr` wires the skip
 into the generated `srnet.h`.  The `upscale` suite measures it together with the
 SR net's real 128x128 layers (head/residual/tail convs, pixel shuffle, bilinear
-skip), so `ml` sessions tune exactly the kernels that toolchain emits.
+skip); the `srnet` suite adds both trained nets' full layer set (64->256 scale 4
+and 128->256 scale 2 at C=256), so `ml` sessions tune exactly the kernels that
+toolchain emits.
 
 ## OpenRouter proxy
 

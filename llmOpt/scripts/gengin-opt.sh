@@ -170,7 +170,7 @@ if [[ "$ML_MODE" == "1" ]]; then
   if ! nvidia-smi -L >/dev/null 2>&1; then
     echo "[ml] warning: no NVIDIA GPU detected - the layer bench needs a working OpenCL device" >&2
   fi
-  echo "[ml] objective: machineLearning/generateKernel.py layer kernels (suites smoke/core/edges/upscale)"
+  echo "[ml] objective: machineLearning/generateKernel.py layer kernels (suites smoke/core/edges/upscale/srnet)"
   echo "[ml] provider: ${PRESET:-default} model: ${MODEL_ARGS[1]:-default}"
 fi
 
