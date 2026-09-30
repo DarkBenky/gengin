@@ -635,7 +635,9 @@ typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 ta
 static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
 	ControllerOutput output = {0};
 
-	float values[3] = {0.5f, 0.5f, 0.5f}; // yaw, pitch, roll
+	// Start from the surfaces the plane actually has; a neutral start re-plans
+	// the whole approach from scratch on every frame.
+	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
 	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
 	float learningRate = 0.05f;
 	float epsilon = 0.025f; // for finite difference gradient
