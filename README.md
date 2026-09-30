@@ -4,6 +4,23 @@
 - [ ] Collect images for upscaler
   - [ ] Train torch model for upscaler
   - [ ] Try to extract images directly from war thunder rendering pipeline
+  - [ ] Integrate up scaling model
+  ```
+  # Rendering pipeline with upscaler
+
+  | Stage | T0   | T1           | T2           | T3           |
+  |-------|------|--------------|--------------|--------------|
+  | CPU   | Img1 | Img2         | Img3         | Img4         |
+  | GPU   | -    | Upscale Img1 | Upscale Img2 | Upscale Img3 |
+  | Show  | -    | -            | Show Img1    | Show Img2    |
+
+  - CPU: prepare frame N+1 (input, scene update, submit)
+  - GPU: upscale frame N (needs history + motion vectors + disocclusion mask tagged with frame N)
+  - Show: present frame N-1 (already finished upscaling)
+  - Latency: 2 frames from CPU to screen
+  - Throughput: max(CPU, GPU, Show), not the sum
+  ```
+
 - [ ] Crate open cl rendering kernels for alternative API for rendering and Hybrid approach
   - [ ] Plan: [todo/opencl-raster-hybrid-plan.md](todo/opencl-raster-hybrid-plan.md) — full design, pitfalls, phases
   - [ ] Phase 1 — GPU raster API core (geometry + depth + material color), offscreen-parity vs ray tracer
