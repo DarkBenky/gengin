@@ -60,7 +60,7 @@
     - [ ] trick where we can use radar ui as mask so renderer will render less pixels
     - [ ] implement so object can show on radar screen we can cheaply reuse the renderer buffer
 
-- **low** [ ] Support for transparent materials
+- [ ] **low** Support for transparent materials
 
 - [ ] Better worker split maybe instead of horizontal lines use vertical (problem is that this will force cpu to jump in image not just one long scan maybe we can change layout)
 
