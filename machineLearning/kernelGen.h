@@ -657,7 +657,7 @@ static inline void KGen_w28_h28_c1_f3_n4_Forward(CL_Context *ctx, KGenConvLayer 
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 32, 32, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 112, 32, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -758,7 +758,7 @@ static inline void KGen_w14_h14_c4_f3_n4_Forward(CL_Context *ctx, KGenConvLayer 
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 16, 16, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 64, 16, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -1295,7 +1295,7 @@ static inline KGenSoftmaxLayer KGenSoftmax_n10_Init(CL_Context *ctx, const char 
 	return layer;
 }
 
-// Forward: dispatches on CL buffers (single work-item)
+// Forward: dispatches on CL buffers (one work group of `lanes`)
 static inline void KGenSoftmax_n10_Forward(CL_Context *ctx, KGenSoftmaxLayer *layer, CL_Buffer *input, CL_Buffer *output) {
 	if (input->size < KGENSOFTMAX_N10_COUNT * sizeof(float) || output->size < KGENSOFTMAX_N10_COUNT * sizeof(float)) {
 		printf("[KGen] buffer too small for cnn2dSoftmax_n10\n");
@@ -1303,7 +1303,7 @@ static inline void KGenSoftmax_n10_Forward(CL_Context *ctx, KGenSoftmaxLayer *la
 	}
 	CL_SetArgBuffer(&layer->pip, 0, input);
 	CL_SetArgBuffer(&layer->pip, 1, output);
-	CL_Dispatch1D(ctx, &layer->pip, 1, 1);
+	CL_Dispatch1D(ctx, &layer->pip, 16, 16);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
@@ -1710,7 +1710,7 @@ static inline void KGenDense_i1568_o128_Forward(CL_Context *ctx, KGenDenseLayer 
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch1D(ctx, &layer->pip, 128, layer->local);
+	CL_Dispatch1D(ctx, &layer->pip, 8192, layer->local);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
