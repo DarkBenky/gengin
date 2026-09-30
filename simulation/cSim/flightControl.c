@@ -641,12 +641,14 @@ typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 ta
 // ends ~2x farther from neutral than the loss minimum) and slightly worse miss.
 // 0.91 -> 0.56 of the box, closer to the loss minimum.
 // SEARCH_MIN_TAIL_WALK stops the walk once the *remaining* travel budget
-// learningRate/(1-SEARCH_STEP_DECAY) is below this value: past that point the
-// remaining iterations cannot move a commanded surface by more than 0.4%, so
-// they cost ~60% of the controller's per-frame time and buy nothing.  Measured
-// on the pinned suite: 128 -> 53 iterations.
+// learningRate/(1-SEARCH_STEP_DECAY) is below this value.  The pre-warm-start
+// walk used 0.004 (53 iterations); with the walk starting at the plane's own
+// surfaces the miss/cost trade is far flatter, so the threshold sits at its
+// measured knee (replica sweep 0.06-0.20: miss +0.07..+0.63%, cost -56..-79%).
+// The pinned suite at 0.06: miss 340.1 -> 341.4 m, effort 20.6 -> 17.9,
+// controller cost 1872 -> 880 us/step.
 #define SEARCH_STEP_DECAY 0.91f
-#define SEARCH_MIN_TAIL_WALK 0.004f
+#define SEARCH_MIN_TAIL_WALK 0.06f
 
 static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
 	ControllerOutput output = {0};
@@ -712,8 +714,7 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 		}
 
 		// Adaptive learning rate decay, plus the convergence exit documented
-		// above: stop once the walk's remaining travel budget cannot move a
-		// commanded surface by 0.4% any more.
+		// above.
 		learningRate *= SEARCH_STEP_DECAY;
 		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
 	}
