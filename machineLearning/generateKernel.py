@@ -175,22 +175,51 @@ def tapGuard(dy, dx, width, height):
 CONV_SPLIT_TARGET = 16384   # work items we would like in flight
 CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
+CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
+CONV_BLOCK_BUDGET = 16      # accumulators per work item (filters x columns)
+
+
+def convBlockX(width, channels, filterSize, filters, perItem):
+    """Output columns per work item for the register-blocked conv body, or 1.
+
+    A work item streams `perItem` filters x k*k x channels weights and spends
+    every load on one output, so the weight loads per output stay at `k*k *
+    channels` however the filters are blocked.  Accumulating `blockX` adjacent
+    columns amortizes one weight load (and the input load beside it) over
+    `blockX` outputs, which at a fixed accumulator budget is the even split
+    between the two.
+
+    Only the scalar body gets the columns: it keeps one register per
+    accumulator, where the float4 body already spends four on each of its
+    `perItem` accumulators and spills when the columns are added.
+    """
+    if filterSize != 3 or (channels % 4) == 0:
+        return 1
+    if filters < 2 * CONV_MIN_PER_ITEM or perItem < 2 * CONV_MIN_PER_ITEM:
+        return 1
+    blockX = min(CONV_BLOCK_COLUMNS, perItem)
+    while blockX > 1 and width % blockX:
+        blockX //= 2
+    return blockX
 
 
 def convPlan(width, height, channels, filterSize, filters):
-    """(groups, perItem, vectorized, channelQuads) for one conv config."""
+    """(groups, perItem, blockX, vectorized, channelQuads) for one conv config."""
     vectorized = (channels % 4) == 0
     quads = channels // 4
     if filters <= 1:
-        return 1, 1, vectorized, quads
+        return 1, 1, 1, vectorized, quads
     want = max(1, CONV_SPLIT_TARGET // max(1, width * height))
     want = min(want, filters)
     perItem = -(-filters // want)                      # ceil
     perItem = min(perItem, CONV_MAX_PER_ITEM)
     perItem = max(CONV_MIN_PER_ITEM, perItem)
     perItem = min(perItem, filters)
+    blockX = convBlockX(width, channels, filterSize, filters, perItem)
+    if blockX > 1:
+        perItem = max(1, CONV_BLOCK_BUDGET // blockX)  # columns share the same budget
     groups = -(-filters // perItem)                    # ceil
-    return groups, perItem, vectorized, quads
+    return groups, perItem, blockX, vectorized, quads
 
 
 def generateKernel(width, height, channels, filterSize, filters=1):
@@ -202,7 +231,7 @@ def generateKernel(width, height, channels, filterSize, filters=1):
     planeStride = filterSize * channels
     filterStride = filterSize * filterSize * channels
     name = kernelName(width, height, channels, filterSize, filters)
-    groups, perItem, vec, quads = convPlan(width, height, channels, filterSize, filters)
+    groups, perItem, blockX, vec, quads = convPlan(width, height, channels, filterSize, filters)
     split = groups > 1
     wholeBlock = perItem == filters          # one block holds every filter
     looped = (not split) and (not wholeBlock)
@@ -215,6 +244,8 @@ def generateKernel(width, height, channels, filterSize, filters=1):
     out.append(f"// width={width} height={height} channels={channels} filterSize={filterSize} filters={filters}")
     out.append(f"// dims: in {width}x{height}x{channels} -> out {width}x{height}x{filters} (output channels = {filters}) | weights [{filters}][{filterSize}][{filterSize}][{channels}] | bias [{filters}]")
     plan = f"// plan: {perItem} filter(s) in registers"
+    if blockX > 1:
+        plan += f", {blockX} output columns per work item"
     if split:
         plan += f", {groups} filter groups over global_id(0)"
     plan += ", float4 channel loads" if vec else ", scalar channel loads"
@@ -231,8 +262,12 @@ def generateKernel(width, height, channels, filterSize, filters=1):
     out.append("{")
     if split:
         out.append("    const int g0 = get_global_id(0);")
-        out.append(f"    const int x = g0 % {width};")
-        out.append(f"    const int n0 = (g0 / {width}) * {perItem};")
+        if blockX > 1:
+            out.append(f"    const int x = (g0 % {width // blockX}) * {blockX};")
+            out.append(f"    const int n0 = (g0 / {width // blockX}) * {perItem};")
+        else:
+            out.append(f"    const int x = g0 % {width};")
+            out.append(f"    const int n0 = (g0 / {width}) * {perItem};")
         out.append("    const int y = get_global_id(1);")
         out.append(f"    if (x >= {width} || y >= {height} || n0 >= {filters}) return;")
     else:
@@ -254,64 +289,78 @@ def generateKernel(width, height, channels, filterSize, filters=1):
         return (str(b * filterStride + offset) if wholeBlock
                 else f"{nTerm(b)} * {filterStride} + {offset}")
 
-    for b in range(perItem):
-        out.append(f"{body}float4 a{b} = (float4)(0.0f);" if vec else f"{body}float a{b} = 0.0f;")
+    def accName(p, b):
+        return f"a{b}" if blockX == 1 else f"a{p}_{b}"
+
+    for p in range(blockX):
+        for b in range(perItem):
+            name = accName(p, b)
+            out.append(f"{body}float4 {name} = (float4)(0.0f);" if vec
+                       else f"{body}float {name} = 0.0f;")
     out.append("")
 
     for j in range(filterSize):
         dy = j - pad
         for i in range(filterSize):
             dx = i - pad
-            base = f"base_{j}_{i}"
-            guard = tapGuard(dy, dx, width, height)
             yTerm = offsetTerm("y", dy)
-            xTerm = offsetTerm("x", dx)
             filterBase = j * planeStride + i * channels
 
             out.append(f"{body}// tap ({j}, {i})")
-            inner = body
-            if guard:
-                out.append(f"{body}if ({guard})")
-                out.append(f"{body}{{")
-                inner = body + "    "
-            out.append(f"{inner}const int {base} = {yTerm} * {rowStride} + {xTerm} * {channels};")
-            if vec:
-                for q in range(quads):
-                    off = f"{base}" if q == 0 else f"{base} + {4 * q}"
-                    out.append(f"{inner}const float4 v{q} = *(__global const float4*)(input + {off});")
-                    for b in range(perItem):
-                        out.append(f"{inner}a{b} += v{q} * *(__global const float4*)(filterWeights + {wIndex(b, filterBase + 4 * q)});")
-            else:
-                for k in range(channels):
-                    inIndex = f"[{base}]" if k == 0 else f"[{base} + {k}]"
-                    out.append(f"{inner}const float v{k} = input{inIndex};")
-                    for b in range(perItem):
-                        out.append(f"{inner}a{b} += v{k} * filterWeights[{wIndex(b, filterBase + k)}];")
-            if guard:
-                out.append(f"{body}}}")
-            out.append("")
+            for p in range(blockX):
+                # column p owns output x + p, so this tap lands on x + p + dx
+                col = p + dx
+                base = f"base_{j}_{i}" if blockX == 1 else f"base_{j}_{i}_{p}"
+                guard = tapGuard(dy, col, width, height)
+                xTerm = offsetTerm("x", col)
+                inner = body
+                if guard:
+                    out.append(f"{body}if ({guard})")
+                if guard or blockX > 1:
+                    # sibling column blocks need their own scope for v{q}
+                    out.append(f"{body}{{")
+                    inner = body + "    "
+                out.append(f"{inner}const int {base} = {yTerm} * {rowStride} + {xTerm} * {channels};")
+                if vec:
+                    for q in range(quads):
+                        off = f"{base}" if q == 0 else f"{base} + {4 * q}"
+                        out.append(f"{inner}const float4 v{q} = *(__global const float4*)(input + {off});")
+                        for b in range(perItem):
+                            out.append(f"{inner}{accName(p, b)} += v{q} * *(__global const float4*)(filterWeights + {wIndex(b, filterBase + 4 * q)});")
+                else:
+                    for k in range(channels):
+                        inIndex = f"[{base}]" if k == 0 else f"[{base} + {k}]"
+                        out.append(f"{inner}const float v{k} = input{inIndex};")
+                        for b in range(perItem):
+                            out.append(f"{inner}{accName(p, b)} += v{k} * filterWeights[{wIndex(b, filterBase + k)}];")
+                if guard or blockX > 1:
+                    out.append(f"{body}}}")
+                out.append("")
 
-    for b in range(perItem):
-        if guarded:
-            out.append(f"{body}if (n0 + {b} < {filters})")
-        out.append(f"{body}{{")
-        inner = body + "    "
-        acc = f"(a{b}.x + a{b}.y) + (a{b}.z + a{b}.w)" if vec else f"a{b}"
-        out.append(f"{inner}float sum = {acc} + bias[{nTerm(b)}];")
-        out.append("")
-        out.append(f"{inner}float value = sum;")
-        out.append(f"{inner}switch (activation)")
-        out.append(f"{inner}{{")
-        out.append(f"{inner}    case ReLU:    value = max(sum, 0.0f); break;")
-        out.append(f"{inner}    case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;")
-        out.append(f"{inner}    case Tanh:    value = tanh(sum); break;")
-        out.append(f"{inner}    case None:    value = sum; break;")
-        out.append(f"{inner}}}")
-        out.append("")
-        out.append(f"{inner}const int idx = (y * {width} + x) * {filters} + {nTerm(b)};")
-        out.append(f"{inner}output[idx] = accumulate ? output[idx] + value : value;")
-        out.append(f"{body}}}")
-        out.append("")
+    for p in range(blockX):
+        storeX = "x" if p == 0 else f"x + {p}"
+        for b in range(perItem):
+            if guarded:
+                out.append(f"{body}if (n0 + {b} < {filters})")
+            out.append(f"{body}{{")
+            inner = body + "    "
+            name = accName(p, b)
+            acc = f"({name}.x + {name}.y) + ({name}.z + {name}.w)" if vec else name
+            out.append(f"{inner}float sum = {acc} + bias[{nTerm(b)}];")
+            out.append("")
+            out.append(f"{inner}float value = sum;")
+            out.append(f"{inner}switch (activation)")
+            out.append(f"{inner}{{")
+            out.append(f"{inner}    case ReLU:    value = max(sum, 0.0f); break;")
+            out.append(f"{inner}    case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;")
+            out.append(f"{inner}    case Tanh:    value = tanh(sum); break;")
+            out.append(f"{inner}    case None:    value = sum; break;")
+            out.append(f"{inner}}}")
+            out.append("")
+            out.append(f"{inner}const int idx = (y * {width} + {storeX}) * {filters} + {nTerm(b)};")
+            out.append(f"{inner}output[idx] = accumulate ? output[idx] + value : value;")
+            out.append(f"{body}}}")
+            out.append("")
 
     if looped:
         out.append("    }")
@@ -340,11 +389,11 @@ def generateC(width, height, channels, filterSize, filters=1):
     tag = baseTag if filters == 1 else f"{baseTag}_N{filters}"
     pref = cFunctionPrefix(width, height, channels, filterSize, filters)
     name = kernelName(width, height, channels, filterSize, filters)
-    groups, perItem, _vec, _quads = convPlan(width, height, channels, filterSize, filters)
-    # One work item per (output pixel, filter group): the kernel's global_id(0)
-    # carries `x + width * group` (see generateKernel), so the grid is `groups`
-    # times wider than the image.
-    gx = roundUp(width * groups, 16)
+    groups, perItem, blockX, _vec, _quads = convPlan(width, height, channels, filterSize, filters)
+    # One work item per (output column block, filter group): the kernel's
+    # global_id(0) carries `x + (width / blockX) * group` (see generateKernel),
+    # so the grid is `groups` times wider than the image.
+    gx = roundUp((width // blockX) * groups, 16)
     gy = roundUp(height, 16)
     initBound = (6.0 / (filterSize * filterSize * channels)) ** 0.5
 
