@@ -253,11 +253,17 @@ scenarios start hitting the 25 m radius, minimise the time to target
 
 The verdict policy, from the baseline run: IMPROVED needs miss to improve
 beyond 1% with no tier losing more than 10%, stability intact (no non-finite
-state), and per-step cost not worse than +20%.  A miss win that costs 3x more
-per frame is a regression, and a cheap controller that gives away miss distance
-is also a regression — the summary prints both sides, so read the whole block.
-Baseline numbers: aggregate miss ~374 m, hitRate 0.00, effort ~50.0, cost
-~4.0 ms/step; by tier static 404 / drift 271 / weave 272 / step 277 / jink 643.
+state), per-step cost not worse than +20%, saturation steps within 10%, and —
+once hits exist — mean time to target not worse beyond 5%.  While hitRate is
+0.000 the time-to-target row reads n/a; the first hits flip the hit-rate row to
+IMPROVED and the mean time to target (non-hits count as the full rollout) starts
+falling from 30 s.  A miss win that costs 3x more per frame is a regression, and
+a cheap controller that gives away miss distance is also a regression — the
+summary prints both sides, so read the whole block.
+Baseline numbers (current desktop pin): aggregate miss ~335 m, hitRate 0.00,
+tHitMean -1 (no hits), effort ~14.2, satSteps 2465, cost machine-dependent
+(~0.6 ms/step desktop, several ms/step on the VM); by tier static 379 /
+drift 240 / weave 240 / step 277 / jink 539.
 
 Leads worth trying (one logical change per attempt, measure every one):
 - `jink` is the weak tier (~643 m): the target fires 0.5-1.5 s impulses while
