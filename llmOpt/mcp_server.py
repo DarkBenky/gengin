@@ -293,11 +293,13 @@ def flight_bench(steps: int = 0, capture_baseline: bool = False) -> str:
     """Run the flight-controller suite (deterministic, ~20 s) and compare it
     against the pinned baseline.  Metrics per tier - static, drift, weave, step,
     jink (moving targets that change direction and speed) - plus an aggregate:
-    miss (closest-approach distance), hit rate against the hit radius, control
-    effort, and median controller cost in microseconds per step.  The first
-    call on a clean controller captures the baseline; pass capture_baseline=True
-    to re-capture it.  `steps` overrides the rollout length (a non-default
-    length has no baseline and only reports absolute numbers)."""
+    miss (closest-approach distance), hit rate against the hit radius, mean time
+    to target over the scenarios that hit (tHitMean, -1 = no hits), control
+    effort, saturation steps, and median controller cost in microseconds per
+    step.  The first call on a clean controller captures the baseline; pass
+    capture_baseline=True to re-capture it.  `steps` overrides the rollout
+    length (a non-default length has no baseline and only reports absolute
+    numbers)."""
     return json.dumps(_main.flightBench(steps=steps, capture_baseline=capture_baseline),
                       indent=2)
 

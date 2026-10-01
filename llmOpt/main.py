@@ -709,6 +709,8 @@ FLIGHT_CONTROLLER_FILES = ("simulation/cSim/flightControl.c",
                            "simulation/cSim/flightControl.h")
 FLIGHT_TIER_REGRESSION_PCT = 10.0
 FLIGHT_COST_REGRESSION_PCT = 20.0
+FLIGHT_THIT_TOLERANCE_PCT = 5.0   # deadband for the mean time-to-target row
+FLIGHT_SAT_TOLERANCE_PCT = 10.0   # guard: time-chasing invites riding the control limits
 
 
 def _flightBinary():
@@ -823,11 +825,33 @@ def _flightSummary(doc, baseline, captured=False):
     for key, better, label, tolerance in (
             ("miss", "lower", "miss (m)", METRIC_NOISE_PCT),
             ("hitRate", "higher", "hit rate", 0.0),
+            ("tHitMean", "lower", "time to target (s)", FLIGHT_THIT_TOLERANCE_PCT),
             ("effort", "lower", "control effort", 5.0),
+            ("satSteps", "lower", "saturation steps", FLIGHT_SAT_TOLERANCE_PCT),
             ("costUs", "lower", "cost (us/step)", FLIGHT_COST_REGRESSION_PCT)):
         old = base.get(key)
         new = agg.get(key)
-        if old is None or new is None or (better == "higher" and not old):
+        if old is None or new is None:
+            continue
+        if key == "tHitMean" and (old < 0 or new < 0):
+            # -1 = no scenario hit: the mean has no value until a hit exists
+            if old < 0 and new >= 0:
+                lines.append(f"  {label:16s} n/a - baseline has no hits (now {new:.3f} s)")
+            elif old >= 0 and new < 0:
+                lines.append(f"  {label:16s} n/a - no hits this run (baseline {old:.3f} s)")
+            else:
+                lines.append(f"  {label:16s} n/a - no hits yet")
+            continue
+        if better == "higher" and not old:
+            # rate metric with a zero baseline: percentages are undefined
+            if new > 0:
+                count = agg.get("scenarios") or 0
+                hits = round(new * count) if count else 0
+                tag = f"IMPROVED (first hits: {hits}/{count})" if count else "IMPROVED (first hits)"
+                improved += 1
+            else:
+                tag = "unchanged (no hits)"
+            lines.append(f"  {label:16s} baseline={old:.3f}  now={new:.3f}  [{tag}]")
             continue
         if better == "lower":
             delta = (old - new) / old * 100 if old else 0.0
@@ -842,6 +866,31 @@ def _flightSummary(doc, baseline, captured=False):
             tag = "REGRESSED"
             regressed += 1
         lines.append(f"  {label:16s} baseline={old:.3f}  now={new:.3f}  ({delta:+.1f}%)  [{tag}]")
+
+    # mean time to target: hits contribute their tHit, non-hits the full rollout
+    run_steps = (doc.get("settings") or {}).get("steps") or 0
+    run_dt = (doc.get("settings") or {}).get("dt") or 0.0
+    horizon = run_steps * run_dt
+
+    def _mtt(vals):
+        hr = vals.get("hitRate")
+        tm = vals.get("tHitMean")
+        if hr is None or horizon <= 0.0:
+            return None
+        if hr > 0 and tm is None:
+            return None
+        tm = tm if (tm is not None and tm >= 0.0) else 0.0
+        return hr * tm + (1.0 - hr) * horizon
+
+    mtt_now = _mtt(agg)
+    if mtt_now is not None:
+        line = f"  {'time to target':16s} now={mtt_now:.3f} s"
+        mtt_base = _mtt(base)
+        if mtt_base is not None:
+            line += f"  baseline={mtt_base:.3f} s"
+        if not agg.get("hitRate"):
+            line += "  (no hits yet - non-hits count as the full rollout)"
+        lines.append(line)
 
     base_tiers = {t["tier"]: t for t in (baseline.get("tiers") or [])}
     tier_regressions = []

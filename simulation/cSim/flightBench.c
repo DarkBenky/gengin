@@ -15,7 +15,10 @@
 // Tiers (4 seeds each): static, drift, weave, step, jink.
 // Per-scenario metrics: miss (closest approach), finalDist, hit + tHit against
 // FB_HIT_RADIUS, effort (integrated |deflection|), saturation steps, stability
-// flag, and the median per-step controller cost in microseconds.
+// flag, and the median per-step controller cost in microseconds.  tHit is the
+// first time the plane is inside the radius (time to target in seconds; -1 when
+// never); the tiers and the aggregate report its mean over the scenarios that
+// hit (tHitMean, -1 = no hits).
 
 #ifndef FLIGHT_BENCH
 #define FLIGHT_BENCH 1
@@ -460,6 +463,7 @@ int main(int argc, char **argv) {
 		int hits = 0;
 		int seen = 0;
 		int satSteps = 0;
+		double tHitSum = 0.0;
 		for (int i = 0; i < count; i++) {
 			if (results[i].scenario->kind != (TargetKind)tier) {
 				continue;
@@ -469,10 +473,12 @@ int main(int argc, char **argv) {
 			costSum += results[i].costUs;
 			hits += results[i].hit ? 1 : 0;
 			satSteps += results[i].satSteps;
+			if (results[i].hit) tHitSum += results[i].tHit;
 			seen++;
 		}
-		printf("    {\"tier\": \"%s\", \"miss\": %.3f, \"hitRate\": %.3f, \"effort\": %.4f, \"costUs\": %.2f, \"satSteps\": %d}%s\n",
+		printf("    {\"tier\": \"%s\", \"miss\": %.3f, \"hitRate\": %.3f, \"tHitMean\": %.3f, \"effort\": %.4f, \"costUs\": %.2f, \"satSteps\": %d}%s\n",
 			   tierNames[tier], seen ? missSum / seen : 0.0, seen ? (double)hits / seen : 0.0,
+			   hits ? tHitSum / hits : -1.0,
 			   seen ? effortSum / seen : 0.0, seen ? costSum / seen : 0.0, satSteps,
 			   (tier + 1 < FB_TIERS) ? "," : "");
 	}
@@ -484,6 +490,7 @@ int main(int argc, char **argv) {
 	int hits = 0;
 	int satSteps = 0;
 	int unstable = 0;
+	double tHitSum = 0.0;
 	for (int i = 0; i < count; i++) {
 		missSum += results[i].miss;
 		effortSum += results[i].effort;
@@ -491,10 +498,12 @@ int main(int argc, char **argv) {
 		hits += results[i].hit ? 1 : 0;
 		satSteps += results[i].satSteps;
 		unstable += results[i].unstable;
+		if (results[i].hit) tHitSum += results[i].tHit;
 	}
-	printf("  \"aggregate\": {\"miss\": %.3f, \"hitRate\": %.3f, \"effort\": %.4f, \"costUs\": %.2f, "
+	printf("  \"aggregate\": {\"miss\": %.3f, \"hitRate\": %.3f, \"tHitMean\": %.3f, \"effort\": %.4f, \"costUs\": %.2f, "
 		   "\"satSteps\": %d, \"unstable\": %d, \"scenarios\": %d}\n",
 		   count ? missSum / count : 0.0, count ? (double)hits / count : 0.0,
+		   hits ? tHitSum / hits : -1.0,
 		   count ? effortSum / count : 0.0, count ? costSum / count : 0.0,
 		   satSteps, unstable, count);
 	printf("}\n");

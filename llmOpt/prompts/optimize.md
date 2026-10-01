@@ -234,16 +234,20 @@ most one switch per session, and only after the frame axis has real numbers.
 The target is the interceptor guidance law in `simulation/cSim/flightControl.c`
 (+ `flightControl.h`) — a per-frame iterative search over
 rudder/elevator/aileron that minimises a multi-step simulated loss against a
-moving target.  The metric is tactical: closest approach (miss distance) to the
-target, not frame time.
+moving target.  The objective is two-stage: first close the closest-approach
+gap (miss distance — the only gradient while hitRate is 0.00), then, once
+scenarios start hitting the 25 m radius, minimise the time to target
+(per-scenario `tHit`, aggregated as `tHitMean`).  Frame time is not the metric.
 
 1. `flight_scenarios()` — the fixed suite (20 scenarios, 5 tiers: `static`,
    `drift`, `weave`, `step`, `jink`; the last three change direction and speed
    mid-flight) and whether a baseline is pinned.
 2. `flight_bench()` — runs the suite, compares against the pinned baseline and
    ends with `=> OVERALL: IMPROVED | REGRESSED | no significant change`.
-   Per tier it prints miss, hit rate (25 m radius), control effort, saturation
-   steps and the median controller cost in us/step.
+   Per tier it prints miss, hit rate (25 m radius), mean time to target, control
+   effort, saturation steps and the median controller cost in us/step; the
+   summary adds a mean-time-to-target line (non-hits count as the full rollout,
+   so it improves as hits appear and as hits get faster).
 3. `flight_trace("weave:2")` — per-step trace of ONE scenario when a number
    looks wrong; read the miss trajectory before theorising.
 
@@ -270,9 +274,10 @@ Leads worth trying (one logical change per attempt, measure every one):
   `learningRate *= 0.95` per iteration may converge too fast on 128 iterations.
 - The reported `*Loss` fields keep the best-so-far value, not the final one —
   `LossAngle` (and any logic keyed on it) can be misleading.
-- hitRate is 0.00 at baseline: every scenario ends 88-650 m short.  Closing the
-  last tens of metres is the stretch goal, but a 25 m hit is not required for
-  IMPROVED.
+- hitRate is 0.00 at baseline: every scenario ends 88-650 m short.  The first
+  hits are stage one of the stretch goal — any hit flips the hit-rate row to
+  IMPROVED and starts moving the mean time to target; a 25 m hit is not
+  required for IMPROVED on miss alone.
 
 Discipline is the same as the frame axis: revert with
 `git checkout -- simulation/cSim/flightControl.c simulation/cSim/flightControl.h`
