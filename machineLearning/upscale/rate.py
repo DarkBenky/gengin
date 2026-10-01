@@ -7,6 +7,7 @@ import sqlite3
 from contextlib import closing
 
 import numpy as np
+import plotly.graph_objects as go
 import streamlit as st
 import torch
 import torch.nn as nn
@@ -25,6 +26,7 @@ PLACE_LABELS = {0: "-", 1: "1st", 2: "2nd", 3: "3rd"}
 ELO_BASE = 1000
 ELO_K = 32
 ELO_SCALE = 400
+BAR_COLORS = ["#4c78a8", "#f58518", "#e45756", "#72b7b2", "#54a24b", "#eeca3b", "#b279a2", "#ff9da6"]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -247,11 +249,10 @@ def dbWriteMetrics(con, category, path, x, y, metrics, ts=None):
     )
 
 
-def dbMetricRows(category):
+def dbMetricStats(category):
     with closing(dbConnect()) as con:
         return con.execute(
-            "SELECT ts, image, crop_x, crop_y, model, psnr, ssim FROM model_metrics "
-            "WHERE category=? ORDER BY ts, id",
+            "SELECT model, AVG(psnr), AVG(ssim) FROM model_metrics WHERE category=? GROUP BY model",
             (category,),
         ).fetchall()
 
@@ -364,23 +365,6 @@ def ratingHistory(rows):
     return ratings, eloEvents, avgEvents
 
 
-def metricHistory(rows):
-    groups = []
-    seen = {}
-    for _, image, x, y, model, psnrValue, ssimValue in rows:
-        key = (image, x, y)
-        if key not in seen:
-            seen[key] = len(groups)
-            groups.append({})
-        groups[seen[key]][model] = (psnrValue, ssimValue)
-    psnrEvents = []
-    ssimEvents = []
-    for index, metrics in enumerate(groups, start=1):
-        psnrEvents.append((index, {model: round(values[0], 2) for model, values in metrics.items()}))
-        ssimEvents.append((index, {model: round(values[1], 4) for model, values in metrics.items()}))
-    return psnrEvents, ssimEvents
-
-
 def rankingMetrics(results):
     return {
         model["stem"]: (psnrValue, ssimValue)
@@ -409,6 +393,30 @@ def overviewImage(gt, cx, cy, zoom):
 
 def placeLabel(value):
     return PLACE_LABELS.get(value, f"{value}th")
+
+
+def metricBars(rows, key, fmt):
+    values = [row[key] for row in rows]
+    low = min(values) if values else 0
+    high = max(values) if values else 1
+    pad = (high - low) * 0.6 if high > low else max(abs(high) * 0.02, 0.01)
+    figure = go.Figure(
+        go.Bar(
+            x=[row["model"] for row in rows],
+            y=values,
+            marker_color=[BAR_COLORS[index % len(BAR_COLORS)] for index in range(len(rows))],
+            text=[format(value, fmt) for value in values],
+            textposition="outside",
+        )
+    )
+    figure.update_layout(
+        height=260,
+        margin=dict(l=40, r=20, t=20, b=70),
+        showlegend=False,
+        yaxis_range=[low - pad, high + pad],
+    )
+    figure.update_xaxes(tickangle=-20)
+    return figure
 
 
 def resetView():
@@ -596,27 +604,20 @@ def main():
                     avgValues.append(avgLast)
                 eloTable[labelOf.get(row[0], row[0])] = eloValues
                 avgTable[labelOf.get(row[0], row[0])] = avgValues
-            psnrEvents, ssimEvents = metricHistory(dbMetricRows(category))
-            metricEvents = [index for index, _ in psnrEvents]
-            psnrTable = {"rating": metricEvents}
-            ssimTable = {"rating": metricEvents}
-            for row in aggregated:
-                psnrValues = []
-                ssimValues = []
-                psnrLast = None
-                ssimLast = None
-                for _, psnrSnapshot in psnrEvents:
-                    value = psnrSnapshot.get(row[0])
-                    if value is not None:
-                        psnrLast = value
-                    psnrValues.append(psnrLast)
-                for _, ssimSnapshot in ssimEvents:
-                    value = ssimSnapshot.get(row[0])
-                    if value is not None:
-                        ssimLast = value
-                    ssimValues.append(ssimLast)
-                psnrTable[labelOf.get(row[0], row[0])] = psnrValues
-                ssimTable[labelOf.get(row[0], row[0])] = ssimValues
+            metricStats = {
+                modelName: (psnrMean, ssimMean)
+                for modelName, psnrMean, ssimMean in dbMetricStats(category)
+            }
+            psnrRows = [
+                {"model": labelOf.get(row[0], row[0]), "psnr": round(metricStats[row[0]][0], 2)}
+                for row in aggregated
+                if row[0] in metricStats
+            ]
+            ssimRows = [
+                {"model": labelOf.get(row[0], row[0]), "ssim": round(metricStats[row[0]][1], 4)}
+                for row in aggregated
+                if row[0] in metricStats
+            ]
             distributionRows = [
                 {"model": labelOf.get(row[0], row[0]), "place": placeLabel(place), "count": distributionMap.get(row[0], {}).get(place, 0)}
                 for place in range(1, len(models) + 1)
@@ -624,7 +625,7 @@ def main():
             ]
             chartLeft, chartMid, chartRight = st.columns(3)
             with chartLeft:
-                st.caption("elo over time (per rating)")
+                st.caption("elo over time (per rating, higher is better)")
                 st.line_chart(eloTable, x="rating", y=labels, height=260)
             with chartMid:
                 st.caption("avg place over time (per rating, lower is better)")
@@ -632,14 +633,14 @@ def main():
             with chartRight:
                 st.caption("place counts")
                 st.bar_chart(distributionRows, x="model", y="count", color="place", sort=False, stack=True, height=260)
-            if metricEvents:
+            if psnrRows:
                 psnrColumn, ssimColumn = st.columns(2)
                 with psnrColumn:
-                    st.caption("psnr over time (per rating)")
-                    st.line_chart(psnrTable, x="rating", y=labels, height=260)
+                    st.caption("mean psnr (all rated crops, higher is better)")
+                    st.plotly_chart(metricBars(psnrRows, "psnr", ".2f"), width="stretch")
                 with ssimColumn:
-                    st.caption("ssim over time (per rating)")
-                    st.line_chart(ssimTable, x="rating", y=labels, height=260)
+                    st.caption("mean ssim (all rated crops, higher is better)")
+                    st.plotly_chart(metricBars(ssimRows, "ssim", ".4f"), width="stretch")
 
 
 if __name__ == "__main__":
