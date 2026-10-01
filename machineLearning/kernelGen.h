@@ -1295,7 +1295,7 @@ static inline KGenSoftmaxLayer KGenSoftmax_n10_Init(CL_Context *ctx, const char 
 	return layer;
 }
 
-// Forward: dispatches on CL buffers (single work-item)
+// Forward: dispatches on CL buffers (one work group over the vector)
 static inline void KGenSoftmax_n10_Forward(CL_Context *ctx, KGenSoftmaxLayer *layer, CL_Buffer *input, CL_Buffer *output) {
 	if (input->size < KGENSOFTMAX_N10_COUNT * sizeof(float) || output->size < KGENSOFTMAX_N10_COUNT * sizeof(float)) {
 		printf("[KGen] buffer too small for cnn2dSoftmax_n10\n");
@@ -1655,7 +1655,7 @@ static inline KGenDenseLayer KGenDense_i1568_o128_Init(CL_Context *ctx, const ch
 	KGenDenseLayer layer = {0};
 	layer.inputFloats = 1568;
 	layer.outputFloats = 128;
-	layer.local = 64;
+	layer.local = 512;
 
 	layer.pip = CL_Pipeline_FromFile(ctx, clPath, "cnn2dDense_i1568_o128", NULL);
 	if (layer.pip.kernel == NULL) {
@@ -1710,7 +1710,7 @@ static inline void KGenDense_i1568_o128_Forward(CL_Context *ctx, KGenDenseLayer 
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch1D(ctx, &layer->pip, 128, layer->local);
+	CL_Dispatch1D(ctx, &layer->pip, 1024, layer->local);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output
