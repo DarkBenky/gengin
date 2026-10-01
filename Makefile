@@ -147,9 +147,13 @@ flightController-debug: $(FLIGHT_CONTROL_SRC)
 flightBench: $(BUILD_DIR)/flightBench/flightBench
 	./$(BUILD_DIR)/flightBench/flightBench
 
-$(BUILD_DIR)/flightBench/flightBench: $(FLIGHT_BENCH_SRC) $(FLIGHT_BENCH_HDR)
+# flightBench.c #includes flightControl.c directly, so the controller is listed
+# as a prerequisite (edits must force a rebuild) but is NOT compiled as its own
+# unit — FLIGHT_BENCH_HDR/SRC feed $^, and compiling it separately would
+# duplicate every definition.  The recipe therefore compiles FLIGHT_BENCH_SRC.
+$(BUILD_DIR)/flightBench/flightBench: $(FLIGHT_BENCH_SRC) $(FLIGHT_BENCH_HDR) simulation/cSim/flightControl.c
 	@mkdir -p $(BUILD_DIR)/flightBench
-	$(CC) $(CFLAGS_BASE) -DFLIGHT_BENCH -Isimulation -I. -o $@ $(filter %.c,$^) $(LDFLAGS) -lpthread -lm
+	$(CC) $(CFLAGS_BASE) -DFLIGHT_BENCH -Isimulation -I. -o $@ $(filter %.c,$(FLIGHT_BENCH_SRC)) $(LDFLAGS) -lpthread -lm
 
 testSound: $(TEST_SOUND_SRC)
 	@mkdir -p $(BUILD_DIR)/testSound
