@@ -300,11 +300,15 @@ def generateKernelStaged(width, height, channels, filterSize, filters, perItem,
             inner = "        "
             out.append(f"{inner}const int base_{j}_{i} = {offsetTerm('y', dy)} * {rowStride}"
                        f" + {offsetTerm('x', dx)} * {channels};")
-            for q in range(quads):
-                off = f"base_{j}_{i}" if q == 0 else f"base_{j}_{i} + {4 * q}"
-                out.append(f"{inner}const float4 v{q} = *(__global const float4*)(input + {off});")
-                for b in range(perItem):
-                    out.append(f"{inner}a{b} += v{q} * weightsLocal[{b * quads + q}];")
+            # A real loop over the channel quads: emitted inline per tap this body
+            # is already long, and unrolling the quad loop too is 1.3x slower on
+            # the wide srnet convs (a 46000-instruction kernel no longer fits).
+            out.append(f"{inner}for (int q = 0; q < {quads}; q++)")
+            out.append(f"{inner}{{")
+            out.append(f"{inner}    const float4 v = *(__global const float4*)(input + base_{j}_{i} + 4 * q);")
+            for b in range(perItem):
+                out.append(f"{inner}    a{b} += v * weightsLocal[{b * quads} + q];")
+            out.append(f"{inner}}}")
             out.append("    }")
             out.append("    barrier(CLK_LOCAL_MEM_FENCE);")
             out.append("")
