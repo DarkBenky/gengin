@@ -575,6 +575,36 @@ static inline uvCoordinates calculateUvCoordinatesForTriangle(const float3 hitPo
 	};
 }
 
+// The per-pixel ray setup is divider-bound: one 1/sqrtf plus three 1/d
+// reciprocals per pixel, and the branchy pixel body around it does not hide the
+// FP divider. Eight columns of a group are therefore computed together with
+// AVX2 divps/sqrtps.
+static inline void RaySetup8(float rx, float ry, float rz, float sx, float sy, float sz,
+                             int width, int x0, float *dxo, float *dyo, float *dzo,
+                             float *ixo, float *iyo, float *izo) {
+	__m256 xv = _mm256_add_ps(_mm256_set1_ps((float)x0),
+	                          _mm256_setr_ps(0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f));
+	__m256 ndc = _mm256_sub_ps(
+		_mm256_mul_ps(_mm256_div_ps(xv, _mm256_set1_ps((float)width)), _mm256_set1_ps(2.0f)),
+		_mm256_set1_ps(1.0f));
+	__m256 ux = _mm256_fmadd_ps(_mm256_set1_ps(sx), ndc, _mm256_set1_ps(rx));
+	__m256 uy = _mm256_fmadd_ps(_mm256_set1_ps(sy), ndc, _mm256_set1_ps(ry));
+	__m256 uz = _mm256_fmadd_ps(_mm256_set1_ps(sz), ndc, _mm256_set1_ps(rz));
+	__m256 len2 = _mm256_fmadd_ps(uz, uz, _mm256_fmadd_ps(uy, uy, _mm256_mul_ps(ux, ux)));
+	__m256 inv = _mm256_div_ps(_mm256_set1_ps(1.0f), _mm256_sqrt_ps(len2));
+	__m256 dx = _mm256_mul_ps(ux, inv);
+	__m256 dy = _mm256_mul_ps(uy, inv);
+	__m256 dz = _mm256_mul_ps(uz, inv);
+	__m256 one = _mm256_set1_ps(1.0f);
+
+	_mm256_storeu_ps(dxo, dx);
+	_mm256_storeu_ps(dyo, dy);
+	_mm256_storeu_ps(dzo, dz);
+	_mm256_storeu_ps(ixo, _mm256_div_ps(one, dx));
+	_mm256_storeu_ps(iyo, _mm256_div_ps(one, dy));
+	_mm256_storeu_ps(izo, _mm256_div_ps(one, dz));
+}
+
 static void RayTraceRowFunc(void *arg) {
 	RayTraceTask *restrict task = arg;
 	int row = task->row;
@@ -664,24 +694,27 @@ static void RayTraceRowFunc(void *arg) {
 		motPrevRot[i][8] = pcx * pcy;
 	}
 
+	float setupDx[8], setupDy[8], setupDz[8];
+	float setupIx[8], setupIy[8], setupIz[8];
+
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
 
-		float ndcX = (x + 0.5f) / (float)width * 2.0f - 1.0f;
-		float dx = rx + sx * ndcX;
-		float dy = ry + sy * ndcX;
-		float dz = rz + sz * ndcX;
-		float inv = 1.0f / sqrtf(dx * dx + dy * dy + dz * dz);
-		dx *= inv;
-		dy *= inv;
-		dz *= inv;
+		if ((x & 7) == 0) {
+			RaySetup8(rx, ry, rz, sx, sy, sz, width, x,
+			          setupDx, setupDy, setupDz, setupIx, setupIy, setupIz);
+		}
+		const int lane = x & 7;
+		float dx = setupDx[lane];
+		float dy = setupDy[lane];
+		float dz = setupDz[lane];
 
 		float bestT = DEPTH_FAR;
 		int bestObj = -1, bestTri = -1;
 		float3 bestHitPos = {0};
 
 		// precompute per-pixel invDir + bias — avoids recomputing 3 divisions per object in world AABB test
-		const float invDx = 1.0f / dx, invDy = 1.0f / dy, invDz = 1.0f / dz;
+		const float invDx = setupIx[lane], invDy = setupIy[lane], invDz = setupIz[lane];
 		const float3 pixInvDir = {invDx, invDy, invDz};
 		const float3 pixBias = {orig.x * invDx, orig.y * invDy, orig.z * invDz};
 
@@ -1164,8 +1197,9 @@ static void RayTraceColumnFunc(void *arg) {
 	float prevAsp = camera->prevAspect;
 	float prevFov = camera->prevFovScale;
 
-	// per-column constants — products and association order match the row version
-	// exactly so rays are bit-identical and frame hashes match
+	// per-column constants — products and association order match the row version's
+	// scalar form (that kernel evaluates its rays 8 lanes at a time with AVX2, so
+	// the two agree only to within the last ulp)
 	float ndcX = (col + 0.5f) / (float)width * 2.0f - 1.0f;
 	float xstepX = rgt.x * aspect * fovScale;
 	float xstepY = rgt.y * aspect * fovScale;
