@@ -14,10 +14,12 @@
 #define ROWS_PER_TASK 2
 #endif
 // Band for the two batches that make up the rendered frame's AO pass (the sample + row-blur rows
-// and the framebuffer apply).  There the pool hand-off measures ~6 us per task (360 empty tasks
-// cost 2.2 ms in situ) and a 2-row band carries only ~14 us of sample work, so 8 rows takes ~1 ms
-// (4.6% of the raster phase, 5/5 paired rounds) off the frame and still leaves 90 bands to balance
-// 720 rows over the pool; 20+ rows loses to tail imbalance.  Frames stay bit-identical (10/10).
+// and the framebuffer apply).  There the pool hand-off scales with the task count while the kernels
+// do not: a no-op region already costs 2.2 ms for 360 tasks in situ, the pass queues ~900 tasks a
+// frame against 5.5 ms of total pass time, and its full-resolution column-blur region measures ~0.
+// 8-row bands cut the batch to 90 tasks and take ~1 ms (4.6% of the raster phase, 5/5 paired
+// rounds) off the frame, while still leaving 90 bands to balance 720 rows over the pool; 20+ rows
+// loses to tail imbalance.  Frames stay bit-identical (all 10 bench hashes).
 #ifndef AO_ROWS_PER_TASK
 #define AO_ROWS_PER_TASK 8
 #endif
