@@ -1,4 +1,6 @@
 # Tasks
+
+- [ ] Add the Sponza palace to scene to test rendering more
 - [ ] improve missiles/planes guidence
   - [ ] add support for missiles flight model and improve flight modeling even more
   - [ ] try to train reinforcement learning model for this 
