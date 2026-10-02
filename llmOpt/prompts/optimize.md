@@ -260,13 +260,16 @@ IMPROVED and the mean time to target (non-hits count as the full rollout) starts
 falling from 30 s.  A miss win that costs 3x more per frame is a regression, and
 a cheap controller that gives away miss distance is also a regression — the
 summary prints both sides, so read the whole block.
-Baseline numbers (current desktop pin): aggregate miss ~335 m, hitRate 0.00,
-tHitMean -1 (no hits), effort ~14.2, satSteps 2465, cost machine-dependent
-(~0.6 ms/step desktop, several ms/step on the VM); by tier static 379 /
-drift 240 / weave 240 / step 277 / jink 539.
+Baseline numbers (current desktop pin, flight-physics batch 2026-10-02):
+aggregate miss ~232 m, hitRate 0.00, tHitMean -1 (no hits), effort ~16.8,
+satSteps 6408, cost machine-dependent (~0.6 ms/step desktop, several ms/step
+on the VM); by tier static 366 / drift 167 / weave 192 / step 96 / jink 338.
+Note: step 1/24 (the trainNN rollout rate) is a different operating point:
+miss ~282 and effort ~27.5 for the same 30 s rollout, so optimize at the rate
+the deployed controller will actually run.
 
 Leads worth trying (one logical change per attempt, measure every one):
-- `jink` is the weak tier (~643 m): the target fires 0.5-1.5 s impulses while
+- `jink` is the weak tier (~338 m): the target fires 0.5-1.5 s impulses while
   the loss simulates the target straight-line — a target-acceleration or
   turn-rate term is the obvious missing piece.
 - `LOOKAHEAD_STEPS` (16, `flightControl.h`) vs `MAX_ITERATION_PER_AXIS` (128):
