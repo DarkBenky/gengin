@@ -346,6 +346,7 @@ int main(int argc, char **argv) {
 	int steps = FB_DEFAULT_STEPS;
 	int threads = FB_DEFAULT_THREADS;
 	const char *traceId = NULL;
+	float dt = 1.0f / 60.0f;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--steps") == 0 && i + 1 < argc) {
@@ -362,13 +363,18 @@ int main(int argc, char **argv) {
 			}
 		} else if (strcmp(argv[i], "--trace") == 0 && i + 1 < argc) {
 			traceId = argv[++i];
+		} else if (strcmp(argv[i], "--dt") == 0 && i + 1 < argc) {
+			dt = (float)atof(argv[++i]);
+			if (!(dt > 0.0f && dt <= 0.5f)) {
+				fprintf(stderr, "flightBench: --dt must be in (0, 0.5]\n");
+				return 2;
+			}
 		} else {
-			fprintf(stderr, "usage: flightBench [--steps N] [--threads N] [--trace <tier:seed>]\n");
+			fprintf(stderr, "usage: flightBench [--steps N] [--threads N] [--dt S] [--trace <tier:seed>]\n");
 			return 2;
 		}
 	}
 
-	const float dt = 1.0f / 60.0f;
 	Scenario scenarios[FB_MAX_SCENARIOS];
 	int count = 0;
 	for (int tier = 0; tier < FB_TIERS; tier++) {

@@ -56,7 +56,7 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c skybox/skybox.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC         = $(filter-out build/% tests/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen, $(MAKECMDGOALS))
+_SPECIFIC         = $(filter-out build/% tests/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen maneuverTest, $(MAKECMDGOALS))
 _RUN_TESTS        = $(if $(_SPECIFIC), $(addprefix $(TEST_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 # Named tests (make test AOBench) get a perf flame graph; FLAME=1 extends that
@@ -68,7 +68,7 @@ _FLAME_BINS       = $(if $(_FLAME_ENABLED),$(addsuffix _flame,$(_RUN_TESTS)))
 BENCH_FUNC_DIR    = bench
 BENCH_FUNC_SRCS   = $(wildcard $(BENCH_FUNC_DIR)/*.c)
 BENCH_FUNC_BINS   = $(patsubst $(BENCH_FUNC_DIR)/%.c, $(BENCH_DIR)/%, $(BENCH_FUNC_SRCS))
-_BENCH_FUNC_SPECIFIC = $(filter-out build/% tests/% bench/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d, $(MAKECMDGOALS))
+_BENCH_FUNC_SPECIFIC = $(filter-out build/% tests/% bench/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d maneuverTest, $(MAKECMDGOALS))
 _RUN_BENCH_FUNCS  = $(if $(_BENCH_FUNC_SPECIFIC), $(addprefix $(BENCH_DIR)/, $(_BENCH_FUNC_SPECIFIC)))
 
 EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
@@ -80,12 +80,13 @@ TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulatio
 FLIGHT_CONTROL_SRC = simulation/cSim/flightControl.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c
 FLIGHT_BENCH_SRC   = simulation/cSim/flightBench.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c
 FLIGHT_BENCH_HDR   = $(wildcard simulation/cSim/*.h) $(wildcard math/*.h) $(wildcard object/*.h)
+MANEUVER_TEST_SRC  = simulation/cSim/maneuverTest.c simulation/cSim/simulate.c simulation/cSim/import.c
 TEST_SOUND_SRC      = sound/soundTest.c
 TEST_SOUND3D_SRC    = sound/soundTest3d.c
 
 TEST_RADAR_SCREEN_SRC = radarScreen/testRadarScreen.c util/saveImage.c render/cpu/font.c render/cpu/tile.c
 
-.PHONY: all main clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
+.PHONY: all main clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen maneuverTest $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
 
 all: $(TARGET)
 
@@ -154,6 +155,14 @@ flightBench: $(BUILD_DIR)/flightBench/flightBench
 $(BUILD_DIR)/flightBench/flightBench: $(FLIGHT_BENCH_SRC) $(FLIGHT_BENCH_HDR) simulation/cSim/flightControl.c
 	@mkdir -p $(BUILD_DIR)/flightBench
 	$(CC) $(CFLAGS_BASE) -DFLIGHT_BENCH -Isimulation -I. -o $@ $(filter %.c,$(FLIGHT_BENCH_SRC)) $(LDFLAGS) -lpthread -lm
+
+# Maneuver regression tests for the flight model (loops, vertical climb,
+# sustained roll, modulated loop); runs immediately and fails the build on a
+# FAIL line.
+maneuverTest: $(MANEUVER_TEST_SRC)
+	@mkdir -p $(BUILD_DIR)/maneuverTest
+	$(CC) $(CFLAGS_BASE) -Isimulation -I. -o $(BUILD_DIR)/maneuverTest/maneuverTest $^ $(LDFLAGS) -lm
+	./$(BUILD_DIR)/maneuverTest/maneuverTest
 
 testSound: $(TEST_SOUND_SRC)
 	@mkdir -p $(BUILD_DIR)/testSound
