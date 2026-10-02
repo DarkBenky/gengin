@@ -86,18 +86,39 @@ static float3 f3Norm(float3 v) {
 	return l > 1e-6f ? f3Scale(v, 1.0f / l) : (float3){1.0f, 0.0f, 0.0f, 0.0f};
 }
 
-// Build right and up vectors from forward direction and bank angle.
-// ref x fwd gives the true body-right vector; fwd x right gives body-up.
+// Seed helper + carried-frame builder for the plane's body frame.
+// Seed the carried (unbanked) body-right vector from gravity.  Used at load
+// time and as the recovery path when the carried frame is ever lost; the
+// per-frame code integrates the frame instead (see updatePlane).  A
+// gravity-derived frame has no continuous choice near the vertical: the old
+// code switched its reference vector at |fwd.y| = 0.99, which rotated the
+// whole frame 180 deg in one step and broke loops and vertical flight.
+static float3 seedBodyRight(float3 fwd)
+{
+	float3 ref = (fabsf(fwd.y) < 0.9f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
+	float3 right = f3Cross(ref, fwd);
+	if (f3Len(right) < 1e-3f) {
+		right = f3Cross((float3){0.0f, 0.0f, 1.0f, 0.0f}, fwd);
+	}
+	return f3Norm(right);
+}
+
+// Build the banked right/up vectors from the carried frame and bank angle.
 // Bank rotation: positive bank = right wing down (D-key convention).
-// outUp  = wUp*cos + wRight*sin  -> tilts right at positive bank (lift curves right)
-// outRight = wRight*cos - wUp*sin -> tilts down-right at positive bank
-static void buildFrame(float3 fwd, float bank, float3 *outRight, float3 *outUp) {
-	float3 ref = (fabsf(fwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	float3 wRight = f3Norm(f3Cross(ref, fwd));
-	float3 wUp = f3Cross(fwd, wRight);
-	float cb = cosf(bank), sb = sinf(bank);
-	*outRight = f3Add(f3Scale(wRight, cb), f3Scale(f3Scale(wUp, -1.0f), sb));
-	*outUp = f3Add(f3Scale(wUp, cb), f3Scale(wRight, sb));
+// outUp  = up0*cos + right0*sin  -> tilts right at positive bank (lift curves right)
+// outRight = right0*cos - up0*sin -> tilts down-right at positive bank
+static void buildFrame(const Plane *plane, float3 *outRight, float3 *outUp)
+{
+	float3 fwd = f3Norm(plane->forward);
+	// Re-orthonormalize the carried frame against forward; it lags by at most
+	// the rotation of one step, so this only removes float drift.
+	float3 right0 = f3Add(plane->bodyRight, f3Scale(fwd, -f3Dot(plane->bodyRight, fwd)));
+	float rl = f3Len(right0);
+	right0 = (rl > 1e-4f) ? f3Scale(right0, 1.0f / rl) : seedBodyRight(fwd);
+	float3 up0 = f3Cross(fwd, right0);
+	float cb = cosf(plane->bankAngle), sb = sinf(plane->bankAngle);
+	*outRight = f3Add(f3Scale(right0, cb), f3Scale(up0, -sb));
+	*outUp = f3Add(f3Scale(up0, cb), f3Scale(right0, sb));
 }
 
 // Lift and drag magnitudes from real effective AoA (body AoA + surface deflection, in degrees).
@@ -113,7 +134,16 @@ static void calcForceMagnitudes(const Surface *s, float q, float mach,
 		return;
 	}
 	float aoaRad = effectiveAoaDeg * (float)(M_PI / 180.0);
-	float stallFactor = (fabsf(effectiveAoaDeg) > s->stallAngle) ? 0.3f : 1.0f;
+	// Soft stall over a 10 deg band centred on the stall angle: the old hard
+	// 1.0 -> 0.3 step made CL jump by 70% in a single crossing, so maneuvers
+	// flown near the boundary (loop pulls, high-g turns) chattered between the
+	// attached and stalled regimes frame by frame.
+	float stallFactor = 1.0f;
+	float aoaAbs = fabsf(effectiveAoaDeg);
+	if (aoaAbs > s->stallAngle - 5.0f) {
+		float stallT = fminf(1.0f, (aoaAbs - (s->stallAngle - 5.0f)) / 10.0f);
+		stallFactor = 1.0f + (0.5f - 1.0f) * stallT;
+	}
 	float baseCL = (s->liftCoefficient * sinf(aoaRad) + 2.0f * (float)M_PI * s->camber) * stallFactor;
 	float compressibility = (mach < 0.85f)
 								? 1.0f / sqrtf(fmaxf(1.0f - mach * mach, 1e-4f))
@@ -174,18 +204,18 @@ float3 planeGetForwardVector(const Plane *plane) {
 
 float3 planeGetRightVector(const Plane *plane) {
 	float3 right, up;
-	buildFrame(plane->forward, plane->bankAngle, &right, &up);
+	buildFrame(plane, &right, &up);
 	return right;
 }
 
 float3 planeGetUpVector(const Plane *plane) {
 	float3 right, up;
-	buildFrame(plane->forward, plane->bankAngle, &right, &up);
+	buildFrame(plane, &right, &up);
 	return up;
 }
 
-void planeSetThrottle(Plane *plane, float pct) {
-	plane->currentTrustPercentage = fmaxf(0.0f, fminf(1.0f, pct));
+void planeSetThrottle(Plane *plane, float v) {
+	plane->currentTrustPercentage = fmaxf(0.0f, fminf(1.0f, v));
 }
 
 float planeGetThrottlePct(const Plane *plane) {
@@ -373,10 +403,16 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	for (int i = 0; i < 11; i++)
 		stepSurface(allSurfaces[i], deltaTime);
 
-	// Orientation frame from nose direction + bank angle.
+	// Orientation frame from the carried body frame + bank angle.
 	float3 fwd = f3Norm(plane->forward);
 	float3 right_banked, up_banked;
-	buildFrame(fwd, plane->bankAngle, &right_banked, &up_banked);
+	buildFrame(plane, &right_banked, &up_banked);
+
+	// Gravity-cue weight: 1 while the body frame is near level, fading to 0 as
+	// it is put on its side or inverted.  Scales the two gravity-derived arcade
+	// terms below (wing leveling and banked-turn coupling) so they stop
+	// fighting the pilot in vertical, inverted and looping flight.
+	float gravityCue = fmaxf(0.0f, fminf(1.0f, up_banked.y * 2.0f));
 
 	// Real AoA and sideslip: angle between velocity vector and nose direction.
 	float speed = f3Len(plane->velocity);
@@ -452,7 +488,9 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	rollTorque -= sideslip_rad * q * plane->rightWing.surfaceArea * DIHEDRAL_EFFECT_COEFF * LEVER_AILERON * controlScale;
 	// Wing-leveling: combined dihedral and pendular stability produces a restoring
 	// roll torque when banked, giving natural tendency to return to wings-level.
-	rollTorque -= sinf(plane->bankAngle) * BANK_RESTORE_COEFF;
+	// Faded by gravityCue: it is a gravity effect, so it must not fight vertical
+	// or inverted flight.
+	rollTorque -= sinf(plane->bankAngle) * BANK_RESTORE_COEFF * gravityCue;
 	// Differential flap (flaperon): wing surface, same sign as aileron — more deflection on
 	// right side reduces right-wing lift → right wing sinks → positive (right) bank.
 	rollTorque += flapDiffDefl * q * plane->rightFlap.surfaceArea * plane->rightFlap.liftCoefficient * LEVER_FLAP_ROLL * controlScale;
@@ -460,8 +498,20 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	// right-tail lift → right tail sinks → right wing rises → negative (left) bank.
 	rollTorque -= elevDiffDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEV_ROLL * controlScale;
 
-	// Pitch: elevator + tail AoA restoring moment.
-	float pitchTorque = -elevDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEVATOR * controlScale;
+	// Pitch: elevator + tail AoA restoring moment.  Stabilator authority fades
+	// as AoA approaches its stall angle: a stalled stabilizer produces almost
+	// no extra force, so full stick winds up to a bounded AoA instead of
+	// driving the nose past 90 deg into an endless tumble (drag from the
+	// stalled wing then wiped out all energy and the plane never looped).
+	float elevAuthority = 1.0f;
+	{
+		float aoaMag = fabsf(aoa_deg);
+		if (aoaMag > 22.0f) {
+			float t = fminf(1.0f, (aoaMag - 22.0f) / 14.0f);
+			elevAuthority = 1.0f + (0.12f - 1.0f) * t;
+		}
+	}
+	float pitchTorque = -elevDefl * q * plane->rightElevator.surfaceArea * plane->rightElevator.liftCoefficient * LEVER_ELEVATOR * controlScale * elevAuthority;
 	pitchTorque -= aoa_rad * q * 2.5f * controlScale;
 
 	// Yaw: rudder + weathervane stability + adverse yaw from aileron differential drag.
@@ -475,9 +525,10 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	// pitchTorque -= plane->yawRate * H_engine;
 	// yawTorque += plane->pitchRate * H_engine;
 
-	// Aerodynamic damping opposes rotation. Uses uncapped dampScale so damping
-	// keeps growing with airspeed — matching the physical q-dependence of the
-	// control forces and preventing instability at high speed.
+	// Aerodynamic damping opposes rotation.  dampScale is capped at 2.5x (see
+	// its definition above): above q ~ 8750 the control torques saturate at
+	// controlScale = 1, and letting damping keep growing with q pinned the
+	// rotation rates and made high-speed handling feel sluggish.
 	rollTorque -= plane->bankRate * DAMP_ROLL * dampScale;
 	pitchTorque -= plane->pitchRate * DAMP_PITCH * dampScale;
 	yawTorque -= plane->yawRate * DAMP_YAW * dampScale;
@@ -487,17 +538,50 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	plane->pitchRate += (pitchTorque / I_PITCH) * deltaTime;
 	plane->yawRate += (yawTorque / I_YAW) * deltaTime;
 
-	fwd = f3Norm(f3Add(fwd, f3Scale(up_banked, plane->pitchRate * deltaTime)));
-	fwd = f3Norm(f3Add(fwd, f3Scale(right_banked, plane->yawRate * deltaTime)));
-	plane->bankAngle += plane->bankRate * deltaTime;
+	float pitchAng = plane->pitchRate * deltaTime;
+	float yawAng = plane->yawRate * deltaTime;
 
-	// Banked-turn coupling: gravity component turns heading when banked.
+	fwd = f3Norm(f3Add(fwd, f3Scale(up_banked, pitchAng)));
+	fwd = f3Norm(f3Add(fwd, f3Scale(right_banked, yawAng)));
+	plane->bankAngle += plane->bankRate * deltaTime;
+	// Keep bank in (-pi, pi]: rolling for minutes used to accumulate unbounded
+	// radians, which loses precision and leaks into every sinf/cosf consumer.
+	if (plane->bankAngle > (float)M_PI) {
+		plane->bankAngle -= 2.0f * (float)M_PI;
+	} else if (plane->bankAngle < -(float)M_PI) {
+		plane->bankAngle += 2.0f * (float)M_PI;
+	}
+
+	// Banked-turn coupling: gravity component turns heading when banked.  It is
+	// a gravity effect, so it fades with gravityCue as the frame tilts away from
+	// level (no heading kick in vertical or inverted flight).
 	float clampedBank = fmaxf(-1.2f, fminf(1.2f, plane->bankAngle));
-	float turnYaw = (9.81f / fmaxf(speed, 50.0f)) * tanf(clampedBank) * deltaTime;
+	float turnYaw = (9.81f / fmaxf(speed, 50.0f)) * tanf(clampedBank) * deltaTime * gravityCue;
 	fwd = f3Norm(f3Add(fwd, f3Scale(right_banked, turnYaw)));
 
+	// Carry the unbanked frame with the same nose rotations; bank is stored
+	// separately in bankAngle.  Keeping it integrated (instead of re-deriving
+	// from world up) is what makes loops, vertical and inverted flight work:
+	// the old derivation rotated the whole frame 180 deg in one step when
+	// |fwd.y| crossed 0.99.
+	{
+		float3 carried = plane->bodyRight;
+		carried = f3Add(carried, f3Scale(f3Cross(right_banked, carried), pitchAng));
+		carried = f3Add(carried, f3Scale(f3Cross(up_banked, carried), yawAng + turnYaw));
+		carried = f3Add(carried, f3Scale(fwd, -f3Dot(carried, fwd)));
+		float cl = f3Len(carried);
+		if (cl < 0.05f) {
+			// frame lost (teleport / degenerate state): reseed from gravity
+			carried = seedBodyRight(fwd);
+		} else {
+			carried = f3Scale(carried, 1.0f / cl);
+		}
+		plane->bodyRight = carried;
+		plane->bodyUp = f3Cross(fwd, carried);
+	}
+
 	plane->forward = fwd;
-	buildFrame(fwd, plane->bankAngle, &right_banked, &up_banked);
+	buildFrame(plane, &right_banked, &up_banked);
 
 	// Aerodynamic forces — lift perpendicular to velocity (in banked-up dir), drag opposing velocity.
 	float totalLift = 0.0f, totalDrag = 0.0f, totalLateral = 0.0f;
@@ -540,7 +624,15 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	}
 
 	float3 worldForce = {0.0f, 0.0f, 0.0f, 0.0f};
-	worldForce = f3Add(worldForce, f3Scale(up_banked, totalLift));		 // lift in banked-up direction
+	// Lift acts perpendicular to the relative wind: project the banked-up
+	// direction onto the plane normal to velocity.  Applying lift along
+	// up_banked rotated the force with the body even at 90 deg AoA, so the
+	// trajectory never followed the nose and sustained pulls tumbled instead
+	// of looping.
+	float3 liftDir = f3Add(up_banked, f3Scale(velNorm, -f3Dot(up_banked, velNorm)));
+	float liftLen = f3Len(liftDir);
+	liftDir = (liftLen > 0.05f) ? f3Scale(liftDir, 1.0f / liftLen) : up_banked;
+	worldForce = f3Add(worldForce, f3Scale(liftDir, totalLift));		 // lift perpendicular to relative wind
 	worldForce = f3Add(worldForce, f3Scale(velNorm, -totalDrag));		 // drag opposing velocity
 	worldForce = f3Add(worldForce, f3Scale(right_banked, totalLateral)); // lateral aero
 
@@ -586,16 +678,11 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 float3 planeGetEulerAngles(const Plane *plane) {
 	float3 fwd = f3Norm(plane->forward);
 
-	// Build reference frame from forward direction
-	float3 ref = (fabsf(fwd.y) < 0.99f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f}
-										: (float3){1.0f, 0.0f, 0.0f, 0.0f};
-	float3 right = f3Norm(f3Cross(ref, fwd));
-	float3 up = f3Cross(fwd, right);
-
-	// Apply bank rotation
-	float cb = cosf(plane->bankAngle);
-	float sb = sinf(plane->bankAngle);
-	float3 bankedUp = f3Add(f3Scale(up, cb), f3Scale(right, sb));
+	// Use the carried body frame: re-deriving a gravity reference here had the
+	// same |fwd.y| = 0.99 discontinuity the physics used to have, so the
+	// rendered attitude glitched through loops even without the physics flip.
+	float3 right, bankedUp;
+	buildFrame(plane, &right, &bankedUp);
 
 	float fx = fwd.x, fy = fwd.y, fz = fwd.z;
 	float ux = bankedUp.x, uy = bankedUp.y, uz = bankedUp.z;

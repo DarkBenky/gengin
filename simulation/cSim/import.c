@@ -1,5 +1,7 @@
 #include "import.h"
+#include "../../math/vector3.h"
 #include <string.h>
+#include <math.h>
 
 static int readF3(FILE *f, float3 *out) {
 	float v[3];
@@ -108,7 +110,11 @@ int loadPlaneBin(Plane *plane, const char *path, float3 forward, float3 position
 	plane->currentTrustPercentage = engine[1];
 	plane->baseMass = engine[2];
 	plane->fuelMass = engine[3];
-	plane->currentFuelPercentage = 1.0f;
+	// engine[4] is the saved fuel fraction: honor it (clamped) instead of
+	// forcing a full tank, so load -> save -> load no longer silently refills.
+	// engine[1] (saved throttle) is deliberately overridden by the spawn
+	// `throttle` parameter a few lines down.
+	plane->currentFuelPercentage = fmaxf(0.0f, fminf(1.0f, engine[4]));
 	plane->burnRate = engine[5];
 	plane->burnWithoutAfterburner = engine[6];
 	plane->forward = forward;
@@ -118,6 +124,19 @@ int loadPlaneBin(Plane *plane, const char *path, float3 forward, float3 position
 	plane->currentAltitude = position.y;
 	plane->currentTrustPercentage = throttle;
 	plane->velocity = (float3){forward.x * speed, forward.y * speed, forward.z * speed, 0.0f};
+
+	// Seed the carried body frame from gravity; updatePlane integrates it from
+	// here.  Derived state - intentionally not part of the file format.
+	{
+		float3 ref = (fabsf(plane->forward.y) < 0.9f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
+		float3 right = Float3_Normalize(Float3_Cross(ref, plane->forward));
+		if (Float3_Length(right) < 0.5f) {
+			// reference parallel to forward: retry around the z axis
+			right = Float3_Normalize(Float3_Cross((float3){0.0f, 0.0f, 1.0f, 0.0f}, plane->forward));
+		}
+		plane->bodyRight = right;
+		plane->bodyUp = Float3_Normalize(Float3_Cross(plane->forward, right));
+	}
 
 	fclose(f);
 	return 0;
