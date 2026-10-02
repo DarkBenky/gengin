@@ -177,6 +177,7 @@ CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
 CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
 CONV_BLOCK_BUDGET = 16      # accumulators per work item (filters x columns)
+CONV_MAX_UNROLL_QUADS = 16  # channel quads emitted inline before the body loops
 
 
 def convBlockX(width, channels, filterSize, filters, perItem):
@@ -322,11 +323,22 @@ def generateKernel(width, height, channels, filterSize, filters=1):
                     inner = body + "    "
                 out.append(f"{inner}const int {base} = {yTerm} * {rowStride} + {xTerm} * {channels};")
                 if vec:
-                    for q in range(quads):
-                        off = f"{base}" if q == 0 else f"{base} + {4 * q}"
-                        out.append(f"{inner}const float4 v{q} = *(__global const float4*)(input + {off});")
+                    if quads > CONV_MAX_UNROLL_QUADS:
+                        # Wide channels: a rolled channel loop keeps the body a few
+                        # hundred bytes instead of one straight-line block per quad.
+                        out.append(f"{inner}for (int q = 0; q < {quads}; q++)")
+                        out.append(f"{inner}{{")
+                        inner = inner + "    "
+                        out.append(f"{inner}const float4 v = *(__global const float4*)(input + {base} + 4 * q);")
                         for b in range(perItem):
-                            out.append(f"{inner}{accName(p, b)} += v{q} * *(__global const float4*)(filterWeights + {wIndex(b, filterBase + 4 * q)});")
+                            out.append(f"{inner}{accName(p, b)} += v * *(__global const float4*)(filterWeights + {wIndex(b, filterBase)} + 4 * q);")
+                        out.append(f"{inner}}}")
+                    else:
+                        for q in range(quads):
+                            off = f"{base}" if q == 0 else f"{base} + {4 * q}"
+                            out.append(f"{inner}const float4 v{q} = *(__global const float4*)(input + {off});")
+                            for b in range(perItem):
+                                out.append(f"{inner}{accName(p, b)} += v{q} * *(__global const float4*)(filterWeights + {wIndex(b, filterBase + 4 * q)});")
                 else:
                     for k in range(channels):
                         inIndex = f"[{base}]" if k == 0 else f"[{base} + {k}]"
