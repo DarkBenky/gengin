@@ -136,4 +136,5 @@ static void freeEmitterManger(EmitterManger *m) {
     m->cap = 0;
 }
 
+// TODO: Implement heatHaze
 static void heatHaze(Camera *restrict cam, EmitterManger *restrict emitters) {};

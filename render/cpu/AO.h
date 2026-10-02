@@ -211,8 +211,6 @@ static inline float Clamp(float val, float lower, float upper) {
 }
 
 static void CalculateAmbientOcclusion(Camera *camera) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	const float pixelRadius = 16.0f; // sample spread in pixels
 	const float worldRadius = 20.5f; // max world-space distance (scene units)
 	const float bias = worldRadius * 0.02f;
@@ -269,8 +267,6 @@ static void CalculateAmbientOcclusion(Camera *camera) {
 }
 
 static void CalculateAmbientOcclusionV2(Camera *camera) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	const float worldRadius = 20.5f;
 	const float bias = worldRadius * 0.02f;
 	const float bias2 = bias * bias;
@@ -1462,8 +1458,6 @@ static void CalculateAmbientOcclusionV3(Camera *camera) {
 }
 
 static void CalculateAmbientOcclusionMp(Camera *camera, ThreadPool *threadPool) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
 
 	const int height = camera->screenHeight;
@@ -1479,8 +1473,6 @@ static void CalculateAmbientOcclusionMp(Camera *camera, ThreadPool *threadPool) 
 }
 
 static void CalculateAmbientOcclusionV2Mp(Camera *camera, ThreadPool *threadPool) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
 
 	const int height = camera->screenHeight;
@@ -1496,8 +1488,6 @@ static void CalculateAmbientOcclusionV2Mp(Camera *camera, ThreadPool *threadPool
 }
 
 static void CalculateAmbientOcclusionV2PlusMp(Camera *camera, ThreadPool *threadPool) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
 
 	const int height = camera->screenHeight;
@@ -1518,10 +1508,7 @@ static void CalculateAmbientOcclusionV2PlusColumn(Camera *camera) {
 	columnBlur(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer);
 }
 
-// TODO: Too slow we need to make some resolution based version
 static void CalculateAmbientOcclusionV2PlusColumnMp(Camera *camera, ThreadPool *threadPool) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
 
 	const int height = camera->screenHeight;
@@ -1538,8 +1525,6 @@ static void CalculateAmbientOcclusionV2PlusColumnMp(Camera *camera, ThreadPool *
 }
 
 static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(Camera *camera, ThreadPool *threadPool) {
-	// TODO: Apply blur pass
-	// TODO: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
 
 	const int height = camera->screenHeight;
@@ -1631,8 +1616,6 @@ static void applyAmbientOcclusion(Camera *camera, ThreadPool *threadPool, float 
 }
 
 static void CalculateAmbientOcclusionV2PlusColumnSgMp(Camera *camera, ThreadPool *threadPool) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
 
 	const int height = camera->screenHeight;
@@ -1649,8 +1632,6 @@ static void CalculateAmbientOcclusionV2PlusColumnSgMp(Camera *camera, ThreadPool
 }
 
 static void CalculateAmbientOcclusionV3Mp(Camera *camera, ThreadPool *threadPool) {
-	// TODO: Apply blur pass
-	// NOTE: Make it edge-aware Cheapest guard is to reject neighbour taps whose depthBuffer differs too much (or whose normal dot < ~0.8)
 	if (!camera || !threadPool) return;
 
 	const int height = camera->screenHeight;
