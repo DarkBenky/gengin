@@ -176,6 +176,7 @@ CONV_SPLIT_TARGET = 16384   # work items we would like in flight
 CONV_MIN_ITEMS = 32768      # work items below which a conv is latency bound
 CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
+CONV_L1_FLOATS = 32768      # filter block (floats) that still caches in the L1
 CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
 CONV_BLOCK_BUDGET = 16      # accumulators per work item (filters x columns)
 CONV_MAX_UNROLL_QUADS = 16  # channel quads emitted inline before the body loops
@@ -414,6 +415,11 @@ def generateC(width, height, channels, filterSize, filters=1):
     # so the grid is `groups` times wider than the image.
     gx = roundUp((width // blockX) * groups, 16)
     gy = roundUp(height, 16)
+    # A filter block that no longer fits the L1 misses on every weight load
+    # anyway, so halving the group costs it nothing: three half-height groups
+    # fit per SM instead of one, and the tail drains in smaller steps.  A block
+    # that does fit keeps the full group - more resident blocks would evict it.
+    localY = 8 if perItem * filterSize * filterSize * channels >= CONV_L1_FLOATS else 16
     initBound = (6.0 / (filterSize * filterSize * channels)) ** 0.5
 
     out = []
@@ -435,7 +441,7 @@ def generateC(width, height, channels, filterSize, filters=1):
     out.append(f"\tlayer.channels = {channels};")
     out.append(f"\tlayer.filterSize = {filterSize};")
     out.append("\tlayer.localX = 16;")
-    out.append("\tlayer.localY = 16;")
+    out.append(f"\tlayer.localY = {localY};")
     out.append("")
     out.append(f'\tlayer.pip = CL_Pipeline_FromFile(ctx, clPath, "{name}", NULL);')
     out.append("\tif (layer.pip.kernel == NULL) {")
