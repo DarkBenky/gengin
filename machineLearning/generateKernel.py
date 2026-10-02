@@ -173,6 +173,7 @@ def tapGuard(dy, dx, width, height):
 #     spread over global_id(0) (`x + width * group`), multiplying the thread
 #     count by `groups`.
 CONV_SPLIT_TARGET = 16384   # work items we would like in flight
+CONV_MIN_ITEMS = 32768      # work items below which a conv is latency bound
 CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
 CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
@@ -220,6 +221,12 @@ def convPlan(width, height, channels, filterSize, filters):
     if blockX > 1:
         perItem = max(1, CONV_BLOCK_BUDGET // blockX)  # columns share the same budget
     groups = -(-filters // perItem)                    # ceil
+    if blockX == 1 and groups == 1 and perItem < CONV_MAX_PER_ITEM and width * height < CONV_MIN_ITEMS:
+        # A single filter group on an image below the latency-bound item count
+        # leaves the device half idle; the filter block is well inside the
+        # register budget, so splitting it buys warps instead of costing reuse.
+        perItem = min(filters, CONV_MIN_PER_ITEM)
+        groups = -(-filters // perItem)
     return groups, perItem, blockX, vectorized, quads
 
 
