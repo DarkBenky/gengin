@@ -1,10 +1,10 @@
 # Tasks
 
-- [ ] Add the Sponza palace to scene to test rendering more
+- [X] Add the Sponza palace to scene to test rendering more
   - [X] convert to bin file
-  - [ ] add to scene
-    - [ ] fix material issues
-    - [ ] fix core dump for this object
+  - [X] add to scene
+    - [X] fix material issues
+    - [X] fix core dump for this object (it works now but not sure if it is correct reason why)
 - [ ] Build some really basic minimalistic model editor
   - [ ] "Tab" toggles "Editor Mode" on/off
     - [ ] click object to select it, use existing model id buffer for highlight (OpenCL: per pixel, if id == selected id, tint color buffer at that pixel)
