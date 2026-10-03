@@ -957,18 +957,21 @@ static void RayTraceRowFunc(void *arg) {
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		// sky reflection blend metals tint it by albedo, dielectrics reflect white sky
-		Color skyRefl = SampleSkybox(task->skybox, reflDir);
 		uint32 st = (uint32)(reflectStrength * 255.0f);
 		if (st > 255u) st = 255u;
 		uint32 sit = 255u - st;
-		uint32 skyR = (skyRefl >> 16) & 0xFF;
-		uint32 skyG = (skyRefl >> 8) & 0xFF;
-		uint32 skyB = (skyRefl) & 0xFF;
-		// tint sky colour by albedo for metals
-		skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
-		skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
-		skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+		// the lookup only reaches the pixel through `st`, so a zero weight skips it
+		uint32 skyR = 0, skyG = 0, skyB = 0;
+		if (st) {
+			Color skyRefl = SampleSkybox(task->skybox, reflDir);
+			skyR = (skyRefl >> 16) & 0xFF;
+			skyG = (skyRefl >> 8) & 0xFF;
+			skyB = (skyRefl) & 0xFF;
+			// tint sky colour by albedo for metals
+			skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
+			skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
+			skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+		}
 		uint32 nr = ((uint32)r * sit + skyR * st) >> 8;
 		uint32 ng = ((uint32)g * sit + skyG * st) >> 8;
 		uint32 nb = ((uint32)b * sit + skyB * st) >> 8;
@@ -1469,18 +1472,21 @@ static void RayTraceColumnFunc(void *arg) {
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		// sky reflection blend metals tint it by albedo, dielectrics reflect white sky
-		Color skyRefl = SampleSkybox(task->skybox, reflDir);
 		uint32 st = (uint32)(reflectStrength * 255.0f);
 		if (st > 255u) st = 255u;
 		uint32 sit = 255u - st;
-		uint32 skyR = (skyRefl >> 16) & 0xFF;
-		uint32 skyG = (skyRefl >> 8) & 0xFF;
-		uint32 skyB = (skyRefl) & 0xFF;
-		// tint sky colour by albedo for metals
-		skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
-		skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
-		skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+		// the lookup only reaches the pixel through `st`, so a zero weight skips it
+		uint32 skyR = 0, skyG = 0, skyB = 0;
+		if (st) {
+			Color skyRefl = SampleSkybox(task->skybox, reflDir);
+			skyR = (skyRefl >> 16) & 0xFF;
+			skyG = (skyRefl >> 8) & 0xFF;
+			skyB = (skyRefl) & 0xFF;
+			// tint sky colour by albedo for metals
+			skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
+			skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
+			skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+		}
 		uint32 nr = ((uint32)r * sit + skyR * st) >> 8;
 		uint32 ng = ((uint32)g * sit + skyG * st) >> 8;
 		uint32 nb = ((uint32)b * sit + skyB * st) >> 8;
