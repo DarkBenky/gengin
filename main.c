@@ -156,9 +156,7 @@ int main() {
 
 	uint32 palaceSceneIndex = (uint32)scene.count;
 	Object *palace = ObjectList_Add(&scene);
-	uint32 palaceId = generateId(MODEL_PALACE);
 	LoadObj("assets/models/palace2.bin", palace, &matLib);
-	idRegister_Add(&objectRegistry, palaceId, palaceSceneIndex);
 	palace->position = (float3){-15.0f, 0.0f, 15.0f};
 	palace->rotation = (float3){0.0f, 40.0f, 0.0f};
 	palace->scale = (float3){1.0f, 1.0f, 1.0f};
