@@ -72,41 +72,58 @@ void packMaterials(int *materialIds, int count, MaterialLib *lib) {
 }
 
 void Textures_Destroy(Textures *tex) {
+	if (!tex) return;
+	free(tex->colorMap);
+	free(tex->normalMap);
+	free(tex->MaterialMap);
 	free(tex);
 }
 
-Textures *Textures_LoadFromFile(FILE *file) {
+Textures *Textures_LoadFromFile(FILE *file, uint32 textureSize) {
+	size_t texelCount = (size_t)textureSize * textureSize;
 	Textures *tex = (Textures *)malloc(sizeof(Textures));
 	if (!tex) {
 		fprintf(stderr, "Error: Could not allocate Textures.\n");
 		return NULL;
 	}
+	tex->size = textureSize;
+	tex->colorMap = (Color *)malloc(texelCount * sizeof(Color));
+	tex->normalMap = (Color *)malloc(texelCount * sizeof(Color));
+	tex->MaterialMap = (uint16 *)malloc(texelCount * sizeof(uint16));
+	if (!tex->colorMap || !tex->normalMap || !tex->MaterialMap) {
+		fprintf(stderr, "Error: Could not allocate textures.\n");
+		Textures_Destroy(tex);
+		return NULL;
+	}
 
 	// ColorMap: RGBA uint8 packed as uint32, read directly.
-	if (fread(tex->colorMap, sizeof(uint32), TEXTURE_SIZE * TEXTURE_SIZE, file) != (size_t)(TEXTURE_SIZE * TEXTURE_SIZE)) {
+	if (fread(tex->colorMap, sizeof(Color), texelCount, file) != texelCount) {
 		fprintf(stderr, "Error: Failed to read colorMap.\n");
-		free(tex);
+		Textures_Destroy(tex);
 		return NULL;
 	}
 
 	// NormalMap: stored as RGB (3 bytes/pixel), unpack to RGBA with full alpha.
-	for (int i = 0; i < TEXTURE_SIZE * TEXTURE_SIZE; i++) {
-		uint8 rgb[3];
-		if (fread(rgb, 1, 3, file) != 3) {
-			fprintf(stderr, "Error: Failed to read normalMap.\n");
-			free(tex);
-			return NULL;
-		}
-		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[0] = rgb[0];
-		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[1] = rgb[1];
-		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[2] = rgb[2];
-		((uint8 *)&tex->normalMap[i / TEXTURE_SIZE][i % TEXTURE_SIZE])[3] = 0xFF;
+	uint8 *normalPlane = (uint8 *)malloc(texelCount * 3);
+	if (!normalPlane || fread(normalPlane, 1, texelCount * 3, file) != texelCount * 3) {
+		fprintf(stderr, "Error: Failed to read normalMap.\n");
+		free(normalPlane);
+		Textures_Destroy(tex);
+		return NULL;
 	}
+	for (size_t i = 0; i < texelCount; i++) {
+		uint8 *px = (uint8 *)&tex->normalMap[i];
+		px[0] = normalPlane[i * 3];
+		px[1] = normalPlane[i * 3 + 1];
+		px[2] = normalPlane[i * 3 + 2];
+		px[3] = 0xFF;
+	}
+	free(normalPlane);
 
 	// MaterialMap: [roughness, metallic] as uint16, read directly.
-	if (fread(tex->MaterialMap, sizeof(uint16), TEXTURE_SIZE * TEXTURE_SIZE, file) != (size_t)(TEXTURE_SIZE * TEXTURE_SIZE)) {
+	if (fread(tex->MaterialMap, sizeof(uint16), texelCount, file) != texelCount) {
 		fprintf(stderr, "Error: Failed to read MaterialMap.\n");
-		free(tex);
+		Textures_Destroy(tex);
 		return NULL;
 	}
 

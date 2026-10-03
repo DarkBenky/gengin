@@ -763,13 +763,13 @@ void getBvhStats(const BVH *bvh, int *outNodeCount, int *outTriCount) {
 // Möller–Trumbore ray-triangle intersection
 // TODO: test different implementations
 static bool rayTriangle(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2, float *tOut) {
+						float3 v0, float3 v1, float3 v2, float *tOut, bool cull) {
 	const float eps = 1e-7f;
 	float3 e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
 	float3 e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
 	float3 h = {rd.y * e2.z - rd.z * e2.y, rd.z * e2.x - rd.x * e2.z, rd.x * e2.y - rd.y * e2.x};
 	float a = e1.x * h.x + e1.y * h.y + e1.z * h.z;
-	if (fabsf(a) < eps) return false;
+	if (cull ? (a < eps) : (fabsf(a) < eps)) return false;
 	float f = 1.0f / a;
 	float3 s = {ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
 	float u = f * (s.x * h.x + s.y * h.y + s.z * h.z);
@@ -790,7 +790,7 @@ static bool rayTriangle(float3 ro, float3 rd,
 // per-lane branch is needed. Invalid/padding lanes have e1 == e2 == 0 -> a == 0
 // -> rejected, so a leaf with 1..3 triangles is handled by the same code.
 // Returns the accept mask per lane; *tOut holds the per-lane t.
-static inline __m128 rayTriLeaf4Mask(const float *ls, float3 ro, float3 rd, __m128 *tOut) {
+static inline __m128 rayTriLeaf4Mask(const float *ls, float3 ro, float3 rd, __m128 *tOut, bool cull) {
 	const __m128 eps = _mm_set1_ps(1e-7f);
 	const __m128 zero = _mm_setzero_ps();
 	const __m128 one = _mm_set1_ps(1.0f);
@@ -808,7 +808,12 @@ static inline __m128 rayTriLeaf4Mask(const float *ls, float3 ro, float3 rd, __m1
 	const __m128 hz = _mm_sub_ps(_mm_mul_ps(rdx, e2y), _mm_mul_ps(rdy, e2x));
 
 	const __m128 a = _mm_add_ps(_mm_add_ps(_mm_mul_ps(e1x, hx), _mm_mul_ps(e1y, hy)), _mm_mul_ps(e1z, hz));
-	__m128 ok = _mm_cmpge_ps(_mm_andnot_ps(sign, a), eps); // |a| >= eps
+	__m128 ok;
+	if (cull) {
+		ok = _mm_cmpge_ps(a, eps);
+	} else {
+		ok = _mm_cmpge_ps(_mm_andnot_ps(sign, a), eps); // |a| >= eps
+	}
 	const __m128 f = _mm_div_ps(one, a);
 
 	const __m128 sx = _mm_sub_ps(rox, v0x), sy = _mm_sub_ps(roy, v0y), sz = _mm_sub_ps(roz, v0z);
@@ -830,9 +835,9 @@ static inline __m128 rayTriLeaf4Mask(const float *ls, float3 ro, float3 rd, __m1
 
 // Closest-hit leaf test: returns the smallest accepted t below bestT, or
 // FLT_MAX when no triangle of the leaf is hit, plus the winning lane.
-static inline float rayTriangleLeaf4(const float *ls, float3 ro, float3 rd, float bestT, int *laneOut) {
+static inline float rayTriangleLeaf4(const float *ls, float3 ro, float3 rd, float bestT, int *laneOut, bool cull) {
 	__m128 t;
-	__m128 ok = rayTriLeaf4Mask(ls, ro, rd, &t);
+	__m128 ok = rayTriLeaf4Mask(ls, ro, rd, &t, cull);
 	ok = _mm_and_ps(ok, _mm_cmplt_ps(t, _mm_set1_ps(bestT)));
 
 	__m128 tin = _mm_blendv_ps(_mm_set1_ps(FLT_MAX), t, ok);
@@ -845,9 +850,9 @@ static inline float rayTriangleLeaf4(const float *ls, float3 ro, float3 rd, floa
 }
 
 // Any-hit leaf test (shadow rays): true when any lane of the leaf is hit.
-static inline bool rayTriangleLeaf4Any(const float *ls, float3 ro, float3 rd) {
+static inline bool rayTriangleLeaf4Any(const float *ls, float3 ro, float3 rd, bool cull) {
 	__m128 t;
-	return _mm_movemask_ps(rayTriLeaf4Mask(ls, ro, rd, &t)) != 0;
+	return _mm_movemask_ps(rayTriLeaf4Mask(ls, ro, rd, &t, cull)) != 0;
 }
 
 static float rayAABB(float3 ro, float3 rd, float3 mn, float3 mx) {
@@ -909,7 +914,7 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 		if (node->triCount > 0) {
 			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
 				int lane = 0;
-				float hit = rayTriangleLeaf4(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir, bestT, &lane);
+				float hit = rayTriangleLeaf4(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir, bestT, &lane, obj->cullBackfaces);
 				if (hit < bestT) {
 					bestT = hit;
 					*hitTriIdx = bvh->triIndices[node->triStart + lane];
@@ -918,7 +923,7 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 				for (int i = 0; i < node->triCount; i++) {
 					int t = bvh->triIndices[node->triStart + i];
 					float hit;
-					if (rayTriangle(rayOrigin, rayDir, obj->v1[t], obj->v2[t], obj->v3[t], &hit) && hit < bestT) {
+					if (rayTriangle(rayOrigin, rayDir, obj->v1[t], obj->v2[t], obj->v3[t], &hit, obj->cullBackfaces) && hit < bestT) {
 						bestT = hit;
 						*hitTriIdx = t;
 					}
@@ -976,13 +981,13 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 		const BVHNode *node = &bvh->nodes[stack[--top]];
 		if (node->triCount > 0) {
 			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
-				if (rayTriangleLeaf4Any(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir))
+				if (rayTriangleLeaf4Any(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir, obj->cullBackfaces))
 					return true;
 			} else {
 				for (int i = 0; i < node->triCount; i++) {
 					int ti = bvh->triIndices[node->triStart + i];
 					float hit;
-					if (rayTriangle(rayOrigin, rayDir, obj->v1[ti], obj->v2[ti], obj->v3[ti], &hit))
+					if (rayTriangle(rayOrigin, rayDir, obj->v1[ti], obj->v2[ti], obj->v3[ti], &hit, obj->cullBackfaces))
 						return true;
 				}
 			}
@@ -1067,7 +1072,7 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
 						for (int i = 0; i < node->triCount; i++) {
 							int t = obj->bvh.triIndices[node->triStart + i];
 							float hit;
-							if (rayTriangle(rayO, dir, obj->v1[t], obj->v2[t], obj->v3[t], &hit) && hit < bestT) {
+							if (rayTriangle(rayO, dir, obj->v1[t], obj->v2[t], obj->v3[t], &hit, obj->cullBackfaces) && hit < bestT) {
 								bestT = hit;
 								hitTri = t;
 							}

@@ -131,6 +131,7 @@ typedef struct Object {
 	int triangleCount;
 
 	bool hasTexture;
+	bool cullBackfaces;
 	bool hasEmission; // quick check to skip emission sampling when no faces emit
 	EmissionMap frontFaceEmission;
 	EmissionMap backFaceEmission;

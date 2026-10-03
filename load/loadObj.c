@@ -17,20 +17,38 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		return;
 	}
 
-	// read first 32 bytes
+	// read header
 	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures;
 	fread(&fileSize, sizeof(uint32), 1, file);
 	fread(&triangleStructSize, sizeof(uint32), 1, file);
 	fread(&triangleCountRead, sizeof(uint32), 1, file);
 	fread(&hasTextures, sizeof(uint32), 1, file);
 
+	// hasTextures bit 0 = textures present, bit 1 = cull backfaces
+	obj->cullBackfaces = (hasTextures & 2) != 0;
+	hasTextures &= 1;
+
 	uint32 triangleCount = triangleCountRead;
+
+	// the texture size field is validated against fileSize; legacy files carry
+	// triangle or texture data there instead and are always 4096
+	uint32 textureSize = 4096;
+	uint32 sizeField = 0;
+	if (fread(&sizeField, sizeof(uint32), 1, file) == 1) {
+		unsigned long long expected = 20ull + (unsigned long long)triangleCount * triangleStructSize +
+									  (hasTextures ? (unsigned long long)sizeField * sizeField * 9 : 0);
+		if (expected == fileSize && sizeField >= 256 && sizeField <= 16384) {
+			textureSize = sizeField;
+		} else {
+			fseek(file, 16, SEEK_SET);
+		}
+	}
 
 	// load textures if present
 	Textures *tex = NULL;
 	if (hasTextures) {
 		obj->hasTexture = true;
-		tex = Textures_LoadFromFile(file);
+		tex = Textures_LoadFromFile(file, textureSize);
 		if (!tex) {
 			fprintf(stderr, "Error: Failed to load textures from file.\n");
 			fclose(file);

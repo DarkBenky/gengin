@@ -566,6 +566,7 @@ typedef struct uvCoordinates {
 } uvCoordinates;
 
 // Calculate x and y for sampling a texture for given hit point and triangle
+// TODO: Use Bilinear texture sampling
 static inline uvCoordinates calculateUvCoordinatesForTriangle(const float3 hitPos, const float3 v0, const float3 v1, const float3 v2, const UvCords uvCords) {
 	float3 edge1 = Float3_Sub(v1, v0);
 	float3 edge2 = Float3_Sub(v2, v0);
@@ -585,12 +586,12 @@ static inline uvCoordinates calculateUvCoordinatesForTriangle(const float3 hitPo
 	float bw = (d00 * d21 - d01 * d20) * invDenom;
 	float bu = 1.0f - bv - bw;
 
-	// interpolate stored [0..65535] UV coords, then map to [0..TEXTURE_SIZE-1]
+	// interpolate stored [0..65535] UV coords
 	float u = bu * uvCords.uv1x + bv * uvCords.uv2x + bw * uvCords.uv3x;
 	float v = bu * uvCords.uv1y + bv * uvCords.uv2y + bw * uvCords.uv3y;
 	return (uvCoordinates){
-		(uint16)(u * (TEXTURE_SIZE - 1) / 65535.0f),
-		(uint16)(v * (TEXTURE_SIZE - 1) / 65535.0f),
+		(uint16)u,
+		(uint16)v,
 	};
 }
 
@@ -812,9 +813,13 @@ static void RayTraceRowFunc(void *arg) {
 				roughness = lib->entries[matId].roughness;
 
 				if (hasTexture && lib->entries[matId].textures) {
-					Color colorFromTexture = lib->entries[matId].textures->colorMap[xyCordsTexture.y][xyCordsTexture.x];
-					Color normalFromTexture = lib->entries[matId].textures->normalMap[xyCordsTexture.y][xyCordsTexture.x];
-					uint16 roughnessAndMetallicFromTexture = lib->entries[matId].textures->MaterialMap[xyCordsTexture.y][xyCordsTexture.x];
+					Textures *tex = lib->entries[matId].textures;
+					uint32 texX = (uint32)xyCordsTexture.x * (tex->size - 1) / 65535;
+					uint32 texY = (uint32)xyCordsTexture.y * (tex->size - 1) / 65535;
+					uint32 texel = texY * tex->size + texX;
+					Color colorFromTexture = tex->colorMap[texel];
+					Color normalFromTexture = tex->normalMap[texel];
+					uint16 roughnessAndMetallicFromTexture = tex->MaterialMap[texel];
 
 					// Texture maps are stored R=bits[0..7], G=bits[8..15], B=bits[16..23]
 					// UnpackColor reads R from bits[16..23], so channels would be swapped — extract directly.
@@ -828,8 +833,6 @@ static void RayTraceRowFunc(void *arg) {
 						((normalFromTexture >> 8) & 0xFF) / 255.0f,
 						((normalFromTexture >> 16) & 0xFF) / 255.0f,
 					};
-
-					colorFromTexture_Float3 = Float3_Scale(colorFromTexture_Float3, 1.25f); // boost texture color a bit to make it more visible
 
 					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
 					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;
@@ -1325,9 +1328,13 @@ static void RayTraceColumnFunc(void *arg) {
 				roughness = lib->entries[matId].roughness;
 
 				if (hasTexture && lib->entries[matId].textures) {
-					Color colorFromTexture = lib->entries[matId].textures->colorMap[xyCordsTexture.y][xyCordsTexture.x];
-					Color normalFromTexture = lib->entries[matId].textures->normalMap[xyCordsTexture.y][xyCordsTexture.x];
-					uint16 roughnessAndMetallicFromTexture = lib->entries[matId].textures->MaterialMap[xyCordsTexture.y][xyCordsTexture.x];
+					Textures *tex = lib->entries[matId].textures;
+					uint32 texX = (uint32)xyCordsTexture.x * (tex->size - 1) / 65535;
+					uint32 texY = (uint32)xyCordsTexture.y * (tex->size - 1) / 65535;
+					uint32 texel = texY * tex->size + texX;
+					Color colorFromTexture = tex->colorMap[texel];
+					Color normalFromTexture = tex->normalMap[texel];
+					uint16 roughnessAndMetallicFromTexture = tex->MaterialMap[texel];
 
 					// Texture maps are stored R=bits[0..7], G=bits[8..15], B=bits[16..23]
 					// UnpackColor reads R from bits[16..23], so channels would be swapped — extract directly.
@@ -1341,8 +1348,6 @@ static void RayTraceColumnFunc(void *arg) {
 						((normalFromTexture >> 8) & 0xFF) / 255.0f,
 						((normalFromTexture >> 16) & 0xFF) / 255.0f,
 					};
-
-					colorFromTexture_Float3 = Float3_Scale(colorFromTexture_Float3, 1.25f); // boost texture color a bit to make it more visible
 
 					uint8 roughnessFromTexture = roughnessAndMetallicFromTexture & 0xFF;
 					uint8 metallicFromTexture = (roughnessAndMetallicFromTexture >> 8) & 0xFF;

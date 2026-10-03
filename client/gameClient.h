@@ -8,6 +8,7 @@
 typedef enum {
 	MODEL_F16 = 1,
 	MODEL_R27 = 2,
+	MODEL_PALACE = 3
 } ModelType;
 
 typedef struct {

@@ -136,11 +136,11 @@ int main() {
 	Object_UpdateWorldBounds(cube);
 
 	Object *cube2 = ObjectList_Add(&scene);
-	CreateCube(cube2, (float3){-10.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.9f, 0.0f}, &matLib, 100.0f, 0.99f, 0.0f);
+	CreateCube(cube2, (float3){10.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.9f, 0.0f}, &matLib, 100.0f, 0.99f, 0.0f);
 	Object_UpdateWorldBounds(cube2);
 
 	Object *cube3 = ObjectList_Add(&scene);
-	CreateCube(cube3, (float3){10.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.0f, 0.9f}, &matLib, 100.0f, 0.99f, 0.0f);
+	CreateCube(cube3, (float3){20.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.0f, 0.9f}, &matLib, 100.0f, 0.99f, 0.0f);
 	Object_UpdateWorldBounds(cube3);
 
 	uint32 f16SceneIndex = (uint32)scene.count;
@@ -153,6 +153,18 @@ int main() {
 	plane->scale = (float3){1.0f, 1.0f, 1.0f};
 	CreateObjectBVH(plane, &plane->bvh);
 	Object_UpdateWorldBounds(plane);
+
+	uint32 palaceSceneIndex = (uint32)scene.count;
+	Object *palace = ObjectList_Add(&scene);
+	uint32 palaceId = generateId(MODEL_PALACE);
+	LoadObj("assets/models/palace2.bin", palace, &matLib);
+	idRegister_Add(&objectRegistry, palaceId, palaceSceneIndex);
+	palace->position = (float3){-15.0f, 0.0f, 15.0f};
+	palace->rotation = (float3){0.0f, 40.0f, 0.0f};
+	palace->scale = (float3){1.0f, 1.0f, 1.0f};
+	CreateObjectBVH(palace, &palace->bvh);
+	Object_UpdateWorldBounds(palace);
+
 
 	Plane simPlane;
 	// Start at 220 m/s (within trim envelope) at 1000 m altitude, half throttle.

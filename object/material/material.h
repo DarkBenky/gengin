@@ -4,11 +4,11 @@
 #include "../format.h"
 #include <stdio.h>
 
-#define TEXTURE_SIZE 4096
 typedef struct Textures {
-	Color colorMap[TEXTURE_SIZE][TEXTURE_SIZE];     // RGBA8
-	Color normalMap[TEXTURE_SIZE][TEXTURE_SIZE];    // RGBA8
-	uint16 MaterialMap[TEXTURE_SIZE][TEXTURE_SIZE]; // [roughness (uint8), metallic (uint8)]
+	Color *colorMap;     // size*size RGBA8
+	Color *normalMap;    // size*size RGBA8
+	uint16 *MaterialMap; // size*size [roughness (uint8), metallic (uint8)]
+	uint32 size;
 } Textures;
 
 typedef struct Material {
@@ -42,7 +42,7 @@ void packMaterials(int *materialIds, int count, MaterialLib *lib);
 // Allocates a Textures block and reads ColorMap/NormalMap/MaterialMap from the
 // current file position. NormalMap is stored as RGB (3 bytes/pixel) in the binary
 // and unpacked to RGBA here. Returns NULL on allocation or read failure.
-Textures *Textures_LoadFromFile(FILE *file);
+Textures *Textures_LoadFromFile(FILE *file, uint32 textureSize);
 
 void Textures_Destroy(Textures *tex);
 
