@@ -138,6 +138,7 @@ static const float2 ROTATION_TABLE[ROTATIONS] = {
 
 #define KERNEL_SIZE 5
 #define KERNEL_SIZE_HALF (KERNEL_SIZE / 2)
+#define BLUR_TILE 256
 static const float lineKernelvaluse[KERNEL_SIZE] = {
 	0.054488685f,
 	0.244201342f,
@@ -988,31 +989,53 @@ static void ColumnBlurColumnsBetter(void *arg) {
 	float *restrict depthBuffer = task->DepthBuffer;
 	const float depthRejectScale = 0.02f; // tune: smaller = stricter edge preservation
 
-	float colValues[height];
+	// The blur writes in place, so the five image rows a tile needs are staged
+	// in a rotating buffer; each row is staged before its output row is written.
+	float stage[KERNEL_SIZE][BLUR_TILE];
 
-	for (int x = task->column; x < endColumn; x++) {
-		for (int y = 0; y < height; y++) {
-			colValues[y] = image[y * width + x];
+	for (int x0 = task->column; x0 < endColumn; x0 += BLUR_TILE) {
+		const int tw = endColumn - x0 < BLUR_TILE ? endColumn - x0 : BLUR_TILE;
+
+		for (int i = 0; i < KERNEL_SIZE; i++) {
+			const float *src = image + i * width + x0;
+			for (int j = 0; j < tw; j++) stage[i][j] = src[j];
 		}
 
 		// start from kernel size half and end early to avoid bound checks
 		for (int y = KERNEL_SIZE_HALF; y < height - KERNEL_SIZE_HALF; y++) {
-			const int centerIdx = y * width + x;
-			const float centerDepth = depthBuffer[centerIdx];
-			const float invDepthThreshold = 1.0f / (centerDepth * depthRejectScale);
-
-			float sum = 0.0f;
-			float weightSum = 0.0f;
-			for (int i = 0; i < KERNEL_SIZE; i++) {
-				const int tapY = y + i - KERNEL_SIZE_HALF;
-				const float depthDiff = fabsf(depthBuffer[tapY * width + x] - centerDepth);
-				const float depthWeight = Clamp(1.0f - depthDiff * invDepthThreshold, 0.0f, 1.0f);
-				const float w = lineKernelvaluse[i] * depthWeight;
-
-				sum += colValues[tapY] * w;
-				weightSum += w;
+			if (y > KERNEL_SIZE_HALF) {
+				const float *src = image + (y + KERNEL_SIZE_HALF) * width + x0;
+				float *dst = stage[(y + KERNEL_SIZE_HALF) % KERNEL_SIZE];
+				for (int j = 0; j < tw; j++) dst[j] = src[j];
 			}
-			image[centerIdx] = weightSum > 1e-5f ? sum / weightSum : colValues[y];
+
+			const float *d0 = depthBuffer + (y - KERNEL_SIZE_HALF) * width + x0;
+			const int b = (y + KERNEL_SIZE - 2) % KERNEL_SIZE;
+			const float *s0 = stage[b], *s1 = stage[(b + 1) % KERNEL_SIZE],
+			            *s2 = stage[(b + 2) % KERNEL_SIZE], *s3 = stage[(b + 3) % KERNEL_SIZE],
+			            *s4 = stage[(b + 4) % KERNEL_SIZE];
+			float *out = image + y * width + x0;
+
+			for (int j = 0; j < tw; j++) {
+				const float centerDepth = d0[2 * width + j];
+				const float invDepthThreshold = 1.0f / (centerDepth * depthRejectScale);
+
+				float sum = 0.0f;
+				float weightSum = 0.0f;
+				float w;
+				w = lineKernelvaluse[0] * Clamp(1.0f - fabsf(d0[j] - centerDepth) * invDepthThreshold, 0.0f, 1.0f);
+				sum += s0[j] * w; weightSum += w;
+				w = lineKernelvaluse[1] * Clamp(1.0f - fabsf(d0[width + j] - centerDepth) * invDepthThreshold, 0.0f, 1.0f);
+				sum += s1[j] * w; weightSum += w;
+				w = lineKernelvaluse[2] * Clamp(1.0f - fabsf(d0[2 * width + j] - centerDepth) * invDepthThreshold, 0.0f, 1.0f);
+				sum += s2[j] * w; weightSum += w;
+				w = lineKernelvaluse[3] * Clamp(1.0f - fabsf(d0[3 * width + j] - centerDepth) * invDepthThreshold, 0.0f, 1.0f);
+				sum += s3[j] * w; weightSum += w;
+				w = lineKernelvaluse[4] * Clamp(1.0f - fabsf(d0[4 * width + j] - centerDepth) * invDepthThreshold, 0.0f, 1.0f);
+				sum += s4[j] * w; weightSum += w;
+
+				out[j] = weightSum > 1e-5f ? sum / weightSum : s2[j];
+			}
 		}
 	}
 }
