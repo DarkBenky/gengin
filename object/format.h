@@ -26,7 +26,6 @@ typedef int32_t int32;
 
 typedef uint32_t Color;
 
-#define nil NULL
 #define boll bool
 
 #define HexToUint32(hex) ((uint32)(0xFF000000 | (hex)))
@@ -68,6 +67,11 @@ typedef struct uvMap {
 	uint16 x;
 	uint16 y;
 } uvMap;
+
+typedef struct Error {
+	int err;
+	char msg[64];
+} Error;
 
 typedef struct Camera {
 	float3 position;
@@ -134,5 +138,13 @@ void CameraMoveRight(Camera *camera, float amount);
 void CameraMoveUp(Camera *camera, float amount);
 void CameraRotate(Camera *camera, float pitch, float yaw);
 void ComputePrevCameraPos(Camera *camera);
+
+enum ErrorTypes {
+	nil,
+	E_INVALID_ARG,
+	E_OUT_OF_MEMORY,
+	E_FILE_NOT_FOUND,
+	// NOTE: add more error types here if needed
+};
 
 #endif // FORMAT_H
