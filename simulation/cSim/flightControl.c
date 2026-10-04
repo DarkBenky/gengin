@@ -188,7 +188,7 @@ static float evaluateLossV2PlusTuned(const Controller *ctrl, float values[3], fl
 	return loss;
 }
 
-// V2PlusTuned_v2: A=3.0, B=0.0065 — runner-up, slightly faster decay than v1.
+// V2PlusTuned_v2: A=2.75, B=0.0065 — runner-up, slightly faster decay than v1.
 static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
 	Plane simPlane = ctrl->plane;
 
@@ -248,7 +248,11 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float distImprovement = (finalDist - currentDist) * 0.3f + (minDist - currentDist) * 0.7f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
 
-	float alignWeight = 1.0f + 3.0f / (1.0f + currentDist * 0.0065f);
+	// Near-target amplification of the alignment terms, re-tuned for the
+	// 2026-10-02 plant batch: the pinned suite's sweep (A = 1.0/2.0/2.5/2.75/
+	// 3.0/4.0 -> 242.1/250.6/228.4/224.2/229.3/235.7 m) puts the minimum at
+	// 2.75, and five held-out geometry sets agree (mean -0.7%).
+	float alignWeight = 1.0f + 2.75f / (1.0f + currentDist * 0.0065f);
 
 	// Control-effort term.  The search scores six single-axis probes per
 	// iteration and the momentum walk ends up further from neutral than the
