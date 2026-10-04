@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] add MCP tool so llm opt know which pr were made
+- [X] add MCP tool so llm opt know which pr were made
 - [X] Add the Sponza palace to scene to test rendering more
   - [X] convert to bin file
   - [X] add to scene

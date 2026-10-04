@@ -1485,33 +1485,109 @@ def _githubHeaders():
     }
 
 
+def _githubGetJson(url, timeout=30):
+    import urllib.error, urllib.request
+
+    req = urllib.request.Request(url, headers=_githubHeaders())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            message = "GITHUB_TOKEN was rejected; check its validity and repository access"
+        elif exc.code in (403, 429):
+            remaining = (exc.headers or {}).get("X-RateLimit-Remaining", "")
+            if exc.code == 429 or remaining == "0":
+                message = "GitHub API rate limit reached; retry later"
+            else:
+                message = "GitHub denied access; check token permissions"
+        else:
+            message = f"GitHub API returned HTTP {exc.code}"
+        raise RuntimeError(message) from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"GitHub API request failed: {exc}") from None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise RuntimeError("GitHub API returned invalid JSON") from None
+
+
+def listPullRequests(state="all", limit=10, page=1):
+    """List repository pull requests and changed paths from GitHub."""
+    if state not in ("all", "open", "closed", "merged"):
+        raise ValueError("state must be one of: all, open, closed, merged")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 20:
+        raise ValueError("limit must be an integer from 1 to 20")
+    if isinstance(page, bool) or not isinstance(page, int) or not 1 <= page <= 1000:
+        raise ValueError("page must be an integer from 1 to 1000")
+
+    owner, repo = _githubRepo()
+    api_state = "closed" if state == "merged" else state
+    per_page = 100 if state == "merged" else limit
+    url = (f"https://api.github.com/repos/{owner}/{repo}/pulls"
+           f"?state={api_state}&per_page={per_page}&page={page}"
+           "&sort=updated&direction=desc")
+    pulls = _githubGetJson(url)
+    if not isinstance(pulls, list):
+        raise RuntimeError("GitHub API returned an invalid pull request list")
+    source_page_has_more = len(pulls) == per_page
+    if state == "merged":
+        pulls = [pr for pr in pulls if pr.get("merged_at")]
+
+    results = []
+    for pr in pulls[:limit]:
+        number = pr.get("number")
+        files = []
+        files_unavailable = False
+        try:
+            file_data = _githubGetJson(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/"
+                f"{number}/files?per_page=21")
+            if not isinstance(file_data, list):
+                raise RuntimeError("GitHub API returned invalid pull request files")
+            files = [item.get("filename", "") for item in file_data[:20]]
+        except Exception:
+            # Partial metadata is better than losing the whole listing; the
+            # flag tells the caller this PR's file list is unknown, not empty.
+            files_unavailable = True
+
+        head = pr.get("head") or {}
+        base = pr.get("base") or {}
+        merged_at = pr.get("merged_at")
+        results.append({
+            "number": number,
+            "title": pr.get("title", ""),
+            "url": pr.get("html_url", ""),
+            "state": "merged" if merged_at else pr.get("state", ""),
+            "draft": bool(pr.get("draft", False)),
+            "author": (pr.get("user") or {}).get("login", ""),
+            "headBranch": head.get("ref", ""),
+            "baseBranch": base.get("ref", ""),
+            "createdAt": pr.get("created_at", ""),
+            "updatedAt": pr.get("updated_at", ""),
+            "closedAt": pr.get("closed_at", ""),
+            "mergedAt": merged_at or "",
+            "files": files,
+            "filesTruncated": len(file_data) > 20 if not files_unavailable else False,
+            "filesUnavailable": files_unavailable,
+        })
+
+    return {
+        "state": state,
+        "page": page,
+        "limit": limit,
+        "sourcePageHasMore": source_page_has_more,
+        "pullRequests": results,
+    }
+
+
 def openPullRequests(limit=10):
     """Open PRs as {number, title, branch, files}; [] when GitHub is unavailable."""
-    import urllib.request, json as _json
     try:
-        owner, repo = _githubRepo()
-        url = (f"https://api.github.com/repos/{owner}/{repo}/pulls"
-               f"?state=open&per_page={int(limit)}&sort=updated&direction=desc")
-        req = urllib.request.Request(url, headers=_githubHeaders())
-        with urllib.request.urlopen(req, timeout=30) as r:
-            pulls = _json.loads(r.read())
+        history = listPullRequests(state="open", limit=int(limit))
     except Exception:
         return []
-    out = []
-    for pr in pulls if isinstance(pulls, list) else []:
-        files = []
-        try:
-            furl = (f"https://api.github.com/repos/{owner}/{repo}/pulls/"
-                    f"{pr.get('number')}/files?per_page=20")
-            freq = urllib.request.Request(furl, headers=_githubHeaders())
-            with urllib.request.urlopen(freq, timeout=30) as r:
-                files = [f.get("filename", "") for f in _json.loads(r.read())][:20]
-        except Exception:
-            files = []
-        out.append({"number": pr.get("number"), "title": pr.get("title", ""),
-                    "branch": (pr.get("head") or {}).get("ref", ""),
-                    "files": files})
-    return out
+    return [{"number": pr["number"], "title": pr["title"],
+             "branch": pr["headBranch"], "files": pr["files"]}
+            for pr in history["pullRequests"]]
 
 
 def _github_find_pr(branch):

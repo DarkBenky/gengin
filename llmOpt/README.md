@@ -196,17 +196,27 @@ Rules:
   (passed via stdin — never on a command line, which `ps` exposes to every
   local user).
 
-## Tools (24)
+## Tools (28)
 
 | Group               | Tools                                                                                              |
 |---------------------|----------------------------------------------------------------------------------------------------|
 | Build & profiling   | `git_pull_project`, `build_project`, `make_bench`, `make_flame`, `create_pr`, `bisect_regression`  |
+| Flight controller  | `flight_bench`, `flight_scenarios`, `flight_trace`                                                  |
 | ML layer kernels    | `ml_bench`, `ml_scenarios`, `ml_trace`, `ml_parity`                                                |
 | Micro-bench sandbox | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench`                        |
 | Visual evidence     | `compare_bench_frames`, `compare_images`                                                           |
+| Pull request history | `list_pull_requests`                                                                                |
 | Hotspot annotation  | `hot_annotate_func`, `hot_annotate_file`                                                           |
 | clangd queries      | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Session control     | `report_session_result` (supervised sessions only)                                                 |
+
+`list_pull_requests(state, limit, page)` reads repository PR history without
+changing GitHub. It reports status, branches, timestamps and changed paths for
+open, closed, merged or all PRs. Merged results are filtered from GitHub's
+closed-PR pages, so a page may contain fewer than `limit` results;
+`sourcePageHasMore` indicates whether another source page may have results.
+Changed paths are capped at 20 per PR and `filesUnavailable` marks incomplete
+file metadata.
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate),
 then `compare_bench_frames` writes `before | after | diff` composites + metrics

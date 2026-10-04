@@ -263,6 +263,18 @@ def make_flame() -> dict:
 
 
 @mcp.tool()
+def list_pull_requests(state: str = "all", limit: int = 10, page: int = 1) -> str:
+    """List repository pull requests and changed paths without modifying GitHub.
+
+    state is all, open, closed, or merged. limit is 1-20. For merged results,
+    page refers to GitHub's closed-PR pages and may return fewer than limit;
+    sourcePageHasMore indicates whether another source page may have results.
+    """
+    return json.dumps(_main.listPullRequests(state=state, limit=limit, page=page),
+                      indent=2)
+
+
+@mcp.tool()
 def create_pr(title: str, body: str, imageOutputChange: bool,
               branch: str = "", commit_msg: str = "",
               compareImagePaths: list[str] | None = None) -> str:

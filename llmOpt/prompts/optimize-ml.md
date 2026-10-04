@@ -54,8 +54,17 @@ FROZEN — never edit, never stage, never "fix" them:
 Editing any of those invalidates the math and the verdict of every session.
 
 ## ALREADY IN FLIGHT (CHECK BEFORE YOU START)
-The session context may list open pull requests with the files they touch.  A
-file, function or node covered there is NOT a candidate:
+The session context may list open pull requests, but it does not include closed
+or merged history.  Before choosing a candidate, call
+`list_pull_requests(state="all", limit=20, page=1)`.  If the candidate's files
+are not covered and `sourcePageHasMore` is true, inspect later pages before
+assuming there is no prior work.  A file, function or node covered by an open
+PR is NOT a candidate:
+- Merged PRs are shipped history: do not reimplement the same change unless a
+  concrete regression or different target justifies it.
+- Closed, unmerged PRs are not automatically rejected or safe to repeat; inspect
+  their title, branch and changed paths, then establish why the new approach is
+  materially different.
 - If your best idea is already covered by an open PR, pick a different lead from
   the candidate queue instead.
 - If your data shows the best find duplicates an open PR, do NOT open another
@@ -64,6 +73,8 @@ file, function or node covered there is NOT a candidate:
 - Never open a second PR containing a change that is already in an open PR, and
   never re-create a PR for a branch that already has one.  Duplicate PRs cost
   review time and both get closed.
+- If the tool fails, or a result has `filesUnavailable: true`, history is
+  incomplete; do not treat missing results as proof that no prior PR exists.
 
 ## TOOLS
 - `ml_scenarios()` — every suite, every config id/shape, and whether a baseline

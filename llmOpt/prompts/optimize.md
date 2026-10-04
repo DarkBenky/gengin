@@ -69,8 +69,17 @@ frame-level CPU wins are small by construction — 1-3% on avg/median with
 `image_mse` 0.00 is a good CPU result and belongs in a PR.
 
 ## ALREADY IN FLIGHT (CHECK BEFORE YOU START)
-The session context lists the open pull requests with the files they touch.  A
-file, function or node covered there is NOT a candidate:
+The session context lists open pull requests, but it does not include closed or
+merged history.  Before choosing a candidate, call
+`list_pull_requests(state="all", limit=20, page=1)`.  If the candidate's files
+are not covered and `sourcePageHasMore` is true, inspect later pages before
+assuming there is no prior work.  A file, function or node covered by an open
+PR is NOT a candidate:
+- Merged PRs are shipped history: do not reimplement the same change unless a
+  concrete regression or different target justifies it.
+- Closed, unmerged PRs are not automatically rejected or safe to repeat; inspect
+  their title, branch and changed paths, then establish why the new approach is
+  materially different.
 - If your best idea is already covered by an open PR, pick a different row of
   the `## Node map` instead.
 - If your data shows the best find duplicates an open PR, do NOT open another
@@ -80,6 +89,8 @@ file, function or node covered there is NOT a candidate:
   never re-create a PR for a branch that already has one.
 - Duplicate PRs are a failure of the session, not a harmless extra: the same
   AO-blur AVX2 change has been opened three times from three different SHAs.
+- If the tool fails, or a result has `filesUnavailable: true`, history is
+  incomplete; do not treat missing results as proof that no prior PR exists.
 
 ## WORKFLOW
 
