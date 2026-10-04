@@ -268,7 +268,18 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 0.1f;
 	float effort = fabsf(values[0] - 0.5f) + fabsf(values[1] - 0.5f) + fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	// The velocity-alignment term is this loss' lead: it aims the velocity
+	// vector, not just the nose, at the target.  Weighted above the nose term it
+	// makes the planner fly the intercept path instead of pointing at the target
+	// and arriving late.  Swept on the pinned suite after the 2026-10-02 plant
+	// batch (aggregate miss, baseline is the 1.0 entry): 0.0 = 237.6 m (+3.6%,
+	// the term is load-bearing), 1.0 = 229.3, 1.25/1.5 = 230.9/231.2, 2.0 =
+	// 226.5, 2.5 = 229.8, 3.0/4.0 = 238.9/238.2 (the drift tier goes 165 -> 225
+	// / 220 m there).  2.0 is the best sampled point and improves four held-out
+	// seedbases, miss -1.2 / -0.9 / -0.1 / -1.3%.
+	const float alignVelWeight = 2.0f;
+
+	float loss = (finalAlignment + alignVelWeight * finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + alignVelWeight * (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
 
 	return loss;
 }
