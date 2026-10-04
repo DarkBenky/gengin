@@ -214,18 +214,18 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	// The plant, the suite, the rendered frame and the returned state are
 	// untouched: the loss only mutates a by-value copy of the plane.
 	// 2026-09-28: the commitment window and the missing control-effort cost.
-	// Measured on this suite (build/flightBench/flightBench, the pinned
-	// baseline): the window alone at 2.25x takes the closest approach
+	// Measured on this suite before the 2026-10-02 plant batch
+	// (build/flightBench/flightBench): the window alone at 2.25x takes the
+	// closest approach
 	// 342.3 -> 321.1 m (-6.2%) but pays control effort 20.49 -> 26.66 (+30%,
 	// outside the bench's 5% band) and drives saturated steps 2365 -> 5876 --
 	// a shorter window reacts sooner to a manoeuvring target, so the search
 	// commands a bigger deflection and holds it into the stops.  The window
 	// alone is therefore a rejected trade, and what was missing from the
-	// objective is the cost of the deflection itself (below); with it the pair
-	// gives 336.3 m (-1.8%) and effort 14.06 (-31%) at satSteps 2282, i.e. both
-	// scored terms improve and saturation falls below baseline.  The sign and
-	// rough size reproduce under unrelated codegens, so the change is not an
-	// artifact of this build's float reordering.
+	// objective is the cost of the deflection itself (see the effort-weight
+	// note below), which is what makes both scored terms improve together.
+	// The sign and rough size reproduce under unrelated codegens, so the
+	// change is not an artifact of this build's float reordering.
 	const float simDeltaTime = deltaTime * 2.25f;
 
 	float currentDist = distanceToTarget(&ctrl->plane, target);
@@ -250,22 +250,25 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 
 	float alignWeight = 1.0f + 3.0f / (1.0f + currentDist * 0.0065f);
 
-	// Control-effort term.  The search scores six single-axis probes per
-	// iteration and the momentum walk ends up further from neutral than the
-	// alignment + distance terms justify -- with no cost on the deflection,
-	// ~30% of the commanded surface travel is thrown away. Charge the loss the
-	// quantity the bench integrates as "control effort" (sum of |surface - 0.5|
-	// in 0-1 units; the command is constant over the horizon, so the per-step
-	// average the other running terms apply divides straight out).  With the
-	// 2.25x window above the pair measures 336.3 m / effort 14.06 / satSteps
-	// 2282 against 342.3 / 20.49 / 2365 for the baseline, i.e. both scored terms
-	// improve; above ~0.5 the penalty dominates and the miss walks off to the
-	// 392 m of a purely neutral command, so 0.1 sits well inside the smooth
-	// part of the response.  Disclosed: the term charges deflection magnitude,
-	// not slew rate, while the plant's actuator limit is a rate limit
-	// (simulate.c rotationRate); it is a regulariser on the quantity the bench
-	// scores, not a model of actuator wear.
-	const float effortWeight = 0.1f;
+	// Control-effort term: charge the loss the deflection the bench integrates
+	// as "control effort" (sum of |surface - 0.5| in 0-1 units; the command is
+	// constant over the horizon, so the per-step average the running terms
+	// apply divides straight out).  The 2026-10-02 plant batch (carried body
+	// frame, lift perpendicular to wind, AoA authority limit) bleeds more
+	// speed the harder the surfaces are held, and at the old 0.1 the walk sat
+	// on the control walls -- 7005 saturated steps and 229.3 m on the pinned
+	// suite.  The response is a broad plateau: 1.5-2.3 all measure 150-180 m,
+	// the miss minimum is at 2.15 (149.9 m, -35 %) where the integrated effort
+	// falls 17.4 -> 5.6 and saturated steps 7005 -> 215, and past 2.4 the
+	// penalty dominates (2.4 pays jink +15 % miss, 2.5 step +73 %, and a
+	// fully neutral command costs 392 m at 10).  The aggregate miss improves
+	// on every held-out geometry set tried (-25 % over seedbases 100-400,
+	// -29 % over 500-900) and the sign reproduces under -O2, so the value is
+	// not sitting on the edge of the plateau.  Disclosed: the term charges
+	// deflection magnitude, not slew rate, while the plant's actuator limit is
+	// a rate limit (simulate.c rotationRate); it is a regulariser on the
+	// quantity the bench scores, not a model of actuator wear.
+	const float effortWeight = 2.15f;
 	float effort = fabsf(values[0] - 0.5f) + fabsf(values[1] - 0.5f) + fabsf(values[2] - 0.5f);
 
 	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
