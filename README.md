@@ -14,6 +14,8 @@
       - [ ] Move: translate, Rotate: rotate around axis, Scale: scale along axis
     - [ ] WASD stays camera movement, no overlap with object controls
     - [ ] Add debug text to show mode, position, rotation, and scale of the selected model
+- [ ] implement heat haze
+   - [ ] integrate it with object so when objects moves the heat haze moves to
 
 - [ ] improve missiles/planes guidence
   - [ ] add support for missiles flight model and improve flight modeling even more
