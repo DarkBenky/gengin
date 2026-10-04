@@ -642,27 +642,10 @@ static void RayTraceRowFunc(void *arg) {
 		}
 	}
 
-	// Previous-frame forward rotation rows, hoisted out of the pixel loop.
-	// The motion-vector transform used to call TransformPointTRS(), which evaluates
-	// 6 sinf/cosf per call -> 12 transcendental calls per geometry pixel. These are
-	// the same expressions Object_UpdateWorldBounds() caches as _fwdRot0/1/2, built
-	// once per row task instead of once per pixel.
-	float motPrevRot[objectCount][9];
-	for (int i = 0; i < objectCount; i++) {
-		const float3 pr = objects[i].prevRotation;
-		const float psx = sinf(pr.x), pcx = cosf(pr.x);
-		const float psy = sinf(pr.y), pcy = cosf(pr.y);
-		const float psz = sinf(pr.z), pcz = cosf(pr.z);
-		motPrevRot[i][0] = pcy * pcz;
-		motPrevRot[i][1] = psx * psy * pcz - pcx * psz;
-		motPrevRot[i][2] = pcx * psy * pcz + psx * psz;
-		motPrevRot[i][3] = pcy * psz;
-		motPrevRot[i][4] = psx * psy * psz + pcx * pcz;
-		motPrevRot[i][5] = pcx * psy * psz - psx * pcz;
-		motPrevRot[i][6] = -psy;
-		motPrevRot[i][7] = psx * pcy;
-		motPrevRot[i][8] = pcx * pcy;
-	}
+	// Previous-frame forward rotation rows, built once per frame in
+	// RayTraceScene — the same values for every row, so the row task only
+	// reads the shared table (was: 720 rebuilds and a 37 KB stack VLA per frame).
+	const float (*motPrevRot)[9] = task->motPrevRot;
 
 	for (int x = 0; x < width; x++) {
 		int idx = row * width + x;
@@ -1129,8 +1112,27 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 			frustumPassIndices[frustumPassCount++] = i;
 	}
 
+	// Previous-frame forward rotation rows for the motion vectors — constant
+	// across rows, so build once per frame instead of once per row task.
+	float motPrevRot[objectCount][9];
+	for (int i = 0; i < objectCount; i++) {
+		const float3 pr = objects[i].prevRotation;
+		const float psx = sinf(pr.x), pcx = cosf(pr.x);
+		const float psy = sinf(pr.y), pcy = cosf(pr.y);
+		const float psz = sinf(pr.z), pcz = cosf(pr.z);
+		motPrevRot[i][0] = pcy * pcz;
+		motPrevRot[i][1] = psx * psy * pcz - pcx * psz;
+		motPrevRot[i][2] = pcx * psy * pcz + psx * psz;
+		motPrevRot[i][3] = pcy * psz;
+		motPrevRot[i][4] = psx * psy * psz + pcx * pcz;
+		motPrevRot[i][5] = pcx * psy * psz - psx * pcz;
+		motPrevRot[i][6] = -psy;
+		motPrevRot[i][7] = psx * pcy;
+		motPrevRot[i][8] = pcx * pcy;
+	}
+
 	for (int row = 0; row < camera->screenHeight; row++) {
-		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
+		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount, motPrevRot};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
@@ -1622,7 +1624,7 @@ void RayTraceSceneColumn(const Object *objects, int objectCount, Camera *camera,
 	}
 
 	for (int col = 0; col < camera->screenWidth; col++) {
-		taskQueue->tasks[col] = (RayTraceTask){col, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
+		taskQueue->tasks[col] = (RayTraceTask){col, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount, NULL};
 		poolAdd(threadPool, RayTraceColumnFunc, &taskQueue->tasks[col]);
 	}
 	poolWait(threadPool);

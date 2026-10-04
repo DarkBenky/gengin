@@ -34,6 +34,7 @@ typedef struct {
 	Frustum frustum;
 	const int *frustumPassIndices;
 	int frustumPassCount;
+	const float (*motPrevRot)[9];
 } RayTraceTask;
 
 typedef struct {
