@@ -379,6 +379,22 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 							  gradient[1] * gradient[1] +
 							  gradient[2] * gradient[2]);
 		if (gradMag > 1e-6f) {
+			// The three surfaces do not have comparable authority, so a plain
+			// 3-vector normalization hands nearly the whole step to whichever
+			// axis has the largest slope and leaves the other two at ~0: the
+			// walk then descends along one axis only.  Floor every non-flat
+			// axis at a quarter of the strongest before normalizing so all
+			// three keep steering.  Swept on the pinned suite (floor share ->
+			// aggregate miss / effort / saturated steps): unfloored 231.8 /
+			// 16.78 / 6408, 0.15 -> 230.5 / 16.80 / 6511, 0.25 -> 229.1 /
+			// 16.60 / 6439, 0.50 -> 229.5 / 16.88 / 6555 - 0.25 is the knee,
+			// and the step tier gains the most (+5.7%).
+			const float floorShare = 0.25f * fmaxf(fabsf(gradient[0]), fmaxf(fabsf(gradient[1]), fabsf(gradient[2])));
+			for (int axis = 0; axis < 3; axis++) {
+				float g = gradient[axis];
+				if (g != 0.0f && fabsf(g) < floorShare)
+					gradient[axis] = g < 0.0f ? -floorShare : floorShare;
+			}
 			gradient[0] /= gradMag;
 			gradient[1] /= gradMag;
 			gradient[2] /= gradMag;
