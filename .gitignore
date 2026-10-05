@@ -101,3 +101,5 @@ machineLearning/upscale/ratings.db
 # generated weight exports (100s of MB; regenerate with torchToJson.py on the checkpoint)
 machineLearning/sr_weights.json
 machineLearning/weights.json
+.agents/skills/developing-with-streamlit
+.claude/skills/developing-with-streamlit

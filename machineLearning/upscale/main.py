@@ -237,7 +237,10 @@ if __name__ == "__main__":
                 wandb.log({"comparison": wandb.Image(grid.cpu())}, step=step)
                 diffGrid = buildDifference(lr, out.detach(), hr)
                 wandb.log({"difference": wandb.Image(diffGrid.cpu())}, step=step)
+
+            if step > 0 and step % 1000 == 0:
+                torch.save(model.module.state_dict(), SAVE_PATH)
+                print(f"step {step} checkpoint saved")
             step += 1
 
-        torch.save(model.module.state_dict(), SAVE_PATH)
         print(f"epoch {epoch} done, loss {loss.item():.4f}")
