@@ -4,7 +4,8 @@ Deterministic build/bench/profile/PR tools for the llmOpt/gengin sandbox.
 File editing, code search, and terminal work are provided by the driving
 harness (Hermes Agent) — this server only exposes what the harness cannot do
 itself: sandbox lifecycle, make/flame/bench orchestration, perf annotation,
-regression bisection, and clangd semantic queries.
+regression bisection, clangd semantic queries, and the cheap advisory
+quick_ask sub-model.
 """
 
 import json
@@ -23,6 +24,7 @@ from mcp.server.fastmcp import FastMCP
 
 import getFunc as _gf
 import main as _main
+import quick_ask as _qa
 
 # All tools operate on llmOpt/gengin/ — a sandboxed copy of the renderer.
 _gengin_dir = os.path.join(_llmOpt_dir, "gengin")
@@ -449,159 +451,16 @@ def bisect_regression() -> str:
 
 
 # ===================================================================
-# Micro-benchmark sandbox
+# Cheap advisory sub-model
 # ===================================================================
 
 @mcp.tool()
-def create_func_bench(func_name: str, header_code: str, impl_code: str) -> str:
-    """Create bench/<func_name>.h and bench/<func_name>.c for standalone
-    micro-benchmarking.  header_code should hold the original function plus
-    optimized variants; impl_code must implement main() that times each variant
-    with clock_gettime, prints ns/call, and validates variants against the
-    original."""
-    return _main.createFuncBench(func_name, header_code, impl_code)
+def quick_ask(question: str, context: str = "",
+              choices: list[str] | None = None,
+              json_schema: dict | None = None) -> str:
+    """Ask a cheap, fast sub-model a narrow question over text YOU provide.
+    Stateless: it knows nothing about PRs, the repo, or this session - pass
+    everything it needs in `question`/`context`.
 
-
-@mcp.tool()
-def run_func_bench(func_name: str) -> str:
-    """Build bench/<func_name>.c and run the binary.  Returns stdout with
-    timing and validation output."""
-    return _main.runFuncBench(func_name)
-
-
-@mcp.tool()
-def run_perf_stat(func_name: str) -> str:
-    """Run `perf stat` on the bench binary (cache-misses, cycles, instructions,
-    branches, branch-misses) and return parsed counters with IPC, cache-miss
-    rate, branch-miss rate, and interpretation guidance.  Call after
-    run_func_bench."""
-    return _main.runPerfStat(func_name)
-
-
-@mcp.tool()
-def delete_func_bench(func_name: str) -> str:
-    """Remove bench/<func_name>.h, bench/<func_name>.c and the compiled binary."""
-    return _main.deleteFuncBench(func_name)
-
-
-# ===================================================================
-# Perf hotspot annotation
-# ===================================================================
-
-@mcp.tool()
-def hot_annotate_func(func_name: str, threshold: float = 0.5) -> str:
-    """Return func_name's source annotated with /* HOT X.X% */ markers on lines
-    consuming >= threshold% of perf samples.  Requires perf.data from a previous
-    make_flame() run."""
-    return _gf.hotAnnotateFunc(func_name, threshold=threshold)
-
-
-@mcp.tool()
-def hot_annotate_file(rel_path: str, threshold: float = 0.5) -> str:
-    """Return an entire source file annotated with per-line perf hotness merged
-    across all its functions.  Requires perf.data from a previous make_flame()
-    run."""
-    return _gf.hotAnnotateFile(rel_path, threshold=threshold)
-
-
-# ===================================================================
-# LSP / clangd (read-only semantic queries)
-# ===================================================================
-
-@mcp.tool()
-def lsp_definition(symbol: str, rel_path: str) -> str:
-    """Go to the AST-exact definition of a symbol using clangd."""
-    pos = _symbolPosition(symbol, rel_path)
-    if pos is None:
-        return f"Symbol '{symbol}' not found in the codebase index."
-    f, line, char = pos
-    defs = _getLspClient().definition(f, line, char)
-    if defs is None:
-        return "LSP: clangd not available or request failed."
-    if not defs:
-        return f"No definition found for '{symbol}'."
-    return "\n".join([f"Definition of '{symbol}':"] +
-                     [f"  {_fmtLocation(d['uri'], d['range'])}" for d in defs])
-
-
-@mcp.tool()
-def lsp_references(symbol: str, rel_path: str) -> str:
-    """Find all semantic references to a symbol using clangd (more accurate
-    than text search).  Returns file:line for every reference."""
-    pos = _symbolPosition(symbol, rel_path)
-    if pos is None:
-        return f"Symbol '{symbol}' not found in the codebase index."
-    f, line, char = pos
-    refs = _getLspClient().references(f, line, char)
-    if refs is None:
-        return "LSP: clangd not available or request failed."
-    if not refs:
-        return f"No references found for '{symbol}'."
-    return "\n".join([f"{len(refs)} reference(s) to '{symbol}':"] +
-                     [f"  {_fmtLocation(r['uri'], r['range'])}" for r in refs])
-
-
-@mcp.tool()
-def lsp_call_hierarchy(symbol: str, rel_path: str, direction: str = "incoming") -> str:
-    """Show the call hierarchy for a function: direction='incoming' lists who
-    calls it, 'outgoing' lists what it calls.  Understand the blast radius
-    before editing hot-path code."""
-    pos = _symbolPosition(symbol, rel_path)
-    if pos is None:
-        return f"Symbol '{symbol}' not found in the codebase index."
-    if direction not in ("incoming", "outgoing"):
-        return f"direction must be 'incoming' or 'outgoing', got {direction!r}."
-    f, line, char = pos
-    calls = _getLspClient().callHierarchy(f, line, char, direction)
-    if calls is None:
-        return f"Call hierarchy not available for '{symbol}'."
-    if not calls:
-        label = "callers" if direction == "incoming" else "callees"
-        return f"No {label} found for '{symbol}'."
-    label = f"Callers of '{symbol}'" if direction == "incoming" else f"Functions called by '{symbol}'"
-    lines = [f"{label} ({len(calls)}):"]
-    for c in calls:
-        node = c.get("from", {}) if direction == "incoming" else c.get("to", {})
-        lines.append(f"  {node.get('name', '?')}  ({_fmtLocation(node.get('uri', ''), node.get('range', {}))})")
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def lsp_diagnostics(rel_path: str) -> str:
-    """Compiler warnings/errors for a file via clangd publishDiagnostics
-    (~1s vs ~30s for a full build).  Call before build_project."""
-    diags = _getLspClient().diagnostics(rel_path)
-    if diags is None:
-        return "LSP: clangd not available."
-    if not diags:
-        return f"No diagnostics for {rel_path} — file is clean."
-    lines = [f"Diagnostics for {rel_path} ({len(diags)} issue(s)):"]
-    for d in sorted(diags, key=lambda x: (x.get('range', {}).get('start', {}).get('line', 0), x.get('severity', 4))):
-        sev = _fmtSeverity(d.get("severity", 4))
-        line = d.get("range", {}).get("start", {}).get("line", 0) + 1
-        lines.append(f"  {rel_path}:{line}: [{sev}] {d.get('message', '')}")
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def lsp_diagnostics_all() -> str:
-    """Diagnostics for every file clangd has parsed so far."""
-    all_diags = _getLspClient().diagnosticsAll()
-    if all_diags is None:
-        return "No diagnostics — no files parsed yet."
-    lines = [f"Diagnostics across {len(all_diags)} file(s):"]
-    for fname, diags in sorted(all_diags.items()):
-        fname_short = fname.replace('file://', '')
-        for d in sorted(diags, key=lambda x: x.get('range', {}).get('start', {}).get('line', 0)):
-            sev = _fmtSeverity(d.get("severity", 4))
-            line = d.get("range", {}).get("start", {}).get("line", 0) + 1
-            lines.append(f"  {fname_short}:{line}: [{sev}] {d.get('message', '')}")
-    return "\n".join(lines)
-
-
-if __name__ == "__main__":
-    print(f"gengin-optimizer MCP server (stdio) — sandbox: {_gengin_dir}", file=sys.stderr)
-    print(f"Indexed {len(_gf._functions)} functions in {len(_gf._sources)} source files.", file=sys.stderr)
-    print("17 domain tools; file editing/navigation is provided by the harness.", file=sys.stderr)
-    print("Configure: llmOpt/scripts/setup-hermes.sh — run: llmOpt/scripts/gengin-opt.sh", file=sys.stderr)
-    mcp.run()
+    Modes:
+      choices=[
