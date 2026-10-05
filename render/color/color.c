@@ -46,10 +46,10 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 	}
 
 	if (mode == 2) { // VIEW_DEPTH
-		float dMin = 1e38f, dMax = 0.0f;
+		float dMin = DEPTH_FAR, dMax = 0.0f;
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
-			if (d > 0.0f && d < 1e38f) {
+			if (d > 0.0f && d < DEPTH_FAR) {
 				if (d < dMin) dMin = d;
 				if (d > dMax) dMax = d;
 			}
@@ -58,9 +58,119 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		if (range < 1e-6f) range = 1.0f;
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
-			float t = (d <= 0.0f || d >= 1e38f) ? 0.0f : 1.0f - (d - dMin) / range;
+			float t = (d <= 0.0f || d >= DEPTH_FAR) ? 0.0f : 1.0f - (d - dMin) / range;
 			camera->framebuffer[i] = PackColorSafe(t, t, t);
 		}
+		return;
+	}
+
+	if (mode == 4) { // VIEW_POSITION
+		float3 pMin = {DEPTH_FAR, DEPTH_FAR, DEPTH_FAR};
+		float3 pMax = {-DEPTH_FAR, -DEPTH_FAR, -DEPTH_FAR};
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) continue;
+			float3 p = camera->positionBuffer[i];
+			if (p.x < pMin.x) pMin.x = p.x;
+			if (p.y < pMin.y) pMin.y = p.y;
+			if (p.z < pMin.z) pMin.z = p.z;
+			if (p.x > pMax.x) pMax.x = p.x;
+			if (p.y > pMax.y) pMax.y = p.y;
+			if (p.z > pMax.z) pMax.z = p.z;
+		}
+		float3 invRange = {
+			pMax.x > pMin.x ? 1.0f / (pMax.x - pMin.x) : 0.0f,
+			pMax.y > pMin.y ? 1.0f / (pMax.y - pMin.y) : 0.0f,
+			pMax.z > pMin.z ? 1.0f / (pMax.z - pMin.z) : 0.0f};
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) {
+				camera->framebuffer[i] = 0xFF000000u;
+				continue;
+			}
+			float3 p = camera->positionBuffer[i];
+			camera->framebuffer[i] = PackColorSafe(
+				(p.x - pMin.x) * invRange.x,
+				(p.y - pMin.y) * invRange.y,
+				(p.z - pMin.z) * invRange.z);
+		}
+		return;
+	}
+
+	if (mode == 5) { // VIEW_OBJECT_ID
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) {
+				camera->framebuffer[i] = 0xFF000000u;
+				continue;
+			}
+			uint32 h = (uint32)camera->objectIdBuffer[i] * 2654435761u;
+			h ^= h >> 13;
+			camera->framebuffer[i] = 0xFF000000u | ((h & 0xFF) << 16) | (h & 0xFF00) | ((h >> 16) & 0xFF);
+		}
+		return;
+	}
+
+	if (mode == 6) { // VIEW_TRIANGLE_ID
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) {
+				camera->framebuffer[i] = 0xFF000000u;
+				continue;
+			}
+			uint32 h = (uint32)camera->triangleIdBuffer[i] * 2654435761u;
+			h ^= h >> 13;
+			camera->framebuffer[i] = 0xFF000000u | ((h & 0xFF) << 16) | (h & 0xFF00) | ((h >> 16) & 0xFF);
+		}
+		return;
+	}
+
+	if (mode == 7) { // VIEW_UV
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) {
+				camera->framebuffer[i] = 0xFF000000u;
+				continue;
+			}
+			uvMap uv = camera->uvBuffer[i];
+			camera->framebuffer[i] = 0xFF000000u | (((uint32)uv.x >> 8) << 16) | (((uint32)uv.y >> 8) << 8);
+		}
+		return;
+	}
+
+	if (mode == 8) { // VIEW_EMISSION
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) {
+				camera->framebuffer[i] = 0xFF000000u;
+				continue;
+			}
+			float3 e = camera->bloomBuffer[i];
+			camera->framebuffer[i] = PackColorSafe(e.x * 100.0f, e.y * 100.0f, e.z * 100.0f);
+		}
+		return;
+	}
+
+	if (mode == 9) { // VIEW_MOTION
+		float maxAbs = 1e-6f;
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) continue;
+			float2 m = camera->motionVectorBuffer[i];
+			if (fabsf(m.x) > maxAbs) maxAbs = fabsf(m.x);
+			if (fabsf(m.y) > maxAbs) maxAbs = fabsf(m.y);
+		}
+		float scale = 0.5f / maxAbs;
+		for (int i = 0; i < n; i++) {
+			float d = camera->depthBuffer[i];
+			if (d <= 0.0f || d >= DEPTH_FAR) {
+				camera->framebuffer[i] = 0xFF000000u;
+				continue;
+			}
+			float2 m = camera->motionVectorBuffer[i];
+			camera->framebuffer[i] = PackColorSafe(m.x * scale + 0.5f, m.y * scale + 0.5f, 0.0f);
+		}
+		return;
 	}
 }
 

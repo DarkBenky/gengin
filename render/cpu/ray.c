@@ -1154,7 +1154,7 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
-	applyAmbientOcclusion(camera, threadPool, 0.45f);
+	applyAmbientOcclusion(camera, threadPool, 0.55f);
 }
 
 static void RayTraceColumnFunc(void *arg) {

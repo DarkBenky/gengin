@@ -154,12 +154,16 @@ float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
 void Object_Destroy(Object *obj);
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
+void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
 void Object_UpdateWorldBounds(Object *obj);
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax);
 RayBoxResult4 RayBoxIntersectV4(const Object *obj0, const Object *obj1,const Object *obj2, const Object *obj3,float3 rayOrigin, float3 rayDir);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward);
+
+// Screen-space pick from the ray-traced object id buffer; objectIndex is -1 on miss (no ray cast).
+Object *ObjectListGetObjectAtPixel(Camera *cam, ObjectList *objList, int px, int py, int *objectIndex);
 
 // Set material properties on every triangle of an object (updates the shared MaterialLib entries).
 void Object_SetMaterial(Object *obj, MaterialLib *lib, Material mat);

@@ -6,17 +6,21 @@
   - [X] add to scene
     - [X] fix material issues
     - [X] fix core dump for this object (it works now but not sure if it is correct reason why)
+
 - [ ] Build some really basic minimalistic model editor
   - [ ] "Tab" toggles "Editor Mode" on/off
     - [ ] click object to select it, use existing model id buffer for highlight (OpenCL: per pixel, if id == selected id, tint color buffer at that pixel)
+      - [X] Crete post processing effect to highlight selected object
     - [ ] "1" Move Mode (default), "2" Rotate Mode, "3" Scale Mode
     - [ ] same keys in every mode, only the meaning changes
       - [ ] "Arrow Left/Right" = X, "Arrow Up/Down" = Z, "Right Shift/Right Ctrl" = Y
       - [ ] Move: translate, Rotate: rotate around axis, Scale: scale along axis
     - [ ] WASD stays camera movement, no overlap with object controls
     - [ ] Add debug text to show mode, position, rotation, and scale of the selected model
+  - [ ] Crete test and different version to find best method for compute heavy methods
+
 - [ ] implement heat haze
-   - [ ] integrate it with object so when objects moves the heat haze moves to
+  - [ ] integrate it with object so when objects moves the heat haze moves to
 
 - [ ] improve missiles/planes guidence
   - [ ] add support for missiles flight model and improve flight modeling even more
