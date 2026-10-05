@@ -68,6 +68,15 @@ INT_BOUNDS = {
     "PREFLIGHT_BENCH_DURATION_SECONDS": (1, 600),
 }
 
+# (name, minimum, maximum) bounds for optional integer settings; unset keys
+# are omitted instead of defaulted.
+OPTIONAL_INT_BOUNDS = {
+    "QUICK_ASK_TIMEOUT_SECONDS": (1, 600),
+    "QUICK_ASK_MAX_CONTEXT_CHARS": (100, 2000000),
+    "QUICK_ASK_MAX_QUESTION_CHARS": (100, 1000000),
+    "QUICK_ASK_MAX_QUESTIONS": (1, 1000),
+}
+
 KNOWN_KEYS = {
     "GENGIN_REPO_URL",
     "GENGIN_INPUTS_DIR",
@@ -95,6 +104,14 @@ KNOWN_KEYS = {
     "RUN_DIR",
     "AGENT_USER",
     "MCP_VENV",
+    # quick_ask tool overrides (see llmOpt/quick_ask.py); all optional.
+    "QUICK_ASK_MODEL",
+    "QUICK_ASK_DECISIONS_URL",
+    "QUICK_ASK_TIMEOUT_SECONDS",
+    "QUICK_ASK_MAX_CONTEXT_CHARS",
+    "QUICK_ASK_MAX_QUESTION_CHARS",
+    "QUICK_ASK_MAX_QUESTIONS",
+    "QUICK_ASK_LOG",
 }
 
 HEX_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -173,6 +190,23 @@ def parse_int(value, key, errors):
     return number
 
 
+def parse_optional_int(values, key, bounds, errors):
+    """Bound-checked int for optional keys; None when the key is unset."""
+    raw = values.get(key)
+    if raw is None:
+        return None
+    try:
+        number = int(raw)
+    except ValueError:
+        errors.append(f"{key}: expected integer, got {raw!r}")
+        return None
+    low, high = bounds
+    if not low <= number <= high:
+        errors.append(f"{key}: {number} outside allowed range {low}..{high}")
+        return None
+    return number
+
+
 def parse_env_file(path):
     """Strict KEY=VALUE parser.
 
@@ -240,6 +274,14 @@ class Config:
     run_dir: str
     agent_user: str = ""
     mcp_venv: str = ""
+    # quick_ask overrides; "" / 0 means unset (the tool defaults apply).
+    quick_ask_model: str = ""
+    quick_ask_decisions_url: str = ""
+    quick_ask_timeout_seconds: int = 0
+    quick_ask_max_context_chars: int = 0
+    quick_ask_max_question_chars: int = 0
+    quick_ask_max_questions: int = 0
+    quick_ask_log: str = ""
     management_key: str = ""
 
     def mcp_python(self):
@@ -341,6 +383,21 @@ def load_config(require_management_key=True):
     if mcp_venv and not os.path.isabs(mcp_venv):
         errors.append("MCP_VENV: must be an absolute path")
 
+    quick_ask_model = values.get("QUICK_ASK_MODEL", "").strip()
+    if quick_ask_model and "/" not in quick_ask_model:
+        errors.append("QUICK_ASK_MODEL: expected provider/model format")
+    quick_ask_decisions_url = values.get("QUICK_ASK_DECISIONS_URL", "").strip()
+    if quick_ask_decisions_url and not quick_ask_decisions_url.startswith(
+            ("http://", "https://")):
+        errors.append("QUICK_ASK_DECISIONS_URL: must be an absolute http(s) URL")
+    quick_ask_ints = {
+        int_key: parse_optional_int(values, int_key, bounds, errors)
+        for int_key, bounds in OPTIONAL_INT_BOUNDS.items()
+    }
+    quick_ask_log = values.get("QUICK_ASK_LOG", "").strip()
+    if quick_ask_log:
+        quick_ask_log = config_resolve(quick_ask_log, "QUICK_ASK_LOG", errors)
+
     if model is not None and "/" not in model:
         errors.append("OPENROUTER_MODEL: expected provider/model format")
     if headless_mode is not None and headless_mode != "xvfb":
@@ -393,6 +450,13 @@ def load_config(require_management_key=True):
         run_dir=config_resolve(run_dir, "RUN_DIR", errors),
         agent_user=agent_user,
         mcp_venv=mcp_venv,
+        quick_ask_model=quick_ask_model,
+        quick_ask_decisions_url=quick_ask_decisions_url,
+        quick_ask_timeout_seconds=quick_ask_ints["QUICK_ASK_TIMEOUT_SECONDS"] or 0,
+        quick_ask_max_context_chars=quick_ask_ints["QUICK_ASK_MAX_CONTEXT_CHARS"] or 0,
+        quick_ask_max_question_chars=quick_ask_ints["QUICK_ASK_MAX_QUESTION_CHARS"] or 0,
+        quick_ask_max_questions=quick_ask_ints["QUICK_ASK_MAX_QUESTIONS"] or 0,
+        quick_ask_log=quick_ask_log,
         management_key=management_key,
     )
     if errors:
@@ -1340,6 +1404,33 @@ def _agent_home(config):
         return os.path.expanduser("~")
 
 
+def _quick_ask_env(config):
+    """QUICK_ASK_* overrides that are explicitly configured.
+
+    Added both to the Hermes child environment (the ${VAR} expansion source)
+    and to the config.yaml mcp env block, so the supervised MCP process sees
+    the same values a manual run would get from its shell.
+    """
+    candidates = {
+        "QUICK_ASK_MODEL": config.quick_ask_model,
+        "QUICK_ASK_DECISIONS_URL": config.quick_ask_decisions_url,
+        "QUICK_ASK_TIMEOUT_SECONDS": (
+            str(config.quick_ask_timeout_seconds)
+            if config.quick_ask_timeout_seconds else ""),
+        "QUICK_ASK_MAX_CONTEXT_CHARS": (
+            str(config.quick_ask_max_context_chars)
+            if config.quick_ask_max_context_chars else ""),
+        "QUICK_ASK_MAX_QUESTION_CHARS": (
+            str(config.quick_ask_max_question_chars)
+            if config.quick_ask_max_question_chars else ""),
+        "QUICK_ASK_MAX_QUESTIONS": (
+            str(config.quick_ask_max_questions)
+            if config.quick_ask_max_questions else ""),
+        "QUICK_ASK_LOG": config.quick_ask_log,
+    }
+    return {key: value for key, value in candidates.items() if value}
+
+
 def _session_mcp_env(config, target_sha, session_id, result_path):
     """Variables the MCP server needs, delivered through the config env block.
 
@@ -1359,6 +1450,7 @@ def _session_mcp_env(config, target_sha, session_id, result_path):
         session_env["GENGIN_INPUTS_DIR"] = config.gengin_inputs_dir
     if os.environ.get("GITHUB_TOKEN"):
         session_env["GITHUB_TOKEN"] = os.environ["GITHUB_TOKEN"]
+    session_env.update(_quick_ask_env(config))
     return session_env
 
 
@@ -1388,6 +1480,7 @@ def _build_session_env(config, session_id, hermes_home, query_file, usage_file,
         env["GENGIN_INPUTS_DIR"] = config.gengin_inputs_dir
     if os.environ.get("GITHUB_TOKEN"):
         env["GITHUB_TOKEN"] = os.environ["GITHUB_TOKEN"]
+    env.update(_quick_ask_env(config))
     return env
 
 

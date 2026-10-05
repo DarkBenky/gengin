@@ -4,7 +4,8 @@ Deterministic build/bench/profile/PR tools for the llmOpt/gengin sandbox.
 File editing, code search, and terminal work are provided by the driving
 harness (Hermes Agent) — this server only exposes what the harness cannot do
 itself: sandbox lifecycle, make/flame/bench orchestration, perf annotation,
-regression bisection, and clangd semantic queries.
+regression bisection, clangd semantic queries, and the cheap advisory
+quick_ask classifier (Jev decisions).
 """
 
 import json
@@ -23,6 +24,7 @@ from mcp.server.fastmcp import FastMCP
 
 import getFunc as _gf
 import main as _main
+import quick_ask as _qa
 
 # All tools operate on llmOpt/gengin/ — a sandboxed copy of the renderer.
 _gengin_dir = os.path.join(_llmOpt_dir, "gengin")
@@ -599,9 +601,39 @@ def lsp_diagnostics_all() -> str:
     return "\n".join(lines)
 
 
+@mcp.tool()
+def quick_ask(question: str = "", context: str = "",
+              choices: list[str] | None = None,
+              yes_no: bool = False,
+              questions: dict | None = None) -> str:
+    """Ask a cheap, fast decision model (Jev) a narrow question over text
+    YOU provide. Stateless and typed: it returns calibrated answers, never
+    generated text, and knows nothing about the repo or this session.
+
+    Modes (pass exactly one of choices, yes_no or questions):
+      choices=[...]      -> {"choice": ..., "confidence"?, "probabilities"?}
+      yes_no=True        -> {"noul": <P(yes), 0..1>}
+      questions={name: {"type": "noul"|"choice"|"score",
+                 "instructions": ..., "criteria": ...}}
+                         -> {"answers": {name: ...}}  (answered in parallel,
+                            one request - the cheapest way to ask several
+                            judgments over the same context)
+
+    Use it for classification, relevance, yes/no and other bulk judgments
+    (e.g. "Is this idea already implemented?" with PR summaries as context).
+    Limits: no multi-step reasoning, no code generation, no free text, no
+    knowledge beyond the context. Verdicts can be wrong - check the
+    confidence/probabilities and decide yourself. Identical calls are cached;
+    every call is logged for audit. On failure returns {"error": ...} - retry
+    once or decide yourself."""
+    return json.dumps(_qa.quick_ask(question, context=context, choices=choices,
+                                    yes_no=yes_no, questions=questions),
+                      indent=2)
+
+
 if __name__ == "__main__":
     print(f"gengin-optimizer MCP server (stdio) — sandbox: {_gengin_dir}", file=sys.stderr)
     print(f"Indexed {len(_gf._functions)} functions in {len(_gf._sources)} source files.", file=sys.stderr)
-    print("17 domain tools; file editing/navigation is provided by the harness.", file=sys.stderr)
+    print("18 domain tools; file editing/navigation is provided by the harness.", file=sys.stderr)
     print("Configure: llmOpt/scripts/setup-hermes.sh — run: llmOpt/scripts/gengin-opt.sh", file=sys.stderr)
     mcp.run()
