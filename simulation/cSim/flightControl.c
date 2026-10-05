@@ -268,7 +268,27 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 0.1f;
 	float effort = fabsf(values[0] - 0.5f) + fabsf(values[1] - 0.5f) + fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	// Flow-angle charge.  The plant's induced drag grows with the square of the
+	// lift coefficient and its CL is driven by the angle between the airframe's
+	// nose and its flight path (simulate.c calcForceMagnitudes); the same angle
+	// also fades the elevator authority past stallAngle-5.  With no cost on it
+	// the search leaves the airframe stalled for most of the flight -- measured
+	// over the 20-scenario suite the baseline flies at a mean flow angle of
+	// 60 deg (77% of steps above 22 deg, p90 152 deg), stalled and out of
+	// control authority much of the time, which is where the energy it needs to
+	// turn is being burned.  Charge the flow angle the plan ends the horizon
+	// with (1 - cos of the angle, so ~angle^2/2 for small angles).  Measured on
+	// the pinned suite: miss 229.3 -> 176.4 m (-23.1%), effort 17.37 -> 8.59,
+	// satSteps 7005 -> 865, every tier improving, and the weight is flat over
+	// 3.5-4.5; held-out geometry improves on 6/6 seedbases (-26..-38%).
+	// Disclosed: the charged angle is the total flow angle, so it prices the
+	// sideslip drag of the vertical surfaces as well as the wing's AoA, and on
+	// this suite it is a substitute for the control-effort charge the loss
+	// already carries rather than an addition to it.
+	const float aoaWeight = 4.0f;
+	float aoa = 1.0f - Float3_Dot(Float3_Normalize(simPlane.velocity), planeGetForwardVector(&simPlane));
+
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + aoaWeight * aoa;
 
 	return loss;
 }
