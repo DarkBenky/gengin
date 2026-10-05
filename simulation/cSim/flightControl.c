@@ -268,7 +268,17 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 0.1f;
 	float effort = fabsf(values[0] - 0.5f) + fabsf(values[1] - 0.5f) + fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	// Energy floor.  Alignment and closure say nothing about the speed the plan
+	// leaves the interceptor with, and the horizon only reaches a fraction of a
+	// second ahead, so spending the endgame below the aircraft's 180 m/s nominal
+	// speed cost nothing -- while turn authority falls off as speed drops.  Only
+	// the shortfall is charged, so at or above the floor the term is exactly zero
+	// (flat response over Vmin 178-184 m/s x weight 1.0-2.5 on the pinned suite).
+	const float speedFloor = 180.0f;
+	const float speedFloorWeight = 1.5f;
+	float speedShortfall = fmaxf(0.0f, speedFloor - Float3_Length(simPlane.velocity));
+
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + speedFloorWeight * speedShortfall;
 
 	return loss;
 }
