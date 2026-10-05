@@ -291,6 +291,31 @@ if ! perf stat -e cycles true >/dev/null 2>&1; then
   fi
 fi
 
+# A session must start from the newest commit: advance the sandbox to the remote
+# tip of the target branch before the harness boots.  Supervised sessions skip
+# this — the supervisor pinned GENGIN_TARGET_SHA and baselined that commit.
+if [[ -z "${GENGIN_TARGET_SHA:-}" && "${GENGIN_SKIP_SANDBOX_SYNC:-0}" != "1" ]]; then
+  LLMOPT_DIR="$LLMOPT_DIR" python3 - <<'PY'
+import os, sys
+sys.path.insert(0, os.environ["LLMOPT_DIR"])
+try:
+    import main
+    main.PROJECT_DIR = os.path.join(os.environ["LLMOPT_DIR"], "gengin")
+    result = main.syncSandboxToLatest(
+        os.environ.get("GENGIN_REPO_URL", "git@github.com:DarkBenky/gengin.git"),
+        os.environ.get("GENGIN_TARGET_BRANCH", "main"),
+        session_id=os.environ.get("GENGIN_SESSION_ID", "manual"),
+        inputs_dir=os.environ.get("GENGIN_INPUTS_DIR") or None,
+    )
+    if result["action"] == "dirty":
+        print("warning: sandbox has local changes - keeping its current base", file=sys.stderr)
+    else:
+        print(f"sandbox base: {result['sha'][:12]} ({result['action']})")
+except Exception as exc:
+    print(f"warning: sandbox sync to latest failed: {exc}", file=sys.stderr)
+PY
+fi
+
 maybe_update_hermes
 
 echo "=== gengin optimizer (Hermes) ==="

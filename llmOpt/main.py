@@ -288,6 +288,52 @@ def git_pull_project(repo_url, branch, target_sha, inputs_dir=None, session_id=N
         raise
 
 
+def remoteTipSha(repo_url, branch, timeout=120):
+    """The sha at refs/heads/<branch> on the remote, without any checkout."""
+    result = subprocess.run(
+        ["git", "ls-remote", "--exit-code", repo_url, f"refs/heads/{branch}"],
+        capture_output=True, text=True, timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"git ls-remote exited {result.returncode}")
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise RuntimeError(f"expected one ref for {branch!r}, got {len(lines)}")
+    return lines[0].split()[0]
+
+
+def syncSandboxToLatest(repo_url, branch, session_id="manual", inputs_dir=None):
+    """Re-prepare the sandbox at the newest commit of the remote branch.
+
+    Called at session start so a task never inherits a stale base from the
+    previous session.  Returns {"action", "sha"} with action "synced" (moved),
+    "current" (already at the tip) or "dirty" (local changes kept: an
+    interrupted session's work is never discarded silently).  Supervised
+    sessions must not call this - their commit is pinned (GENGIN_TARGET_SHA)
+    and the prepared baseline was captured for it.
+    """
+    sandbox = os.path.join(_llmopt_dir(), "gengin")
+    head = ""
+    if os.path.exists(os.path.join(sandbox, ".git")):
+        rev = subprocess.run(["git", "rev-parse", "HEAD"],
+                             capture_output=True, text=True, cwd=sandbox)
+        head = rev.stdout.strip() if rev.returncode == 0 else ""
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--ignore-submodules=dirty"],
+            capture_output=True, text=True, cwd=sandbox,
+        )
+        if status.returncode == 0:
+            changed = [line for line in status.stdout.splitlines()
+                       if line[3:].strip() not in _GENERATED_ARTIFACTS]
+            if changed:
+                return {"action": "dirty", "sha": head}
+    tip = remoteTipSha(repo_url, branch)
+    if head == tip:
+        return {"action": "current", "sha": tip}
+    git_pull_project(repo_url, branch, tip, inputs_dir=inputs_dir, session_id=session_id)
+    return {"action": "synced", "sha": tip}
+
+
 def buildProject():
     """make clean + make, with a fast syntax-only pass over changed .c files first."""
     run(["make", "clean"], cwd=PROJECT_DIR)
