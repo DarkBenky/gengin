@@ -268,7 +268,20 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 0.1f;
 	float effort = fabsf(values[0] - 0.5f) + fabsf(values[1] - 0.5f) + fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	// Square-law deflection charge.  The charge above is linear, so it prices a
+	// small correction the same as a large one, while both the induced drag and
+	// the speed (hence pitch authority) the plant loses to a held surface grow
+	// with the square of the deflection.  The linear form cannot cover the same
+	// ground at any weight -- at 6.0 the walk parks at the 392.7 m of a fully
+	// neutral command.  Measured on the pinned suite at 4.0: miss 229.3 ->
+	// 204.2 m with every tier inside its guard, effort 17.4 -> 8.2, saturated
+	// steps 7005 -> 114, and the suite's first two hits (weave:3 14.0 m,
+	// step:1 24.3 m).  2.0-4.0 all improve; 6.0 gives the step tier back, so
+	// this is the largest value the guards allow.
+	const float effortSqWeight = 4.0f;
+	float effortSq = (values[0] - 0.5f) * (values[0] - 0.5f) + (values[1] - 0.5f) * (values[1] - 0.5f) + (values[2] - 0.5f) * (values[2] - 0.5f);
+
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + effortSqWeight * effortSq;
 
 	return loss;
 }
