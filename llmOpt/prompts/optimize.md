@@ -91,6 +91,10 @@ PR is NOT a candidate:
   AO-blur AVX2 change has been opened three times from three different SHAs.
 - If the tool fails, or a result has `filesUnavailable: true`, history is
   incomplete; do not treat missing results as proof that no prior PR exists.
+- When PR titles/descriptions are ambiguous about whether a candidate is
+  covered, one `quick_ask(choices=["covered", "not covered"], context=<titles>)`
+  call is cheaper than reading every PR; it is advisory — you still make the
+  final call.
 
 ## WORKFLOW
 
@@ -323,6 +327,10 @@ Apply directly in those rare cases and validate with `make_bench`.
 - `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`,
   `lsp_diagnostics_all` — semantic clangd queries.
 - `hot_annotate_func` / `hot_annotate_file` — perf-annotated source.
+- `quick_ask` — cheap Jev decision model (typed answers with probabilities, no
+  text).  Use it for narrow judgments over text you provide.  Advisory: it can
+  be wrong — check confidence and decide yourself.  Prefer `yes_no`/`choices`;
+  batch independent questions into one `questions` call.
 
 ## VISUAL CORRECTNESS (make_bench output)
 - `image_mse` is the PRIMARY correctness metric in exact mode: < 1.0 visually

@@ -91,6 +91,10 @@ PR is NOT a candidate:
 - `ml_trace(config, reps)` — one config with 50 reps, full row (init ms,
   median/p10/p90 ms, GFLOP/s, GB/s, deviation, first bad element).
 - `ml_parity()` — the `edges` suite; run it before every PR.
+- `quick_ask` — cheap Jev decision model (typed answers with probabilities, no
+  text).  Use it for narrow judgments over text you provide.  Advisory: it can
+  be wrong — check confidence and decide yourself.  Prefer `yes_no`/`choices`;
+  batch independent questions into one `questions` call.
 
 Verdict codes from `ml_bench`: `baseline_captured` (this run pinned the
 baseline; clean tree only), `no_baseline`, `correctness_failure` (fix the math
