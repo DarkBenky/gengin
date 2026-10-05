@@ -15,13 +15,13 @@ import wandb
 
 BATCH_SIZE = 16
 C = 256
-BLOCKS = 16
+BLOCKS = 4
 SCALE = 2
 HR_SIZE = 256
 SHOW_IMAGES = False
 LEARNING_RATE = 1e-4 # model is already trained on some samples so lr is lowered
 EPOCHS = 100
-DEVICE = 0
+DEVICE = 1 # RTX 3060 (PyTorch orders fastest-first, cuda:0 is the 3090)
 PERC_WEIGHT = 0.175
 GRAM_WEIGHT = 0.0125
 
@@ -179,6 +179,7 @@ def buildDifference(lr, pred, hr, rows=4, gain=5.0):
     return (torch.cat(diffs, dim=1) * gain).clamp(0, 1)
 
 if __name__ == "__main__":
+    print("Initializing Dataset")
     dataset = ImageDataset("/media/user/2TB/wt_screenshots")
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8,
                         pin_memory=True, persistent_workers=True, drop_last=True)
@@ -192,6 +193,7 @@ if __name__ == "__main__":
         axes[1].imshow(hr.permute(1, 2, 0)); axes[1].set_title(f"HR {hr.shape[-1]}")
         plt.show()
 
+    print("Initializing Model")
     model, modelSize, optimizer, modelStructure = buildModel()
     vgg = VGGFeatures().cuda(DEVICE).eval()
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS * len(loader))
