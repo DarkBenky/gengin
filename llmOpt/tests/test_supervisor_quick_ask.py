@@ -125,6 +125,20 @@ class SupervisorQuickAskTests(unittest.TestCase):
         self.assertEqual(hermes_env["QUICK_ASK_MODEL"], "typesafe/jev-1.13")
         self.assertEqual(hermes_env["QUICK_ASK_TIMEOUT_SECONDS"], "45")
 
+    def test_openrouter_key_reaches_mcp_env_block(self):
+        config, errors = self.load()
+        self.assertEqual(errors, [])
+        mcp_env = supervisor._session_mcp_env(
+            config, "0" * 40, "sess", "/tmp/result.json")
+        self.assertIn("OPENROUTER_API_KEY", mcp_env)
+        # The renderer emits `KEY: "${KEY}"` lines; Hermes resolves the value.
+        rendered = [f'{key}: "${{{key}}}"' for key in mcp_env]
+        self.assertIn('OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"', rendered)
+        hermes_env = supervisor._build_session_env(
+            config, "sess", "/tmp/hermes", "/tmp/q.md", "/tmp/u.json",
+            "capped-key", "/tmp/result.json")
+        self.assertEqual(hermes_env["OPENROUTER_API_KEY"], "capped-key")
+
     def test_unset_overrides_not_exported(self):
         config, errors = self.load()
         self.assertEqual(errors, [])

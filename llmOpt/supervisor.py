@@ -1446,6 +1446,11 @@ def _session_mcp_env(config, target_sha, session_id, result_path):
         "GENGIN_SESSION_ID": session_id,
         "GENGIN_SESSION_RESULT_PATH": result_path,
     }
+    # Hermes' stdio env filter strips API keys from the parent environment, so
+    # the capped inference key quick_ask calls OpenRouter with must be listed
+    # here. The renderer uses key names only; Hermes resolves
+    # ${OPENROUTER_API_KEY} from its process environment at spawn time.
+    session_env["OPENROUTER_API_KEY"] = ""
     if config.gengin_inputs_dir and os.path.isdir(config.gengin_inputs_dir):
         session_env["GENGIN_INPUTS_DIR"] = config.gengin_inputs_dir
     if os.environ.get("GITHUB_TOKEN"):
