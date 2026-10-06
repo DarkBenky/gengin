@@ -13,9 +13,9 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import wandb
 
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 C = 256
-BLOCKS = 4
+BLOCKS = 16
 SCALE = 2
 HR_SIZE = 256
 SHOW_IMAGES = False

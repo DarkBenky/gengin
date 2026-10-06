@@ -22,7 +22,7 @@
   - [ ] Crete test and different version to find best method for compute heavy methods
 
 - [ ] implement heat haze
-  - [ ] integrate it with object so when objects moves the heat haze moves to
+  - [ ] integrate it with object so when objects moves the heat haze  t
 
 - [ ] improve missiles/planes guidence
   - [ ] add support for missiles flight model and improve flight modeling even more

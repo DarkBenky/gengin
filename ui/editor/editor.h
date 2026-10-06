@@ -6,15 +6,26 @@
 #include "../../util/threadPool.h"
 #include "../../render/color/color.h"
 #include "../../keyboard/keyboard.h"
+#include "MiniFB_enums.h"
+#include <MiniFB.h>
 
 #define ROWS_PER_TASK 8
 const float3 highlightColor = {1.75f, 0.75f, 1.81f}; // Multipliers for each color channel
 
 enum EditorMode {
-	MOVE_MODE, // default mode
-	ROTATE_MODE,
-	SCALE_MODE
+	MOVE_MODE = KB_KEY_1,
+	ROTATE_MODE = KB_KEY_2,
+	SCALE_MODE = KB_KEY_3
 };
+
+const int ToggleEditor = KB_KEY_TAB;
+const int ForwardKey = KB_KEY_UP;
+const int BackwardKey = KB_KEY_DOWN;
+const int LeftKey = KB_KEY_LEFT;
+const int RightKey = KB_KEY_RIGHT;
+const int UpKey = KB_KEY_RIGHT_SHIFT;
+const int DownKey = KB_KEY_RIGHT_CONTROL;
+const int SnapKey = KB_KEY_KP_0;
 
 typedef struct editorUi {
 	ObjectList *scene;
@@ -23,6 +34,7 @@ typedef struct editorUi {
 	Object *selectedObject; // if NULL, no object is selected
 	enum EditorMode mode;
 	bool editorActive;
+	bool snapToGrid;
 	float moveSpeed;
 	float rotationSpeed;
 	float scaleSpeed;
@@ -43,6 +55,7 @@ Error createEditorUi(ObjectList *objectList, editorUi *ui, Camera *cam) {
 	ui->moveSpeed = 1.0f;
 	ui->rotationSpeed = 1.0f;
 	ui->scaleSpeed = 1.0f;
+	ui->snapToGrid = false;
 	err.err = nil;
 	strcpy(err.msg, "OK");
 	return err;
@@ -306,6 +319,53 @@ void applyHighlightEdge(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 			if (x >= 0 && x < width) cam->framebuffer[py * width + x] = cursorColor;
 			int y = py + i;
 			if (y >= 0 && y < height) cam->framebuffer[y * width + px] = cursorColor;
+		}
+	}
+}
+
+void drawStats(editorUi *ui, int x, int y) {
+	// TODO: Draw statistics about the selected object or the scene
+}
+
+void editorStep(editorUi *ui, struct mfb_window *window) {
+	Input *input = ui->input;
+	Input_Poll(input, window);
+	if (input->keys[ToggleEditor]) {
+		if (ui->editorActive) {
+			deactivateEditorUi(ui);
+			return;
+		} else {
+			activateEditorUi(ui);
+		}
+	}
+	
+	if (ui->editorActive) {
+		if (input->keys[SnapKey]) {
+			ui->snapToGrid = !ui->snapToGrid;
+		}
+
+		if (input->keys[MOVE_MODE]) {
+			ui->mode = MOVE_MODE;
+		} else if (input->keys[ROTATE_MODE]) {
+			ui->mode = ROTATE_MODE;
+		} else if (input->keys[SCALE_MODE]) {
+			ui->mode = SCALE_MODE;
+		}
+
+		switch (ui->mode) {
+			// NOTE: when this is applied we need to rebuild objects data
+			case MOVE_MODE: {
+				// TODO: Move selected object
+				break;
+			}
+			case ROTATE_MODE: {
+				// TODO: Rotate selected object
+				break;
+			}
+			case SCALE_MODE: {
+				// TODO: Scale selected object
+				break;
+			}
 		}
 	}
 }
