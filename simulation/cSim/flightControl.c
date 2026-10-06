@@ -304,7 +304,17 @@ typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 ta
 // same miss with the shorter walk (effort 15.98 -> 21.41, 620 -> 1180
 // saturated steps) while the other four tiers spend less, so the aggregate
 // effort moves less than any single tier.
-#define SEARCH_STEP_DECAY 0.91f
+// Re-tuned on the post-#77 base (2026-10-06); the numbers in this paragraph
+// are against the current pin (116.18 m), not the older block's 335 m one.
+// Pricing the rudder above the wing controls moved the plan's basin, and with
+// it the walk's optimum.  At lr0 0.052 / decay 0.885 / momentum 0.88 the
+// travel is 0.45 of the box and the walk stops after 10 iterations (was 15):
+// pinned suite miss 116.18 -> 109.09 m (-6.1%), effort 5.81 -> 5.85,
+// saturated steps 268 -> 265, controller cost -29%, every tier inside its
+// guard.  Over nine held-out geometry sets (seedbases 100-900) the aggregate
+// miss is neutral (mean -0.31%, worst +1.1%), so the pinned miss gain is
+// suite-specific; the robust part is the cost cut.
+#define SEARCH_STEP_DECAY 0.885f
 #define SEARCH_MIN_TAIL_WALK 0.14f
 
 static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
@@ -313,8 +323,8 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
 	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
-	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
-	float learningRate = 0.05f;
+	float momentumCoefficient = 0.88f;	  // how much of the previous momentum to keep
+	float learningRate = 0.052f;
 	// Finite-difference probe span. At 0.025 the two probes differ by less than
 	// the loss's step-to-step noise, so the gradient direction is noise-driven;
 	// 0.05 (the flat 0.04-0.075 region) steers the same miss with ~22% less
