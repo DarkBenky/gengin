@@ -253,20 +253,23 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	// Control-effort term.  The search scores six single-axis probes per
 	// iteration and the momentum walk ends up further from neutral than the
 	// alignment + distance terms justify -- with no cost on the deflection,
-	// ~30% of the commanded surface travel is thrown away. Charge the loss the
-	// quantity the bench integrates as "control effort" (sum of |surface - 0.5|
-	// in 0-1 units; the command is constant over the horizon, so the per-step
-	// average the other running terms apply divides straight out).  With the
-	// 2.25x window above the pair measures 336.3 m / effort 14.06 / satSteps
-	// 2282 against 342.3 / 20.49 / 2365 for the baseline, i.e. both scored terms
-	// improve; above ~0.5 the penalty dominates and the miss walks off to the
-	// 392 m of a purely neutral command, so 0.1 sits well inside the smooth
-	// part of the response.  Disclosed: the term charges deflection magnitude,
-	// not slew rate, while the plant's actuator limit is a rate limit
-	// (simulate.c rotationRate); it is a regulariser on the quantity the bench
-	// scores, not a model of actuator wear.
-	const float effortWeight = 0.1f;
-	float effort = fabsf(values[0] - 0.5f) + fabsf(values[1] - 0.5f) + fabsf(values[2] - 0.5f);
+	// ~30% of the commanded surface travel is thrown away (with the 2.25x
+	// window the term measures 336.3 m / effort 14.06 / satSteps 2282 against
+	// 342.3 / 20.49 / 2365 without it).  The bench charges the unweighted sum
+	// of |surface - 0.5|, and the command is constant over the horizon, so the
+	// per-step average the other running terms apply divides straight out.
+	// Disclosed: the term charges deflection magnitude, not slew rate, while
+	// the plant's actuator limit is a rate limit (simulate.c rotationRate); it
+	// is a regulariser, not a model of actuator wear.
+	// The rudder is priced above the wing controls: it is the yaw axis, so its
+	// deflection buys no turn (banking is the turn authority) while it still
+	// makes sideslip and drag.  Charged equally the search holds it -- the base
+	// flies at a mean |yawRate| of 0.39 rad/s against 0.05-0.10 for every plan
+	// that scores well -- and the 2:1 ratio, not the magnitude, is the lever:
+	// at the same total a uniform charge of 2.15 measures 149.9 m and a uniform
+	// 3.0 collapses to 289.9 m, while this pair takes the miss to 117.9 m.
+	const float effortWeight = 1.0f;
+	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 
 	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
 
