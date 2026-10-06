@@ -196,7 +196,7 @@ Rules:
   (passed via stdin — never on a command line, which `ps` exposes to every
   local user).
 
-## Tools (28)
+## Tools (30)
 
 | Group               | Tools                                                                                              |
 |---------------------|----------------------------------------------------------------------------------------------------|
@@ -205,7 +205,7 @@ Rules:
 | ML layer kernels    | `ml_bench`, `ml_scenarios`, `ml_trace`, `ml_parity`                                                |
 | Micro-bench sandbox | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench`                        |
 | Visual evidence     | `compare_bench_frames`, `compare_images`                                                           |
-| Pull request history | `list_pull_requests`                                                                                |
+| Pull requests       | `list_pull_requests`, `fetch_pull_request`, `close_pull_request`                                    |
 | Hotspot annotation  | `hot_annotate_func`, `hot_annotate_file`                                                           |
 | clangd queries      | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Session control     | `report_session_result` (supervised sessions only)                                                 |
@@ -217,6 +217,15 @@ closed-PR pages, so a page may contain fewer than `limit` results;
 `sourcePageHasMore` indicates whether another source page may have results.
 Changed paths are capped at 20 per PR and `filesUnavailable` marks incomplete
 file metadata.
+
+`fetch_pull_request(number)` fetches a PR head into the sandbox (object store
+only — the working tree is untouched) and reports its files, diffstat and
+whether the diff applies cleanly to the current tree.  `close_pull_request`
+closes one open PR with a mandatory evidence comment and refuses merged or
+already-closed ones.  Both exist for the maintenance task in
+`prompts/optimize.md`: with 4 or more open PRs a session verifies them
+individually and folds the survivors into one consolidation PR, closing its
+sources with their measured numbers.
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate),
 then `compare_bench_frames` writes `before | after | diff` composites + metrics

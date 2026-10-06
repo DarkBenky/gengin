@@ -60,6 +60,9 @@ If the CPU node map is genuinely exhausted — every row `tried-failed` or
 `shipped` with numbers, no unexplored hotspot left — do NOT report
 `no_change` yet: switch to the SECOND OBJECTIVE below (the flight controller)
 and meet the same effort bar there.
+Alternatively, when 4 or more pull requests are open, the MAINTENANCE TASK
+below (PR consolidation) is a valid session goal; a complete pass through it
+also satisfies this bar.
 Candidates come from the `## Node map`, ranked by its flame percentages.  If
 that section is empty (first session on a fresh checkout), seed it from your
 own `make_flame` output — top 5 nodes, one row each — before choosing.  The
@@ -95,6 +98,9 @@ PR is NOT a candidate:
   covered, one `quick_ask(choices=["covered", "not covered"], context=<titles>)`
   call is cheaper than reading every PR; it is advisory — you still make the
   final call.
+- Exception: with 4 or more open PRs you may take the MAINTENANCE TASK below
+  instead — folding verified open PRs into one consolidation PR is not
+  re-implementing them.
 
 ## WORKFLOW
 
@@ -309,6 +315,52 @@ when the verdict is not IMPROVED, update `codebase_context.md` (its
 `## Flight node map` section has the same row format), and open ONE PR titled
 for the controller with the before/after block quoted in the body.
 
+## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 PRs are open)
+When 4 or more pull requests are open — or the session context explicitly asks
+for it — you may make this the session's task instead of a new optimization:
+verify the open PRs individually and fold the ones that pass into ONE
+consolidation PR.  State the choice in your first message.  The reviewer gets
+one PR instead of a dozen, and every included change still carries its own
+before/after numbers.  This is the one sanctioned multi-change PR; keep it to
+verified, independent changes.
+
+1. Inventory — `list_pull_requests(state="open", limit=20, page=1)`, paging
+   while `sourcePageHasMore`.  Skip drafts, `[visual]` PRs and PRs touching
+   `machineLearning/`, `llmOpt/` or `deps/` (leave those open).  Newest first,
+   at most 6.
+2. Verify each PR alone.  HEAD stays the prepared target SHA so the pinned
+   baselines keep loading; every candidate is applied as UNCOMMITTED edits:
+   - `fetch_pull_request(N)` — head, files, diffstat, and whether it applies.
+   - Apply it as uncommitted edits.  If it does not apply, port only
+     mechanical conflicts; a port that is not obvious within a few hunks is
+     `conflict - skipped`.
+   - `build_project`, then gate what the PR touches:
+     render files -> `make_bench`: include only on `PERFORMANCE IMPROVED`
+     (repeat once for 1-3% wins) with `image_mse` 0.00.
+     flight files -> `flight_bench`: include only on `OVERALL: IMPROVED`.
+     both -> both gates must pass.
+   - Record the numbers, then `git checkout -- .` before the next candidate.
+3. Combine the winners in win order (largest measured win first).  If two
+   winners conflict, keep the larger win, note the dropped PR in the body and
+   leave it open.
+4. Validate the combined tree: `build_project` + EVERY gate the batch touches
+   (step 2).  If the combination fails where the PRs passed alone, drop the
+   weakest winner and re-run — note the interaction in the PR body.
+5. `create_pr(title="consolidate: N verified PRs (render + flight)",
+   body=<per-PR table: number, title, measured numbers, applied or why not;
+   the combined gate block; "Supersedes: #a #b ...">, imageOutputChange=false)`.
+   In a manual session pass `branch="llmopt/<8-hex-sha>/consolidate-<yyyymmdd>"`.
+6. Close ONLY the included PRs:
+   `close_pull_request(N, "Consolidated into <URL> after individual
+   verification on <sha>: <numbers>. Branch preserved.")`.  Excluded PRs stay
+   untouched.
+7. Update `codebase_context.md` and `report_session_result(pr_created, ...)`.
+
+If fewer than two PRs pass, revert everything (the sandbox must be clean),
+record what was refuted and why, and continue with the normal workflow — never
+open a one-PR "consolidation", and never repeat a contributor's claimed
+numbers without re-measuring them on the prepared SHA.
+
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
 - requires OpenCL, minifb, or infrastructure that cannot be isolated;
@@ -402,6 +454,11 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
 16. NEVER leave unnecessary comments in the diff — comments only when really
     necessary, and then only WHY.  No commented-out code, no reformatting of
     untouched lines: the change must read like the surrounding codebase.
+17. NEVER close a pull request you did not include in your consolidation PR —
+    `close_pull_request` is for folded-in sources only, with the evidence
+    comment.
+18. NEVER sell a consolidation on a contributor's claimed numbers — only runs
+    you made on the prepared SHA go into the evidence.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

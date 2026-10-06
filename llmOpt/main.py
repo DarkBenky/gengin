@@ -1556,6 +1556,30 @@ def _githubGetJson(url, timeout=30):
         raise RuntimeError("GitHub API returned invalid JSON") from None
 
 
+def _githubSendJson(url, payload, method="POST", timeout=60):
+    import urllib.error, urllib.request
+
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers=_githubHeaders())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            body = response.read()
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            message = "GITHUB_TOKEN was rejected; check its validity and repository access"
+        elif exc.code == 403:
+            message = "GitHub denied access; check token permissions"
+        else:
+            message = f"GitHub API returned HTTP {exc.code}"
+        raise RuntimeError(message) from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"GitHub API request failed: {exc}") from None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise RuntimeError("GitHub API returned invalid JSON") from None
+
+
 def listPullRequests(state="all", limit=10, page=1):
     """List repository pull requests and changed paths from GitHub."""
     if state not in ("all", "open", "closed", "merged"):
@@ -1835,3 +1859,89 @@ def createPR(title, body, branch="", commit_msg=None,
     url = _github_create_pr(title, body, head=branch)
     print(f"PR created: {url}", file=sys.stderr)
     return url
+
+
+def fetchPullRequest(number):
+    """Fetch a pull request head and report how it can be verified locally.
+
+    The fetch only grows the object store; the working tree is untouched —
+    ``git apply --check`` runs in dry-run mode.  HEAD is the comparison base,
+    so a PR generated from an older main reports its diff against its own
+    merge-base.  Used by the PR-consolidation task: the session applies the
+    diff as uncommitted edits while HEAD stays at the prepared SHA, so the
+    pinned baselines keep loading.
+    """
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        raise ValueError("number must be a positive integer")
+
+    def git(args, input_text=None, timeout=120):
+        return subprocess.run(["git"] + args, capture_output=True, text=True,
+                              cwd=PROJECT_DIR, input=input_text, timeout=timeout)
+
+    fetched = git(["fetch", "--no-tags", "origin", f"pull/{number}/head"],
+                  timeout=300)
+    if fetched.returncode != 0:
+        raise RuntimeError(
+            f"git fetch for pull/{number}/head failed: "
+            f"{(fetched.stderr or fetched.stdout).strip()[:300]}")
+
+    head = git(["rev-parse", "FETCH_HEAD"]).stdout.strip()
+    merge_base_res = git(["merge-base", "HEAD", head])
+    if merge_base_res.returncode != 0:
+        raise RuntimeError(f"no merge base between HEAD and PR #{number} ({head[:12]})")
+    merge_base = merge_base_res.stdout.strip()
+
+    files, insertions, deletions = [], 0, 0
+    numstat = git(["diff", "--numstat", "--no-renames", merge_base, head]).stdout
+    for line in numstat.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        ins, dele, path = parts
+        files.append(path)
+        insertions += int(ins) if ins.isdigit() else 0
+        deletions += int(dele) if dele.isdigit() else 0
+
+    diff_text = git(["diff", "--no-renames", merge_base, head]).stdout
+    applies_cleanly = bool(diff_text) and git(
+        ["apply", "--check", "-"], input_text=diff_text).returncode == 0
+
+    return {
+        "number": number,
+        "head": head,
+        "mergeBase": merge_base,
+        "files": files,
+        "insertions": insertions,
+        "deletions": deletions,
+        "appliesCleanly": applies_cleanly,
+    }
+
+
+def closePullRequest(number, comment):
+    """Close one open pull request with an evidence comment.
+
+    Refuses merged or already-closed PRs so a consolidation can never rewrite
+    shipped history or double-close.  The comment is mandatory: it carries the
+    consolidation PR URL and the numbers measured on this session's SHA.
+    """
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        raise ValueError("number must be a positive integer")
+    comment = (comment or "").strip()
+    if not comment:
+        raise ValueError(
+            "comment is required: state the consolidation PR and the measured numbers")
+    if len(comment) > 60000:
+        raise ValueError("comment is too long for the GitHub comment limit")
+
+    owner, repo = _githubRepo()
+    base = f"https://api.github.com/repos/{owner}/{repo}"
+    pr = _githubGetJson(f"{base}/pulls/{number}")
+    if pr.get("merged_at"):
+        raise RuntimeError(f"refusing to close #{number}: the PR is merged (shipped history)")
+    if pr.get("state") != "open":
+        raise RuntimeError(f"refusing to close #{number}: state is {pr.get('state')!r}, not open")
+
+    _githubSendJson(f"{base}/issues/{number}/comments", {"body": comment})
+    _githubSendJson(f"{base}/pulls/{number}", {"state": "closed"}, method="PATCH")
+    return {"number": number, "state": "closed", "url": pr.get("html_url", ""),
+            "commentPosted": True}

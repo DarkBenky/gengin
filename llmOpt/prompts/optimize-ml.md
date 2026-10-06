@@ -75,6 +75,9 @@ PR is NOT a candidate:
   review time and both get closed.
 - If the tool fails, or a result has `filesUnavailable: true`, history is
   incomplete; do not treat missing results as proof that no prior PR exists.
+- Exception: with 4 or more open PRs you may take the MAINTENANCE TASK at the
+  end of this prompt instead — folding verified ML PRs into one consolidation
+  PR is not re-implementing them.
 
 ## TOOLS
 - `ml_scenarios()` — every suite, every config id/shape, and whether a baseline
@@ -213,6 +216,51 @@ Do not re-derive what a previous session already recorded in
 - If the only change you can justify is correctness-neutral and inside its
   noise band, say so with the numbers and report `no_change`.
 
+## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 PRs are open)
+When 4 or more pull requests are open — or the session context explicitly asks
+for it — you may make this the session's task instead of a new kernel idea:
+verify the open ML pull requests individually and fold the ones that pass into
+ONE consolidation PR.  State the choice in your first message.  The reviewer
+gets one PR instead of a dozen, and every included change still carries its own
+before/after summaries.  This is the one sanctioned multi-change PR; keep it to
+verified, independent changes.
+
+1. Inventory — `list_pull_requests(state="open", limit=20, page=1)`, paging
+   while `sourcePageHasMore`.  Skip drafts and PRs whose files are not under
+   `gengin/machineLearning/` (leave those open).  Newest first, at most 6.
+2. Verify each PR alone.  HEAD stays the prepared target SHA so the pinned
+   baselines keep loading; every candidate is applied as UNCOMMITTED edits:
+   - `fetch_pull_request(N)` — head, files, diffstat, and whether it applies.
+   - Apply it as uncommitted edits.  If it does not apply, port only
+     mechanical conflicts; a port that is not obvious within a few hunks is
+     `conflict - skipped`.
+   - `ml_bench(suite="smoke")`, then the suite(s) the change targets
+     (`core`, `srnet`, `edges`, ...); include only when the correctness block
+     passes everywhere and no family regresses past its noise band.  Run
+     `ml_parity()` when conv/pool shapes moved.
+   - Record the summaries, then `git checkout -- .` before the next candidate.
+3. Combine the winners in win order (largest measured win first).  If two
+   winners conflict, keep the larger win, note the dropped PR in the body and
+   leave it open.
+4. Validate the combined tree: refresh the tracked generator output once
+   (`python3 gengin/machineLearning/generateKernel.py`), `make -C gengin`, then
+   `ml_bench(suite="all")` (plus `ml_parity()` if the batch touched conv/pool).
+5. `create_pr(title="consolidate: N verified ML PRs", body=<per-PR table:
+   number, title, before/after summaries, applied or why not; the combined
+   block; "Supersedes: #a #b ...">)`, with the "after" summaries the normal
+   flow requires.
+6. Close ONLY the included PRs:
+   `close_pull_request(N, "Consolidated into <URL> after individual
+   verification on <sha>: <numbers>. Branch preserved.")`.  Excluded PRs stay
+   untouched.
+7. Update `codebase_context.md` (ML node map) and
+   `report_session_result(pr_created, ...)`.
+
+If fewer than two PRs pass, revert everything (the sandbox must be clean),
+record what was refuted and why, and continue with the normal workflow — never
+open a one-PR "consolidation", and never repeat a contributor's claimed
+numbers without re-measuring them on the prepared SHA.
+
 ## SESSION EFFORT BUDGET
 This is a long session and the supervisor measures whether you used it.  A
 session that ends after one bench run and a quick `no_change` is a FAILED
@@ -223,6 +271,8 @@ session.  Minimum effort before you may report `no_change`:
 - a `smoke`, a `core` and, for conv candidates, an `srnet` run for every
   candidate you kept long enough to measure; AND
 - a reverted tree plus a written reason for every candidate that failed.
+A complete PR-consolidation pass (see MAINTENANCE TASK) is an equally valid
+way to spend the session — every listed PR tested or refuted with numbers.
 Prefer a small, honest, well-measured win over a large speculative rewrite; a
 measured win counts wherever it lands, but the big convs deserve the most
 attempts.

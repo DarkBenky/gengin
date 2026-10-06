@@ -303,6 +303,29 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
 
 
 @mcp.tool()
+def fetch_pull_request(number: int) -> str:
+    """Fetch one pull request's head into the sandbox and report how it can be
+    verified: files, diffstat, merge-base, and whether the diff applies to the
+    current tree (`git apply --check`, dry run — the working tree is untouched).
+
+    Use during PR consolidation to pick which open PRs to apply as uncommitted
+    edits for individual make_bench / flight_bench runs while HEAD stays at the
+    prepared SHA."""
+    return json.dumps(_main.fetchPullRequest(number), indent=2)
+
+
+@mcp.tool()
+def close_pull_request(number: int, comment: str) -> str:
+    """Close ONE open pull request with a mandatory evidence comment, e.g.
+    "Consolidated into <PR-URL> after individual verification on <sha>: ...".
+
+    Refuses merged or already-closed PRs.  Use only for PRs folded into a
+    consolidation PR, with this session's measured numbers in the comment —
+    never for review feedback."""
+    return json.dumps(_main.closePullRequest(number, comment), indent=2)
+
+
+@mcp.tool()
 def flight_bench(steps: int = 0, capture_baseline: bool = False) -> str:
     """Run the flight-controller suite (deterministic, ~20 s) and compare it
     against the pinned baseline.  Metrics per tier - static, drift, weave, step,
