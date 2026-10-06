@@ -7,10 +7,21 @@
 #define MAX_FLOAT 3.402823466e+38F
 #define SAMPLES 8
 #define VARIATIONS 8
-// Rows handed to one pool task: bigger bands cut per-task overhead, smaller ones balance better
+// Rows handed to one pool task in the legacy AOBench entry points below: bigger bands cut
+// per-task overhead, smaller ones balance better
 // Swept 1..64 rows/task on AOBench: 1 and 2 tie at the top, 8+ loses to balance, 16+ idles threads
 #ifndef ROWS_PER_TASK
 #define ROWS_PER_TASK 2
+#endif
+// Band for the two batches that make up the rendered frame's AO pass (the sample + row-blur rows
+// and the framebuffer apply).  There the pool hand-off scales with the task count while the kernels
+// do not: a no-op region already costs 2.2 ms for 360 tasks in situ, the pass queues ~900 tasks a
+// frame against 5.5 ms of total pass time, and its full-resolution column-blur region measures ~0.
+// 8-row bands cut the batch to 90 tasks and take ~1 ms (4.6% of the raster phase, 5/5 paired
+// rounds) off the frame, while still leaving 90 bands to balance 720 rows over the pool; 20+ rows
+// loses to tail imbalance.  Frames stay bit-identical (all 10 bench hashes).
+#ifndef AO_ROWS_PER_TASK
+#define AO_ROWS_PER_TASK 8
 #endif
 // Columns handed to one pool task for the column blur; wider bands amortize the strided sweep's cache lines
 // Swept 2..64 columns/task on AOBench: 16 best (~6.2ms median), 2 worst (~7.9ms, 638 tiny tasks); 1 exceeds the pool ring
@@ -35,8 +46,8 @@
 // (2 rounds x row+col band) measure 2.19 ms of pure hand-off against 0.24 ms for 22 empty tasks.
 // Coarser bands measure row blur 0.76 -> 0.21 ms and column blur 0.215 -> 0.147 ms with bit-identical
 // output (bench/aoWide).  The band size is an explicit argument now: the full-resolution column pass
-// (the only other caller) still passes COLUMNS_PER_TASK, and ROWS_PER_TASK still sizes the
-// full-resolution AO sample-pass tasks in the CalculateAmbientOcclusion*Mp helpers below.
+// (the only other caller) still passes COLUMNS_PER_TASK, and the legacy CalculateAmbientOcclusion*Mp
+// entry points below still size their bands from ROWS_PER_TASK.
 #ifndef AO_SMOOTH_BLUR_ROWS_PER_TASK
 #define AO_SMOOTH_BLUR_ROWS_PER_TASK 8
 #endif
@@ -1547,11 +1558,11 @@ static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(Camera *c
 	camera->minDepth = FLT_MAX;
 
 	const int height = camera->screenHeight;
-	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	const int taskCount = (height + AO_ROWS_PER_TASK - 1) / AO_ROWS_PER_TASK;
 	AmbientOcclusionTask tasks[taskCount];
 	for (int t = 0; t < taskCount; t++) {
-		const int row = t * ROWS_PER_TASK;
-		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		const int row = t * AO_ROWS_PER_TASK;
+		const int rows = height - row < AO_ROWS_PER_TASK ? height - row : AO_ROWS_PER_TASK;
 		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
 		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlusSkipBetterBlur, &tasks[t]);
 	}
@@ -1603,12 +1614,12 @@ static void applyAmbientOcclusion(Camera *camera, ThreadPool *threadPool, float 
 
 	const int width = camera->screenWidth;
 	const int height = camera->screenHeight;
-	const int taskCount = (height + ROWS_PER_TASK - 1) / ROWS_PER_TASK;
+	const int taskCount = (height + AO_ROWS_PER_TASK - 1) / AO_ROWS_PER_TASK;
 	ApplyTask tasks[taskCount];
 
 	for (int t = 0; t < taskCount; t++) {
-		const int row = t * ROWS_PER_TASK;
-		const int rows = height - row < ROWS_PER_TASK ? height - row : ROWS_PER_TASK;
+		const int row = t * AO_ROWS_PER_TASK;
+		const int rows = height - row < AO_ROWS_PER_TASK ? height - row : AO_ROWS_PER_TASK;
 		tasks[t] = (ApplyTask){row, rows, width, height, camera->ambientOcclusionBuffer, strength, camera->framebuffer};
 		poolAdd(threadPool, ApplyAoRows, &tasks[t]);
 	}
