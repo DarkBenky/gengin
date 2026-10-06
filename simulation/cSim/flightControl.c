@@ -245,10 +245,15 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
 	float finalDist = distanceToTarget(&simPlane, target);
 
-	float distImprovement = (finalDist - currentDist) * 0.3f + (minDist - currentDist) * 0.7f;
+	// Tuned as a pair: the 3.0 amplification predates the deflection charge, and
+	// once the rudder was priced above the wing controls it pins the search into
+	// the `step` tier's floor -- each knob alone regresses `step` by more than
+	// 30%.  Together: miss 116.2 -> 110.0 m, effort 5.81 -> 5.61, satSteps
+	// 268 -> 208, largest tier regression -3.4% (`static`), cost unchanged.
+	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 0.55f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
 
-	float alignWeight = 1.0f + 3.0f / (1.0f + currentDist * 0.0065f);
+	float alignWeight = 1.0f + 1.5f / (1.0f + currentDist * 0.0065f);
 
 	// Control-effort term.  The search scores six single-axis probes per
 	// iteration and the momentum walk ends up further from neutral than the
