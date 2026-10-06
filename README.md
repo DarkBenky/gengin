@@ -1,6 +1,8 @@
 # Tasks
 
 - [X] add MCP tool so llm opt know which pr were made
+- [ ] add MipMaps for textures and add bilinear samplings
+  - [ ] test different implementations for max performance 
 - [X] Add the Sponza palace to scene to test rendering more
   - [X] convert to bin file
   - [X] add to scene
