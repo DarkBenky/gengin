@@ -5,6 +5,7 @@
 #include "../../object/scene.h"
 #include "../../util/threadPool.h"
 #include "../../render/color/color.h"
+#include "../../keyboard/keyboard.h"
 
 #define ROWS_PER_TASK 8
 const float3 highlightColor = {1.75f, 0.75f, 1.81f}; // Multipliers for each color channel
@@ -18,6 +19,7 @@ enum EditorMode {
 typedef struct editorUi {
 	ObjectList *scene;
 	Camera *cam;
+	Input *input; // TODO: integrate Input into Editor
 	Object *selectedObject; // if NULL, no object is selected
 	enum EditorMode mode;
 	bool editorActive;

@@ -1,4 +1,4 @@
-#include "keyboar.h"
+#include "keyboard.h"
 
 static bool prevKeys[512];
 static bool prevMouse[8];

@@ -19,7 +19,7 @@
 #include "skybox/skybox.h"
 #include "util/threadPool.h"
 #include "util/bench.h"
-#include "keyboar/keyboar.h"
+#include "keyboard/keyboard.h"
 #include "render/gpu/kernels/cloadrendering/cload.h"
 #include "client/gameClient.h"
 #include "simulation/cSim/import.h"
@@ -83,7 +83,7 @@ int main() {
 
 	Input input;
 	Camera camera;
-	initCamera(&camera, WIDTH, HEIGHT, 90.0f, (float3){0.0f, 2.0f, -7.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){0.0f, 80.0f, -60.0f});
+	initCamera(&camera, WIDTH, HEIGHT, 90.0f, (float3){5.0f, 5.0f, -15.0f}, (float3){0.0f, -0.15f, 1.0f}, (float3){0.0f, 80.0f, -60.0f});
 
 	MaterialLib matLib;
 	MaterialLib_Init(&matLib, 256);
@@ -132,16 +132,63 @@ int main() {
 	free(grid.objects);
 
 	Object *cube = ObjectList_Add(&scene);
-	CreateCube(cube, (float3){0.0f, 1.0f, 10.0f}, (float3){0.0f, 0.5f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.9f, 0.0f, 0.0f}, &matLib, 100.0f, 0.99f, 0.0f);
+	CreateCube(cube, (float3){-3.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){0.5f, 0.5f, 0.5f}, (float3){0.7f, 0.4f, 0.0f}, &matLib, 8.0f, 0.99f, 0.0f);
 	Object_UpdateWorldBounds(cube);
 
 	Object *cube2 = ObjectList_Add(&scene);
-	CreateCube(cube2, (float3){10.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.9f, 0.0f}, &matLib, 100.0f, 0.99f, 0.0f);
+	CreateCube(cube2, (float3){3.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){1.5f, 1.5f, 1.5f}, (float3){0.0f, 0.6f, 0.3f}, &matLib, 8.0f, 0.99f, 0.0f);
 	Object_UpdateWorldBounds(cube2);
 
 	Object *cube3 = ObjectList_Add(&scene);
-	CreateCube(cube3, (float3){20.0f, 1.0f, 15.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 7.0f, 7.0f}, (float3){0.0f, 0.0f, 0.9f}, &matLib, 100.0f, 0.99f, 0.0f);
+	CreateCube(cube3, (float3){10.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){1.5f, 1.5f, 1.5f}, (float3){0.4f, 0.0f, 0.5f}, &matLib, 8.0f, 0.99f, 0.0f);
 	Object_UpdateWorldBounds(cube3);
+
+	static const float3 gridColors[6] = {
+		{0.90f, 0.10f, 0.10f},
+		{0.90f, 0.45f, 0.05f},
+		{0.90f, 0.80f, 0.10f},
+		{0.10f, 0.75f, 0.15f},
+		{0.10f, 0.30f, 0.90f},
+		{0.55f, 0.10f, 0.85f},
+	};
+	static const struct {
+		float roughness;
+		float metallic;
+	} gridMats[4] = {
+		{0.95f, 0.00f},
+		{0.05f, 0.00f},
+		{0.15f, 0.95f},
+		{0.50f, 0.50f},
+	};
+	ObjectList matGrid;
+	ObjectList_Init(&matGrid, 64);
+	for (int ix = 0; ix < 4; ix++) {
+		for (int iy = 0; iy < 4; iy++) {
+			for (int iz = 0; iz < 4; iz++) {
+				Object *matCube = ObjectList_Add(&matGrid);
+				CreateCube(matCube, (float3){22.0f + ix * 3.0f, 0.8f + iy * 3.0f, 11.0f + iz * 3.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){2.0f, 2.0f, 2.0f}, gridColors[(ix + iy + iz) % 6], &matLib, 0.0f, gridMats[(ix + 2 * iy + 3 * iz) % 4].roughness, gridMats[(ix + 2 * iy + 3 * iz) % 4].metallic);
+				Object_UpdateWorldBounds(matCube);
+			}
+		}
+	}
+	ObjectList_Merge(&matGrid, &scene);
+	free(matGrid.objects);
+
+	Object *sphere = ObjectList_Add(&scene);
+	CreateSphereHighResolution(sphere, (float3){-7.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.85f, 0.65f, 0.15f}, &matLib, 0.0f, 0.25f, 0.8f);
+	Object_UpdateWorldBounds(sphere);
+
+	Object *sphere2 = ObjectList_Add(&scene);
+	CreateSphereHighResolution(sphere2, (float3){7.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.20f, 0.70f, 0.80f}, &matLib, 0.0f, 0.15f, 0.4f);
+	Object_UpdateWorldBounds(sphere2);
+
+	Object *sphere3 = ObjectList_Add(&scene);
+	CreateSphereHighResolution(sphere3, (float3){0.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.80f, 0.80f, 0.80f}, &matLib, 0.0f, 0.05f, 0.9f);
+	Object_UpdateWorldBounds(sphere3);
+
+	Object *sphere4 = ObjectList_Add(&scene);
+	CreateSphereHighResolution(sphere4, (float3){14.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.80f, 0.80f, 0.80f}, &matLib, 0.0f, 0.05f, 0.9f);
+	Object_UpdateWorldBounds(sphere4);
 
 	uint32 f16SceneIndex = (uint32)scene.count;
 	Object *plane = ObjectList_Add(&scene);
@@ -150,7 +197,7 @@ int main() {
 	idRegister_Add(&objectRegistry, f16Id, f16SceneIndex);
 	plane->position = (float3){0.0f, 10.0f, 20.0f};
 	plane->rotation = (float3){0.0f, 0.0f, 0.0f};
-	plane->scale = (float3){1.0f, 1.0f, 1.0f};
+	plane->scale = (float3){0.75f, 0.75f, 0.75f};
 	CreateObjectBVH(plane, &plane->bvh);
 	Object_UpdateWorldBounds(plane);
 
@@ -163,10 +210,7 @@ int main() {
 	CreateObjectBVH(palace, &palace->bvh);
 	Object_UpdateWorldBounds(palace);
 
-
 	Plane simPlane;
-	// Start at 220 m/s (within trim envelope) at 1000 m altitude, half throttle.
-	// 100 m/s (previous value) is below the ~193 m/s stall speed at sea level.
 	loadPlaneBin(&simPlane, "./simulation/simModels/F-16C.bin",
 				 (float3){0.0f, 0.0f, 1.0f},	 // forward direction
 				 (float3){0.0f, 1000.0f, 20.0f}, // position (x, altitude, z)
@@ -203,7 +247,7 @@ int main() {
 
 	Volume cloudVol;
 	LoadVolume(&cloudVol, "assets/models/cloud.bin",
-			   (float3){0.0f, 70.0f, 13.0f, 0.0f},
+			   (float3){0.0f, 70.0f, 80.0f, 0.0f},
 			   (float3){0.0f, 0.0f, 0.0f, 0.0f},
 			   (float3){180.0f, 18.0f, 180.0f, 0.0f},
 			   VOLUME_CLOUD);
@@ -263,6 +307,8 @@ int main() {
 		if (input.mouse[MOUSE_LEFT]) CameraRotate(&camera, input.mouseDY * 0.005f, -input.mouseDX * 0.005f);
 
 		// Keep plane in front of camera, facing the same direction, offset slightly below view center
+		// ObjectList_Add may have reallocated the scene array (setup adds + server sync); re-fetch by index
+		plane = &scene.objects[f16SceneIndex];
 		float3 fwd = Float3_Normalize(camera.forward);
 		plane->position = Float3_Add(
 			Float3_Add(camera.position, Float3_Scale(fwd, 10.0f)),

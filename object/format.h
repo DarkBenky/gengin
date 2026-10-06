@@ -7,6 +7,8 @@
 
 #define WIDTH 1080
 #define HEIGHT 720
+// #define WIDTH 1920
+// #define HEIGHT 1080
 
 #define FLT_MAX 3.402823466e+38F
 #define FLT_MIN -3.402823466e+38F

@@ -92,6 +92,7 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
@@ -152,6 +153,9 @@ void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define SPHERE_SEGMENTS 48
 #define SPHERE_RINGS 24
 
+#define SPHERE_SEGMENTS_HIGH_RES 56
+#define SPHERE_RINGS_HIGH_RES 36
+
 static float3 SphereFaceNormal(float3 v1, float3 v2, float3 v3) {
 	float3 n = Float3_Cross(Float3_Sub(v2, v1), Float3_Sub(v3, v1));
 	float len = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
@@ -165,6 +169,7 @@ static float3 SphereFaceNormal(float3 v1, float3 v2, float3 v3) {
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
 void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
 	obj->scale = scale;
@@ -197,6 +202,65 @@ void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, f
 		for (int seg = 0; seg < SPHERE_SEGMENTS; seg++) {
 			float th0 = twoPi * seg / SPHERE_SEGMENTS;
 			float th1 = twoPi * (seg + 1) / SPHERE_SEGMENTS;
+			float3 a = {r0 * cosf(th0), y0, r0 * sinf(th0)};
+			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
+			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
+			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
+			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->normals[t] = SphereFaceNormal(a, c, b);
+			t++;
+			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->normals[t] = SphereFaceNormal(a, d, c);
+			t++;
+		}
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = SPHERE_SEGMENTS_HIGH_RES * SPHERE_RINGS_HIGH_RES * 2;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for sphere triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	int t = 0;
+	for (int ring = 0; ring < SPHERE_RINGS_HIGH_RES; ring++) {
+		float phi0 = 3.14159265f * ring / SPHERE_RINGS_HIGH_RES;
+		float phi1 = 3.14159265f * (ring + 1) / SPHERE_RINGS_HIGH_RES;
+		float y0 = cosf(phi0) * radius, y1 = cosf(phi1) * radius;
+		float r0 = sinf(phi0) * radius, r1 = sinf(phi1) * radius;
+		for (int seg = 0; seg < SPHERE_SEGMENTS_HIGH_RES; seg++) {
+			float th0 = twoPi * seg / SPHERE_SEGMENTS_HIGH_RES;
+			float th1 = twoPi * (seg + 1) / SPHERE_SEGMENTS_HIGH_RES;
 			float3 a = {r0 * cosf(th0), y0, r0 * sinf(th0)};
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};

@@ -155,6 +155,7 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 void Object_Destroy(Object *obj);
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
 void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
+void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
 void Object_UpdateWorldBounds(Object *obj);
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax);
 RayBoxResult4 RayBoxIntersectV4(const Object *obj0, const Object *obj1,const Object *obj2, const Object *obj3,float3 rayOrigin, float3 rayDir);

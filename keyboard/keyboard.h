@@ -1,5 +1,5 @@
-#ifndef KEYBOAR_H
-#define KEYBOAR_H
+#ifndef KEYBOARD_H
+#define KEYBOARD_H
 
 #include <MiniFB.h>
 #include <stdbool.h>
@@ -34,4 +34,4 @@ static inline bool Input_MouseHeld(const Input *inp, mfb_mouse_button b) { retur
 static inline bool Input_MouseDown(const Input *inp, mfb_mouse_button b) { return inp->mouseDown[b]; }
 static inline bool Input_MouseUp  (const Input *inp, mfb_mouse_button b) { return inp->mouseUp[b]; }
 
-#endif // KEYBOAR_H
+#endif // KEYBOARD_H

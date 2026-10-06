@@ -31,8 +31,8 @@
   },
   {
     "directory": "/home/user/Desktop/gengin",
-    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include keyboar/keyboar.c",
-    "file": "keyboar/keyboar.c"
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include keyboard/keyboard.c",
+    "file": "keyboard/keyboard.c"
   },
   {
     "directory": "/home/user/Desktop/gengin",
@@ -61,8 +61,8 @@
   },
   {
     "directory": "/home/user/Desktop/gengin",
-    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/keyboar/keyboar.c",
-    "file": "llmOpt/gengin/keyboar/keyboar.c"
+    "command": "clang -c -I/home/user/Desktop/gengin -I/home/user/Desktop/gengin/bench -I/home/user/Desktop/gengin/deps/minifb/include -I/home/user/Desktop/gengin/hexDump -I/home/user/Desktop/gengin/object -I/home/user/Desktop/gengin/radarScreen -I/home/user/Desktop/gengin/simulation -I/home/user/Desktop/gengin/sound -I/home/user/Desktop/gengin/tests -I/usr/local/include llmOpt/gengin/keyboard/keyboard.c",
+    "file": "llmOpt/gengin/keyboard/keyboard.c"
   },
   {
     "directory": "/home/user/Desktop/gengin",
