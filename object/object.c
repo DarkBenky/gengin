@@ -561,13 +561,13 @@ float3 ComputeCentroid(const Object *obj, const int *ObjectIdx, int ObjectsCount
 }
 
 // --- BVH split rule -------------------------------------------------------
-// Binned SAH: score every candidate split plane (12 bins per axis) by
+// Binned SAH: score every candidate split plane (BVH_SAH_BINS bins per axis) by
 // surface-area(child) * triangle-count(child) and take the cheapest.  The
 // previous longest-axis AABB-midpoint rule ignores how the triangles are
 // distributed, so on the bench scene it produced trees that cost ~1.7x the
 // traversal time (11.89 vs 7.41 internal-node tests and 18.87 vs 9.88 triangle
 // tests per ray, identical hit results).
-#define BVH_SAH_BINS 12
+#define BVH_SAH_BINS 64
 // Hard depth bound: past this depth the range is always split in half, so the
 // tree depth stays <= BVH_SAH_MAX_DEPTH + log2(count) and the fixed-size node
 // stacks in IntersectBVH / IntersectBVH_Shadow / CreateObjectBVH (64 entries,
