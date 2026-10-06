@@ -296,8 +296,16 @@ typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 ta
 // measured knee (replica sweep 0.06-0.20: miss +0.07..+0.63%, cost -56..-79%).
 // The pinned suite at 0.06: miss 340.1 -> 341.4 m, effort 20.6 -> 17.9,
 // controller cost 1872 -> 880 us/step.
+// 0.06 -> 0.14 takes the walk from 24 to 15 iterations: pinned suite miss
+// 335.15 -> 335.60 m, effort 13.63 -> 13.74, controller cost ~850 -> ~550
+// us/step, and over six geometry sets (seeds 0/100/200/300/400/500, 120
+// scenarios) the aggregate miss stays within +0.34%.  0.16 is where the miss
+// starts to give way (+0.69%).  Disclosed: the drift tier spends more for the
+// same miss with the shorter walk (effort 15.98 -> 21.41, 620 -> 1180
+// saturated steps) while the other four tiers spend less, so the aggregate
+// effort moves less than any single tier.
 #define SEARCH_STEP_DECAY 0.91f
-#define SEARCH_MIN_TAIL_WALK 0.06f
+#define SEARCH_MIN_TAIL_WALK 0.14f
 
 static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
 	ControllerOutput output = {0};
