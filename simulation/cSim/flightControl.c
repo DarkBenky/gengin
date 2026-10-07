@@ -228,6 +228,19 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	// artifact of this build's float reordering.
 	const float simDeltaTime = deltaTime * 2.25f;
 
+	// Score the plan against where the target is going, not where it is: the
+	// horizon is LookaheadSteps * simDeltaTime = 0.6 s and a weaving target
+	// covers far more cross-range in it than the 25 m hit radius, while the
+	// loss holds the target still.  Only the cross-range part of the target's
+	// motion turns into miss; the radial part (the target flying along the line
+	// of sight) only slides the aim point along that line and distorts the
+	// distance terms, so it is carried at a fraction of the weight.
+	float3 los = Float3_Normalize(Float3_Sub(target, ctrl->plane.position));
+	float3 radial = Float3_Scale(los, Float3_Dot(ctrl->targetVelocity, los));
+	float3 crossRange = Float3_Sub(ctrl->targetVelocity, radial);
+	float3 tgtVel = Float3_Add(Float3_Scale(crossRange, 0.95f), Float3_Scale(radial, 0.25f));
+	float3 aim = target;
+
 	float currentDist = distanceToTarget(&ctrl->plane, target);
 	float minDist = currentDist;
 	float runningAlignment = 0.0f;
@@ -235,15 +248,16 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		runningAlignment += alignmentLoss(&simPlane, target);
-		runningAlignVel += alignmentLossVelocity(&simPlane, target);
-		float d = distanceToTarget(&simPlane, target);
+		aim = Float3_Add(target, Float3_Scale(tgtVel, (float)(step + 1) * simDeltaTime));
+		runningAlignment += alignmentLoss(&simPlane, aim);
+		runningAlignVel += alignmentLossVelocity(&simPlane, aim);
+		float d = distanceToTarget(&simPlane, aim);
 		if (d < minDist) minDist = d;
 	}
 
-	float finalAlignment = alignmentLoss(&simPlane, target);
-	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
-	float finalDist = distanceToTarget(&simPlane, target);
+	float finalAlignment = alignmentLoss(&simPlane, aim);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, aim);
+	float finalDist = distanceToTarget(&simPlane, aim);
 
 	// Tuned as a pair: the 3.0 amplification predates the deflection charge, and
 	// once the rudder was priced above the wing controls it pins the search into
@@ -312,8 +326,19 @@ typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 ta
 #define SEARCH_STEP_DECAY 0.91f
 #define SEARCH_MIN_TAIL_WALK 0.14f
 
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
+static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
 	ControllerOutput output = {0};
+
+	// The caller supplies one target position per frame, so the target's motion
+	// comes from the position difference; the first call has none and scores the
+	// target where it is, exactly as the loss did before.
+	if (ctrl->hasPrevTarget) {
+		ctrl->targetVelocity = Float3_Scale(Float3_Sub(target, ctrl->prevTarget), 1.0f / deltaTime);
+	} else {
+		ctrl->targetVelocity = (float3){0.0f, 0.0f, 0.0f};
+	}
+	ctrl->prevTarget = target;
+	ctrl->hasPrevTarget = 1;
 
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
