@@ -1,5 +1,7 @@
 # Tasks
 
+- [ ] Map loading files
+
 - [ ] Add back images to repo
 
 - [ ] add MipMaps for textures and add bilinear samplings
