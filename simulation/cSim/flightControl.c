@@ -276,7 +276,17 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	// The plant stops at the surface limit, so the last percent of the range
+	// buys no authority while it still costs the plan its margin: charge what a
+	// candidate pins against the stop.  Neutral pays nothing for it, so the
+	// walk is not biased back toward the undeflected command.
+	float satCharge = 0.0f;
+	for (int axis = 0; axis < 3; axis++) {
+		float over = fabsf(values[axis] - 0.5f) - 0.45f;
+		if (over > 0.0f) satCharge += over;
+	}
+
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + 3.0f * satCharge;
 
 	return loss;
 }
@@ -420,7 +430,16 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// momentum walk happened to stop on.
 	output.Rudder = bestProbe[0];
 	output.Elevator = bestProbe[1];
-	output.Aileron = bestProbe[2];
+	// The horizon cannot price roll: the heading change a bank buys arrives
+	// through the banked-turn coupling, which needs seconds to accumulate, so
+	// inside the 0.6 s the search simulates every roll candidate scores within
+	// a few metres of neutral and the walk parks the aileron ~1% off neutral
+	// (measured mean |aileron-0.5| 0.007 over the suite) while the command is
+	// re-issued every frame and the bank does build up.  Extrapolating the roll
+	// channel around neutral by half a box width gives the search's own roll
+	// direction the authority the horizon was hiding; the elevator and rudder
+	// axes are left exactly as searched.
+	output.Aileron = fmaxf(0.0f, fminf(1.0f, 0.5f + 1.5f * (bestProbe[2] - 0.5f)));
 
 	output.RudderLoss = bestAxisLoss[0];
 	output.ElevatorLoss = bestAxisLoss[1];
