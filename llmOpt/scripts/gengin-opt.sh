@@ -169,6 +169,8 @@ if [[ "$ML_MODE" == "1" ]]; then
   PROMPT_FILE="$LLMOPT_DIR/prompts/optimize-ml.md"
   if ! nvidia-smi -L >/dev/null 2>&1; then
     echo "[ml] warning: no NVIDIA GPU detected - the layer bench needs a working OpenCL device" >&2
+  else
+    echo "[ml] GPU: benches auto-pin to the fastest free GPU (3090 first, 3060 while the 3090 is busy)"
   fi
   echo "[ml] objective: machineLearning/generateKernel.py layer kernels (suites smoke/core/edges/upscale/srnet)"
   echo "[ml] provider: ${PRESET:-default} model: ${MODEL_ARGS[1]:-default}"
