@@ -1,5 +1,6 @@
 # Tasks
 
+- [ ] Add back images to repo
 - [X] add MCP tool so llm opt know which pr were made
 - [ ] add MipMaps for textures and add bilinear samplings
   - [ ] test different implementations for max performance 
