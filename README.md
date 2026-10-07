@@ -19,6 +19,7 @@
       - [ ] Move: translate, Rotate: rotate around axis, Scale: scale along axis
     - [ ] WASD stays camera movement, no overlap with object controls
     - [ ] Add debug text to show mode, position, rotation, and scale of the selected model
+    - [ ] add snap mode
   - [ ] Crete test and different version to find best method for compute heavy methods
 
 - [ ] implement heat haze
