@@ -58,8 +58,14 @@ the next one.  Do not stop while unexplored hotspots remain.  Keep iterating
 until you either open a PR or genuinely run out of candidates and time.
 If the CPU node map is genuinely exhausted — every row `tried-failed` or
 `shipped` with numbers, no unexplored hotspot left — do NOT report
-`no_change` yet: switch to the SECOND OBJECTIVE below (the flight controller)
-and meet the same effort bar there.
+`no_change` yet.  First re-seed the map from THIS session's own `make_flame` /
+`hot_annotate` numbers: the map prunes `shipped` rows and goes stale, so
+"exhausted" means YOUR fresh profile shows no untried node worth ~2%+ of
+frame time.  Only then — and only after at least two fresh render candidates
+were attempt-and-measured-and-refuted in THIS session — switch to the SECOND
+OBJECTIVE (the flight controller), and treat it as a LAST RESORT, not an equal
+half of the session: ending in `no_change` with the render refutations
+recorded is also a valid, honest outcome.  Flight is never mandatory.
 Alternatively, when 4 or more pull requests are open, the MAINTENANCE TASK
 below (PR consolidation) is a valid session goal; a complete pass through it
 also satisfies this bar.
@@ -249,9 +255,14 @@ END of the session.
     is opened, or when the SESSION EFFORT BUDGET conditions are met and no
     safe candidate survives — then report `no_change`.
 
-## SECOND OBJECTIVE — FLIGHT CONTROLLER
-Use this when the CPU node map is exhausted (see SESSION EFFORT BUDGET): at
-most one switch per session, and only after the frame axis has real numbers.
+## SECOND OBJECTIVE — FLIGHT CONTROLLER (LAST RESORT, NOT AN EQUAL OBJECTIVE)
+Use this only when the render axis is provably exhausted FOR THIS SESSION (see
+SESSION EFFORT BUDGET): a fresh profile seeded the node map, it still shows no
+untried node worth ~2%+, and at least two fresh render candidates were measured
+and refuted in this session.  Do not drift here on inherited evidence — old
+`tried-failed` rows go stale, and a session may legitimately end in `no_change`
+with the render refutations recorded.  When you do switch: at most one switch
+per session, and only after the frame axis has real numbers.
 The target is the interceptor guidance law in `simulation/cSim/flightControl.c`
 (+ `flightControl.h`) — a per-frame iterative search over
 rudder/elevator/aileron that minimises a multi-step simulated loss against a
@@ -459,6 +470,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     comment.
 18. NEVER sell a consolidation on a contributor's claimed numbers — only runs
     you made on the prepared SHA go into the evidence.
+19. NEVER default to the flight controller — the frame axis is the product;
+    flight is a last resort under the SESSION EFFORT BUDGET conditions, not a
+    routine next step, and inherited `tried-failed` rows are not proof that
+    render is exhausted (re-profile first).
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and
