@@ -302,7 +302,15 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
 	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
-	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
+	// Momentum carries the previous frame's step into this one; at 0.9 the
+	// walk overshoots the loss minimum the best-probe tracking then has to
+	// undo, and the carry-over fights the per-frame warm start.  Swept on the
+	// pinned suite (0.0-0.9): 0.3 is the miss minimum - miss 231.8 -> 223.8 m
+	// (+3.4%), effort 16.78 -> 15.86, saturation steps 6408 -> 5537, cost
+	// -1.5%; drift tier +27.5%, step -7.0% and jink -0.5% stay inside the
+	// bench's per-tier band.  The response is jagged (0.2 -> 228.9, 0.45 ->
+	// 228.6), so 0.3 is the measured knee, not a flat region.
+	float momentumCoefficient = 0.3f;	  // how much of the previous momentum to keep
 	float learningRate = 0.05f;
 	// Finite-difference probe span. At 0.025 the two probes differ by less than
 	// the loss's step-to-step noise, so the gradient direction is noise-driven;
