@@ -35,11 +35,20 @@ typedef struct {
     Plane plane;
 
     int LookaheadSteps;
+
+    // Target motion between controller calls, finite-differenced from the last
+    // two target positions: the caller supplies only a position per frame.
+    float3 prevTarget;
+    float3 targetVelocity;
+    int hasPrevTarget;
 } Controller;
 
 static void initController(Controller *ctrl, const Plane *plane) {
     ctrl->plane = *plane;
     ctrl->LookaheadSteps = LOOKAHEAD_STEPS;
+    ctrl->prevTarget = (float3){0.0f, 0.0f, 0.0f};
+    ctrl->targetVelocity = (float3){0.0f, 0.0f, 0.0f};
+    ctrl->hasPrevTarget = 0;
 }
 
 typedef struct {
