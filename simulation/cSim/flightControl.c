@@ -327,6 +327,7 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	float epsilon = 0.05f;
 
 	float bestAxisLoss[3] = {FLT_MAX, FLT_MAX, FLT_MAX}; // best loss for yaw, pitch, roll
+	float bestAxisStep[3] = {0.0f, 0.0f, 0.0f}; // step that last improved each axis
 
 	// The iterate below is a momentum walk whose learning rate decays by 0.95
 	// per step, so the value it stops on is not necessarily the best control it
@@ -369,6 +370,9 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			if (lossNeg < bestAxisLoss[axis]) {
 				bestAxisLoss[axis] = lossNeg;
 			}
+
+			bestAxisStep[axis] = (lossPos <= lossNeg) ? (perturbedPositive[axis] - values[axis])
+													  : (perturbedNegative[axis] - values[axis]);
 
 			if (lossPos < bestProbeLoss) {
 				bestProbeLoss = lossPos;
@@ -414,6 +418,24 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 		// above.
 		learningRate *= SEARCH_STEP_DECAY;
 		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
+	}
+
+	// Every candidate the walk scores moves a single axis, so the control it
+	// commands can never express a simultaneous move: the three improving
+	// directions are applied together at the converged iterate and scored as one
+	// more candidate.  One extra loss evaluation per call; the walk itself is
+	// untouched, so the command is bit-identical whenever this candidate loses.
+	float combined[3] = {
+		fmaxf(0.0f, fminf(1.0f, values[0] + bestAxisStep[0])),
+		fmaxf(0.0f, fminf(1.0f, values[1] + bestAxisStep[1])),
+		fmaxf(0.0f, fminf(1.0f, values[2] + bestAxisStep[2])),
+	};
+	float combinedLoss = lossFunc(ctrl, combined, target, deltaTime);
+	if (combinedLoss < bestProbeLoss) {
+		bestProbeLoss = combinedLoss;
+		bestProbe[0] = combined[0];
+		bestProbe[1] = combined[1];
+		bestProbe[2] = combined[2];
 	}
 
 	// Command the best control the search actually scored, not the iterate the
