@@ -2,10 +2,12 @@
 
 - [ ] Map loading files
   - [ ] More primitives like toroid, cone, pyramid ...
+  - [ ] Optimalize loading by building multiple bvh at same time not one by one
 
 - [ ] Add back images to repo
 
 - [ ] add MipMaps for textures and add bilinear samplings
+  - [ ] mipMaps are generated on object leading
   - [ ] test different implementations for max performance
 
 - [ ] Build some really basic minimalistic model editor
