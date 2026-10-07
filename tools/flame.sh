@@ -47,6 +47,27 @@ if ! command -v perf >/dev/null; then
 	exit 0
 fi
 
+# OpenCL init fails when the chosen GPU is saturated (the local LLM holds the
+# 3090), so prefer the fastest free GPU unless the caller pinned one.  Hosts
+# without nvidia-smi (e.g. the VM) are untouched.
+if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+	pick=$(nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null | awk -F', ' '
+		{
+			free = $3 - $4
+			if (free >= 2048 && $3 > bestTotal) { bestTotal = $3; bestIdx = $1; bestLabel = $2 ", " free " MiB free" }
+			if (free > fallbackFree) { fallbackFree = free; fallbackIdx = $1; fallbackLabel = $2 ", " free " MiB free" }
+		}
+		END {
+			if (bestIdx != "") print bestIdx "|" bestLabel
+			else if (fallbackIdx != "") print fallbackIdx "|" fallbackLabel
+		}')
+	if [[ -n "$pick" ]]; then
+		export CUDA_DEVICE_ORDER=PCI_BUS_ID
+		export CUDA_VISIBLE_DEVICES=${pick%%|*}
+		echo "[flame] pinning OpenCL run to GPU ${pick%%|*} (${pick#*|})"
+	fi
+fi
+
 # 999 Hz keeps the sampling overhead small enough not to distort the run
 hz=999
 child=("$bin")

@@ -735,13 +735,56 @@ def compile_bench():
     return binary, (result.stderr or "").strip()
 
 
+def _pick_opencl_gpu():
+    """GPU (index, name, free MiB) for the bench, or None to inherit the env.
+
+    OpenCL init fails when the chosen device is saturated, so prefer the
+    fastest free GPU (largest total memory wins, i.e. the 3090 whenever it has
+    room) and fall back to the most-free one.  An explicit CUDA_VISIBLE_DEVICES
+    wins; hosts without nvidia-smi (the VM) are untouched.
+    """
+    if os.environ.get("CUDA_VISIBLE_DEVICES"):
+        return None
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    best = fallback = None
+    for line in out.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 4 or not parts[0].isdigit():
+            continue
+        try:
+            total = int(parts[2])
+            free = total - int(parts[3])
+        except ValueError:
+            continue
+        if free >= 2048 and (best is None or total > best[3]):
+            best = (parts[0], parts[1], free, total)
+        if fallback is None or free > fallback[2]:
+            fallback = (parts[0], parts[1], free, total)
+    pick = best or fallback
+    return None if pick is None else (pick[0], pick[1], pick[2])
+
+
 def run_bench(binary, manifest, cl_path, reps, warmup):
     result_path = os.path.join(WORK_DIR, "result.json")
     if os.path.exists(result_path):
         os.unlink(result_path)  # never analyse a previous run's report
     cmd = [binary, "--manifest", manifest, "--cl", cl_path,
            "--reps", str(reps), "--warmup", str(warmup), "--json", result_path]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=PROJECT_DIR, timeout=3600)
+    env = os.environ.copy()
+    gpu = _pick_opencl_gpu()
+    if gpu is not None:
+        env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        env["CUDA_VISIBLE_DEVICES"] = gpu[0]
+        print("[ml] bench GPU: %s (%s, %d MiB free)" % (gpu[0], gpu[1], gpu[2]),
+              file=sys.stderr)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=PROJECT_DIR,
+                            timeout=3600, env=env)
     stderr = (result.stderr or "").strip()
     if not os.path.exists(result_path) or os.path.getsize(result_path) == 0:
         raise RuntimeError("bench produced no result (exit %s):\n%s"

@@ -20,6 +20,7 @@ typedef struct {
 	CL_Buffer outputBlurBuf;
 	int width;
 	int height;
+	int enabled; // 0 = OpenCL init failed or GENGIN_NO_CLOUDS set; every entry point no-ops
 } CloudRenderer;
 
 // One-time init: compiles kernel from kernelPath, allocates output buffers.

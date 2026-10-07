@@ -53,6 +53,11 @@ makes the ML tools answer `predates the layer bench`.  Baselines are shared with
 the repo checkout, so a session compares against the timings you pinned here.
 `ml deepseek` needs neither and leaves the GPU to the kernel bench.
 
+The kernel bench auto-pins the fastest free GPU (3090 first, the 3060 only as
+a fallback while something else holds the 3090 — e.g. the local LLM); baselines
+are per-device, so a fallback run reports `no_baseline` instead of comparing
+across GPUs.
+
 The session measures first, edits ONLY `machineLearning/generateKernel.py`, and
 re-measures before it opens one PR:
 
@@ -267,6 +272,12 @@ config passes `DISPLAY=:2` (this machine's headless Xorg).  Override with
 `make_flame` need unprivileged perf counters — `llmOpt/scripts/enable-perf.sh`
 enables them once (sudo prompt; persists via `/etc/sysctl.d`, with a
 `cap_perfmon` fallback).
+
+`make flame` (and the ML kernel bench) auto-pin the run to the fastest free
+GPU — the 3090 whenever it has room, the 3060 as fallback — so profiling works
+while the local LLM holds a card; an explicit `CUDA_VISIBLE_DEVICES=<n>` wins,
+and if OpenCL still fails the cloud pass is skipped with a warning instead of
+crashing a run (`GENGIN_NO_CLOUDS=1` forces the skip).
 
 ## Unattended supervisor (`supervisor.py`)
 

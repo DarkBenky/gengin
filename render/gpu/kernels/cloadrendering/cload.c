@@ -19,9 +19,28 @@ static void updateVolumeCache(Volume *vol) {
 	vol->_fwdRot2 = (float3){-sy, sx * cy, cx * cy, 0.0f};
 }
 
+static int envFlag(const char *name) {
+	const char *value = getenv(name);
+	return value != NULL && value[0] != '\0' && value[0] != '0';
+}
+
+static void cloudRendererDisable(CloudRenderer *cr, const char *why) {
+	if (cr->enabled)
+		printf("[cload] cloud pass disabled: %s\n", why);
+	cr->enabled = 0;
+}
+
 void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *kernelPath) {
+	memset(cr, 0, sizeof(*cr)); // every early return must leave NULL handles, not stack garbage
 	cr->width = width;
 	cr->height = height;
+	cr->enabled = 1;
+
+	if (envFlag("GENGIN_NO_CLOUDS")) {
+		cloudRendererDisable(cr, "GENGIN_NO_CLOUDS");
+		return;
+	}
+
 	cr->ctx = CL_Context_Create();
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
 	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
@@ -36,13 +55,31 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->godRaySrcBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_WRITE);
 	cr->framebufferBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(uint32), CL_MEM_READ_WRITE);
 	cr->outputBlurBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
+
+	if (cr->ctx.context == NULL || cr->ctx.queue == NULL ||
+		cr->pipeline.kernel == NULL || cr->godRayPipeline.kernel == NULL ||
+		cr->godRaySrcPipeline.kernel == NULL || cr->compositePipeline.kernel == NULL ||
+		cr->blurPipeline.kernel == NULL ||
+		cr->outputBuf.buf == NULL || cr->depthBuf.buf == NULL ||
+		cr->godRayBuf.buf == NULL || cr->godRaySrcBuf.buf == NULL ||
+		cr->framebufferBuf.buf == NULL || cr->outputBlurBuf.buf == NULL) {
+		cloudRendererDisable(cr, "OpenCL init failed (device busy or out of resources)");
+		return;
+	}
 }
 
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params) {
+	if (!cr->enabled)
+		return;
+
 	updateVolumeCache(vol);
 
 	// Upload scene depth via pinned map — avoids a pageable memcpy inside the driver
 	void *depthPtr = CL_Buffer_Map(&cr->ctx, &cr->depthBuf, CL_MAP_WRITE_INVALIDATE_REGION);
+	if (depthPtr == NULL) {
+		cloudRendererDisable(cr, "depth upload map failed");
+		return;
+	}
 	memcpy(depthPtr, cam->depthBuffer, (size_t)cr->width * cr->height * sizeof(float));
 	CL_Buffer_Unmap(&cr->ctx, &cr->depthBuf, depthPtr);
 
@@ -133,10 +170,17 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 }
 
 void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
+	if (!cr->enabled)
+		return;
+
 	size_t fbBytes = (size_t)cr->width * cr->height * sizeof(uint32);
 
 	// Upload CPU framebuffer (written by ray tracer) to pinned GPU buffer
 	void *fbPtr = CL_Buffer_Map(&cr->ctx, &cr->framebufferBuf, CL_MAP_WRITE_INVALIDATE_REGION);
+	if (fbPtr == NULL) {
+		cloudRendererDisable(cr, "framebuffer upload map failed");
+		return;
+	}
 	memcpy(fbPtr, cam->framebuffer, fbBytes);
 	CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
 
@@ -150,6 +194,10 @@ void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
 
 	// Read blended framebuffer back via pinned map — DMA direct, no staging copy
 	fbPtr = CL_Buffer_Map(&cr->ctx, &cr->framebufferBuf, CL_MAP_READ);
+	if (fbPtr == NULL) {
+		cloudRendererDisable(cr, "framebuffer read-back map failed");
+		return;
+	}
 	memcpy(cam->framebuffer, fbPtr, fbBytes);
 	CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
 }

@@ -1400,6 +1400,8 @@ void UploadVolumeToGpu(Volume *vol, CL_Context *ctx) {
 		fprintf(stderr, "Error: Invalid volume or OpenCL context.\n");
 		return;
 	}
+	if (ctx->context == NULL) // cloud pass disabled — nothing to upload to
+		return;
 
 	float *temp = malloc(sizeof(float) * (size_t)(vol->xResolution * vol->yResolution * vol->zResolution + 3));
 	if (temp == NULL) {

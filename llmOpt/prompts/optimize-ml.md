@@ -210,7 +210,12 @@ Do not re-derive what a previous session already recorded in
 - Always quote the full correctness block (`configs`, `passed the torch gate`,
   `worst |diff|`) next to any speed number, for the before AND after run.
 - The device must be named (it is in the summary) — a baseline from another GPU
-  is not comparable and the harness will say `no_baseline`.
+  is not comparable and the harness will say `no_baseline`.  The bench
+  auto-pins the fastest free GPU (3090 first, the 3060 only while the 3090 is
+  busy — e.g. the local LLM holds it), so landing on a device without a
+  baseline is expected: state the device in your summary, never compare
+  numbers across devices, and capture a baseline for the fallback device only
+  on a clean tree.
 - When the change targets the big convs, quote the `srnet` conv configs you
   moved next to the summary.
 - If the only change you can justify is correctness-neutral and inside its
