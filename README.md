@@ -1,14 +1,9 @@
 # Tasks
 
 - [ ] Add back images to repo
-- [X] add MCP tool so llm opt know which pr were made
+
 - [ ] add MipMaps for textures and add bilinear samplings
-  - [ ] test different implementations for max performance 
-- [X] Add the Sponza palace to scene to test rendering more
-  - [X] convert to bin file
-  - [X] add to scene
-    - [X] fix material issues
-    - [X] fix core dump for this object (it works now but not sure if it is correct reason why)
+  - [ ] test different implementations for max performance
 
 - [ ] Build some really basic minimalistic model editor
   - [ ] "Tab" toggles "Editor Mode" on/off
@@ -55,6 +50,7 @@
   - [ ] Phase 2 — textures + material table + base lighting match
   - [ ] Phase 3 — (caller-owned) integration: toggle, near/far split, compositing
   - [ ] Phase 4 — extras (normal maps, specular, culling, tile binning, GPU AO/skybox, async overlap)
+
 - [ ] Add debug build that enables to check the output of each buffer
 - [X] Add to agent prompt specific part that model should focus mainly on c part not open cl
 - [X] Add to agent prompt specific part of trying to inject ```restrict``` so compiler can be more aggressive and also add focus on alignment of strict for minimal cache misses
@@ -303,6 +299,14 @@
     }
   }
   ```
+
+- [X] add MCP tool so llm opt know which pr were made
+
+- [X] Add the Sponza palace to scene to test rendering more
+  - [X] convert to bin file
+  - [X] add to scene
+    - [X] fix material issues
+    - [X] fix core dump for this object (it works now but not sure if it is correct reason why)
 
 ## Current Render
 
