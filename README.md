@@ -1,6 +1,7 @@
 # Tasks
 
 - [ ] Map loading files
+  - [ ] More primitives like toroid, cone, pyramid ...
 
 - [ ] Add back images to repo
 
