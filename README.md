@@ -3,7 +3,9 @@
 - [ ] create same logic for session credit limit for deep seek api
   - [ ] on each requste we can cache the stats of how much did the request cost add to session sum
     - [ ] add tool / waring to model when close to limit for the seesion
-    - [ ] dont lunch llmOpt session in peek hours wait for off peek hours  
+    - [ ] dont lunch llmOpt session in peek hours wait for off peek hours
+    - [ ] create some simple server that  can run on vm where all reqest will be loget and their metric like cost input ammount output cached ammount ...
+      - [ ] visually it should look similar to open router /logs panel so top part graph where you can select different visualization per seesion cost per day cost per day requests catch hit amount ... and below should be table with individual request entries [date, model, sessionId, input, output, cost, ... ]
 
 - [ ] reflection have missing emission
 - [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
