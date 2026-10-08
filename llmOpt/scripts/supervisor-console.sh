@@ -16,6 +16,10 @@
 # llmopt-supervisor.  A proxy this script started is stopped again on exit; a
 # systemd-managed one is left running.
 #
+# Optional run-level route overrides (they win over llmOpt/.env for this run):
+#
+#   supervisor-console.sh --max-context 99K --fallback-model MODEL
+#
 # Rotate keys by editing /etc/gengin-llmopt/secrets.env (management key +
 # GITHUB_TOKEN). The systemd unit must be stopped first: it and this console
 # must not poll at the same time (systemctl disable --now gengin-llmopt.service).
@@ -28,6 +32,42 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKOUT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 SECRETS=/etc/gengin-llmopt/secrets.env
 PROXY_PORT="${GENGIN_PROXY_PORT:-8787}"
+
+usage() {
+  echo "usage: $0 [--max-context SIZE] [--fallback-model MODEL]"
+  echo "       Run-level cost-aware route overrides (SIZE like 99K or 1M; both"
+  echo "       flags must be given together). They win over llmOpt/.env"
+  echo "       GENGIN_ROUTE_MAX_CONTEXT / GENGIN_ROUTE_FALLBACK_MODEL."
+}
+
+ROUTE_MAX_CONTEXT_ARG=""
+ROUTE_FALLBACK_ARG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --max-context)
+      [[ $# -ge 2 ]] || { echo "error: --max-context needs a value" >&2; exit 2; }
+      ROUTE_MAX_CONTEXT_ARG="$2"; shift 2 ;;
+    --fallback-model)
+      [[ $# -ge 2 ]] || { echo "error: --fallback-model needs a value" >&2; exit 2; }
+      ROUTE_FALLBACK_ARG="$2"; shift 2 ;;
+    -h|--help)
+      usage; exit 0 ;;
+    *)
+      echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if [[ -n "$ROUTE_MAX_CONTEXT_ARG" || -n "$ROUTE_FALLBACK_ARG" ]]; then
+  [[ -n "$ROUTE_MAX_CONTEXT_ARG" && -n "$ROUTE_FALLBACK_ARG" ]] || {
+    echo "error: --max-context and --fallback-model must be given together" >&2
+    exit 2; }
+  [[ "$ROUTE_MAX_CONTEXT_ARG" =~ ^[0-9]+[KkMm]?$ ]] || {
+    echo "error: --max-context expects a token count like 99000 or 99K" >&2
+    exit 2; }
+  [[ "$ROUTE_FALLBACK_ARG" =~ ^[A-Za-z0-9._:/-]+$ ]] || {
+    echo "error: invalid --fallback-model: $ROUTE_FALLBACK_ARG" >&2
+    exit 2; }
+fi
 
 [[ -f "$SECRETS" ]] || { echo "error: missing $SECRETS" >&2; exit 1; }
 cd "$CHECKOUT"
@@ -97,17 +137,30 @@ follow_pane
 # Secrets are fed through stdin, never through argv or the environment of any
 # world-readable process: `ps` shows command lines to every local user, and
 # the sandboxed agent must not be able to scrape the management key.
+route_env=()
+if [[ -n "$ROUTE_MAX_CONTEXT_ARG" ]]; then
+  route_env+=("GENGIN_ROUTE_MAX_CONTEXT=$ROUTE_MAX_CONTEXT_ARG")
+fi
+if [[ -n "$ROUTE_FALLBACK_ARG" ]]; then
+  route_env+=("GENGIN_ROUTE_FALLBACK_MODEL=$ROUTE_FALLBACK_ARG")
+fi
+if [[ ${#route_env[@]} -gt 0 ]]; then
+  echo "route override: ${route_env[*]}"
+fi
+
 set +e
-sudo -H -u llmopt-supervisor bash -c '
+sudo -H -u llmopt-supervisor env "${route_env[@]}" bash -c '
   OPENROUTER_MANAGEMENT_KEY=""
   GITHUB_TOKEN=""
+  DEEPSEEK_API_KEY=""
   while IFS="=" read -r name value; do
     case "$name" in
       OPENROUTER_MANAGEMENT_KEY) OPENROUTER_MANAGEMENT_KEY="$value" ;;
       GITHUB_TOKEN) GITHUB_TOKEN="$value" ;;
+      DEEPSEEK_API_KEY) DEEPSEEK_API_KEY="$value" ;;
     esac
   done
-  export OPENROUTER_MANAGEMENT_KEY GITHUB_TOKEN
+  export OPENROUTER_MANAGEMENT_KEY GITHUB_TOKEN DEEPSEEK_API_KEY
   umask 0007
   exec /usr/bin/python3 llmOpt/supervisor.py run
 ' < "$SECRETS"

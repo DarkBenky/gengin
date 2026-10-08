@@ -29,6 +29,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -89,6 +91,11 @@ KNOWN_KEYS = {
     "RETRY_MAX_SECONDS",
     "OPENROUTER_MODEL",
     "OPENROUTER_BUDGET_USD",
+    # cost-aware route: switch to a cheap fallback once the prompt crosses a
+    # token threshold (llmOpt/proxy registration; set both or neither).
+    "GENGIN_ROUTE_MAX_CONTEXT",
+    "GENGIN_ROUTE_FALLBACK_MODEL",
+    "GENGIN_ROUTE_TTL_SECONDS",
     "SESSION_TIMEOUT_SECONDS",
     "BUDGET_POLL_SECONDS",
     "KEY_EXPIRY_GRACE_SECONDS",
@@ -116,6 +123,11 @@ KNOWN_KEYS = {
 
 HEX_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+ROUTE_MODEL_RE = re.compile(r"^[A-Za-z0-9._:/-]+$")
+# In the fallback position `deepseek`/`ds` selects the DIRECT DeepSeek API (the
+# proxy holds a second upstream for it); any other value is an OpenRouter id.
+ROUTE_DIRECT_FALLBACKS = {"deepseek", "ds"}
+ROUTE_DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 
 class ConfigError(Exception):
@@ -207,6 +219,22 @@ def parse_optional_int(values, key, bounds, errors):
     return number
 
 
+def parse_size_tokens(value):
+    """'99K' / '1M' / '99000' -> tokens; ValueError when malformed."""
+    match = re.fullmatch(r"([0-9]+)([KkMm]?)", value.strip())
+    if not match:
+        raise ValueError("expected a token count like 99000 or 99K")
+    number = int(match.group(1))
+    unit = match.group(2).lower()
+    if unit == "k":
+        number *= 1000
+    elif unit == "m":
+        number *= 1000000
+    if not 1000 <= number <= 10000000:
+        raise ValueError("token count outside 1000..10000000")
+    return number
+
+
 def parse_env_file(path):
     """Strict KEY=VALUE parser.
 
@@ -282,6 +310,11 @@ class Config:
     quick_ask_max_question_chars: int = 0
     quick_ask_max_questions: int = 0
     quick_ask_log: str = ""
+    # cost-aware route ("" / 0 means off; set both keys or neither).
+    route_fallback_model: str = ""
+    route_fallback_direct: bool = False
+    route_max_context_tokens: int = 0
+    route_ttl_seconds: int = 0
     management_key: str = ""
 
     def mcp_python(self):
@@ -398,6 +431,38 @@ def load_config(require_management_key=True):
     if quick_ask_log:
         quick_ask_log = config_resolve(quick_ask_log, "QUICK_ASK_LOG", errors)
 
+    # Cost-aware route. Environment overrides win over the file, so a console
+    # run or a systemd drop-in can retarget the route without editing .env.
+    route_max_context_raw = values.get("GENGIN_ROUTE_MAX_CONTEXT", "").strip()
+    route_max_context_raw = (
+        os.environ.get("GENGIN_ROUTE_MAX_CONTEXT", "").strip()
+        or route_max_context_raw)
+    route_fallback_model = values.get("GENGIN_ROUTE_FALLBACK_MODEL", "").strip()
+    route_fallback_model = (
+        os.environ.get("GENGIN_ROUTE_FALLBACK_MODEL", "").strip()
+        or route_fallback_model)
+    route_max_context_tokens = 0
+    if route_max_context_raw:
+        try:
+            route_max_context_tokens = parse_size_tokens(route_max_context_raw)
+        except ValueError as exc:
+            errors.append(f"GENGIN_ROUTE_MAX_CONTEXT: {exc}")
+    route_fallback_direct = route_fallback_model in ROUTE_DIRECT_FALLBACKS
+    if bool(route_max_context_raw) != bool(route_fallback_model):
+        errors.append("GENGIN_ROUTE_MAX_CONTEXT and GENGIN_ROUTE_FALLBACK_MODEL: "
+                      "set both or neither")
+    if route_fallback_direct:
+        route_fallback_model = ROUTE_DEEPSEEK_MODEL
+        if not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+            errors.append("GENGIN_ROUTE_FALLBACK_MODEL=deepseek needs "
+                          "DEEPSEEK_API_KEY in the supervisor environment "
+                          "(/etc/gengin-llmopt/secrets.env)")
+    elif route_fallback_model and not ROUTE_MODEL_RE.fullmatch(route_fallback_model):
+        errors.append("GENGIN_ROUTE_FALLBACK_MODEL: invalid model id "
+                      f"{route_fallback_model!r}")
+    route_ttl_seconds = parse_optional_int(
+        values, "GENGIN_ROUTE_TTL_SECONDS", (60, 604800), errors) or 0
+
     if model is not None and "/" not in model:
         errors.append("OPENROUTER_MODEL: expected provider/model format")
     if headless_mode is not None and headless_mode != "xvfb":
@@ -457,6 +522,10 @@ def load_config(require_management_key=True):
         quick_ask_max_question_chars=quick_ask_ints["QUICK_ASK_MAX_QUESTION_CHARS"] or 0,
         quick_ask_max_questions=quick_ask_ints["QUICK_ASK_MAX_QUESTIONS"] or 0,
         quick_ask_log=quick_ask_log,
+        route_fallback_model=route_fallback_model,
+        route_fallback_direct=route_fallback_direct,
+        route_max_context_tokens=route_max_context_tokens,
+        route_ttl_seconds=route_ttl_seconds,
         management_key=management_key,
     )
     if errors:
@@ -1087,6 +1156,10 @@ def print_status(config, state):
         print(f"    log:         {active.get('logPath')}")
         key_hash = active.get("keyHash") or ""
         print(f"    key hash:    {key_hash[:12] + '...' if key_hash else '(none)'}")
+        route = active.get("route") or {}
+        if route:
+            print(f"    route:       {' -> '.join(route.get('members', []))} "
+                  f"at {route.get('maxContext')} tokens")
     else:
         print("  active session:    (none)")
     print(f"  keys pending del: {len(state['keysPendingDeletion'])}")
@@ -1100,6 +1173,15 @@ def print_dry_run(config, state):
     print(f"  poll interval: {config.poll_interval_seconds}s")
     print(f"  run on start:  {config.run_on_start}")
     print(f"  model:         {config.openrouter_model}")
+    if config.route_fallback_model:
+        ttl = (f"{config.route_ttl_seconds}s" if config.route_ttl_seconds
+               else "session timeout + grace")
+        label = (f"{config.route_fallback_model} (direct DeepSeek API)"
+                 if config.route_fallback_direct else config.route_fallback_model)
+        print(f"  route:         -> {label} at "
+              f"{config.route_max_context_tokens} prompt tokens (ttl {ttl})")
+    else:
+        print("  route:         (none)")
     print(f"  budget:        {config.openrouter_budget_usd} USD")
     print(f"  session limit: {config.session_timeout_seconds}s")
     print(f"  display:       {config.gengin_display} (headless={config.headless_mode})")
@@ -1343,6 +1425,9 @@ def _recover_interrupted_session(config, state):
             warnings.append(f"key deletion failed: {exc}")
             log("ERROR", "key.delete_failed", session=session_id, detail=str(exc))
 
+    # Drop the route the interrupted session registered (routeId-guarded).
+    clear_route(active.get("route"))
+
     # Write the interrupted summary.
     started_at = utc_now()
     try:
@@ -1580,6 +1665,7 @@ def _rel(path):
 
 def _write_summary(config, session, exit_reason, exit_code, usage_usd, pr_url,
                    setup_checks, warnings, started_at, ended_at):
+    route = session.get("route") or {}
     summary = {
         "schemaVersion": 1,
         "sessionId": session["sessionId"],
@@ -1600,6 +1686,9 @@ def _write_summary(config, session, exit_reason, exit_code, usage_usd, pr_url,
         "logFile": _rel(session.get("logPath", "")),
         "setupChecks": setup_checks,
         "warnings": warnings,
+        "route": (
+            {"members": route.get("members", []),
+             "maxContext": route.get("maxContext", 0)} if route else None),
     }
     path = session["logPath"].replace(".log", ".json")
     tmp = path + f".tmp.{os.getpid()}"
@@ -1610,6 +1699,73 @@ def _write_summary(config, session, exit_reason, exit_code, usage_usd, pr_url,
         os.fsync(fh.fileno())
     os.replace(tmp, path)
     return path
+
+
+def _route_proxy_port():
+    try:
+        return int(os.environ.get("GENGIN_PROXY_PORT", "8787") or 8787)
+    except ValueError:
+        return 8787
+
+
+def register_route(config):
+    """Install the cost-aware route on the local proxy. Best effort: a failed
+    registration leaves the session on the primary model, never blocks it."""
+    if not config.route_fallback_model:
+        return {}
+    ttl = config.route_ttl_seconds or (
+        config.session_timeout_seconds + config.key_expiry_grace_seconds)
+    if config.route_fallback_direct:
+        fallback_member = {"model": config.route_fallback_model,
+                           "upstream": "deepseek"}
+    else:
+        fallback_member = config.route_fallback_model
+    registration = {
+        "members": [config.openrouter_model, fallback_member],
+        "maxContext": config.route_max_context_tokens,
+        "ttlSeconds": ttl,
+        "label": "supervisor",
+    }
+    if config.route_fallback_direct:
+        registration["deepseekKey"] = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    url = f"http://127.0.0.1:{_route_proxy_port()}/route/register"
+    try:
+        request = urllib.request.Request(
+            url, data=json.dumps(registration).encode(), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8") or "{}")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        log("WARN", "route.register_failed", detail=str(exc))
+        return {}
+    route = {"routeId": data.get("routeId", ""),
+             "members": [m["model"] if isinstance(m, dict) else m
+                         for m in registration["members"]],
+             "maxContext": registration["maxContext"]}
+    chain = "->".join(
+        m["model"] + "@" + m["upstream"] if isinstance(m, dict) else m
+        for m in registration["members"])
+    log("INFO", "route.registered", chain=chain,
+        max_context=registration["maxContext"], ttl=ttl,
+        route_id=route["routeId"] or "-")
+    return route
+
+
+def clear_route(route):
+    """Drop the route this session registered (routeId-guarded). Best effort."""
+    route_id = (route or {}).get("routeId", "")
+    if not route_id:
+        return
+    url = f"http://127.0.0.1:{_route_proxy_port()}/route/clear"
+    try:
+        request = urllib.request.Request(
+            url, data=json.dumps({"routeId": route_id}).encode(), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=5):
+            pass
+        log("INFO", "route.cleared", route_id=route_id)
+    except (urllib.error.URLError, OSError) as exc:
+        log("WARN", "route.clear_failed", route_id=route_id, detail=str(exc))
 
 
 def run_session(config, state, target_sha):
@@ -1728,6 +1884,11 @@ def run_session(config, state, target_sha):
     }
     save_state(config.state_dir, state)
     log("INFO", "key.created", session=session_id, hash_prefix=key_hash[:12])
+
+    route = register_route(config)
+    if route:
+        state["activeSession"]["route"] = route
+        save_state(config.state_dir, state)
 
     secrets = [inference_key, config.management_key]
     exit_reason = "completed"
@@ -1860,6 +2021,7 @@ def run_session(config, state, target_sha):
         except ork.OpenRouterError as exc:
             state["keysPendingDeletion"].append(key_hash)
             log("ERROR", "key.delete_failed", session=session_id, detail=str(exc))
+        clear_route(state["activeSession"].get("route"))
         ended_at = utc_now()
         _write_summary(config, state["activeSession"], exit_reason, exit_code,
                        usage_usd, pr_url, {}, warnings, started_at, ended_at)

@@ -29,8 +29,6 @@
 #define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
 
 #define ACCUMULATE_STATS 1024
-#define GRID_COLS 32
-#define GRID_ROWS 32
 
 // update render object to sim object and move camera to follow the plane
 void SimObjToRenderObj(Plane *simPlane, Object *renderObj, Camera *camera, Input *input, struct mfb_window *window) {
@@ -99,96 +97,7 @@ int main() {
 	RequestData request;
 	RequestData_Init(&request, 1);
 
-	// build checkerboard grid into a temporary list, then merge into one object
-	ObjectList grid;
-	ObjectList_Init(&grid, GRID_COLS * GRID_ROWS);
-	for (int row = 0; row < GRID_ROWS; row++) {
-		for (int col = 0; col < GRID_COLS; col++) {
-			Object *obj = ObjectList_Add(&grid);
-			static const struct {
-				float3 color;
-				float roughness;
-				float metallic;
-			} palette[] = {
-				{{0.90f, 0.78f, 0.08f}, 0.85f, 0.00f}, // yellow  - rough matte
-				{{0.55f, 0.08f, 0.85f}, 0.10f, 0.05f}, // purple  - smooth
-				{{0.85f, 0.60f, 0.05f}, 0.20f, 0.90f}, // gold    - metallic
-				{{0.80f, 0.12f, 0.12f}, 0.75f, 0.05f}, // red     - rough
-				{{0.08f, 0.75f, 0.85f}, 0.15f, 0.00f}, // cyan    - smooth
-				{{0.88f, 0.88f, 0.88f}, 0.05f, 0.90f}, // silver  - mirror
-				{{0.10f, 0.50f, 0.12f}, 0.90f, 0.00f}, // green   - rough matte
-				{{0.90f, 0.38f, 0.05f}, 0.50f, 0.20f}, // orange  - semi-rough
-			};
-			int pIdx = ((col * 7) ^ (row * 3) ^ (col + row * 5)) % 8;
-			float emission = (row == GRID_ROWS - 1) ? 0.5f : 0.0f;
-			float roughness = palette[pIdx].roughness;
-			float metallic = palette[pIdx].metallic;
-			float3 tileColor = palette[pIdx].color;
-			CreateCube(obj, (float3){(col - GRID_COLS / 2) * 7.0f, -0.09f, 5.0f + row * 7.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 0.1f, 7.0f}, tileColor, &matLib, emission, roughness, metallic);
-			Object_UpdateWorldBounds(obj);
-		}
-	}
-	ObjectList_Merge(&grid, &scene);
-	free(grid.objects);
-
-	Object *cube = ObjectList_Add(&scene);
-	CreateCube(cube, (float3){-3.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){0.5f, 0.5f, 0.5f}, (float3){0.7f, 0.4f, 0.0f}, &matLib, 8.0f, 0.99f, 0.0f);
-	Object_UpdateWorldBounds(cube);
-
-	Object *cube2 = ObjectList_Add(&scene);
-	CreateCube(cube2, (float3){3.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){1.5f, 1.5f, 1.5f}, (float3){0.0f, 0.6f, 0.3f}, &matLib, 8.0f, 0.99f, 0.0f);
-	Object_UpdateWorldBounds(cube2);
-
-	Object *cube3 = ObjectList_Add(&scene);
-	CreateCube(cube3, (float3){10.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){1.5f, 1.5f, 1.5f}, (float3){0.4f, 0.0f, 0.5f}, &matLib, 8.0f, 0.99f, 0.0f);
-	Object_UpdateWorldBounds(cube3);
-
-	static const float3 gridColors[6] = {
-		{0.90f, 0.10f, 0.10f},
-		{0.90f, 0.45f, 0.05f},
-		{0.90f, 0.80f, 0.10f},
-		{0.10f, 0.75f, 0.15f},
-		{0.10f, 0.30f, 0.90f},
-		{0.55f, 0.10f, 0.85f},
-	};
-	static const struct {
-		float roughness;
-		float metallic;
-	} gridMats[4] = {
-		{0.95f, 0.00f},
-		{0.05f, 0.00f},
-		{0.15f, 0.95f},
-		{0.50f, 0.50f},
-	};
-	ObjectList matGrid;
-	ObjectList_Init(&matGrid, 64);
-	for (int ix = 0; ix < 4; ix++) {
-		for (int iy = 0; iy < 4; iy++) {
-			for (int iz = 0; iz < 4; iz++) {
-				Object *matCube = ObjectList_Add(&matGrid);
-				CreateCube(matCube, (float3){22.0f + ix * 3.0f, 0.8f + iy * 3.0f, 11.0f + iz * 3.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){2.0f, 2.0f, 2.0f}, gridColors[(ix + iy + iz) % 6], &matLib, 0.0f, gridMats[(ix + 2 * iy + 3 * iz) % 4].roughness, gridMats[(ix + 2 * iy + 3 * iz) % 4].metallic);
-				Object_UpdateWorldBounds(matCube);
-			}
-		}
-	}
-	ObjectList_Merge(&matGrid, &scene);
-	free(matGrid.objects);
-
-	Object *sphere = ObjectList_Add(&scene);
-	CreateSphereHighResolution(sphere, (float3){-7.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.85f, 0.65f, 0.15f}, &matLib, 0.0f, 0.25f, 0.8f);
-	Object_UpdateWorldBounds(sphere);
-
-	Object *sphere2 = ObjectList_Add(&scene);
-	CreateSphereHighResolution(sphere2, (float3){7.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.20f, 0.70f, 0.80f}, &matLib, 0.0f, 0.15f, 0.4f);
-	Object_UpdateWorldBounds(sphere2);
-
-	Object *sphere3 = ObjectList_Add(&scene);
-	CreateSphereHighResolution(sphere3, (float3){0.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.80f, 0.80f, 0.80f}, &matLib, 0.0f, 0.05f, 0.9f);
-	Object_UpdateWorldBounds(sphere3);
-
-	Object *sphere4 = ObjectList_Add(&scene);
-	CreateSphereHighResolution(sphere4, (float3){14.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.80f, 0.80f, 0.80f}, &matLib, 0.0f, 0.05f, 0.9f);
-	Object_UpdateWorldBounds(sphere4);
+	Scene_BuildShowcase(&scene, &matLib);
 
 	uint32 f16SceneIndex = (uint32)scene.count;
 	Object *plane = ObjectList_Add(&scene);

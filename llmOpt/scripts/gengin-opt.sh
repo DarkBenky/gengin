@@ -5,6 +5,8 @@
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
 #   gengin-opt.sh local [model]         local llama.cpp server on :8013
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
+#   gengin-opt.sh openrouter PRIMARY --max-context 99K FALLBACK
+#                                       switch to FALLBACK at 99K prompt tokens
 #   gengin-opt.sh ml [local|openrouter|deepseek] [model]  ML layer objective
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report
@@ -27,12 +29,53 @@ SUPERVISED=0
 MODEL=""
 QUERY_FILE_ARG=""
 USAGE_FILE_ARG=""
+ROUTE_MAX_CONTEXT=""
+ROUTE_FALLBACK=""
 
 usage() {
   echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
   echo "       $0 ml [local|openrouter|deepseek] [model] [--goal TEXT] [--headless]"
+  echo "       $0 openrouter PRIMARY --max-context 99K FALLBACK [--goal TEXT]"
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
 }
+
+parse_tokens() {
+  # 99K / 99000 / 1M -> integer tokens; nonzero exit when malformed.
+  local value="$1" size unit
+  [[ "$value" =~ ^([0-9]+)([KkMm]?)$ ]] || return 1
+  size="${BASH_REMATCH[1]}"
+  unit="${BASH_REMATCH[2]}"
+  case "$unit" in
+    K|k) size=$((size * 1000)) ;;
+    M|m) size=$((size * 1000000)) ;;
+  esac
+  (( size >= 1000 && size <= 10000000 )) || return 1
+  printf '%s' "$size"
+}
+
+ensure_route_proxy() {
+  # Health-check the proxy; start the desktop user unit when one is installed.
+  local port="$1"
+  curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && return 0
+  if systemctl --user cat gengin-openrouter-proxy.service >/dev/null 2>&1; then
+    systemctl --user start gengin-openrouter-proxy.service 2>/dev/null || true
+    local _
+    for _ in $(seq 1 20); do
+      curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && return 0
+      sleep 0.25
+    done
+  fi
+  return 1
+}
+
+# A chain request changes how bare model words are interpreted, no matter
+# where the flags appear relative to the models.
+ROUTE_FLAG=0
+for arg in "$@"; do
+  case "$arg" in
+    --max-context|--fallback-model) ROUTE_FLAG=1 ;;
+  esac
+done
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,8 +90,13 @@ while [[ $# -gt 0 ]]; do
       PRESET=openrouter
       PROVIDER_ARGS=(--provider openrouter); shift ;;
     deepseek|ds)
-      PRESET=deepseek
-      PROVIDER_ARGS=(--provider deepseek); shift ;;
+      if [[ "$ROUTE_FLAG" -eq 1 && ${#MODEL_ARGS[@]} -gt 0 && -z "$ROUTE_FALLBACK" ]]; then
+        # Inside a chain the word names the fallback leg (direct DeepSeek API).
+        ROUTE_FALLBACK="deepseek"; shift
+      else
+        PRESET=deepseek
+        PROVIDER_ARGS=(--provider deepseek); shift
+      fi ;;
     --model)
       [[ $# -ge 2 ]] || { echo "error: --model needs a value" >&2; exit 2; }
       MODEL="$2"; MODEL_ARGS=(-m "$2"); shift 2 ;;
@@ -65,6 +113,12 @@ while [[ $# -gt 0 ]]; do
     --usage-file)
       [[ $# -ge 2 ]] || { echo "error: --usage-file needs a value" >&2; exit 2; }
       USAGE_FILE_ARG="$2"; shift 2 ;;
+    --max-context)
+      [[ $# -ge 2 ]] || { echo "error: --max-context needs a value" >&2; exit 2; }
+      ROUTE_MAX_CONTEXT="$2"; shift 2 ;;
+    --fallback-model)
+      [[ $# -ge 2 ]] || { echo "error: --fallback-model needs a value" >&2; exit 2; }
+      ROUTE_FALLBACK="$2"; shift 2 ;;
     --dry-run)
       DRY_RUN=1; shift ;;
     -h|--help)
@@ -72,13 +126,17 @@ while [[ $# -gt 0 ]]; do
     -*)
       echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     *)
-      MODEL_ARGS=(-m "$1"); shift ;;  # bare word = model id
+      if [[ "$ROUTE_FLAG" -eq 1 && ${#MODEL_ARGS[@]} -gt 0 && -z "$ROUTE_FALLBACK" ]]; then
+        ROUTE_FALLBACK="$1"; shift  # second model in a chain = fallback leg
+      else
+        MODEL_ARGS=(-m "$1"); shift  # bare word = model id
+      fi ;;
   esac
 done
 
 # `--provider` is not accepted without `--model`; fall back to defaults
 # per preset (override with GENGIN_<PRESET>_MODEL or a bare model argument).
-if [[ "$ML_MODE" == "1" && ${#PROVIDER_ARGS[@]} -eq 0 ]]; then
+if [[ "$ML_MODE" == "1" && ${#PROVIDER_ARGS[@]} -eq 0 && "$ROUTE_FLAG" -eq 0 ]]; then
   PRESET=local
   PROVIDER_ARGS=(--provider custom:local)
 fi
@@ -186,6 +244,105 @@ if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
   KEY_VALUE="$(grep -E '^KEY=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
   if [[ -n "$KEY_VALUE" ]]; then
     export OPENROUTER_API_KEY="$KEY_VALUE"
+  fi
+fi
+
+# --- cost-aware route: switch models when the prompt crosses a threshold ---
+# CLI flags win over llmOpt/.env; both halves are required (primary = the
+# session model, fallback = the model the proxy switches to). The proxy
+# counts with OpenRouter's own response usage, so no extra key is needed.
+route_max_context="${ROUTE_MAX_CONTEXT:-}"
+route_fallback="${ROUTE_FALLBACK:-}"
+if [[ -z "$route_max_context" ]]; then
+  route_max_context="$(grep -E '^GENGIN_ROUTE_MAX_CONTEXT=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+fi
+if [[ -z "$route_fallback" ]]; then
+  route_fallback="$(grep -E '^GENGIN_ROUTE_FALLBACK_MODEL=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+fi
+route_ttl="$(grep -E '^GENGIN_ROUTE_TTL_SECONDS=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+route_ttl="${route_ttl:-86400}"
+route_enabled=0
+if [[ -n "$route_max_context" || -n "$route_fallback" ]]; then
+  if [[ "$PRESET" == "local" || "$PRESET" == "deepseek" ]]; then
+    if [[ "$ROUTE_FLAG" -eq 1 ]]; then
+      echo "error: a chain needs OpenRouter models — the '${PRESET}' preset bypasses the proxy (chain syntax: PRIMARY --max-context 99K FALLBACK)" >&2
+      exit 2
+    fi
+    echo "warning: GENGIN_ROUTE_* is set but the '${PRESET}' preset bypasses the proxy — route disabled" >&2
+  elif [[ -z "$route_max_context" || -z "$route_fallback" ]]; then
+    echo "error: a route needs both a threshold and a fallback model (use --max-context + --fallback-model, or GENGIN_ROUTE_MAX_CONTEXT + GENGIN_ROUTE_FALLBACK_MODEL in .env)" >&2
+    exit 2
+  else
+    route_enabled=1
+  fi
+fi
+
+if [[ "$route_enabled" -eq 1 ]]; then
+  # `deepseek` as the fallback word means the DIRECT DeepSeek API: the proxy
+  # holds a second upstream for that leg, so the key rides along with the
+  # loopback registration.  Any other word is an OpenRouter model id.
+  route_fallback_direct=0
+  route_ds_key=""
+  case "$route_fallback" in
+    deepseek|ds)
+      route_fallback_direct=1
+      route_fallback="${GENGIN_DEEPSEEK_MODEL:-deepseek-v4-flash}"
+      route_ds_key="${DEEPSEEK_API_KEY:-}"
+      if [[ -z "$route_ds_key" ]]; then
+        route_ds_key="$(grep -E '^DEEPSEEK_API_KEY=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+      fi
+      if [[ -z "$route_ds_key" ]]; then
+        echo "error: the deepseek fallback needs DEEPSEEK_API_KEY (environment or llmOpt/.env)" >&2
+        exit 2
+      fi
+      [[ "$route_ds_key" =~ ^[A-Za-z0-9._-]+$ ]] || {
+        echo "error: DEEPSEEK_API_KEY contains unexpected characters" >&2; exit 2; }
+      ;;
+  esac
+  if [[ "$route_fallback_direct" -eq 0 ]]; then
+    [[ "$route_fallback" =~ ^[A-Za-z0-9._:/-]+$ ]] || {
+      echo "error: invalid fallback model: $route_fallback" >&2; exit 2; }
+  fi
+  route_primary="${MODEL:-${MODEL_ARGS[1]:-}}"
+  if [[ -z "$route_primary" ]]; then
+    route_primary="${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}"
+    MODEL_ARGS=(-m "$route_primary")
+  fi
+  [[ "$route_primary" =~ ^[A-Za-z0-9._:/-]+$ ]] || {
+    echo "error: invalid primary model: $route_primary" >&2; exit 2; }
+  [[ "$route_ttl" =~ ^[0-9]+$ ]] && [ "$route_ttl" -ge 60 ] && [ "$route_ttl" -le 604800 ] || {
+    echo "error: GENGIN_ROUTE_TTL_SECONDS must be 60..604800 seconds: $route_ttl" >&2; exit 2; }
+  route_tokens="$(parse_tokens "$route_max_context")" || {
+    echo "error: --max-context expects a token count like 99000 or 99K, got: $route_max_context" >&2
+    exit 2; }
+  if [[ ${#PROVIDER_ARGS[@]} -eq 0 ]]; then
+    PRESET=openrouter
+    PROVIDER_ARGS=(--provider openrouter)
+  fi
+  if [[ "$route_fallback_direct" -eq 1 ]]; then
+    route_fallback_member="$(printf '{"model":"%s","upstream":"deepseek"}' "$route_fallback")"
+    route_fallback_label="$route_fallback (direct DeepSeek API)"
+  else
+    route_fallback_member="\"$route_fallback\""
+    route_fallback_label="$route_fallback"
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "[route] chain: $route_primary -> $route_fallback_label once the prompt reaches $route_tokens tokens"
+  else
+    PROXY_PORT="${GENGIN_PROXY_PORT:-8787}"
+    if ! ensure_route_proxy "$PROXY_PORT"; then
+      echo "error: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT — start it with $SCRIPT_DIR/setup-openrouter-proxy.sh" >&2
+      exit 2
+    fi
+    route_json="$(printf '{"members":["%s",%s],"maxContext":%s,"ttlSeconds":%s,"label":"gengin-opt"%s}' \
+      "$route_primary" "$route_fallback_member" "$route_tokens" "$route_ttl" \
+      "${route_ds_key:+,\"deepseekKey\":\"$route_ds_key\"}")"
+    if ! curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' \
+        -d "$route_json" "http://127.0.0.1:$PROXY_PORT/route/register" >/dev/null 2>&1; then
+      echo "error: route registration failed on http://127.0.0.1:$PROXY_PORT/route/register (a proxy running before the route feature must be restarted: systemctl --user restart gengin-openrouter-proxy)" >&2
+      exit 2
+    fi
+    echo "[route] $route_primary -> $route_fallback_label at $route_tokens prompt tokens (ttl ${route_ttl}s)"
   fi
 fi
 

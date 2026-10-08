@@ -13,8 +13,8 @@
 #include "../render/gpu/format.h"
 
 typedef struct {
-    float tMin[4];
-    float tMax[4];
+	float tMin[4];
+	float tMax[4];
 } RayBoxResult4;
 
 typedef enum VolumeType {
@@ -61,9 +61,9 @@ typedef struct BVHNode {
 		int leftFirst; // internal: left child index
 		int triStart;  // leaf: start in triIndices
 	};
-	int triCount;  // 0 = internal, >0 = leaf
-	int _pad[2];   // pad to 64 bytes; _pad[0] = leaf ordinal for leaves (leafSoa index)
-} BVHNode;        // 64 bytes — 1 per cache line
+	int triCount; // 0 = internal, >0 = leaf
+	int _pad[2];  // pad to 64 bytes; _pad[0] = leaf ordinal for leaves (leafSoa index)
+} BVHNode;		  // 64 bytes — 1 per cache line
 
 // Triangles evaluated per SSE leaf payload (the lane count of bvh.leafSoa).
 // CreateObjectBVH splits until a leaf holds at most this many triangles; the
@@ -153,12 +153,187 @@ float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
 void Object_Destroy(Object *obj);
-void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
-void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
-void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic);
+
+// Basic object shapes / primitives
+void CreateCube(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateSphere(
+	Object *obj,
+	float3 position, 
+	float3 rotation, 
+	float3 scale, 
+	float3 color, 
+	MaterialLib *lib, 
+	float emission, float 
+	roughness, float 
+	metallic);
+
+void CreateSphereHighResolution(
+	Object *obj, 
+	float3 position, 
+	float3 rotation, 
+	float3 scale, 
+	float3 color, 
+	MaterialLib *lib, 
+	float emission, 
+	float roughness, 
+	float metallic);
+
+void CreatePlane(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateCone(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateCapsule(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateTorus(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateDisk(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreatePyramid(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreatePrism(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateHemisphere(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateTube(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateQuad(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateUVSphere(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateIcosphere(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
+void CreateCylinder(
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
+	float metallic);
+
 void Object_UpdateWorldBounds(Object *obj);
 void RayBoxItersect(const Object *obj, float3 rayOrigin, float3 rayDir, float *tMin, float *tMax);
-RayBoxResult4 RayBoxIntersectV4(const Object *obj0, const Object *obj1,const Object *obj2, const Object *obj3,float3 rayOrigin, float3 rayDir);
+RayBoxResult4 RayBoxIntersectV4(const Object *obj0, const Object *obj1, const Object *obj2, const Object *obj3, float3 rayOrigin, float3 rayDir);
 bool IntersectAnyBBox(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 Color IntersectBBoxColor(const Object *objects, int objectCount, float3 rayOrigin, float3 rayDir);
 bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward);

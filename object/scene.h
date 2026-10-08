@@ -27,6 +27,10 @@ int ObjectList_CountTriangles(const ObjectList *list);
 // Src objects are destroyed and the list is reset after merging.
 void ObjectList_Merge(ObjectList *src, ObjectList *dst);
 
+// Builds the demo scene into the list: tile grid, material grid, cube/sphere
+// samples, and one instance of every shape in shapeTable order.
+void Scene_BuildShowcase(ObjectList *list, MaterialLib *lib);
+
 #include "object.h"
 
 #endif // SCENE_H

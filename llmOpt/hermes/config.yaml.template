@@ -11,6 +11,12 @@ model:
   # (#10622) and keeps selecting OPENROUTER_API_KEY for it.
   # Start it with scripts/setup-openrouter-proxy.sh.
   base_url: http://127.0.0.1:8787/api/v1
+  # The proxy can swap the server-side model mid-session (Haiku -> DeepSeek
+  # chain); Hermes still believes it talks to the primary, so its host/model
+  # echo-back detection misses the DeepSeek leg.  This opt-in (Hermes's
+  # documented gateway remedy) keeps `reasoning_content` on every replayed
+  # assistant turn, which DeepSeek thinking mode requires.
+  reasoning_echo: true
 
 provider_routing:
   sort: price

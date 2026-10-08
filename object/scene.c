@@ -1,5 +1,6 @@
 #include "scene.h"
 #include "object.h"
+#include "loadObjects.h"
 #include "material/material.h"
 
 #include <math.h>
@@ -148,4 +149,164 @@ void ObjectList_Merge(ObjectList *src, ObjectList *dst) {
 	for (int i = 0; i < src->count; i++)
 		Object_Destroy(&src->objects[i]);
 	src->count = 0;
+}
+
+#define GRID_COLS 32
+#define GRID_ROWS 32
+
+static void AddTileGrid(ObjectList *list, MaterialLib *lib) {
+	static const struct {
+		float3 color;
+		float roughness;
+		float metallic;
+	} palette[] = {
+		{{0.90f, 0.78f, 0.08f}, 0.85f, 0.00f}, // yellow  - rough matte
+		{{0.55f, 0.08f, 0.85f}, 0.10f, 0.05f}, // purple  - smooth
+		{{0.85f, 0.60f, 0.05f}, 0.20f, 0.90f}, // gold    - metallic
+		{{0.80f, 0.12f, 0.12f}, 0.75f, 0.05f}, // red     - rough
+		{{0.08f, 0.75f, 0.85f}, 0.15f, 0.00f}, // cyan    - smooth
+		{{0.88f, 0.88f, 0.88f}, 0.05f, 0.90f}, // silver  - mirror
+		{{0.10f, 0.50f, 0.12f}, 0.90f, 0.00f}, // green   - rough matte
+		{{0.90f, 0.38f, 0.05f}, 0.50f, 0.20f}, // orange  - semi-rough
+	};
+
+	ObjectList tiles;
+	ObjectList_Init(&tiles, GRID_COLS * GRID_ROWS);
+	for (int row = 0; row < GRID_ROWS; row++) {
+		for (int col = 0; col < GRID_COLS; col++) {
+			Object *obj = ObjectList_Add(&tiles);
+			int pIdx = ((col * 7) ^ (row * 3) ^ (col + row * 5)) % 8;
+			float emission = (row == GRID_ROWS - 1) ? 0.5f : 0.0f;
+			CreateCube(obj, (float3){(col - GRID_COLS / 2) * 7.0f, -0.09f, 5.0f + row * 7.0f}, (float3){0.0f, 0.0f, 0.0f}, (float3){7.0f, 0.1f, 7.0f}, palette[pIdx].color, lib, emission, palette[pIdx].roughness, palette[pIdx].metallic);
+			Object_UpdateWorldBounds(obj);
+		}
+	}
+	ObjectList_Merge(&tiles, list);
+	ObjectList_Destroy(&tiles);
+}
+
+static void AddEmissiveCubes(ObjectList *list, MaterialLib *lib) {
+	Object *cube = ObjectList_Add(list);
+	CreateCube(cube, (float3){-3.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){0.5f, 0.5f, 0.5f}, (float3){0.7f, 0.4f, 0.0f}, lib, 8.0f, 0.99f, 0.0f);
+	Object_UpdateWorldBounds(cube);
+
+	Object *cube2 = ObjectList_Add(list);
+	CreateCube(cube2, (float3){3.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){1.5f, 1.5f, 1.5f}, (float3){0.0f, 0.6f, 0.3f}, lib, 8.0f, 0.99f, 0.0f);
+	Object_UpdateWorldBounds(cube2);
+
+	Object *cube3 = ObjectList_Add(list);
+	CreateCube(cube3, (float3){10.5f, 0.5f, 5.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){1.5f, 1.5f, 1.5f}, (float3){0.4f, 0.0f, 0.5f}, lib, 8.0f, 0.99f, 0.0f);
+	Object_UpdateWorldBounds(cube3);
+}
+
+static void AddMaterialGrid(ObjectList *list, MaterialLib *lib) {
+	static const float3 gridColors[6] = {
+		{0.90f, 0.10f, 0.10f},
+		{0.90f, 0.45f, 0.05f},
+		{0.90f, 0.80f, 0.10f},
+		{0.10f, 0.75f, 0.15f},
+		{0.10f, 0.30f, 0.90f},
+		{0.55f, 0.10f, 0.85f},
+	};
+	static const struct {
+		float roughness;
+		float metallic;
+	} gridMats[4] = {
+		{0.95f, 0.00f},
+		{0.05f, 0.00f},
+		{0.15f, 0.95f},
+		{0.50f, 0.50f},
+	};
+
+	ObjectList grid;
+	ObjectList_Init(&grid, 64);
+	// each (ix, iz) column is one primitive from shapeTable; each iy level one material
+	for (int ix = 0; ix < 4; ix++) {
+		for (int iz = 0; iz < 4; iz++) {
+			ShapeKind shape = (ShapeKind)(ix * 4 + iz);
+			for (int iy = 0; iy < 4; iy++) {
+				ObjectRecord rec = {0};
+				rec.type = OBJ_SHAPE;
+				rec.shape = shape;
+				rec.position = (float3){22.0f + ix * 3.0f, 0.8f + iy * 3.0f, 11.0f + iz * 3.0f};
+				rec.scale = (float3){2.0f, 2.0f, 2.0f};
+				rec.material = (ObjectMaterial){gridColors[shape % 6], 0.0f, gridMats[iy].roughness, gridMats[iy].metallic};
+				spawnShape(ObjectList_Add(&grid), &rec, lib);
+			}
+		}
+	}
+	ObjectList_Merge(&grid, list);
+	ObjectList_Destroy(&grid);
+}
+
+static void AddReflectiveSpheres(ObjectList *list, MaterialLib *lib) {
+	Object *sphere = ObjectList_Add(list);
+	CreateSphereHighResolution(sphere, (float3){-7.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.85f, 0.65f, 0.15f}, lib, 0.0f, 0.25f, 0.8f);
+	Object_UpdateWorldBounds(sphere);
+
+	Object *sphere2 = ObjectList_Add(list);
+	CreateSphereHighResolution(sphere2, (float3){7.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.20f, 0.70f, 0.80f}, lib, 0.0f, 0.15f, 0.4f);
+	Object_UpdateWorldBounds(sphere2);
+
+	Object *sphere3 = ObjectList_Add(list);
+	CreateSphereHighResolution(sphere3, (float3){0.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.80f, 0.80f, 0.80f}, lib, 0.0f, 0.05f, 0.9f);
+	Object_UpdateWorldBounds(sphere3);
+
+	Object *sphere4 = ObjectList_Add(list);
+	CreateSphereHighResolution(sphere4, (float3){14.0f, 1.5f, 9.5f}, (float3){0.0f, 0.0f, 0.0f}, (float3){4.0f, 4.0f, 4.0f}, (float3){0.80f, 0.80f, 0.80f}, lib, 0.0f, 0.05f, 0.9f);
+	Object_UpdateWorldBounds(sphere4);
+}
+
+// One of every primitive in SHAPE enum order, spawned through the ObjectRecord
+// path (loadObjects.h) so the future scene-file loader gets exercised.
+static void AddShapeParade(ObjectList *list, MaterialLib *lib) {
+	static const struct {
+		float y;
+		float3 rotation;
+		float3 scale;
+		float3 color;
+		float roughness;
+		float metallic;
+	} parade[SHAPE_COUNT] = {
+		[SHAPE_CUBE]        = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.35f, 0.10f}, 0.75f, 0.00f},
+		[SHAPE_SPHERE]      = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.90f, 0.20f, 0.20f}, 0.80f, 0.00f},
+		[SHAPE_SPHERE_HIGH] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.95f, 0.55f, 0.15f}, 0.80f, 0.00f},
+		[SHAPE_PLANE]       = {0.05f, {0.0f, 0.0f, 0.0f}, {2.4f, 2.4f, 2.4f}, {0.65f, 0.70f, 0.75f}, 0.90f, 0.00f},
+		[SHAPE_CONE]        = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.90f, 0.75f, 0.10f}, 0.80f, 0.00f},
+		[SHAPE_CAPSULE]     = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.35f, 0.75f, 0.25f}, 0.80f, 0.00f},
+		[SHAPE_TORUS]       = {0.41f, {0.0f, 0.0f, 0.0f}, {2.4f, 2.4f, 2.4f}, {0.20f, 0.65f, 0.85f}, 0.80f, 0.00f},
+		[SHAPE_DISK]        = {0.05f, {0.0f, 0.0f, 0.0f}, {1.9f, 1.9f, 1.9f}, {0.80f, 0.80f, 0.85f}, 0.80f, 0.00f},
+		[SHAPE_PYRAMID]     = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.65f, 0.20f}, 0.80f, 0.00f},
+		[SHAPE_PRISM]       = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.55f, 0.30f, 0.80f}, 0.80f, 0.00f},
+		[SHAPE_HEMISPHERE]  = {0.02f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.25f, 0.45f, 0.85f}, 0.85f, 0.00f},
+		[SHAPE_TUBE]        = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.75f, 0.30f, 0.60f}, 0.80f, 0.00f},
+		[SHAPE_QUAD]        = {0.85f, {0.0f, 180.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.85f, 0.85f}, 0.85f, 0.00f},
+		[SHAPE_UV_SPHERE]   = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.30f, 0.70f, 0.60f}, 0.80f, 0.00f},
+		[SHAPE_ICOSPHERE]   = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.95f, 0.85f, 0.55f}, 0.80f, 0.00f},
+		[SHAPE_CYLINDER]    = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.55f, 0.55f, 0.60f}, 0.80f, 0.00f},
+	};
+
+	// front tile row, centered on the spawn camera axis (x = 5 in main.c), so the
+	// row is on screen at startup - z = 30 put it behind the sphere band instead
+	const float kParadeZ = 3.2f;
+	const float spacing = 3.0f;
+	const float centerX = 5.0f;
+	for (int i = 0; i < SHAPE_COUNT; i++) {
+		ObjectRecord rec = {0};
+		rec.type = OBJ_SHAPE;
+		rec.shape = i;
+		rec.position = (float3){centerX + (i - (SHAPE_COUNT - 1) * 0.5f) * spacing, parade[i].y, kParadeZ};
+		rec.rotation = parade[i].rotation;
+		rec.scale = parade[i].scale;
+		rec.material = (ObjectMaterial){parade[i].color, 0.0f, parade[i].roughness, parade[i].metallic};
+		spawnShape(ObjectList_Add(list), &rec, lib);
+	}
+}
+
+void Scene_BuildShowcase(ObjectList *list, MaterialLib *lib) {
+	AddTileGrid(list, lib);
+	AddEmissiveCubes(list, lib);
+	AddMaterialGrid(list, lib);
+	AddReflectiveSpheres(list, lib);
+	AddShapeParade(list, lib);
 }

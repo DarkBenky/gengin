@@ -21,12 +21,14 @@ annotation, bisection, and clangd queries.
     llmOpt/scripts/gengin-opt.sh local            # local llama.cpp server on :8013
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek         # direct DeepSeek API (DEEPSEEK_API_KEY)
+    llmOpt/scripts/gengin-opt.sh anthropic/claude-haiku-5.5:anthropic --max-context 99K deepseek
     llmOpt/scripts/gengin-opt.sh --headless       # unattended oneshot (-z)
     llmOpt/scripts/gengin-opt.sh ml               # ML layer kernels, local GPU (see below)
 
 The launcher loads `prompts/optimize.md` as the session query; switch models
-in-session with `/model custom:local:Qwen3.8-27B`.  The `ml` mode loads
-`prompts/optimize-ml.md` instead - see **ML layer objective** below.
+in-session with `/model custom:local:Qwen3.8-27B`.  `--max-context SIZE`
+chains two models instead - see **Cost-aware routing** below.  The `ml` mode
+loads `prompts/optimize-ml.md` instead - see **ML layer objective** below.
 
 ## ML layer objective (`ml` mode)
 
@@ -140,6 +142,58 @@ from the slug and sends it as `provider.order` (exclusive unless
 `GENGIN_PROXY_PIN_FALLBACKS=1`), which is the only form OpenRouter honors.
 The preflight model check validates pins against the model's endpoint list.
 
+### Cost-aware routing (multi-model by prompt size)
+
+A session can start on one model and continue on a cheaper one once its
+conversation grows past a token threshold — the motivating case is Claude
+Haiku 5.5, whose input price jumps 5x above a 100K-token prompt (a price
+tier, not a context window):
+
+    llmOpt/scripts/gengin-opt.sh anthropic/claude-haiku-5.5:anthropic --max-context 99K deepseek
+
+The launcher registers the chain with the proxy (`POST /route/register`,
+loopback) before Hermes starts.  The proxy keeps the conversation on the
+primary until its prompt is estimated to reach the threshold, then serves the
+rest of that conversation from the fallback.  A `{model, upstream: deepseek}`
+member is served straight from `api.deepseek.com` — the OpenRouter-only
+provider filters are skipped for it and `stream_options.include_usage` is set
+so counting keeps working.  The leg keeps thinking mode on.  Thinking mode
+400s a tool-carrying request whose replayed assistant messages lost
+`reasoning_content` ("must be passed back to the API") — the proxy caches the
+reasoning of every response it served, replays it into those messages, and
+pads `" "` over the rest (presence is what the API checks, and DeepSeek
+rejects empty-string pads).  The proxy swaps models server-side while Hermes
+still believes it talks to the primary, so Hermes's own host/model echo-back
+detection misses the switch: the project config sets
+`model.reasoning_echo: true` (the documented gateway opt-in) so the harness
+echoes as well — the proxy replay stays as the second net.  The estimate
+comes from the response `usage` plus
+a conservative char-count of what was added since
+(`GENGIN_PROXY_ROUTE_CHARS_PER_TOKEN`, default 3 chars/token — lower switches
+earlier).  Watch it with `curl 127.0.0.1:8787/route` or the proxy log
+(`route=<member> est=<n>/<T>`, plus `switched=1` on the switch itself).
+
+- Manual runs: `--max-context SIZE` (K/M suffixes) plus a second model word or
+  `--fallback-model M`.  In the fallback position `deepseek`/`ds` means the
+  DIRECT DeepSeek API — the proxy holds a second upstream for that leg, and
+  the key travels with the loopback registration (DEEPSEEK_API_KEY must be in
+  `llmOpt/.env`).  Any other word is an OpenRouter model id, e.g.
+  `deepseek/deepseek-v4-flash-0731`.  `--dry-run` prints the resolved chain
+  without registering it.
+- Supervised runs: set `GENGIN_ROUTE_MAX_CONTEXT` +
+  `GENGIN_ROUTE_FALLBACK_MODEL` in `llmOpt/.env` (both or neither; `deepseek`
+  = direct API and needs `DEEPSEEK_API_KEY` in `secrets.env`); the supervisor
+  registers the route before each session and clears it on every exit path.
+  `supervisor-console.sh --max-context 99K --fallback-model M` overrides the
+  file for one console run.
+
+Caveats: switching abandons the primary's prompt cache; the route lives in
+proxy memory only (a proxy restart loses it until the next registration); one
+route is active at a time (the last registration wins) — concurrent manual
+sessions share it.  Requests the proxy already passes through untouched
+(caller-set `provider.only`/`provider.order`, `:free` variants) are never
+re-routed.
+
 Desktop: `llmOpt/scripts/setup-openrouter-proxy.sh` (user unit).  VM: nothing
 to enable — `gengin-llmopt.service` and `supervisor-console.sh` start it (the
 console also stops what it started); config wiring (`model.base_url`) is
@@ -147,6 +201,7 @@ automatic.  Inspect: `curl 127.0.0.1:8787/status`.  Knobs:
 `GENGIN_PROXY_PORT`, `GENGIN_PROXY_QUANTIZATIONS`, `GENGIN_PROXY_FLOOR`,
 `GENGIN_PROXY_ALLOW_FALLBACKS`, `GENGIN_PROXY_PIN_FALLBACKS`,
 `GENGIN_PROXY_FAIL_THRESHOLD`, `GENGIN_PROXY_COOLDOWN_SECONDS`,
+`GENGIN_PROXY_ROUTE_CHARS_PER_TOKEN`, `GENGIN_PROXY_DEEPSEEK_UPSTREAM`,
 `GENGIN_PROXY_LOG`.
 
 ### Harness updates
@@ -168,7 +223,7 @@ All local secrets live in **`llmOpt/.env`**:
 |--------------------|----------------------------------------------------|
 | `KEY`              | OpenRouter API key for manual `gengin-opt.sh` runs |
 | `GITHUB_TOKEN`     | Push / PR creation                                 |
-| `DEEPSEEK_API_KEY` | Only needed for the `deepseek` preset              |
+| `DEEPSEEK_API_KEY` | `deepseek` preset and `deepseek` chain fallback    |
 
 After editing, mirror them into the Hermes environment:
 
@@ -180,6 +235,7 @@ Everything is in **one root-only file**: `/etc/gengin-llmopt/secrets.env`
 
     OPENROUTER_MANAGEMENT_KEY=sk-or-v1-...
     GITHUB_TOKEN=ghp_...        # optional, enables PR creation
+    DEEPSEEK_API_KEY=sk-...     # optional, for a `deepseek` chain fallback
 
 View or rotate (this is the only place to edit):
 

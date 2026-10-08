@@ -286,6 +286,792 @@ void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, f
 	CalculateFaceEmissions(obj, lib);
 }
 
+void CreatePlane(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = false;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = 2;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for plane triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	// XZ plane facing +Y
+	const float3 v0 = {-0.5f, 0.0f, -0.5f}, v1 = {0.5f, 0.0f, -0.5f}, v2 = {0.5f, 0.0f, 0.5f}, v3 = {-0.5f, 0.0f, 0.5f};
+	const float3 n = {0.0f, 1.0f, 0.0f};
+	obj->v1[0] = v0; obj->v2[0] = v3; obj->v3[0] = v1; obj->normals[0] = n;
+	obj->v1[1] = v1; obj->v2[1] = v3; obj->v3[1] = v2; obj->normals[1] = n;
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, 0.0f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.0f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+void CreateQuad(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = false;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = 2;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for quad triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	// XY quad facing +Z
+	const float3 v0 = {-0.5f, -0.5f, 0.0f}, v1 = {0.5f, -0.5f, 0.0f}, v2 = {0.5f, 0.5f, 0.0f}, v3 = {-0.5f, 0.5f, 0.0f};
+	const float3 n = {0.0f, 0.0f, 1.0f};
+	obj->v1[0] = v0; obj->v2[0] = v1; obj->v3[0] = v2; obj->normals[0] = n;
+	obj->v1[1] = v0; obj->v2[1] = v2; obj->v3[1] = v3; obj->normals[1] = n;
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, 0.0f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.0f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define DISK_SEGMENTS 24
+
+void CreateDisk(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = false;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = DISK_SEGMENTS;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for disk triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	// XZ disk facing +Y
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	const float3 center = {0.0f, 0.0f, 0.0f};
+	const float3 n = {0.0f, 1.0f, 0.0f};
+	for (int i = 0; i < DISK_SEGMENTS; i++) {
+		float a0 = twoPi * i / DISK_SEGMENTS;
+		float a1 = twoPi * (i + 1) / DISK_SEGMENTS;
+		float3 p0 = {cosf(a0) * radius, 0.0f, sinf(a0) * radius};
+		float3 p1 = {cosf(a1) * radius, 0.0f, sinf(a1) * radius};
+		obj->v1[i] = center; obj->v2[i] = p1; obj->v3[i] = p0; obj->normals[i] = n;
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, 0.0f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.0f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define CONE_SEGMENTS 24
+
+void CreateCone(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = CONE_SEGMENTS * 2;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for cone triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	const float3 apex = {0.0f, 0.5f, 0.0f};
+	const float3 baseCenter = {0.0f, -0.5f, 0.0f};
+	int t = 0;
+	for (int i = 0; i < CONE_SEGMENTS; i++) {
+		float a0 = twoPi * i / CONE_SEGMENTS;
+		float a1 = twoPi * (i + 1) / CONE_SEGMENTS;
+		float3 p0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
+		float3 p1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
+		obj->v1[t] = apex; obj->v2[t] = p1; obj->v3[t] = p0;
+		obj->normals[t] = SphereFaceNormal(apex, p1, p0);
+		t++;
+		obj->v1[t] = baseCenter; obj->v2[t] = p0; obj->v3[t] = p1;
+		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
+		t++;
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define CYLINDER_SEGMENTS 24
+
+void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = CYLINDER_SEGMENTS * 4;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for cylinder triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	const float3 topCenter = {0.0f, 0.5f, 0.0f};
+	const float3 bottomCenter = {0.0f, -0.5f, 0.0f};
+	int t = 0;
+	for (int i = 0; i < CYLINDER_SEGMENTS; i++) {
+		float a0 = twoPi * i / CYLINDER_SEGMENTS;
+		float a1 = twoPi * (i + 1) / CYLINDER_SEGMENTS;
+		float3 top0 = {cosf(a0) * radius, 0.5f, sinf(a0) * radius};
+		float3 top1 = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
+		float3 bot0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
+		float3 bot1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
+		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
+		t++;
+		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
+		t++;
+		obj->v1[t] = topCenter; obj->v2[t] = top1; obj->v3[t] = top0;
+		obj->normals[t] = (float3){0.0f, 1.0f, 0.0f};
+		t++;
+		obj->v1[t] = bottomCenter; obj->v2[t] = bot0; obj->v3[t] = bot1;
+		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
+		t++;
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define TUBE_SEGMENTS 24
+
+void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = false;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = TUBE_SEGMENTS * 2;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for tube triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	// open-ended cylinder wall
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	int t = 0;
+	for (int i = 0; i < TUBE_SEGMENTS; i++) {
+		float a0 = twoPi * i / TUBE_SEGMENTS;
+		float a1 = twoPi * (i + 1) / TUBE_SEGMENTS;
+		float3 top0 = {cosf(a0) * radius, 0.5f, sinf(a0) * radius};
+		float3 top1 = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
+		float3 bot0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
+		float3 bot1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
+		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
+		t++;
+		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
+		t++;
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define CAPSULE_SEGMENTS 24
+#define CAPSULE_RINGS 6
+
+void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = CAPSULE_SEGMENTS * 2 + CAPSULE_SEGMENTS * CAPSULE_RINGS * 4;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for capsule triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float radius = 0.25f;
+	const float halfHeight = 0.25f;
+	const float twoPi = 6.2831853f;
+	int t = 0;
+	for (int i = 0; i < CAPSULE_SEGMENTS; i++) {
+		float a0 = twoPi * i / CAPSULE_SEGMENTS;
+		float a1 = twoPi * (i + 1) / CAPSULE_SEGMENTS;
+		float3 top0 = {cosf(a0) * radius, halfHeight, sinf(a0) * radius};
+		float3 top1 = {cosf(a1) * radius, halfHeight, sinf(a1) * radius};
+		float3 bot0 = {cosf(a0) * radius, -halfHeight, sinf(a0) * radius};
+		float3 bot1 = {cosf(a1) * radius, -halfHeight, sinf(a1) * radius};
+		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
+		t++;
+		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
+		t++;
+	}
+	for (int ring = 0; ring < 2 * CAPSULE_RINGS; ring++) {
+		float yOff = ring < CAPSULE_RINGS ? halfHeight : -halfHeight;
+		float phi0 = 0.5f * 3.14159265f * ring / CAPSULE_RINGS;
+		float phi1 = 0.5f * 3.14159265f * (ring + 1) / CAPSULE_RINGS;
+		float y0 = yOff + cosf(phi0) * radius, y1 = yOff + cosf(phi1) * radius;
+		float r0 = sinf(phi0) * radius, r1 = sinf(phi1) * radius;
+		for (int seg = 0; seg < CAPSULE_SEGMENTS; seg++) {
+			float th0 = twoPi * seg / CAPSULE_SEGMENTS;
+			float th1 = twoPi * (seg + 1) / CAPSULE_SEGMENTS;
+			float3 a = {r0 * cosf(th0), y0, r0 * sinf(th0)};
+			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
+			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
+			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
+			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->normals[t] = SphereFaceNormal(a, c, b);
+			t++;
+			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->normals[t] = SphereFaceNormal(a, d, c);
+			t++;
+		}
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.25f, -0.5f, -0.25f};
+	obj->BBmax = (float3){0.25f, 0.5f, 0.25f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define HEMISPHERE_SEGMENTS 24
+#define HEMISPHERE_RINGS 8
+
+void CreateHemisphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = HEMISPHERE_SEGMENTS * (HEMISPHERE_RINGS * 2 + 1);
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for hemisphere triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	// dome sits on the y = 0 plane, base disk faces -Y
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	int t = 0;
+	for (int ring = 0; ring < HEMISPHERE_RINGS; ring++) {
+		float phi0 = 0.5f * 3.14159265f * ring / HEMISPHERE_RINGS;
+		float phi1 = 0.5f * 3.14159265f * (ring + 1) / HEMISPHERE_RINGS;
+		float y0 = cosf(phi0) * radius, y1 = cosf(phi1) * radius;
+		float r0 = sinf(phi0) * radius, r1 = sinf(phi1) * radius;
+		for (int seg = 0; seg < HEMISPHERE_SEGMENTS; seg++) {
+			float th0 = twoPi * seg / HEMISPHERE_SEGMENTS;
+			float th1 = twoPi * (seg + 1) / HEMISPHERE_SEGMENTS;
+			float3 a = {r0 * cosf(th0), y0, r0 * sinf(th0)};
+			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
+			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
+			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
+			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->normals[t] = SphereFaceNormal(a, c, b);
+			t++;
+			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->normals[t] = SphereFaceNormal(a, d, c);
+			t++;
+		}
+	}
+	const float3 baseCenter = {0.0f, 0.0f, 0.0f};
+	for (int seg = 0; seg < HEMISPHERE_SEGMENTS; seg++) {
+		float a0 = twoPi * seg / HEMISPHERE_SEGMENTS;
+		float a1 = twoPi * (seg + 1) / HEMISPHERE_SEGMENTS;
+		float3 p0 = {cosf(a0) * radius, 0.0f, sinf(a0) * radius};
+		float3 p1 = {cosf(a1) * radius, 0.0f, sinf(a1) * radius};
+		obj->v1[t] = baseCenter; obj->v2[t] = p0; obj->v3[t] = p1;
+		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
+		t++;
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, 0.0f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define TORUS_SEGMENTS 24
+#define TORUS_RINGS 12
+
+static float3 TorusPoint(float u, float v, float major, float minor) {
+	float ring = major + minor * cosf(v);
+	return (float3){ring * cosf(u), minor * sinf(v), ring * sinf(u)};
+}
+
+void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = TORUS_SEGMENTS * TORUS_RINGS * 2;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for torus triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float major = 0.35f;
+	const float minor = 0.15f;
+	const float twoPi = 6.2831853f;
+	int t = 0;
+	for (int i = 0; i < TORUS_SEGMENTS; i++) {
+		float u0 = twoPi * i / TORUS_SEGMENTS;
+		float u1 = twoPi * (i + 1) / TORUS_SEGMENTS;
+		for (int j = 0; j < TORUS_RINGS; j++) {
+			float v0 = twoPi * j / TORUS_RINGS;
+			float v1 = twoPi * (j + 1) / TORUS_RINGS;
+			float3 a = TorusPoint(u0, v0, major, minor);
+			float3 b = TorusPoint(u1, v0, major, minor);
+			float3 c = TorusPoint(u0, v1, major, minor);
+			float3 d = TorusPoint(u1, v1, major, minor);
+			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->normals[t] = SphereFaceNormal(a, c, b);
+			t++;
+			obj->v1[t] = c; obj->v2[t] = d; obj->v3[t] = b;
+			obj->normals[t] = SphereFaceNormal(c, d, b);
+			t++;
+		}
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.15f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.15f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = 6;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for pyramid triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float3 base[4] = {
+		{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, 0.5f}, {-0.5f, -0.5f, 0.5f}};
+	const float3 apex = {0.0f, 0.5f, 0.0f};
+	int t = 0;
+	for (int i = 0; i < 4; i++) {
+		float3 p = base[i], q = base[(i + 1) & 3];
+		obj->v1[t] = q; obj->v2[t] = p; obj->v3[t] = apex;
+		obj->normals[t] = SphereFaceNormal(q, p, apex);
+		t++;
+	}
+	obj->v1[t] = base[0]; obj->v2[t] = base[1]; obj->v3[t] = base[2];
+	obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
+	t++;
+	obj->v1[t] = base[0]; obj->v2[t] = base[2]; obj->v3[t] = base[3];
+	obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
+	t++;
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define PRISM_SEGMENTS 3
+
+void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = PRISM_SEGMENTS * 4 - 4;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for prism triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	const float3 top0 = {radius, 0.5f, 0.0f};
+	const float3 bot0 = {radius, -0.5f, 0.0f};
+	int t = 0;
+	for (int i = 0; i < PRISM_SEGMENTS; i++) {
+		float a0 = twoPi * i / PRISM_SEGMENTS;
+		float a1 = twoPi * (i + 1) / PRISM_SEGMENTS;
+		float3 topA = {cosf(a0) * radius, 0.5f, sinf(a0) * radius};
+		float3 topB = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
+		float3 botA = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
+		float3 botB = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
+		obj->v1[t] = topA; obj->v2[t] = botB; obj->v3[t] = botA;
+		obj->normals[t] = SphereFaceNormal(topA, botB, botA);
+		t++;
+		obj->v1[t] = topA; obj->v2[t] = topB; obj->v3[t] = botB;
+		obj->normals[t] = SphereFaceNormal(topA, topB, botB);
+		t++;
+	}
+	for (int i = 1; i < PRISM_SEGMENTS - 1; i++) {
+		float a0 = twoPi * i / PRISM_SEGMENTS;
+		float a1 = twoPi * (i + 1) / PRISM_SEGMENTS;
+		float3 topA = {cosf(a0) * radius, 0.5f, sinf(a0) * radius};
+		float3 topB = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
+		float3 botA = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
+		float3 botB = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
+		obj->v1[t] = top0; obj->v2[t] = topB; obj->v3[t] = topA;
+		obj->normals[t] = (float3){0.0f, 1.0f, 0.0f};
+		t++;
+		obj->v1[t] = bot0; obj->v2[t] = botA; obj->v3[t] = botB;
+		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
+		t++;
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define UVSPHERE_SEGMENTS 32
+#define UVSPHERE_RINGS 16
+
+void CreateUVSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	const int triCount = UVSPHERE_SEGMENTS * UVSPHERE_RINGS * 2;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+	obj->uvs = (UvCords *)malloc(triCount * sizeof(UvCords));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds || !obj->uvs) {
+		fprintf(stderr, "Error: Could not allocate memory for UV sphere triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float radius = 0.5f;
+	const float twoPi = 6.2831853f;
+	int t = 0;
+	for (int ring = 0; ring < UVSPHERE_RINGS; ring++) {
+		float phi0 = 3.14159265f * ring / UVSPHERE_RINGS;
+		float phi1 = 3.14159265f * (ring + 1) / UVSPHERE_RINGS;
+		float y0 = cosf(phi0) * radius, y1 = cosf(phi1) * radius;
+		float r0 = sinf(phi0) * radius, r1 = sinf(phi1) * radius;
+		float v0 = (float)ring / UVSPHERE_RINGS, v1 = (float)(ring + 1) / UVSPHERE_RINGS;
+		for (int seg = 0; seg < UVSPHERE_SEGMENTS; seg++) {
+			float th0 = twoPi * seg / UVSPHERE_SEGMENTS;
+			float th1 = twoPi * (seg + 1) / UVSPHERE_SEGMENTS;
+			float u0 = (float)seg / UVSPHERE_SEGMENTS, u1 = (float)(seg + 1) / UVSPHERE_SEGMENTS;
+			float3 a = {r0 * cosf(th0), y0, r0 * sinf(th0)};
+			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
+			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
+			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
+			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->normals[t] = SphereFaceNormal(a, c, b);
+			obj->uvs[t] = (UvCords){(uint16)(u0 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v1 * 65535.0f), (uint16)(u0 * 65535.0f), (uint16)(v1 * 65535.0f)};
+			t++;
+			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->normals[t] = SphereFaceNormal(a, d, c);
+			obj->uvs[t] = (UvCords){(uint16)(u0 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v1 * 65535.0f)};
+			t++;
+		}
+	}
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
+#define ICOSPHERE_SUBDIVISIONS 2
+
+static float3 IcoMidpoint(float3 a, float3 b) {
+	return Float3_Scale(Float3_Normalize(Float3_Add(a, b)), 0.5f);
+}
+
+static int IcoSubdivide(Object *obj, float3 a, float3 b, float3 c, int level, int idx) {
+	if (level == 0) {
+		obj->v1[idx] = a; obj->v2[idx] = b; obj->v3[idx] = c;
+		obj->normals[idx] = SphereFaceNormal(a, b, c);
+		return idx + 1;
+	}
+	float3 ab = IcoMidpoint(a, b), bc = IcoMidpoint(b, c), ca = IcoMidpoint(c, a);
+	idx = IcoSubdivide(obj, a, ab, ca, level - 1, idx);
+	idx = IcoSubdivide(obj, b, bc, ab, level - 1, idx);
+	idx = IcoSubdivide(obj, c, ca, bc, level - 1, idx);
+	return IcoSubdivide(obj, ab, bc, ca, level - 1, idx);
+}
+
+void CreateIcosphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	obj->cullBackfaces = true;
+	obj->position = position;
+	obj->rotation = rotation;
+	obj->scale = scale;
+	obj->hasTexture = false;
+	obj->hasEmission = emission > 0.0f ? true : false;
+	obj->_temp = ((uint8)(color.x * 255.0f) << 16) | ((uint8)(color.y * 255.0f) << 8) | (uint8)(color.z * 255.0f);
+
+	int triCount = 20;
+	for (int i = 0; i < ICOSPHERE_SUBDIVISIONS; i++)
+		triCount *= 4;
+
+	obj->v1 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v2 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->v3 = (float3 *)malloc(triCount * sizeof(float3));
+	obj->normals = (float3 *)malloc(triCount * sizeof(float3));
+	obj->materialIds = (int *)malloc(triCount * sizeof(int));
+
+	if (!obj->v1 || !obj->v2 || !obj->v3 || !obj->normals || !obj->materialIds) {
+		fprintf(stderr, "Error: Could not allocate memory for icosphere triangles.\n");
+		Object_Destroy(obj);
+		return;
+	}
+
+	const float t = (1.0f + sqrtf(5.0f)) * 0.5f;
+	const float3 icoVerts[12] = {
+		{-1.0f, t, 0.0f}, {1.0f, t, 0.0f}, {-1.0f, -t, 0.0f}, {1.0f, -t, 0.0f},
+		{0.0f, -1.0f, t}, {0.0f, 1.0f, t}, {0.0f, -1.0f, -t}, {0.0f, 1.0f, -t},
+		{t, 0.0f, -1.0f}, {t, 0.0f, 1.0f}, {-t, 0.0f, -1.0f}, {-t, 0.0f, 1.0f}};
+	const int icoFaces[20][3] = {
+		{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11},
+		{1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
+		{3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9},
+		{4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
+	float3 verts[12];
+	for (int i = 0; i < 12; i++)
+		verts[i] = Float3_Scale(Float3_Normalize(icoVerts[i]), 0.5f);
+	int idx = 0;
+	for (int i = 0; i < 20; i++)
+		idx = IcoSubdivide(obj, verts[icoFaces[i][0]], verts[icoFaces[i][1]], verts[icoFaces[i][2]], ICOSPHERE_SUBDIVISIONS, idx);
+
+	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
+	for (int i = 0; i < triCount; i++)
+		obj->materialIds[i] = matIdx;
+
+	obj->triangleCount = triCount;
+	obj->BBmin = (float3){-0.5f, -0.5f, -0.5f};
+	obj->BBmax = (float3){0.5f, 0.5f, 0.5f};
+	CreateObjectBVH(obj, &obj->bvh);
+	Object_UpdateWorldBounds(obj);
+	CalculateFaceEmissions(obj, lib);
+}
+
 void Object_SetMaterial(Object *obj, MaterialLib *lib, Material mat) {
 	for (int i = 0; i < obj->triangleCount; i++)
 		lib->entries[obj->materialIds[i]] = mat;
