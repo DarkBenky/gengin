@@ -1,5 +1,8 @@
 # Tasks
 
+- [ ] reflection have missing emission
+- [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
+
 - [ ] Map loading files
   - [ ] More primitives like toroid, cone, pyramid ...
   - [ ] Optimalize loading by building multiple bvh at same time not one by one
