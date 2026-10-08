@@ -1841,10 +1841,12 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 	float bestT = initialBestT;
 	int stack[64];
 	int top = 0;
-	stack[top++] = 0;
+	// the nearer child is entered directly and only the farther one is left
+	// pending, so an internal node hands over one stack slot instead of two
+	int cur = 0;
 
-	while (top > 0) {
-		const BVHNode *node = &bvh->nodes[stack[--top]];
+	for (;;) {
+		const BVHNode *node = &bvh->nodes[cur];
 
 		if (node->triCount > 0) {
 			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
@@ -1864,6 +1866,9 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 					}
 				}
 			}
+			if (top == 0) break;
+			cur = stack[--top];
+			continue;
 		} else {
 			// test both children at once with SSE — bounds stored SoA in this node
 			float out[2];
@@ -1874,11 +1879,13 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 			int li = node->leftFirst, ri = li + 1;
 			if (tl <= tr) {
 				if (tr < FLT_MAX) stack[top++] = ri;
-				if (tl < FLT_MAX) stack[top++] = li;
+				if (tl < FLT_MAX) { cur = li; continue; }
 			} else {
 				if (tl < FLT_MAX) stack[top++] = li;
-				if (tr < FLT_MAX) stack[top++] = ri;
+				if (tr < FLT_MAX) { cur = ri; continue; }
 			}
+			if (top == 0) break;
+			cur = stack[--top];
 		}
 	}
 
