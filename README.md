@@ -1,11 +1,17 @@
 # Tasks
 
+- [ ] create same logic for session credit limit for deep seek api
+  - [ ] on each requste we can cache the stats of how much did the request cost add to session sum
+    - [ ] add tool / waring to model when close to limit for the seesion
+    - [ ] dont lunch llmOpt session in peek hours wait for off peek hours  
+
 - [ ] reflection have missing emission
 - [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
 
 - [ ] Map loading files
-  - [ ] More primitives like toroid, cone, pyramid ...
+  - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimalize loading by building multiple bvh at same time not one by one
+  - [ ] generate synthetic maps and camera movements (saved in the map file) so we can capture frames for upscaling model
 
 - [ ] Add back images to repo
 
