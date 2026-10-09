@@ -101,7 +101,8 @@ Benches open a MiniFB window, so the server needs a display (`DISPLAY=:2` here).
 Watches `origin/main`; on a new commit it prepares an exact-SHA sandbox, runs
 preflight + clean baseline, mints a budget-capped temporary OpenRouter key, runs
 one Hermes session under Xvfb, and deletes the key on every exit path. One session
-at a time; new commits coalesce to the newest.
+at a time; new commits coalesce to the newest. `GENGIN_OFFPEAK_WAIT=1` in
+`llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window.
 
     git clone git@github.com:DarkBenky/gengin.git <checkout>
     sudo bash <checkout>/llmOpt/scripts/setup-vm.sh --checkout <checkout>   # Ubuntu 22.04/24.04

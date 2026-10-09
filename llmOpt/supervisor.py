@@ -97,6 +97,9 @@ KNOWN_KEYS = {
     "GENGIN_ROUTE_FALLBACK_MODEL",
     "GENGIN_ROUTE_TTL_SECONDS",
     "GENGIN_ROUTE_BUDGET_USD",
+    # Hold a pending commit (re-checked every poll) until DeepSeek's off-peak
+    # (half-price) window before preparing or launching a session.
+    "GENGIN_OFFPEAK_WAIT",
     "SESSION_TIMEOUT_SECONDS",
     "BUDGET_POLL_SECONDS",
     "KEY_EXPIRY_GRACE_SECONDS",
@@ -324,6 +327,7 @@ class Config:
     route_max_context_tokens: int = 0
     route_ttl_seconds: int = 0
     route_budget_usd: float = 0.0
+    offpeak_wait: bool = False
     direct_session: bool = False
     management_key: str = ""
 
@@ -517,6 +521,13 @@ def load_config(require_management_key=True):
             errors.append("GENGIN_ROUTE_BUDGET_USD: must be a number in "
                           "(0, 1000000]")
             route_budget_usd = 0.0
+    # Off-peak gating for session launches (environment wins over the file).
+    offpeak_wait_raw = (os.environ.get("GENGIN_OFFPEAK_WAIT", "").strip()
+                        or values.get("GENGIN_OFFPEAK_WAIT", "").strip())
+    offpeak_wait = False
+    if offpeak_wait_raw:
+        offpeak_wait = parse_bool(offpeak_wait_raw, "GENGIN_OFFPEAK_WAIT",
+                                  errors) or False
     if direct_session:
         if route_max_context_raw or route_fallback_model:
             errors.append("OPENROUTER_MODEL=deepseek runs the whole session on "
@@ -591,6 +602,7 @@ def load_config(require_management_key=True):
         route_max_context_tokens=route_max_context_tokens,
         route_ttl_seconds=route_ttl_seconds,
         route_budget_usd=route_budget_usd,
+        offpeak_wait=offpeak_wait,
         management_key=management_key,
     )
     if errors:
@@ -1252,6 +1264,12 @@ def print_dry_run(config, state):
         print("  route:         (none)")
     print(f"  budget:        {config.openrouter_budget_usd} USD")
     print(f"  session limit: {config.session_timeout_seconds}s")
+    offpeak_note = ""
+    if config.offpeak_wait:
+        peak, until = _offpeak_status()
+        offpeak_note = (f" (peak now; sessions wait until {until})" if peak
+                        else " (off-peak now)")
+    print(f"  offpeak wait:  {config.offpeak_wait}{offpeak_note}")
     print(f"  display:       {config.gengin_display} (headless={config.headless_mode})")
     print(f"  inputs dir:    {config.gengin_inputs_dir}")
     print(f"  state dir:     {config.state_dir}")
@@ -1266,6 +1284,17 @@ def print_dry_run(config, state):
     print("          sandbox, run preflight, create a capped temporary key, and launch Hermes.")
 
 
+def _offpeak_status():
+    """(in_peak, until_label): DeepSeek pricing state used by off-peak gating."""
+    import deepseek_pricing
+
+    if deepseek_pricing.is_offpeak():
+        return False, ""
+    until = time.strftime("%a %H:%M UTC",
+                          time.gmtime(deepseek_pricing.next_change()))
+    return True, until
+
+
 def run_once(config, state):
     """Poll once and process at most one eligible SHA (full pipeline).
 
@@ -1278,6 +1307,16 @@ def run_once(config, state):
     if action in ("first_start", "unchanged"):
         save_state(config.state_dir, state)
         return EXIT_OK
+
+    # GENGIN_OFFPEAK_WAIT=1: hold the pending SHA (re-checked every poll) until
+    # DeepSeek's half-price window; nothing is prepared or spent in peak hours.
+    if config.offpeak_wait:
+        peak, until = _offpeak_status()
+        if peak:
+            log("INFO", "offpeak.deferred", sha=state["pendingSha"] or tip,
+                until=until)
+            save_state(config.state_dir, state)
+            return EXIT_OK
 
     # action is "pending" or "run_on_start": process the pending SHA.
     target = state["pendingSha"] or tip

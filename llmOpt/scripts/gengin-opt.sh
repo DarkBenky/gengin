@@ -338,7 +338,8 @@ if [[ "$route_enabled" -eq 1 ]]; then
     offpeak_out="$(python3 "$LLMOPT_DIR/deepseek_pricing.py" status 2>&1)" || offpeak_rc=$?
     if [[ "$offpeak_rc" -ne 0 ]]; then
       echo "[off-peak] $offpeak_out" >&2
-      if [[ "$WAIT_OFFPEAK" -eq 1 || "${GENGIN_OFFPEAK_WAIT:-0}" == "1" ]]; then
+      offpeak_env_file="$(grep -E '^GENGIN_OFFPEAK_WAIT=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+      if [[ "$WAIT_OFFPEAK" -eq 1 || "${GENGIN_OFFPEAK_WAIT:-$offpeak_env_file}" == "1" ]]; then
         if [[ "$DRY_RUN" -eq 1 ]]; then
           echo "[off-peak] dry-run: would wait for the half-price window"
         else
