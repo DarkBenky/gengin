@@ -228,6 +228,19 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	// artifact of this build's float reordering.
 	const float simDeltaTime = deltaTime * 2.25f;
 
+	// Score the plan against where the target is going, not where it is: the
+	// horizon is LookaheadSteps * simDeltaTime = 0.6 s and a weaving target
+	// covers far more cross-range in it than the 25 m hit radius, while the
+	// loss holds the target still.  Only the cross-range part of the target's
+	// motion turns into miss; the radial part (the target flying along the line
+	// of sight) only slides the aim point along that line and distorts the
+	// distance terms, so it is carried at a fraction of the weight.
+	float3 los = Float3_Normalize(Float3_Sub(target, ctrl->plane.position));
+	float3 radial = Float3_Scale(los, Float3_Dot(ctrl->targetVelocity, los));
+	float3 crossRange = Float3_Sub(ctrl->targetVelocity, radial);
+	float3 tgtVel = Float3_Add(Float3_Scale(crossRange, 0.95f), Float3_Scale(radial, 0.25f));
+	float3 aim = target;
+
 	float currentDist = distanceToTarget(&ctrl->plane, target);
 	float minDist = currentDist;
 	float runningAlignment = 0.0f;
@@ -235,15 +248,16 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		runningAlignment += alignmentLoss(&simPlane, target);
-		runningAlignVel += alignmentLossVelocity(&simPlane, target);
-		float d = distanceToTarget(&simPlane, target);
+		aim = Float3_Add(target, Float3_Scale(tgtVel, (float)(step + 1) * simDeltaTime));
+		runningAlignment += alignmentLoss(&simPlane, aim);
+		runningAlignVel += alignmentLossVelocity(&simPlane, aim);
+		float d = distanceToTarget(&simPlane, aim);
 		if (d < minDist) minDist = d;
 	}
 
-	float finalAlignment = alignmentLoss(&simPlane, target);
-	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
-	float finalDist = distanceToTarget(&simPlane, target);
+	float finalAlignment = alignmentLoss(&simPlane, aim);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, aim);
+	float finalDist = distanceToTarget(&simPlane, aim);
 
 	// Tuned as a pair: the 3.0 amplification predates the deflection charge, and
 	// once the rudder was priced above the wing controls it pins the search into
@@ -276,7 +290,17 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	// The plant stops at the surface limit, so the last percent of the range
+	// buys no authority while it still costs the plan its margin: charge what a
+	// candidate pins against the stop.  Neutral pays nothing for it, so the
+	// walk is not biased back toward the undeflected command.
+	float satCharge = 0.0f;
+	for (int axis = 0; axis < 3; axis++) {
+		float over = fabsf(values[axis] - 0.5f) - 0.45f;
+		if (over > 0.0f) satCharge += over;
+	}
+
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + 3.0f * satCharge;
 
 	return loss;
 }
@@ -309,17 +333,31 @@ typedef float (*LossFunction)(const Controller *ctrl, float values[3], float3 ta
 // same miss with the shorter walk (effort 15.98 -> 21.41, 620 -> 1180
 // saturated steps) while the other four tiers spend less, so the aggregate
 // effort moves less than any single tier.
-#define SEARCH_STEP_DECAY 0.91f
+// Re-tuned on the post-#77 base: pricing the rudder above the wing controls
+// moved the plan's basin, and the walk's optimum with it.  At 0.885 the travel
+// is 0.45 of the box and the walk stops after ~10 iterations instead of ~15.
+#define SEARCH_STEP_DECAY 0.885f
 #define SEARCH_MIN_TAIL_WALK 0.14f
 
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
+static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations, LossFunction lossFunc) {
 	ControllerOutput output = {0};
+
+	// The caller supplies one target position per frame, so the target's motion
+	// comes from the position difference; the first call has none and scores the
+	// target where it is, exactly as the loss did before.
+	if (ctrl->hasPrevTarget) {
+		ctrl->targetVelocity = Float3_Scale(Float3_Sub(target, ctrl->prevTarget), 1.0f / deltaTime);
+	} else {
+		ctrl->targetVelocity = (float3){0.0f, 0.0f, 0.0f};
+	}
+	ctrl->prevTarget = target;
+	ctrl->hasPrevTarget = 1;
 
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
 	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
-	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
-	float learningRate = 0.05f;
+	float momentumCoefficient = 0.88f;	  // how much of the previous momentum to keep
+	float learningRate = 0.052f;
 	// Finite-difference probe span. At 0.025 the two probes differ by less than
 	// the loss's step-to-step noise, so the gradient direction is noise-driven;
 	// 0.05 (the flat 0.04-0.075 region) steers the same miss with ~22% less
@@ -327,6 +365,7 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	float epsilon = 0.05f;
 
 	float bestAxisLoss[3] = {FLT_MAX, FLT_MAX, FLT_MAX}; // best loss for yaw, pitch, roll
+	float bestAxisStep[3] = {0.0f, 0.0f, 0.0f}; // step that last improved each axis
 
 	// The iterate below is a momentum walk whose learning rate decays by 0.95
 	// per step, so the value it stops on is not necessarily the best control it
@@ -369,6 +408,9 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			if (lossNeg < bestAxisLoss[axis]) {
 				bestAxisLoss[axis] = lossNeg;
 			}
+
+			bestAxisStep[axis] = (lossPos <= lossNeg) ? (perturbedPositive[axis] - values[axis])
+													  : (perturbedNegative[axis] - values[axis]);
 
 			if (lossPos < bestProbeLoss) {
 				bestProbeLoss = lossPos;
@@ -416,11 +458,38 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
 	}
 
+	// Every candidate the walk scores moves a single axis, so the control it
+	// commands can never express a simultaneous move: the three improving
+	// directions are applied together at the converged iterate and scored as one
+	// more candidate.  One extra loss evaluation per call; the walk itself is
+	// untouched, so the command is bit-identical whenever this candidate loses.
+	float combined[3] = {
+		fmaxf(0.0f, fminf(1.0f, values[0] + bestAxisStep[0])),
+		fmaxf(0.0f, fminf(1.0f, values[1] + bestAxisStep[1])),
+		fmaxf(0.0f, fminf(1.0f, values[2] + bestAxisStep[2])),
+	};
+	float combinedLoss = lossFunc(ctrl, combined, target, deltaTime);
+	if (combinedLoss < bestProbeLoss) {
+		bestProbeLoss = combinedLoss;
+		bestProbe[0] = combined[0];
+		bestProbe[1] = combined[1];
+		bestProbe[2] = combined[2];
+	}
+
 	// Command the best control the search actually scored, not the iterate the
 	// momentum walk happened to stop on.
 	output.Rudder = bestProbe[0];
 	output.Elevator = bestProbe[1];
-	output.Aileron = bestProbe[2];
+	// The horizon cannot price roll: the heading change a bank buys arrives
+	// through the banked-turn coupling, which needs seconds to accumulate, so
+	// inside the 0.6 s the search simulates every roll candidate scores within
+	// a few metres of neutral and the walk parks the aileron ~1% off neutral
+	// (measured mean |aileron-0.5| 0.007 over the suite) while the command is
+	// re-issued every frame and the bank does build up.  Extrapolating the roll
+	// channel around neutral by half a box width gives the search's own roll
+	// direction the authority the horizon was hiding; the elevator and rudder
+	// axes are left exactly as searched.
+	output.Aileron = fmaxf(0.0f, fminf(1.0f, 0.5f + 1.5f * (bestProbe[2] - 0.5f)));
 
 	output.RudderLoss = bestAxisLoss[0];
 	output.ElevatorLoss = bestAxisLoss[1];
