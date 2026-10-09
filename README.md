@@ -11,6 +11,7 @@
 - [ ] Add back images to repo
 
 - [ ] add MipMaps for textures and add bilinear samplings
+  - [ ] min map resolution (original, medium, low) probably use box blur 3x3 kernel for this
   - [ ] mipMaps are generated on object leading
   - [ ] test different implementations for max performance
 
