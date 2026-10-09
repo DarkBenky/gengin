@@ -31,12 +31,16 @@ QUERY_FILE_ARG=""
 USAGE_FILE_ARG=""
 ROUTE_MAX_CONTEXT=""
 ROUTE_FALLBACK=""
+ROUTE_BUDGET=""
+WAIT_OFFPEAK=0
 
 usage() {
   echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
   echo "       $0 ml [local|openrouter|deepseek] [model] [--goal TEXT] [--headless]"
   echo "       $0 openrouter PRIMARY --max-context 99K FALLBACK [--goal TEXT]"
+  echo "       $0 openrouter PRIMARY --max-context 99K --budget 15 deepseek"
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
+  echo "       --budget USD session spend cap; --wait-offpeak waits for half-price hours"
 }
 
 parse_tokens() {
@@ -119,6 +123,11 @@ while [[ $# -gt 0 ]]; do
     --fallback-model)
       [[ $# -ge 2 ]] || { echo "error: --fallback-model needs a value" >&2; exit 2; }
       ROUTE_FALLBACK="$2"; shift 2 ;;
+    --budget)
+      [[ $# -ge 2 ]] || { echo "error: --budget needs a value" >&2; exit 2; }
+      ROUTE_BUDGET="$2"; shift 2 ;;
+    --wait-offpeak)
+      WAIT_OFFPEAK=1; shift ;;
     --dry-run)
       DRY_RUN=1; shift ;;
     -h|--help)
@@ -261,6 +270,10 @@ if [[ -z "$route_fallback" ]]; then
 fi
 route_ttl="$(grep -E '^GENGIN_ROUTE_TTL_SECONDS=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 route_ttl="${route_ttl:-86400}"
+route_budget="${ROUTE_BUDGET:-}"
+if [[ -z "$route_budget" ]]; then
+  route_budget="$(grep -E '^GENGIN_ROUTE_BUDGET_USD=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+fi
 route_enabled=0
 if [[ -n "$route_max_context" || -n "$route_fallback" ]]; then
   if [[ "$PRESET" == "local" || "$PRESET" == "deepseek" ]]; then
@@ -312,6 +325,33 @@ if [[ "$route_enabled" -eq 1 ]]; then
     echo "error: invalid primary model: $route_primary" >&2; exit 2; }
   [[ "$route_ttl" =~ ^[0-9]+$ ]] && [ "$route_ttl" -ge 60 ] && [ "$route_ttl" -le 604800 ] || {
     echo "error: GENGIN_ROUTE_TTL_SECONDS must be 60..604800 seconds: $route_ttl" >&2; exit 2; }
+  if [[ -n "$route_budget" ]]; then
+    [[ "$route_budget" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+      echo "error: --budget expects a positive USD amount, got: $route_budget" >&2; exit 2; }
+    awk "BEGIN{exit !($route_budget > 0)}" || {
+      echo "error: --budget must be greater than 0, got: $route_budget" >&2; exit 2; }
+  fi
+  if [[ "$route_fallback_direct" -eq 1 ]]; then
+    # DeepSeek halves its prices outside the peak windows: warn, and optionally
+    # wait, so a long session does not run at full price.
+    offpeak_rc=0
+    offpeak_out="$(python3 "$LLMOPT_DIR/deepseek_pricing.py" status 2>&1)" || offpeak_rc=$?
+    if [[ "$offpeak_rc" -ne 0 ]]; then
+      echo "[off-peak] $offpeak_out" >&2
+      if [[ "$WAIT_OFFPEAK" -eq 1 || "${GENGIN_OFFPEAK_WAIT:-0}" == "1" ]]; then
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+          echo "[off-peak] dry-run: would wait for the half-price window"
+        else
+          echo "[off-peak] waiting for the half-price window..." >&2
+          python3 "$LLMOPT_DIR/deepseek_pricing.py" wait || echo "[off-peak] warning: wait failed - continuing" >&2
+        fi
+      else
+        echo "[off-peak] tip: --wait-offpeak starts the session in the half-price window" >&2
+      fi
+    elif [[ -n "$offpeak_out" ]]; then
+      echo "[off-peak] $offpeak_out"
+    fi
+  fi
   route_tokens="$(parse_tokens "$route_max_context")" || {
     echo "error: --max-context expects a token count like 99000 or 99K, got: $route_max_context" >&2
     exit 2; }
@@ -334,15 +374,16 @@ if [[ "$route_enabled" -eq 1 ]]; then
       echo "error: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT — start it with $SCRIPT_DIR/setup-openrouter-proxy.sh" >&2
       exit 2
     fi
-    route_json="$(printf '{"members":["%s",%s],"maxContext":%s,"ttlSeconds":%s,"label":"gengin-opt"%s}' \
+    route_json="$(printf '{"members":["%s",%s],"maxContext":%s,"ttlSeconds":%s,"label":"gengin-opt"%s%s}' \
       "$route_primary" "$route_fallback_member" "$route_tokens" "$route_ttl" \
-      "${route_ds_key:+,\"deepseekKey\":\"$route_ds_key\"}")"
+      "${route_ds_key:+,\"deepseekKey\":\"$route_ds_key\"}" \
+      "${route_budget:+,\"budgetUsd\":$route_budget}")"
     if ! curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' \
         -d "$route_json" "http://127.0.0.1:$PROXY_PORT/route/register" >/dev/null 2>&1; then
       echo "error: route registration failed on http://127.0.0.1:$PROXY_PORT/route/register (a proxy running before the route feature must be restarted: systemctl --user restart gengin-openrouter-proxy)" >&2
       exit 2
     fi
-    echo "[route] $route_primary -> $route_fallback_label at $route_tokens prompt tokens (ttl ${route_ttl}s)"
+    echo "[route] $route_primary -> $route_fallback_label at $route_tokens prompt tokens (ttl ${route_ttl}s${route_budget:+, budget \$$route_budget})"
   fi
 fi
 

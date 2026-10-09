@@ -53,7 +53,11 @@ chunk when streaming) plus a conservative estimate of the text added since.
 This targets price tiers (Haiku input costs 5x above a 100K prompt), not
 context windows.  Registration lives in proxy memory, expires after its TTL,
 and is inspectable at `GET /route`; `POST /route/clear` removes it
-(routeId-guarded).
+(routeId-guarded).  The direct leg's cost is computed from DeepSeek's price
+table (off-peak aware, llmOpt/deepseek_pricing.py); every served request lands
+in a SQLite log with a dashboard at `GET /logs`; and a route can carry a
+session budget (`budgetUsd`) that injects a warning at the configured
+fraction and at 95%, and stops the conversation with HTTP 402 once spent.
 
 Standard library only (http.server + urllib), streaming-safe: response bodies
 are relayed with chunked transfer encoding as they arrive, so SSE completions
@@ -78,6 +82,9 @@ Env knobs (all optional):
   GENGIN_PROXY_LOG=-            # "-" = stderr, or an absolute file path
   GENGIN_PROXY_ROUTE_CHARS_PER_TOKEN=3  # estimate divisor; lower = switch sooner
   GENGIN_PROXY_DEEPSEEK_UPSTREAM=https://api.deepseek.com
+  GENGIN_PROXY_LOG_DB=<llmOpt>/state/requests.db  # "" or 0 disables the log
+  GENGIN_PROXY_BUDGET_WARN=0.8         # session-budget warning fraction
+  GENGIN_PROXY_BUDGET_TEXT=...         # replace the budget warning text
 """
 
 import copy
@@ -86,6 +93,7 @@ import json
 import os
 import random
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -93,6 +101,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import deepseek_pricing  # noqa: E402  (llmOpt/deepseek_pricing.py)
 
 PORT = int(os.environ.get("GENGIN_PROXY_PORT", "8787") or 8787)
 BIND = os.environ.get("GENGIN_PROXY_BIND", "127.0.0.1")
@@ -136,6 +147,27 @@ except ValueError:
     ROUTE_CHARS_PER_TOKEN = 3.0
 if ROUTE_CHARS_PER_TOKEN <= 0:
     ROUTE_CHARS_PER_TOKEN = 3.0
+
+# Request log (SQLite, served as a dashboard at GET /logs) and the session
+# budget (warn at a fraction of budgetUsd, hard-stop at 100%).
+LOG_DB = (os.environ.get("GENGIN_PROXY_LOG_DB")
+          or os.path.join(os.path.dirname(os.path.dirname(
+              os.path.abspath(__file__))), "state", "requests.db"))
+if LOG_DB.strip().lower() in ("", "0", "off"):
+    LOG_DB = ""
+try:
+    BUDGET_WARN_FRACTION = float(
+        os.environ.get("GENGIN_PROXY_BUDGET_WARN", "0.8") or 0.8)
+except ValueError:
+    BUDGET_WARN_FRACTION = 0.8
+if not 0.1 <= BUDGET_WARN_FRACTION <= 0.95:
+    BUDGET_WARN_FRACTION = 0.8
+BUDGET_TEXT = os.environ.get("GENGIN_PROXY_BUDGET_TEXT") or (
+    "[budget] Session spend is ${spent:.2f} of the ${budget:.2f} cap "
+    "({pct}%). Wrap up safely: finish the current measurement, record the "
+    "results, and update codebase_context.md - the session stops when the "
+    "cap is reached."
+)
 
 # OpenRouter slug variants: `:floor`/`:nitro`/`:free` and friends are
 # documented. Any other suffix in a model id is a caller-chosen provider or
@@ -747,6 +779,12 @@ def _route_register(payload):
     label = payload.get("label", "")
     if not isinstance(label, str) or len(label) > 80:
         return 400, {"error": {"message": "route: label must be a short string"}}
+    budget = payload.get("budgetUsd")
+    if budget is not None and (isinstance(budget, bool)
+                               or not isinstance(budget, (int, float))
+                               or not 0 < budget <= 1000000):
+        return 400, {"error": {"message":
+            "route: budgetUsd must be a positive number"}}
     deepseek_key = payload.get("deepseekKey", "")
     if not isinstance(deepseek_key, str) or len(deepseek_key) > 512:
         return 400, {"error": {"message": "route: deepseekKey must be a short string"}}
@@ -769,6 +807,10 @@ def _route_register(payload):
                       "costUsd": 0.0} for _ in members],
         "switches": 0,
         "deepseekKey": deepseek_key,
+        "budgetUsd": float(budget) if budget is not None else None,
+        "spentUsd": 0.0,
+        "warnLevel": 0,
+        "budgetPending": None,
     }
     with _lock:
         replaced = _route is not None
@@ -782,7 +824,9 @@ def _route_register(payload):
     return 200, {"routeId": spec["routeId"],
                  "members": [m["model"] for m in members],
                  "upstreams": [m["upstream"] for m in members],
-                 "maxContext": spec["maxContext"], "expiresAt": spec["expiresAt"]}
+                 "maxContext": spec["maxContext"],
+                 "budgetUsd": spec["budgetUsd"],
+                 "expiresAt": spec["expiresAt"]}
 
 
 def _route_clear(payload):
@@ -822,6 +866,10 @@ def _route_status():
             "expiresAt": route["expiresAt"],
             "conversations": len(route["conversations"]),
             "switches": route["switches"],
+            "budgetUsd": route.get("budgetUsd"),
+            "spentUsd": round(route.get("spentUsd", 0.0), 6),
+            "remainingUsd": (round(route["budgetUsd"] - route.get("spentUsd", 0.0), 6)
+                             if route.get("budgetUsd") else None),
             "counters": [dict(counter) for counter in route["counters"]],
             "lastConversations": conversations,
         }
@@ -885,8 +933,40 @@ def _route_apply(body, model, raw_len, conversation):
     return model, info
 
 
+def _response_cost(upstream, model, usage, when=None):
+    """Cost of one response: provider-reported when present (OpenRouter sends
+    `usage.cost`), computed from the price table for the direct DeepSeek leg."""
+    cost = None
+    if isinstance(usage, dict):
+        raw = usage.get("cost")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            cost = float(raw)
+    if cost is None and upstream == "deepseek":
+        cost = deepseek_pricing.cost_usd(model, usage, when)
+    return cost
+
+
+def _budget_take(route):
+    """Consume a queued budget warning (injected into the next request)."""
+    with _lock:
+        note = route.get("budgetPending")
+        route["budgetPending"] = None
+    return note or ""
+
+
+def _budget_block(route):
+    """Stop message when the session budget is exhausted, else ''."""
+    budget = route.get("budgetUsd")
+    spent = route.get("spentUsd", 0.0)
+    if budget and spent >= budget:
+        return (f"proxy: session budget exhausted (${spent:.2f} of "
+                f"${budget:.2f} spent) - start a new session or raise the budget")
+    return ""
+
+
 def _route_observe(conversation, info, tap, raw_len):
-    """Record the response's usage for the next request's estimate."""
+    """Record the response's usage for the next request's estimate, add its
+    cost to the session total, and queue a warning at the budget thresholds."""
     if info is None or tap is None:
         return
     usage = tap.usage
@@ -896,7 +976,9 @@ def _route_observe(conversation, info, tap, raw_len):
     member = info["member"]
     prompt = usage.get("prompt_tokens")
     completion = usage.get("completion_tokens")
-    cost = usage.get("cost")
+    cost_value = _response_cost(info.get("upstream"),
+                                route["members"][member]["model"], usage)
+    warning = ""
     with _lock:
         counters = route["counters"][member]
         counters["requests"] += 1
@@ -904,8 +986,20 @@ def _route_observe(conversation, info, tap, raw_len):
             counters["promptTokens"] += prompt
         if isinstance(completion, int) and not isinstance(completion, bool):
             counters["completionTokens"] += completion
-        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
-            counters["costUsd"] += float(cost)
+        if cost_value is not None:
+            counters["costUsd"] += cost_value
+            route["spentUsd"] = route.get("spentUsd", 0.0) + cost_value
+            budget = route.get("budgetUsd")
+            if budget:
+                spent = route["spentUsd"]
+                level = (2 if spent >= budget * 0.95
+                         else 1 if spent >= budget * BUDGET_WARN_FRACTION else 0)
+                if level > route.get("warnLevel", 0):
+                    route["warnLevel"] = level
+                    route["budgetPending"] = BUDGET_TEXT.format(
+                        spent=spent, budget=budget, pct=int(100 * spent / budget))
+                    warning = (f"budget warn={level} spent={spent:.4f}"
+                               f"/{budget:.4f}")
         if (conversation and isinstance(prompt, int)
                 and not isinstance(prompt, bool) and prompt > 0):
             state = route["conversations"].get(conversation)
@@ -914,6 +1008,227 @@ def _route_observe(conversation, info, tap, raw_len):
                 route["conversations"][conversation] = state
             state["lastPrompt"] = prompt
             state["lastChars"] = raw_len
+    if warning:
+        _log_line(warning)
+
+
+# --- request log -----------------------------------------------------------
+# One SQLite row per served request (tokens, cost, session, timing); served as
+# a small dashboard at GET /logs - the OpenRouter logs panel equivalent for
+# whatever runs through this proxy, including the direct DeepSeek leg.
+
+_LOG_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS requests (ts REAL, date TEXT, route_id TEXT,"
+    " label TEXT, conv TEXT, model TEXT, upstream TEXT, stream INTEGER,"
+    " status INTEGER, ms INTEGER, prompt INTEGER, completion INTEGER,"
+    " cache_hit INTEGER, cache_miss INTEGER, cost REAL, retry INTEGER,"
+    " flags TEXT)")
+_LOG_COLUMNS = ("ts", "date", "route_id", "label", "conv", "model", "upstream",
+                "stream", "status", "ms", "prompt", "completion", "cache_hit",
+                "cache_miss", "cost", "retry", "flags")
+_log_lock = threading.Lock()
+
+
+def _usage_fields(usage):
+    """(prompt, completion, cache_hit, cache_miss); ints or None per field."""
+    def _int(value):
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+    if not isinstance(usage, dict):
+        return None, None, None, None
+    hit = _int(usage.get("prompt_cache_hit_tokens"))
+    if hit is None:
+        details = usage.get("prompt_tokens_details")
+        hit = _int(details.get("cached_tokens")) if isinstance(details, dict) else None
+    return (_int(usage.get("prompt_tokens")), _int(usage.get("completion_tokens")),
+            hit, _int(usage.get("prompt_cache_miss_tokens")))
+
+
+def _log_entry(model, upstream, route_info, conversation, status, ms, streamed,
+               retried, applied, skip_reason, coach, budget, cached, backfilled,
+               tap):
+    """One log row for a served request; None when logging is disabled."""
+    if not LOG_DB:
+        return None
+    usage = tap.usage if tap is not None else None
+    prompt, completion, hit, miss = _usage_fields(usage)
+    route = route_info["route"] if route_info else None
+    flags = "+".join(part for part in (
+        ("inject:" + "+".join(applied)) if applied else "",
+        ("skip:" + skip_reason) if skip_reason else "",
+        "coach" if coach else "",
+        "budget" if budget else "",
+        ("reasoning:%d+%d" % (cached, backfilled)) if (cached or backfilled) else "",
+        "retry" if retried else "",
+    ) if part)
+    return {
+        "ts": time.time(),
+        "date": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "route_id": route["routeId"] if route else "",
+        "label": route["label"] if route else "",
+        "conv": conversation or "",
+        "model": model,
+        "upstream": upstream,
+        "stream": 1 if streamed else 0,
+        "status": int(status or 0),
+        "ms": int(ms),
+        "prompt": prompt,
+        "completion": completion,
+        "cache_hit": hit,
+        "cache_miss": miss,
+        "cost": _response_cost(upstream, model, usage),
+        "retry": 1 if retried else 0,
+        "flags": flags,
+    }
+
+
+def _log_request(entry):
+    try:
+        with _log_lock:
+            connection = sqlite3.connect(LOG_DB, timeout=5)
+            try:
+                connection.execute(_LOG_SCHEMA)
+                connection.execute(
+                    "INSERT INTO requests (" + ", ".join(_LOG_COLUMNS) + ") VALUES ("
+                    + ", ".join(":" + column for column in _LOG_COLUMNS) + ")",
+                    entry)
+                connection.commit()
+            finally:
+                connection.close()
+    except sqlite3.Error as exc:
+        _log_line(f"request log error: {type(exc).__name__}: {exc}")
+
+
+def _logs_data(query):
+    """Rows + totals for the /logs dashboard (query is a parse_qs dict)."""
+    try:
+        window = float((query.get("window") or ["86400"])[0])
+    except ValueError:
+        window = 86400.0
+    try:
+        limit = int((query.get("limit") or ["1000"])[0])
+    except ValueError:
+        limit = 1000
+    limit = max(1, min(5000, limit))
+    since = (time.time() - window) if window > 0 else 0.0
+    response = {"rows": [], "totals": {"requests": 0, "cost": 0.0, "prompt": 0,
+                                       "completion": 0, "cache_hit": 0}}
+    if not LOG_DB:
+        return response
+    try:
+        with _log_lock:
+            connection = sqlite3.connect(LOG_DB, timeout=5)
+            try:
+                connection.execute(_LOG_SCHEMA)
+                rows = connection.execute(
+                    "SELECT " + ", ".join(_LOG_COLUMNS)
+                    + " FROM requests WHERE ts >= ? ORDER BY ts DESC LIMIT ?",
+                    (since, limit)).fetchall()
+                totals = connection.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(cost), 0),"
+                    " COALESCE(SUM(prompt), 0), COALESCE(SUM(completion), 0),"
+                    " COALESCE(SUM(cache_hit), 0) FROM requests WHERE ts >= ?",
+                    (since,)).fetchone()
+            finally:
+                connection.close()
+        response["rows"] = [dict(zip(_LOG_COLUMNS, row)) for row in rows]
+        response["totals"] = {"requests": totals[0], "cost": totals[1],
+                              "prompt": totals[2], "completion": totals[3],
+                              "cache_hit": totals[4]}
+    except sqlite3.Error as exc:
+        response["error"] = f"{type(exc).__name__}: {exc}"
+    return response
+
+
+LOGS_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>gengin request logs</title>
+<style>
+ body{background:#151517;color:#e9e9ec;font:13px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;padding:18px 22px}
+ h1{font-size:15px;font-weight:600;margin:0 0 12px;color:#cfcfd6}
+ select,button{background:#232328;color:#e9e9ec;border:1px solid #3a3a42;border-radius:6px;padding:4px 8px;font:inherit}
+ .cards{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0 10px}
+ .card{background:#1c1c21;border:1px solid #2b2b33;border-radius:8px;padding:8px 12px;min-width:120px}
+ .card span{color:#8b8b94;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+ .card b{display:block;font-size:16px;margin-top:2px;font-weight:600}
+ .chart{display:flex;align-items:flex-end;gap:3px;height:140px;background:#1c1c21;border:1px solid #2b2b33;border-radius:8px;padding:22px 10px 10px;overflow:hidden}
+ .bar{flex:1;background:#3ecf8e;min-width:3px;border-radius:2px 2px 0 0;position:relative}
+ .bar:hover{background:#63e2aa}
+ .barlabel{position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;color:#a8a8b0;display:none;z-index:2}
+ .bar:hover .barlabel{display:block}
+ .empty{color:#77777f;padding:40px 10px;margin:auto}
+ table{width:100%;border-collapse:collapse;margin-top:14px;font-size:12px}
+ th,td{padding:4px 8px;text-align:left;border-bottom:1px solid #26262c;white-space:nowrap}
+ th{color:#8b8b94;font-weight:500;position:sticky;top:0;background:#151517}
+ tr:hover td{background:#1b1b20}
+ td.num,th.num{text-align:right}
+ .up{color:#8fb4ff}.ds{color:#3ecf8e}
+ .muted{color:#77777f}
+</style></head><body>
+<h1>gengin request logs <span class="muted" id="range"></span></h1>
+<div>
+ window <select id="window">
+  <option value="3600">1h</option><option value="86400" selected>24h</option>
+  <option value="604800">7d</option><option value="2592000">30d</option><option value="0">all</option>
+ </select>
+ metric <select id="metric">
+  <option value="cost_day">cost / day</option>
+  <option value="cost_session">cost / session</option>
+  <option value="req_day">requests / day</option>
+  <option value="hit_day">cache-hit tokens / day</option>
+  <option value="tok_day">input tokens / day</option>
+ </select>
+ <button onclick="load()">refresh</button> <span class="muted">auto-refresh 30s</span>
+</div>
+<div class="cards" id="cards"></div>
+<div class="chart" id="chart"></div>
+<div style="overflow:auto;max-height:58vh"><table id="table"></table></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtTok = (v) => v == null ? '-' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'k' : String(v);
+const fmtCost = (v) => v == null ? '-' : '$' + Number(v).toFixed(5);
+function card(label, value) { return '<div class="card"><span>' + label + '</span><b>' + value + '</b></div>'; }
+function esc(text) { return String(text == null ? '' : text).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function sessionName(r) { return (r.label || 'manual') + ' #' + (r.route_id || 'anon').slice(0, 6); }
+async function load() {
+  const windowSec = Number($('window').value);
+  const metric = $('metric').value;
+  const res = await fetch('/logs/data?window=' + windowSec + '&limit=2000');
+  const data = await res.json();
+  const rows = data.rows || [];
+  const totals = data.totals || {};
+  $('range').textContent = windowSec ? '(' + rows.length + ' rows shown)' : '(all time)';
+  $('cards').innerHTML = card('requests', totals.requests || 0) + card('cost', fmtCost(totals.cost)) + card('input', fmtTok(totals.prompt)) + card('output', fmtTok(totals.completion)) + card('cache-hit', fmtTok(totals.cache_hit));
+  const groups = new Map();
+  const add = (key, value) => groups.set(key, (groups.get(key) || 0) + value);
+  if (metric === 'cost_session') {
+    for (const r of rows) add(sessionName(r), r.cost || 0);
+  } else {
+    const byDay = windowSec > 172800 || windowSec === 0;
+    for (const r of rows) {
+      const key = byDay ? r.date.slice(0, 10) : r.date.slice(0, 13) + ':00';
+      const value = metric === 'cost_day' ? (r.cost || 0) : metric === 'req_day' ? 1 : metric === 'hit_day' ? (r.cache_hit || 0) : (r.prompt || 0);
+      add(key, value);
+    }
+  }
+  let items = [...groups.entries()].sort((a, b) => metric === 'cost_session' ? b[1] - a[1] : String(a[0]).localeCompare(String(b[0])));
+  if (metric === 'cost_session') items = items.slice(0, 24);
+  const max = Math.max(...items.map((pair) => pair[1]), 0.000001);
+  $('chart').innerHTML = items.length ? items.map((pair) =>
+    '<div class="bar" style="height:' + Math.max(2, (pair[1] / max) * 100) + '%"><span class="barlabel">' +
+    esc(pair[0]) + ' - ' + (metric.includes('cost') ? fmtCost(pair[1]) : fmtTok(pair[1])) + '</span></div>').join('') : '<div class="empty">no requests recorded yet</div>';
+  const cols = [['date', 0], ['session', 0], ['model', 0], ['provider', 0], ['input', 1], ['output', 1], ['cached', 1], ['cost', 1], ['ms', 1], ['status', 1]];
+  let html = '<thead><tr>' + cols.map((c) => '<th' + (c[1] ? ' class="num"' : '') + '>' + c[0] + '</th>').join('') + '</tr></thead><tbody>';
+  for (const r of rows.slice(0, 800)) {
+    const provider = r.upstream === 'deepseek' ? '<span class="ds">deepseek</span>' : '<span class="up">openrouter</span>';
+    html += '<tr><td>' + esc(r.date) + '</td><td>' + esc(sessionName(r)) + '</td><td>' + esc(r.model) + '</td><td>' + provider + '</td><td class="num">' + fmtTok(r.prompt) + '</td><td class="num">' + fmtTok(r.completion) + '</td><td class="num">' + fmtTok(r.cache_hit) + '</td><td class="num">' + fmtCost(r.cost) + '</td><td class="num">' + (r.ms == null ? '-' : r.ms) + '</td><td class="num">' + (r.status == null ? '-' : r.status) + '</td></tr>';
+  }
+  $('table').innerHTML = html + '</tbody>';
+}
+$('window').addEventListener('change', load);
+$('metric').addEventListener('change', load);
+load();
+setInterval(load, 30000);
+</script></body></html>
+"""
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -996,6 +1311,14 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_page(self, status, html):
+        data = html.encode("utf-8")
+        self.send_response_only(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _upstream_request(self, body, headers, upstream="openrouter", key=""):
         if upstream == "deepseek":
             headers = dict(headers)
@@ -1018,6 +1341,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/route":
             self._send_json(200, _route_status())
+            return
+        if self.path == "/logs":
+            self._send_page(200, LOGS_HTML)
+            return
+        if self.path.startswith("/logs/data"):
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            self._send_json(200, _logs_data(query))
             return
         if self.path == "/status":
             with _lock:
@@ -1089,7 +1419,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     "proxy: the deepseek chain leg has no API key"}})
                 return
 
+        if route_info is not None:
+            blocked = _budget_block(route_info["route"])
+            if blocked:
+                _log_line(f"POST {self.path} model={model} budget=block "
+                          f"spent={route_info['route'].get('spentUsd', 0.0):.4f}")
+                self._send_json(402, {"error": {"message": blocked}})
+                return
+
         reason_field = ""
+        cached = backfilled = 0
         if upstream_kind == "deepseek":
             # Thinking mode requires reasoning_content on the replayed
             # assistant messages; harnesses drop it, so restore what this
@@ -1107,11 +1446,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
         # Coach note goes into this request only - never into `original`, so the
         # unfiltered retry still carries the caller's own turn.
         coach_note = ""
+        budget_note = ""
         messages = body.get("messages")
         if isinstance(messages, list):
             coach_note = _coach_take(body)
             if coach_note:
                 messages.append({"role": "user", "content": coach_note})
+            if route_info is not None:
+                budget_note = _budget_take(route_info["route"])
+                if budget_note:
+                    messages.append({"role": "user", "content": budget_note})
 
         started = time.monotonic()
 
@@ -1187,12 +1531,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
         _log_line(
             f"POST {self.path} model={model} inject={'+'.join(applied) or '-'} "
             f"skip={skip_reason or '-'} coach={1 if coach_note else 0} "
+            f"budget={1 if budget_note else 0} "
             f"status={status} stream={1 if streamed else 0} "
             f"retry={1 if retried else 0} ms={elapsed_ms}{route_field}{reason_field}"
         )
 
         tap = (_ResponseTap(streamed)
-               if (conversation or route_info is not None) else None)
+               if (LOG_DB or conversation or route_info is not None) else None)
         try:
             self._send_upstream_status(_status_of(upstream), upstream.headers)
             self._relay_body(upstream, buffered, tap)
@@ -1202,6 +1547,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
             _coach_observe(conversation, tap)
             _route_observe(conversation, route_info, tap, len(raw))
             _reasoning_observe(conversation, route_info, tap)
+            entry = _log_entry(model, upstream_kind, route_info, conversation,
+                               status, elapsed_ms, streamed, retried, applied,
+                               skip_reason, bool(coach_note), bool(budget_note),
+                               cached, backfilled, tap)
+            if entry is not None:
+                _log_request(entry)
 
     do_PUT = do_POST
     do_PATCH = do_POST

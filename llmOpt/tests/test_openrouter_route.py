@@ -405,5 +405,64 @@ class ReasoningReplayTests(unittest.TestCase):
         self.assertEqual(cached, 0)
 
 
+class DeepSeekBudgetTests(unittest.TestCase):
+    def setUp(self):
+        proxy._route = None
+
+    def tearDown(self):
+        proxy._route = None
+
+    def test_cost_table_and_offpeak_windows(self):
+        import datetime
+
+        def utc(*parts):
+            return datetime.datetime(
+                *parts, tzinfo=datetime.timezone.utc).timestamp()
+
+        peak = utc(2026, 10, 7, 2, 0)       # Wednesday 02:00 UTC
+        off = utc(2026, 10, 7, 5, 0)        # Wednesday 05:00 UTC
+        weekend = utc(2026, 10, 10, 2, 0)   # Saturday
+        usage = {"prompt_tokens": 1000000, "completion_tokens": 1000000,
+                 "prompt_cache_hit_tokens": 400000,
+                 "prompt_cache_miss_tokens": 600000}
+        self.assertFalse(proxy.deepseek_pricing.is_offpeak(peak))
+        self.assertTrue(proxy.deepseek_pricing.is_offpeak(off))
+        self.assertTrue(proxy.deepseek_pricing.is_offpeak(weekend))
+        self.assertAlmostEqual(proxy.deepseek_pricing.cost_usd(
+            "deepseek-flash", usage, peak), 1.3824, places=6)
+        self.assertAlmostEqual(proxy.deepseek_pricing.cost_usd(
+            "deepseek-flash", usage, off), 0.6912, places=6)
+
+    def test_budget_warning_then_block(self):
+        status, _ = proxy._route_register({
+            "members": [PRIMARY, {"model": "deepseek-v4-flash",
+                                  "upstream": "deepseek"}],
+            "maxContext": 1000, "deepseekKey": "sk-test", "budgetUsd": 10})
+        self.assertEqual(status, 200)
+        route = proxy._route
+        body = make_body()
+        _, info = proxy._route_apply(body, PRIMARY, 6000, "conv-budget")
+        tap = proxy._ResponseTap(False)
+        tap.usage = {"prompt_tokens": 500, "completion_tokens": 10,
+                     "cost": 8.6}
+        proxy._route_observe("conv-budget", info, tap, 6000)
+        self.assertGreater(route["spentUsd"], 8.0)
+        self.assertEqual(route["warnLevel"], 1)
+        self.assertIn("budget", proxy._budget_take(route).lower())
+        self.assertEqual(proxy._budget_take(route), "")
+        tap = proxy._ResponseTap(False)
+        tap.usage = {"prompt_tokens": 500, "completion_tokens": 10,
+                     "cost": 2.0}
+        proxy._route_observe("conv-budget", info, tap, 6000)
+        self.assertTrue(proxy._budget_block(route))
+
+    def test_budget_registration_validation(self):
+        for bad in (True, 0, -1, "10"):
+            status, _ = proxy._route_register({
+                "members": [PRIMARY, FALLBACK], "maxContext": 1000,
+                "budgetUsd": bad})
+            self.assertEqual(status, 400, bad)
+
+
 if __name__ == "__main__":
     unittest.main()

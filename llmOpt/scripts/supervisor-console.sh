@@ -34,14 +34,16 @@ SECRETS=/etc/gengin-llmopt/secrets.env
 PROXY_PORT="${GENGIN_PROXY_PORT:-8787}"
 
 usage() {
-  echo "usage: $0 [--max-context SIZE] [--fallback-model MODEL]"
+  echo "usage: $0 [--max-context SIZE] [--fallback-model MODEL] [--budget USD]"
   echo "       Run-level cost-aware route overrides (SIZE like 99K or 1M; both"
   echo "       flags must be given together). They win over llmOpt/.env"
   echo "       GENGIN_ROUTE_MAX_CONTEXT / GENGIN_ROUTE_FALLBACK_MODEL."
+  echo "       --budget caps the session spend (proxy warns, then stops at it)."
 }
 
 ROUTE_MAX_CONTEXT_ARG=""
 ROUTE_FALLBACK_ARG=""
+ROUTE_BUDGET_ARG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --max-context)
@@ -50,6 +52,9 @@ while [[ $# -gt 0 ]]; do
     --fallback-model)
       [[ $# -ge 2 ]] || { echo "error: --fallback-model needs a value" >&2; exit 2; }
       ROUTE_FALLBACK_ARG="$2"; shift 2 ;;
+    --budget)
+      [[ $# -ge 2 ]] || { echo "error: --budget needs a value" >&2; exit 2; }
+      ROUTE_BUDGET_ARG="$2"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -67,6 +72,11 @@ if [[ -n "$ROUTE_MAX_CONTEXT_ARG" || -n "$ROUTE_FALLBACK_ARG" ]]; then
   [[ "$ROUTE_FALLBACK_ARG" =~ ^[A-Za-z0-9._:/-]+$ ]] || {
     echo "error: invalid --fallback-model: $ROUTE_FALLBACK_ARG" >&2
     exit 2; }
+fi
+
+if [[ -n "$ROUTE_BUDGET_ARG" ]]; then
+  [[ "$ROUTE_BUDGET_ARG" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+    echo "error: --budget expects a positive USD amount" >&2; exit 2; }
 fi
 
 [[ -f "$SECRETS" ]] || { echo "error: missing $SECRETS" >&2; exit 1; }
@@ -143,6 +153,9 @@ if [[ -n "$ROUTE_MAX_CONTEXT_ARG" ]]; then
 fi
 if [[ -n "$ROUTE_FALLBACK_ARG" ]]; then
   route_env+=("GENGIN_ROUTE_FALLBACK_MODEL=$ROUTE_FALLBACK_ARG")
+fi
+if [[ -n "$ROUTE_BUDGET_ARG" ]]; then
+  route_env+=("GENGIN_ROUTE_BUDGET_USD=$ROUTE_BUDGET_ARG")
 fi
 if [[ ${#route_env[@]} -gt 0 ]]; then
   echo "route override: ${route_env[*]}"

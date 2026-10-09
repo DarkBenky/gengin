@@ -96,6 +96,7 @@ KNOWN_KEYS = {
     "GENGIN_ROUTE_MAX_CONTEXT",
     "GENGIN_ROUTE_FALLBACK_MODEL",
     "GENGIN_ROUTE_TTL_SECONDS",
+    "GENGIN_ROUTE_BUDGET_USD",
     "SESSION_TIMEOUT_SECONDS",
     "BUDGET_POLL_SECONDS",
     "KEY_EXPIRY_GRACE_SECONDS",
@@ -315,6 +316,7 @@ class Config:
     route_fallback_direct: bool = False
     route_max_context_tokens: int = 0
     route_ttl_seconds: int = 0
+    route_budget_usd: float = 0.0
     management_key: str = ""
 
     def mcp_python(self):
@@ -462,6 +464,18 @@ def load_config(require_management_key=True):
                       f"{route_fallback_model!r}")
     route_ttl_seconds = parse_optional_int(
         values, "GENGIN_ROUTE_TTL_SECONDS", (60, 604800), errors) or 0
+    route_budget_raw = (os.environ.get("GENGIN_ROUTE_BUDGET_USD", "").strip()
+                        or values.get("GENGIN_ROUTE_BUDGET_USD", "").strip())
+    route_budget_usd = 0.0
+    if route_budget_raw:
+        try:
+            route_budget_usd = float(route_budget_raw)
+            if not 0 < route_budget_usd <= 1000000:
+                raise ValueError(route_budget_raw)
+        except ValueError:
+            errors.append("GENGIN_ROUTE_BUDGET_USD: must be a number in "
+                          "(0, 1000000]")
+            route_budget_usd = 0.0
 
     if model is not None and "/" not in model:
         errors.append("OPENROUTER_MODEL: expected provider/model format")
@@ -526,6 +540,7 @@ def load_config(require_management_key=True):
         route_fallback_direct=route_fallback_direct,
         route_max_context_tokens=route_max_context_tokens,
         route_ttl_seconds=route_ttl_seconds,
+        route_budget_usd=route_budget_usd,
         management_key=management_key,
     )
     if errors:
@@ -1728,6 +1743,8 @@ def register_route(config):
     }
     if config.route_fallback_direct:
         registration["deepseekKey"] = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if config.route_budget_usd:
+        registration["budgetUsd"] = config.route_budget_usd
     url = f"http://127.0.0.1:{_route_proxy_port()}/route/register"
     try:
         request = urllib.request.Request(
@@ -1741,12 +1758,14 @@ def register_route(config):
     route = {"routeId": data.get("routeId", ""),
              "members": [m["model"] if isinstance(m, dict) else m
                          for m in registration["members"]],
-             "maxContext": registration["maxContext"]}
+             "maxContext": registration["maxContext"],
+             "budgetUsd": registration.get("budgetUsd")}
     chain = "->".join(
         m["model"] + "@" + m["upstream"] if isinstance(m, dict) else m
         for m in registration["members"])
     log("INFO", "route.registered", chain=chain,
         max_context=registration["maxContext"], ttl=ttl,
+        budget=registration.get("budgetUsd", "-"),
         route_id=route["routeId"] or "-")
     return route
 
