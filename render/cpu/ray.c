@@ -37,6 +37,17 @@ static inline Color PackColorFast01(float3 color) {
 static float s_aabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
 static int s_aabbSoaValid = 0;   // 0 -> the row kernel keeps the scalar pre-filter
 
+// Same group layout as s_aabbSoa, but for ALL objects: shadow and reflection
+// rays can hit objects the camera frustum culls.  rayCollision walks it 8
+// boxes per slab group with the ray's reciprocal direction hoisted out of the
+// per-batch test, instead of one RayBoxIntersectV4 call per 4 boxes (which
+// re-derives 1/dir and re-transposes the AoS pair on every call).  Built once
+// per frame on the main thread, read-only in the row kernels; keyed to the
+// object list it was built from so a stale cache can never be read.
+static float s_allAabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
+static const Object *s_allAabbSoaObjects = NULL;
+static int s_allAabbSoaCount = 0;
+
 static inline Color BlendColors50(Color a, Color b) {
 	return ((a & 0x00FEFEFEu) + (b & 0x00FEFEFEu)) >> 1;
 }
@@ -359,10 +370,59 @@ void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, S
 	poolWait(threadPool);
 }
 
+// Rebuild the all-objects AABB SoA for rayCollision (see s_allAabbSoa at the
+// top of this file).  Called from every RayTraceScene entry point right before
+// its tasks are dispatched, so the cache can never outlive the frame whose
+// world bounds it snapshotted.
+static void buildAllAabbSoa(const Object *objects, int objectCount) {
+	s_allAabbSoaObjects = NULL;
+	s_allAabbSoaCount = 0;
+	if (objectCount > RAY_AABB_SOA_BOXES) return;
+	for (int j = 0; j < objectCount; j++) {
+		const Object *o = &objects[j];
+		float *gp = s_allAabbSoa + (size_t)(j >> 3) * 48;
+		const int k = j & 7;
+		gp[0 * 8 + k] = o->worldBBmin.x;
+		gp[1 * 8 + k] = o->worldBBmax.x;
+		gp[2 * 8 + k] = o->worldBBmin.y;
+		gp[3 * 8 + k] = o->worldBBmax.y;
+		gp[4 * 8 + k] = o->worldBBmin.z;
+		gp[5 * 8 + k] = o->worldBBmax.z;
+	}
+	s_allAabbSoaObjects = objects;
+	s_allAabbSoaCount = objectCount;
+}
+
+// One 8-box slab group over the s_allAabbSoa layout [mnX8, mxX8, mnY8, mxY8,
+// mnZ8, mxZ8].  Per-lane op sequence replicates RayBoxIntersectV4 exactly
+// (sub then mul, same min/max tree, same miss sentinels) so the box decisions
+// are bit-identical; only the staging differs (SoA loads, no transpose,
+// invDir hoisted by the caller).
+static inline void raySlabGroup8(const float *gp, float3 ro, __m256 ivx, __m256 ivy, __m256 ivz,
+                                 float tMinA[8], float tMaxA[8]) {
+	const __m256 ox = _mm256_set1_ps(ro.x), oy = _mm256_set1_ps(ro.y), oz = _mm256_set1_ps(ro.z);
+	__m256 taX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 0), ox), ivx);
+	__m256 tbX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 8), ox), ivx);
+	__m256 taY = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 16), oy), ivy);
+	__m256 tbY = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 24), oy), ivy);
+	__m256 taZ = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 32), oz), ivz);
+	__m256 tbZ = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 40), oz), ivz);
+	__m256 tMin = _mm256_max_ps(_mm256_max_ps(_mm256_max_ps(_mm256_min_ps(taX, tbX), _mm256_min_ps(taY, tbY)), _mm256_min_ps(taZ, tbZ)), _mm256_setzero_ps());
+	__m256 tMax = _mm256_min_ps(_mm256_min_ps(_mm256_max_ps(taX, tbX), _mm256_max_ps(taY, tbY)), _mm256_max_ps(taZ, tbZ));
+	__m256 miss = _mm256_cmp_ps(tMin, tMax, _CMP_GT_OQ);
+	tMin = _mm256_blendv_ps(tMin, _mm256_set1_ps(FLT_MAX), miss);
+	tMax = _mm256_blendv_ps(tMax, _mm256_set1_ps(FLT_MIN), miss);
+	_mm256_storeu_ps(tMinA, tMin);
+	_mm256_storeu_ps(tMaxA, tMax);
+}
+
 static void rayCollision(Object *restrict objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, int *restrict hitObjIdx, int *restrict hitTriIdx, float3 *restrict hitPos) {
 	*hitObjIdx = -1;
 	if (hitTriIdx) *hitTriIdx = -1;
 	if (hitPos) *hitPos = (float3){0.0f, 0.0f, 0.0f};
+
+	const float *restrict soa = (objects == s_allAabbSoaObjects && objectCount == s_allAabbSoaCount)
+		? s_allAabbSoa : NULL;
 
 	// Fast shadow path (scalar, kept for reference)
 	// if (!hitTriIdx && !hitPos) {
@@ -381,6 +441,27 @@ static void rayCollision(Object *restrict objects, int objectCount, float3 rayOr
 
 	// Vectorized shadow path: 4 bbox checks per call, return on first hit
 	if (!hitTriIdx && !hitPos) {
+		if (soa) {
+			const __m256 ivx = _mm256_set1_ps(1.0f / rayDir.x);
+			const __m256 ivy = _mm256_set1_ps(1.0f / rayDir.y);
+			const __m256 ivz = _mm256_set1_ps(1.0f / rayDir.z);
+			for (int g = 0; g < objectCount; g += 8) {
+				float tMinA[8], tMaxA[8];
+				raySlabGroup8(soa + (g >> 3) * 48, rayOrigin, ivx, ivy, ivz, tMinA, tMaxA);
+				int end = objectCount - g;
+				if (end > 8) end = 8;
+				for (int j = 0; j < end; j++) {
+					int idx = g + j;
+					if (idx == excludeObj) continue;
+					if (tMinA[j] >= tMaxA[j]) continue;
+					if (IntersectBVH_Shadow(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir)) {
+						*hitObjIdx = idx;
+						return;
+					}
+				}
+			}
+			return;
+		}
 		for (int i = 0; i < objectCount; i += 4) {
 			int n = objectCount - i;
 			if (n > 4) n = 4;
@@ -430,6 +511,37 @@ static void rayCollision(Object *restrict objects, int objectCount, float3 rayOr
 	// 	}
 	// }
 
+	if (soa) {
+		const __m256 ivx = _mm256_set1_ps(1.0f / rayDir.x);
+		const __m256 ivy = _mm256_set1_ps(1.0f / rayDir.y);
+		const __m256 ivz = _mm256_set1_ps(1.0f / rayDir.z);
+		for (int g = 0; g < objectCount; g += 8) {
+			float tMinA[8], tMaxA[8];
+			raySlabGroup8(soa + (g >> 3) * 48, rayOrigin, ivx, ivy, ivz, tMinA, tMaxA);
+			int end = objectCount - g;
+			if (end > 8) end = 8;
+			for (int j = 0; j < end; j++) {
+				int idx = g + j;
+				if (idx == excludeObj) continue;
+				if (tMinA[j] >= tMaxA[j] || tMinA[j] >= bestT) continue;
+
+				int triIdx = -1;
+				float3 hitPosLocal;
+				IntersectBVH(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir, bestT, &triIdx, &hitPosLocal);
+				if (triIdx < 0) continue;
+
+				float3 dv = {hitPosLocal.x - rayOrigin.x, hitPosLocal.y - rayOrigin.y, hitPosLocal.z - rayOrigin.z};
+				float t = dv.x * rayDir.x + dv.y * rayDir.y + dv.z * rayDir.z;
+				if (t > 0.0f && t < bestT) {
+					bestT = t;
+					*hitObjIdx = idx;
+					if (hitTriIdx) *hitTriIdx = triIdx;
+					if (hitPos) *hitPos = hitPosLocal;
+				}
+			}
+		}
+		return;
+	}
 	for (int i = 0; i < objectCount; i += 4) {
 		int n = objectCount - i;
 		if (n > 4) n = 4;
@@ -1184,6 +1296,8 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		s_aabbSoaValid = 1;
 	}
 
+	buildAllAabbSoa(objects, objectCount);
+
 	for (int row = 0; row < camera->screenHeight; row++) {
 		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
@@ -1686,6 +1800,8 @@ void RayTraceSceneColumn(const Object *objects, int objectCount, Camera *camera,
 		if (Frustum_TestAABB(&frustum, objects[i].worldBBmin, objects[i].worldBBmax))
 			frustumPassIndices[frustumPassCount++] = i;
 	}
+
+	buildAllAabbSoa(objects, objectCount);
 
 	for (int col = 0; col < camera->screenWidth; col++) {
 		taskQueue->tasks[col] = (RayTraceTask){col, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
