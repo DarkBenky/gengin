@@ -374,6 +374,36 @@ def _management_key_from_env_or_credential():
     return ""
 
 
+def _deepseek_key_from_env_or_credential():
+    """DeepSeek key from the environment or a credential/secrets file.
+
+    Sources, in order: $DEEPSEEK_API_KEY, files in $CREDENTIALS_DIRECTORY
+    (a dedicated DEEPSEEK_API_KEY credential, or the single secrets file
+    exposed under another name), then the console's secrets path.  Each file
+    may be a raw key or dotenv-style KEY=VALUE lines.
+    """
+    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if key:
+        return key
+    cred_dir = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    candidates = [
+        os.path.join(cred_dir, "DEEPSEEK_API_KEY"),
+        os.path.join(cred_dir, "OPENROUTER_MANAGEMENT_KEY"),
+        "/etc/gengin-llmopt/secrets.env",
+    ] if cred_dir else ["/etc/gengin-llmopt/secrets.env"]
+    for path in candidates:
+        try:
+            with open(path) as fh:
+                content = fh.read()
+        except OSError:
+            continue
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("DEEPSEEK_API_KEY="):
+                return line.split("=", 1)[1].strip().strip("'\"")
+    return ""
+
+
 def load_config(require_management_key=True):
     """Parse and validate llmOpt/.env. Returns (config, errors)."""
     values, errors = parse_env_file(ENV_FILE)
@@ -466,7 +496,7 @@ def load_config(require_management_key=True):
                       "set both or neither")
     if route_fallback_direct:
         route_fallback_model = ROUTE_DEEPSEEK_MODEL
-        if not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+        if not _deepseek_key_from_env_or_credential():
             errors.append("GENGIN_ROUTE_FALLBACK_MODEL=deepseek needs "
                           "DEEPSEEK_API_KEY in the supervisor environment "
                           "(/etc/gengin-llmopt/secrets.env)")
@@ -492,11 +522,10 @@ def load_config(require_management_key=True):
             errors.append("OPENROUTER_MODEL=deepseek runs the whole session on "
                           "the direct API: drop GENGIN_ROUTE_MAX_CONTEXT/"
                           "GENGIN_ROUTE_FALLBACK_MODEL (or keep the chain instead)")
-        if not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+        if not _deepseek_key_from_env_or_credential():
             errors.append("OPENROUTER_MODEL=deepseek needs DEEPSEEK_API_KEY in "
                           "the supervisor environment "
                           "(/etc/gengin-llmopt/secrets.env)")
-
     if model is not None and "/" not in model and not direct_session:
         errors.append("OPENROUTER_MODEL: expected provider/model format")
     if headless_mode is not None and headless_mode != "xvfb":
@@ -1765,7 +1794,7 @@ def register_route(config):
             "maxContext": ROUTE_DIRECT_MAX_CONTEXT,
             "ttlSeconds": ttl,
             "label": "supervisor",
-            "deepseekKey": os.environ.get("DEEPSEEK_API_KEY", "").strip(),
+            "deepseekKey": _deepseek_key_from_env_or_credential(),
         }
     else:
         if config.route_fallback_direct:
@@ -1780,8 +1809,7 @@ def register_route(config):
             "label": "supervisor",
         }
         if config.route_fallback_direct:
-            registration["deepseekKey"] = os.environ.get(
-                "DEEPSEEK_API_KEY", "").strip()
+            registration["deepseekKey"] = _deepseek_key_from_env_or_credential()
     if config.route_budget_usd:
         registration["budgetUsd"] = config.route_budget_usd
     url = f"http://127.0.0.1:{_route_proxy_port()}/route/register"
