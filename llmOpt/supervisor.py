@@ -129,6 +129,13 @@ ROUTE_MODEL_RE = re.compile(r"^[A-Za-z0-9._:/-]+$")
 # proxy holds a second upstream for it); any other value is an OpenRouter id.
 ROUTE_DIRECT_FALLBACKS = {"deepseek", "ds"}
 ROUTE_DEEPSEEK_MODEL = "deepseek-v4-flash"
+# OPENROUTER_MODEL=deepseek/ds runs the WHOLE session on the direct DeepSeek
+# API through the proxy (no switching): the session model is the direct model
+# itself and the "fallback" is the same model under its legacy id below a
+# never-reached threshold, so the route only carries the key, the cost log and
+# the budget.  (Both ids are billed at the Flash price.)
+ROUTE_DEEPSEEK_ALIAS = "deepseek-flash"
+ROUTE_DIRECT_MAX_CONTEXT = 10000000
 
 
 class ConfigError(Exception):
@@ -317,6 +324,7 @@ class Config:
     route_max_context_tokens: int = 0
     route_ttl_seconds: int = 0
     route_budget_usd: float = 0.0
+    direct_session: bool = False
     management_key: str = ""
 
     def mcp_python(self):
@@ -380,6 +388,9 @@ def load_config(require_management_key=True):
     watch_remote = text("WATCH_REMOTE")
     watch_branch = text("WATCH_BRANCH")
     model = text("OPENROUTER_MODEL")
+    direct_session = model in ROUTE_DIRECT_FALLBACKS
+    if direct_session:
+        model = ROUTE_DEEPSEEK_MODEL
     display = text("GENGIN_DISPLAY")
     headless_mode = text("HEADLESS_MODE")
     state_dir = text("STATE_DIR")
@@ -476,8 +487,17 @@ def load_config(require_management_key=True):
             errors.append("GENGIN_ROUTE_BUDGET_USD: must be a number in "
                           "(0, 1000000]")
             route_budget_usd = 0.0
+    if direct_session:
+        if route_max_context_raw or route_fallback_model:
+            errors.append("OPENROUTER_MODEL=deepseek runs the whole session on "
+                          "the direct API: drop GENGIN_ROUTE_MAX_CONTEXT/"
+                          "GENGIN_ROUTE_FALLBACK_MODEL (or keep the chain instead)")
+        if not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+            errors.append("OPENROUTER_MODEL=deepseek needs DEEPSEEK_API_KEY in "
+                          "the supervisor environment "
+                          "(/etc/gengin-llmopt/secrets.env)")
 
-    if model is not None and "/" not in model:
+    if model is not None and "/" not in model and not direct_session:
         errors.append("OPENROUTER_MODEL: expected provider/model format")
     if headless_mode is not None and headless_mode != "xvfb":
         errors.append(f"HEADLESS_MODE: only 'xvfb' is implemented, got {headless_mode!r}")
@@ -514,6 +534,7 @@ def load_config(require_management_key=True):
         retry_max_seconds=ints["RETRY_MAX_SECONDS"],
         openrouter_model=model,
         openrouter_budget_usd=budget,
+        direct_session=direct_session,
         session_timeout_seconds=ints["SESSION_TIMEOUT_SECONDS"],
         budget_poll_seconds=ints["BUDGET_POLL_SECONDS"],
         key_expiry_grace_seconds=ints["KEY_EXPIRY_GRACE_SECONDS"],
@@ -955,6 +976,9 @@ def check_openrouter_model(config):
     """
     import openrouter_keys as ork
 
+    if config.direct_session:
+        return ("openrouter_model", True,
+                f"{config.openrouter_model} (direct DeepSeek API)")
     model = config.openrouter_model
     available = ork.model_available(model)
     if available is None:
@@ -1726,23 +1750,38 @@ def _route_proxy_port():
 def register_route(config):
     """Install the cost-aware route on the local proxy. Best effort: a failed
     registration leaves the session on the primary model, never blocks it."""
-    if not config.route_fallback_model:
+    if not config.route_fallback_model and not config.direct_session:
         return {}
     ttl = config.route_ttl_seconds or (
         config.session_timeout_seconds + config.key_expiry_grace_seconds)
-    if config.route_fallback_direct:
-        fallback_member = {"model": config.route_fallback_model,
-                           "upstream": "deepseek"}
+    if config.direct_session:
+        # Whole session on the direct DeepSeek API through the proxy: member 0
+        # is the session model, the "fallback" is the same model under its
+        # legacy id below the never-reached threshold - nothing ever switches,
+        # the route just carries the key, the cost log and the budget.
+        registration = {
+            "members": [{"model": ROUTE_DEEPSEEK_MODEL, "upstream": "deepseek"},
+                        {"model": ROUTE_DEEPSEEK_ALIAS, "upstream": "deepseek"}],
+            "maxContext": ROUTE_DIRECT_MAX_CONTEXT,
+            "ttlSeconds": ttl,
+            "label": "supervisor",
+            "deepseekKey": os.environ.get("DEEPSEEK_API_KEY", "").strip(),
+        }
     else:
-        fallback_member = config.route_fallback_model
-    registration = {
-        "members": [config.openrouter_model, fallback_member],
-        "maxContext": config.route_max_context_tokens,
-        "ttlSeconds": ttl,
-        "label": "supervisor",
-    }
-    if config.route_fallback_direct:
-        registration["deepseekKey"] = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        if config.route_fallback_direct:
+            fallback_member = {"model": config.route_fallback_model,
+                               "upstream": "deepseek"}
+        else:
+            fallback_member = config.route_fallback_model
+        registration = {
+            "members": [config.openrouter_model, fallback_member],
+            "maxContext": config.route_max_context_tokens,
+            "ttlSeconds": ttl,
+            "label": "supervisor",
+        }
+        if config.route_fallback_direct:
+            registration["deepseekKey"] = os.environ.get(
+                "DEEPSEEK_API_KEY", "").strip()
     if config.route_budget_usd:
         registration["budgetUsd"] = config.route_budget_usd
     url = f"http://127.0.0.1:{_route_proxy_port()}/route/register"
