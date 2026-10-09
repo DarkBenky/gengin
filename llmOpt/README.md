@@ -138,7 +138,8 @@ cheaper model once the prompt crosses a token threshold:
 
 `--budget 15` caps session spend (warns the model at 80%/95%, HTTP 402 past it);
 `--wait-offpeak` waits for DeepSeek's half-price window. Every request is logged to
-SQLite and shown at `http://127.0.0.1:8787/logs`. Desktop:
+SQLite and shown at `http://127.0.0.1:8787/logs` (per-interval chart, cache-hit %,
+CSV/JSON export). Desktop:
 `scripts/setup-openrouter-proxy.sh`; on the VM it starts with the supervisor.
 Inspect with `curl 127.0.0.1:8787/status` or `/route`. Knobs are `GENGIN_PROXY_*`
 and `GENGIN_ROUTE_*` in `llmOpt/.env`.

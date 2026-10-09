@@ -1111,7 +1111,8 @@ def _logs_data(query):
     limit = max(1, min(5000, limit))
     since = (time.time() - window) if window > 0 else 0.0
     response = {"rows": [], "totals": {"requests": 0, "cost": 0.0, "prompt": 0,
-                                       "completion": 0, "cache_hit": 0}}
+                                       "completion": 0, "cache_hit": 0,
+                                       "cache_miss": 0}}
     if not LOG_DB:
         return response
     try:
@@ -1126,17 +1127,96 @@ def _logs_data(query):
                 totals = connection.execute(
                     "SELECT COUNT(*), COALESCE(SUM(cost), 0),"
                     " COALESCE(SUM(prompt), 0), COALESCE(SUM(completion), 0),"
-                    " COALESCE(SUM(cache_hit), 0) FROM requests WHERE ts >= ?",
+                    " COALESCE(SUM(cache_hit), 0), COALESCE(SUM(cache_miss), 0)"
+                    " FROM requests WHERE ts >= ?",
                     (since,)).fetchone()
             finally:
                 connection.close()
         response["rows"] = [dict(zip(_LOG_COLUMNS, row)) for row in rows]
         response["totals"] = {"requests": totals[0], "cost": totals[1],
                               "prompt": totals[2], "completion": totals[3],
-                              "cache_hit": totals[4]}
+                              "cache_hit": totals[4], "cache_miss": totals[5]}
     except sqlite3.Error as exc:
         response["error"] = f"{type(exc).__name__}: {exc}"
     return response
+
+
+def _cache_hit_pct(hit, miss):
+    """Cache-hit rate over known prompt tokens, in percent; None when unknown."""
+    denom = (hit or 0) + (miss or 0)
+    if denom <= 0:
+        return None
+    return round(100.0 * (hit or 0) / denom, 2)
+
+
+def _logs_export(query):
+    """Full-fidelity CSV/JSON export of the request log (all matching rows).
+
+    Query params mirror /logs/data: `window` (seconds, 0 = everything) and
+    `format` (csv|json). Rows are oldest-first for analysis in a spreadsheet.
+    Returns (filename, content_type, body).
+    """
+    import csv
+    import io
+
+    fmt = ((query.get("format") or ["csv"])[0]).strip().lower()
+    if fmt not in ("csv", "json"):
+        fmt = "csv"
+    try:
+        window = float((query.get("window") or ["0"])[0])
+    except ValueError:
+        window = 0.0
+    since = (time.time() - window) if window > 0 else 0.0
+    rows = []
+    if LOG_DB:
+        try:
+            with _log_lock:
+                connection = sqlite3.connect(LOG_DB, timeout=5)
+                try:
+                    connection.execute(_LOG_SCHEMA)
+                    rows = connection.execute(
+                        "SELECT " + ", ".join(_LOG_COLUMNS)
+                        + " FROM requests WHERE ts >= ? ORDER BY ts ASC",
+                        (since,)).fetchall()
+                finally:
+                    connection.close()
+        except sqlite3.Error:
+            rows = []
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    records = []
+    for row in rows:
+        record = dict(zip(_LOG_COLUMNS, row))
+        record["timestamp_utc"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(row[0]))
+        record["cache_hit_pct"] = _cache_hit_pct(record.get("cache_hit"),
+                                                 record.get("cache_miss"))
+        records.append(record)
+    if fmt == "json":
+        payload = {
+            "exportedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "windowSeconds": window,
+            "rows": records,
+        }
+        body = json.dumps(payload, indent=2).encode() + b"\n"
+        return f"gengin-requests-{stamp}.json", "application/json", body
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(("ts_epoch", "timestamp_utc", "date_local", "session",
+                     "route_id", "conversation", "model", "upstream", "streamed",
+                     "status", "ms", "prompt_tokens", "completion_tokens",
+                     "cache_hit_tokens", "cache_miss_tokens", "cache_hit_pct",
+                     "cost_usd", "retry", "flags"))
+    for record in records:
+        writer.writerow((
+            record["ts"], record["timestamp_utc"], record["date"],
+            record["label"] or "manual", record["route_id"], record["conv"],
+            record["model"], record["upstream"], record["stream"],
+            record["status"], record["ms"], record["prompt"],
+            record["completion"], record["cache_hit"], record["cache_miss"],
+            record["cache_hit_pct"], record["cost"], record["retry"],
+            record["flags"]))
+    return (f"gengin-requests-{stamp}.csv", "text/csv; charset=utf-8",
+            buffer.getvalue().encode("utf-8"))
 
 
 LOGS_HTML = """<!doctype html>
@@ -1169,14 +1249,24 @@ LOGS_HTML = """<!doctype html>
   <option value="3600">1h</option><option value="86400" selected>24h</option>
   <option value="604800">7d</option><option value="2592000">30d</option><option value="0">all</option>
  </select>
- metric <select id="metric">
-  <option value="cost_day">cost / day</option>
-  <option value="cost_session">cost / session</option>
-  <option value="req_day">requests / day</option>
-  <option value="hit_day">cache-hit tokens / day</option>
-  <option value="tok_day">input tokens / day</option>
+ interval <select id="interval">
+  <option value="auto" selected>auto</option>
+  <option value="60">1m</option><option value="300">5m</option>
+  <option value="900">15m</option><option value="3600">1h</option>
+  <option value="21600">6h</option><option value="86400">1d</option>
  </select>
- <button onclick="load()">refresh</button> <span class="muted">auto-refresh 30s</span>
+ metric <select id="metric">
+  <option value="cost" selected>cost</option>
+  <option value="req">requests</option>
+  <option value="hit">cache-hit tokens</option>
+  <option value="hit_pct">cache-hit %</option>
+  <option value="input">input tokens</option>
+  <option value="cost_session">cost / session</option>
+ </select>
+ <button onclick="load()">refresh</button>
+ <button onclick="doExport('csv')">export CSV</button>
+ <button onclick="doExport('json')">export JSON</button>
+ <span class="muted">auto-refresh 30s</span>
 </div>
 <div class="cards" id="cards"></div>
 <div class="chart" id="chart"></div>
@@ -1188,43 +1278,56 @@ const fmtCost = (v) => v == null ? '-' : '$' + Number(v).toFixed(5);
 function card(label, value) { return '<div class="card"><span>' + label + '</span><b>' + value + '</b></div>'; }
 function esc(text) { return String(text == null ? '' : text).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function sessionName(r) { return (r.label || 'manual') + ' #' + (r.route_id || 'anon').slice(0, 6); }
+const fmtPct = (hit, miss) => { const d = (hit || 0) + (miss || 0); return d > 0 ? (100 * (hit || 0) / d).toFixed(1) + '%' : '-'; };
+const pad = (n) => String(n).padStart(2, '0');
+const autoBucket = (w) => !w ? 86400 : w <= 7200 ? 60 : w <= 86400 ? 900 : w <= 259200 ? 3600 : w <= 7776000 ? 21600 : 86400;
+const bucketName = (b) => b >= 86400 ? '1d' : b >= 21600 ? '6h' : b >= 3600 ? '1h' : b >= 900 ? '15m' : b >= 300 ? '5m' : '1m';
+function fmtBucket(ts, bucket) { const d = new Date(ts * 1000); if (bucket >= 86400) return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+function doExport(format) { const w = Number($('window').value); location.href = '/logs/export?format=' + format + '&window=' + w; }
 async function load() {
   const windowSec = Number($('window').value);
   const metric = $('metric').value;
-  const res = await fetch('/logs/data?window=' + windowSec + '&limit=2000');
+  const bucket = $('interval').value === 'auto' ? autoBucket(windowSec) : Number($('interval').value);
+  const res = await fetch('/logs/data?window=' + windowSec + '&limit=5000');
   const data = await res.json();
   const rows = data.rows || [];
   const totals = data.totals || {};
-  $('range').textContent = windowSec ? '(' + rows.length + ' rows shown)' : '(all time)';
-  $('cards').innerHTML = card('requests', totals.requests || 0) + card('cost', fmtCost(totals.cost)) + card('input', fmtTok(totals.prompt)) + card('output', fmtTok(totals.completion)) + card('cache-hit', fmtTok(totals.cache_hit));
-  const groups = new Map();
-  const add = (key, value) => groups.set(key, (groups.get(key) || 0) + value);
-  if (metric === 'cost_session') {
-    for (const r of rows) add(sessionName(r), r.cost || 0);
-  } else {
-    const byDay = windowSec > 172800 || windowSec === 0;
-    for (const r of rows) {
-      const key = byDay ? r.date.slice(0, 10) : r.date.slice(0, 13) + ':00';
-      const value = metric === 'cost_day' ? (r.cost || 0) : metric === 'req_day' ? 1 : metric === 'hit_day' ? (r.cache_hit || 0) : (r.prompt || 0);
-      add(key, value);
-    }
+  $('range').textContent = (windowSec ? '(' + rows.length + ' rows shown)' : '(all time)') + ' - ' + bucketName(bucket) + ' buckets';
+  $('cards').innerHTML = card('requests', totals.requests || 0) + card('cost', fmtCost(totals.cost)) + card('input', fmtTok(totals.prompt)) + card('output', fmtTok(totals.completion)) + card('cache-hit', fmtTok(totals.cache_hit)) + card('cache-hit %', fmtPct(totals.cache_hit, totals.cache_miss));
+  const acc = new Map();
+  const slot = (key) => { let a = acc.get(key); if (!a) { a = { v: 0, hit: 0, miss: 0 }; acc.set(key, a); } return a; };
+  for (const r of rows) {
+    const key = metric === 'cost_session' ? sessionName(r) : Math.floor(Number(r.ts) / bucket) * bucket;
+    const a = slot(key);
+    a.hit += r.cache_hit || 0;
+    a.miss += r.cache_miss || 0;
+    if (metric === 'cost' || metric === 'cost_session') a.v += r.cost || 0;
+    else if (metric === 'req') a.v += 1;
+    else if (metric === 'hit') a.v += r.cache_hit || 0;
+    else if (metric === 'input') a.v += r.prompt || 0;
   }
-  let items = [...groups.entries()].sort((a, b) => metric === 'cost_session' ? b[1] - a[1] : String(a[0]).localeCompare(String(b[0])));
-  if (metric === 'cost_session') items = items.slice(0, 24);
-  const max = Math.max(...items.map((pair) => pair[1]), 0.000001);
-  $('chart').innerHTML = items.length ? items.map((pair) =>
-    '<div class="bar" style="height:' + Math.max(2, (pair[1] / max) * 100) + '%"><span class="barlabel">' +
-    esc(pair[0]) + ' - ' + (metric.includes('cost') ? fmtCost(pair[1]) : fmtTok(pair[1])) + '</span></div>').join('') : '<div class="empty">no requests recorded yet</div>';
-  const cols = [['date', 0], ['session', 0], ['model', 0], ['provider', 0], ['input', 1], ['output', 1], ['cached', 1], ['cost', 1], ['ms', 1], ['status', 1]];
+  const value = (a) => metric === 'hit_pct' ? ((a.hit + a.miss) > 0 ? 100 * a.hit / (a.hit + a.miss) : 0) : a.v;
+  let items = [...acc.entries()];
+  if (metric === 'cost_session') { items.sort((a, b) => value(b[1]) - value(a[1])); items = items.slice(0, 24); }
+  else { items.sort((a, b) => a[0] - b[0]); }
+  const max = Math.max(...items.map((pair) => value(pair[1])), 0.000001);
+  $('chart').innerHTML = items.length ? items.map((pair) => {
+    const label = metric === 'cost_session' ? pair[0] : fmtBucket(pair[0], bucket);
+    const v = value(pair[1]);
+    const shown = metric === 'hit_pct' ? v.toFixed(1) + '%' : metric.includes('cost') ? fmtCost(v) : fmtTok(Math.round(v));
+    return '<div class="bar" style="height:' + Math.max(2, (v / max) * 100) + '%"><span class="barlabel">' + esc(label) + ' - ' + shown + '</span></div>';
+  }).join('') : '<div class="empty">no requests recorded yet</div>';
+  const cols = [['date', 0], ['session', 0], ['model', 0], ['provider', 0], ['input', 1], ['output', 1], ['cached', 1], ['hit %', 1], ['cost', 1], ['ms', 1], ['status', 1]];
   let html = '<thead><tr>' + cols.map((c) => '<th' + (c[1] ? ' class="num"' : '') + '>' + c[0] + '</th>').join('') + '</tr></thead><tbody>';
   for (const r of rows.slice(0, 800)) {
     const provider = r.upstream === 'deepseek' ? '<span class="ds">deepseek</span>' : '<span class="up">openrouter</span>';
-    html += '<tr><td>' + esc(r.date) + '</td><td>' + esc(sessionName(r)) + '</td><td>' + esc(r.model) + '</td><td>' + provider + '</td><td class="num">' + fmtTok(r.prompt) + '</td><td class="num">' + fmtTok(r.completion) + '</td><td class="num">' + fmtTok(r.cache_hit) + '</td><td class="num">' + fmtCost(r.cost) + '</td><td class="num">' + (r.ms == null ? '-' : r.ms) + '</td><td class="num">' + (r.status == null ? '-' : r.status) + '</td></tr>';
+    html += '<tr><td>' + esc(r.date) + '</td><td>' + esc(sessionName(r)) + '</td><td>' + esc(r.model) + '</td><td>' + provider + '</td><td class="num">' + fmtTok(r.prompt) + '</td><td class="num">' + fmtTok(r.completion) + '</td><td class="num">' + fmtTok(r.cache_hit) + '</td><td class="num">' + fmtPct(r.cache_hit, r.cache_miss) + '</td><td class="num">' + fmtCost(r.cost) + '</td><td class="num">' + (r.ms == null ? '-' : r.ms) + '</td><td class="num">' + (r.status == null ? '-' : r.status) + '</td></tr>';
   }
   $('table').innerHTML = html + '</tbody>';
 }
 $('window').addEventListener('change', load);
 $('metric').addEventListener('change', load);
+$('interval').addEventListener('change', load);
 load();
 setInterval(load, 30000);
 </script></body></html>
@@ -1319,6 +1422,15 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_download(self, filename, content_type, body):
+        self.send_response_only(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition",
+                         'attachment; filename="%s"' % filename)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _upstream_request(self, body, headers, upstream="openrouter", key=""):
         if upstream == "deepseek":
             headers = dict(headers)
@@ -1348,6 +1460,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/logs/data"):
             query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             self._send_json(200, _logs_data(query))
+            return
+        if self.path.startswith("/logs/export"):
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            filename, content_type, body = _logs_export(query)
+            self._send_download(filename, content_type, body)
             return
         if self.path == "/status":
             with _lock:

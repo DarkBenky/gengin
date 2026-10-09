@@ -3,7 +3,9 @@
 
 import json
 import os
+import sqlite3
 import sys
+import tempfile
 import time
 import unittest
 
@@ -462,6 +464,72 @@ class DeepSeekBudgetTests(unittest.TestCase):
                 "members": [PRIMARY, FALLBACK], "maxContext": 1000,
                 "budgetUsd": bad})
             self.assertEqual(status, 400, bad)
+
+
+class LogsExportTests(unittest.TestCase):
+    def setUp(self):
+        handle = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        handle.close()
+        self._path = handle.name
+        self._old_db = proxy.LOG_DB
+        proxy.LOG_DB = self._path
+        self._insert(1700000000, hit=900, miss=100)
+        self._insert(1700000100, hit=0, miss=500)
+
+    def tearDown(self):
+        proxy.LOG_DB = self._old_db
+        os.unlink(self._path)
+
+    @staticmethod
+    def _insert(ts, hit, miss):
+        connection = sqlite3.connect(proxy.LOG_DB)
+        try:
+            connection.execute(proxy._LOG_SCHEMA)
+            values = {"ts": ts,
+                      "date": time.strftime("%Y-%m-%d %H:%M:%S",
+                                            time.localtime(ts)),
+                      "route_id": "abcdef123456", "label": "supervisor",
+                      "conv": "conv-1", "model": "deepseek-v4-flash",
+                      "upstream": "deepseek", "stream": 0, "status": 200,
+                      "ms": 120, "prompt": hit + miss, "completion": 5,
+                      "cache_hit": hit, "cache_miss": miss, "cost": 0.001,
+                      "retry": 0, "flags": ""}
+            connection.execute(
+                "INSERT INTO requests (" + ", ".join(proxy._LOG_COLUMNS)
+                + ") VALUES (" + ", ".join(":" + c for c in proxy._LOG_COLUMNS)
+                + ")", values)
+            connection.commit()
+        finally:
+            connection.close()
+
+    def test_cache_hit_pct(self):
+        self.assertEqual(proxy._cache_hit_pct(900, 100), 90.0)
+        self.assertIsNone(proxy._cache_hit_pct(0, 0))
+        self.assertIsNone(proxy._cache_hit_pct(None, None))
+
+    def test_export_csv_oldest_first_with_pct(self):
+        filename, content_type, body = proxy._logs_export({"format": ["csv"]})
+        self.assertTrue(filename.endswith(".csv"))
+        self.assertIn("text/csv", content_type)
+        lines = body.decode().strip().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertIn("cache_hit_pct", lines[0])
+        self.assertIn("90.0", lines[1])
+        self.assertIn("0.0", lines[2])
+
+    def test_export_json_carries_pct_and_totals_gain_miss(self):
+        _, _, body = proxy._logs_export({"format": ["json"]})
+        payload = json.loads(body)
+        self.assertEqual(len(payload["rows"]), 2)
+        self.assertEqual(payload["rows"][0]["cache_hit_pct"], 90.0)
+        self.assertEqual(payload["rows"][1]["cache_hit_pct"], 0.0)
+        totals = proxy._logs_data({"window": ["0"]})["totals"]
+        self.assertEqual(totals["cache_hit"], 900)
+        self.assertEqual(totals["cache_miss"], 600)
+
+    def test_export_unknown_format_falls_back_to_csv(self):
+        filename, _, _ = proxy._logs_export({"format": ["xml"]})
+        self.assertTrue(filename.endswith(".csv"))
 
 
 if __name__ == "__main__":
