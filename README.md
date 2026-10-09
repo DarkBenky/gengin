@@ -1,18 +1,11 @@
 # Tasks
 
-- [X] create same logic for session credit limit for deep seek api
-  - [X] on each request we can get the stats of how much did the request cost add to session sum (the proxy computes each response's cost from the DeepSeek price table; `GET /route` shows `spentUsd`/`remainingUsd`)
-    - [X] add tool / waring to model when close to limit for the session for deep seek sessions (proxy injects warnings at 80%/95% of the cap and stops with HTTP 402 at it; launch with `--budget 15` / `GENGIN_ROUTE_BUDGET_USD`)
-    - [X] don't lunch llmOpt session in peek hours wait for off peek hours [deep seek pricing](https://api-docs.deepseek.com/quick_start/pricing/) (`gengin-opt.sh` prints the window; `--wait-offpeak` / `GENGIN_OFFPEAK_WAIT=1` waits — supervised sessions too (pending commits are held until off-peak); `python3 llmOpt/deepseek_pricing.py status`)
-    - [X] create some simple server that  can run on vm where all request will be logged and their metric like cost input amount output cached amount ... (SQLite `llmOpt/state/requests.db`, written by the proxy on every request — the direct DeepSeek leg included)
-      - [X] visually it should look similar to open router /logs panel so top part graph where you can select different visualization per session cost per day cost per day requests catch hit amount ... and below should be table with individual request entries [date, model, sessionId, input, output, cost, ... ] (`http://127.0.0.1:8787/logs`; raw data at `/logs/data`)
-
 - [ ] reflection have missing emission
 - [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
 
 - [ ] Map loading files
   - [X] More primitives like toroid, cone, pyramid ...
-  - [ ] Optimalize loading by building multiple bvh at same time not one by one
+  - [ ] Optimize loading by building multiple bvh at same time not one by one
   - [ ] generate synthetic maps and camera movements (saved in the map file) so we can capture frames for upscaling model
 
 - [ ] Add back images to repo
@@ -35,11 +28,11 @@
   - [ ] Crete test and different version to find best method for compute heavy methods
 
 - [ ] implement heat haze
-  - [ ] integrate it with object so when objects moves the heat haze  t
+  - [ ] integrate it with object so when objects moves the heat haze
 
-- [ ] improve missiles/planes guidence
+- [ ] improve missiles/planes guidance
   - [ ] add support for missiles flight model and improve flight modeling even more
-  - [ ] try to train reinforcement learning model for this 
+  - [ ] try to train reinforcement learning model for this
 - [ ] Collect images for upscaler
   - [ ] Train torch model for upscaler
   - [ ] Try to extract images directly from war thunder rendering pipeline
@@ -324,9 +317,17 @@
     - [X] fix material issues
     - [X] fix core dump for this object (it works now but not sure if it is correct reason why)
 
+- [X] create same logic for session credit limit for deep seek api
+  - [X] on each request we can get the stats of how much did the request cost add to session sum (the proxy computes each response's cost from the DeepSeek price table; `GET /route` shows `spentUsd`/`remainingUsd`)
+    - [X] add tool / waring to model when close to limit for the session for deep seek sessions (proxy injects warnings at 80%/95% of the cap and stops with HTTP 402 at it; launch with `--budget 15` / `GENGIN_ROUTE_BUDGET_USD`)
+    - [X] don't lunch llmOpt session in peek hours wait for off peek hours [deep seek pricing](https://api-docs.deepseek.com/quick_start/pricing/) (`gengin-opt.sh` prints the window; `--wait-offpeak` / `GENGIN_OFFPEAK_WAIT=1` waits — supervised sessions too (pending commits are held until off-peak); `python3 llmOpt/deepseek_pricing.py status`)
+    - [X] create some simple server that  can run on vm where all request will be logged and their metric like cost input amount output cached amount ... (SQLite `llmOpt/state/requests.db`, written by the proxy on every request — the direct DeepSeek leg included)
+      - [X] visually it should look similar to open router /logs panel so top part graph where you can select different visualization per session cost per day cost per day requests catch hit amount ... and below should be table with individual request entries [date, model, sessionId, input, output, cost, ... ] (`http://127.0.0.1:8787/logs`; raw data at `/logs/data`)
+
+
 ## Current Render
 
-![img](./img.png)
+![img](./screnshots/img.png)
 
 - [ ] Airofoil and flaps simulation
   - ![example_c_implementation](planeSurfacesExample.c)
