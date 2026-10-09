@@ -845,6 +845,10 @@ static void RayTraceRowFunc(void *arg) {
 				roughness = lib->entries[matId].roughness;
 
 				if (hasTexture && lib->entries[matId].textures) {
+					// TODO: Bilinear filtering for texture sampling
+					// TODO: add mipmapping for texture sampling (currently only nearest-neighbor sampling is used)
+					// TODO: add 3 (highRes[current], midRes, lowRes) resolution levels for each texture map (color, normal, roughness/metallic)
+					// TODO: build them when object is loaded
 					Textures *tex = lib->entries[matId].textures;
 					uint32 texX = (uint32)xyCordsTexture.x * (tex->size - 1) / 65535;
 					uint32 texY = (uint32)xyCordsTexture.y * (tex->size - 1) / 65535;
@@ -1072,9 +1076,15 @@ static void RayTraceRowFunc(void *arg) {
 			float3 rOrig = sOrig;
 			RayHit rHit;
 			if (RayCast((Object *)objects, objectCount, rOrig, reflDir, bestObj, lib, &rHit)) {
-				catchReflection.x = rHit.mat.color.x;
-				catchReflection.y = rHit.mat.color.y;
-				catchReflection.z = rHit.mat.color.z;
+				// glow like the direct view: emitter self-term emission * NdotL / d^2
+				// toward its center (what accumulatedEmission adds to the object's own pixels)
+				float3 toCenter = Float3_Sub(objects[rHit.objIdx].position, rHit.pos);
+				float dist2 = Float3_Dot(toCenter, toCenter) + 1e-6f;
+				float ndl = fabsf(Float3_Dot(rHit.normal, toCenter)) / sqrtf(dist2);
+				float emissionBoost = 1.0f + rHit.mat.emission * ndl / dist2;
+				catchReflection.x = rHit.mat.color.x * emissionBoost;
+				catchReflection.y = rHit.mat.color.y * emissionBoost;
+				catchReflection.z = rHit.mat.color.z * emissionBoost;
 				catchReflection.w = reflectStrength;
 			} else {
 				Color skyColor = SampleSkybox(task->skybox, reflDir);
@@ -1607,9 +1617,15 @@ static void RayTraceColumnFunc(void *arg) {
 			float3 rOrig = sOrig;
 			RayHit rHit;
 			if (RayCast((Object *)objects, objectCount, rOrig, reflDir, bestObj, lib, &rHit)) {
-				catchReflection.x = rHit.mat.color.x;
-				catchReflection.y = rHit.mat.color.y;
-				catchReflection.z = rHit.mat.color.z;
+				// glow like the direct view: emitter self-term emission * NdotL / d^2
+				// toward its center (what accumulatedEmission adds to the object's own pixels)
+				float3 toCenter = Float3_Sub(objects[rHit.objIdx].position, rHit.pos);
+				float dist2 = Float3_Dot(toCenter, toCenter) + 1e-6f;
+				float ndl = fabsf(Float3_Dot(rHit.normal, toCenter)) / sqrtf(dist2);
+				float emissionBoost = 1.0f + rHit.mat.emission * ndl / dist2;
+				catchReflection.x = rHit.mat.color.x * emissionBoost;
+				catchReflection.y = rHit.mat.color.y * emissionBoost;
+				catchReflection.z = rHit.mat.color.z * emissionBoost;
 				catchReflection.w = reflectStrength;
 			} else {
 				Color skyColor = SampleSkybox(task->skybox, reflDir);
