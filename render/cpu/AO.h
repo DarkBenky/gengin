@@ -952,23 +952,35 @@ static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
 				float occlusion = 0.0f;
 				int validSamples = 0;
 
+				// all 8 sample coords, bounds and indices in one AVX2 pass; the
+				// depth/position gathers stay scalar so skipped samples cost nothing
 				const float2 *pattern = SAMPLES_PATTERN[h % VARIATIONS];
+				__m256 p0 = _mm256_loadu_ps(&pattern[0].x);
+				__m256 p1 = _mm256_loadu_ps(&pattern[4].x);
+				__m256 pidx = _mm256_setr_epi32(0, 1, 4, 5, 2, 3, 6, 7);
+				__m256 vsx = _mm256_permutevar8x32_ps(_mm256_shuffle_ps(p0, p1, 0x88), pidx);
+				__m256 vsy = _mm256_permutevar8x32_ps(_mm256_shuffle_ps(p0, p1, 0xDD), pidx);
+				__m256 vca = _mm256_set1_ps(ca), vsa = _mm256_set1_ps(sa);
+				__m256 vpr = _mm256_set1_ps(pixelRadius);
+				__m256 vrx = _mm256_sub_ps(_mm256_mul_ps(vsx, vca), _mm256_mul_ps(vsy, vsa));
+				__m256 vry = _mm256_add_ps(_mm256_mul_ps(vsx, vsa), _mm256_mul_ps(vsy, vca));
+				__m256 vsX = _mm256_add_ps(_mm256_set1_ps((float)j), _mm256_mul_ps(vrx, vpr));
+				__m256 vsY = _mm256_add_ps(_mm256_set1_ps((float)row), _mm256_mul_ps(vry, vpr));
+				__m256 in = _mm256_and_ps(
+					_mm256_and_ps(_mm256_cmp_ps(vsX, _mm256_setzero_ps(), _CMP_GE_OQ),
+						_mm256_cmp_ps(vsX, _mm256_set1_ps((float)width), _CMP_LT_OQ)),
+					_mm256_and_ps(_mm256_cmp_ps(vsY, _mm256_setzero_ps(), _CMP_GE_OQ),
+						_mm256_cmp_ps(vsY, _mm256_set1_ps((float)height), _CMP_LT_OQ)));
+				int mask = _mm256_movemask_ps(in);
+				__m256i vidx = _mm256_add_epi32(
+					_mm256_mullo_epi32(_mm256_cvttps_epi32(vsY), _mm256_set1_epi32(width)),
+					_mm256_cvttps_epi32(vsX));
+				int idxs[SAMPLES] __attribute__((aligned(32)));
+				_mm256_store_si256((__m256i *)idxs, vidx);
 
 				for (int k = 0; k < SAMPLES; k++) {
-					float sx = pattern[k].x;
-					float sy = pattern[k].y;
-					float rx = sx * ca - sy * sa;
-					float ry = sx * sa + sy * ca;
-
-					float sampleX = j + rx * pixelRadius;
-					float sampleY = row + ry * pixelRadius;
-
-					if (sampleX < 0 || sampleX >= width ||
-						sampleY < 0 || sampleY >= height) {
-						continue;
-					}
-
-					int sampleIndex = (int)sampleY * width + (int)sampleX;
+					if (!((mask >> k) & 1)) continue;
+					int sampleIndex = idxs[k];
 
 					if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
 						continue;
