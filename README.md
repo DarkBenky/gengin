@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] reflection have missing emission
+- [X] reflection have missing emission
 - [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
 
 - [ ] Map loading files
