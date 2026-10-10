@@ -1,6 +1,5 @@
 # Tasks
 
-- [X] reflection have missing emission
 - [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
 
 - [ ] Map loading files
@@ -325,6 +324,7 @@
     - [X] create some simple server that  can run on vm where all request will be logged and their metric like cost input amount output cached amount ... (SQLite `llmOpt/state/requests.db`, written by the proxy on every request — the direct DeepSeek leg included)
       - [X] visually it should look similar to open router /logs panel so top part graph where you can select different visualization per session cost per day cost per day requests catch hit amount ... and below should be table with individual request entries [date, model, sessionId, input, output, cost, ... ] (`http://127.0.0.1:8787/logs`; raw data at `/logs/data`; CSV/JSON export at `/logs/export`)
 
+- [X] reflection have missing emission
 
 ## Current Render
 
