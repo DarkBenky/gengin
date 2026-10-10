@@ -1,20 +1,5 @@
 # Tasks
 
-- [X] add roles for llmOpt PRs
-  - [X] do not merge PRs of different types
-    - [X] categories
-      - [X] render changes that do not change frame hashes but improve performance go together => Labels: Render Improvements
-      - [X] render changes that changes visuals minimally but provide uplift => Labels: Render Improvements [Visual change / Performance]
-      - [X] render changes that improve visual with no cost or extremely limited costs ( should include side by side before and after, this needs to be added as side goal, code changes should be minimal and when added the style should be same as rest of the code base **Important**) => Labels: Render Improvements Visual [No/Minimal Cost]
-      - [X] flight controller changes that improve performance => Labels: Flight Controller
-      - [X] general improvement that are based mainly on the README.md or bug fixes or ease of use utilities/functions **extremely low priority** changes should be really minimal so like adding few new functions to reduce the testing and review overhead **Important** must follow same style and ideally not change underlined structures if not needed this changes should not make performance losing changes => Labels: General Improvements
-  - [X] session should look if there are badly merge / compacted PRs and untangle them to their categories ( check if there is ability in GitHub to add to PRs tags / labels to make it more clean what category it is)
-    - [X] labels available [Flight Controller, General Improvements, Render Improvements, Render Improvements [Visual change / Performance], Render Improvements Visual [No/Minimal Cost]]
-  - [X] the PRs / Merged pr should at begging provide detailed table of chances and always provide table of performance change compared to stating point
-  - [X] **Low priority** when there is some PR that is still open but the changes made it not able to merge session can look into it and update it to be able to merge it again
-  - [X] If there is some PR open with out Label / Tag add them
-  - [X] compaction should be available only when there is 4 or more per category / label
-
 - [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
 
 - [ ] Map loading files
@@ -340,6 +325,21 @@
       - [X] visually it should look similar to open router /logs panel so top part graph where you can select different visualization per session cost per day cost per day requests catch hit amount ... and below should be table with individual request entries [date, model, sessionId, input, output, cost, ... ] (`http://127.0.0.1:8787/logs`; raw data at `/logs/data`; CSV/JSON export at `/logs/export`)
 
 - [X] reflection have missing emission
+
+- [X] add roles for llmOpt PRs
+  - [X] do not merge PRs of different types
+    - [X] categories
+      - [X] render changes that do not change frame hashes but improve performance go together => Labels: Render Improvements
+      - [X] render changes that changes visuals minimally but provide uplift => Labels: Render Improvements [Visual change / Performance]
+      - [X] render changes that improve visual with no cost or extremely limited costs ( should include side by side before and after, this needs to be added as side goal, code changes should be minimal and when added the style should be same as rest of the code base **Important**) => Labels: Render Improvements Visual [No/Minimal Cost]
+      - [X] flight controller changes that improve performance => Labels: Flight Controller
+      - [X] general improvement that are based mainly on the README.md or bug fixes or ease of use utilities/functions **extremely low priority** changes should be really minimal so like adding few new functions to reduce the testing and review overhead **Important** must follow same style and ideally not change underlined structures if not needed this changes should not make performance losing changes => Labels: General Improvements
+  - [X] session should look if there are badly merge / compacted PRs and untangle them to their categories ( check if there is ability in GitHub to add to PRs tags / labels to make it more clean what category it is)
+    - [X] labels available [Flight Controller, General Improvements, Render Improvements, Render Improvements [Visual change / Performance], Render Improvements Visual [No/Minimal Cost]]
+  - [X] the PRs / Merged pr should at begging provide detailed table of chances and always provide table of performance change compared to stating point
+  - [X] **Low priority** when there is some PR that is still open but the changes made it not able to merge session can look into it and update it to be able to merge it again
+  - [X] If there is some PR open with out Label / Tag add them
+  - [X] compaction should be available only when there is 4 or more per category / label
 
 ## Current Render
 
