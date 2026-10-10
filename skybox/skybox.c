@@ -58,17 +58,75 @@ static uint32 *loadFace(const char *dir, const char *name, int *w, int *h) {
 	return loadJpeg(path, w, h);
 }
 
+// The source cube is 2048^2, i.e. 16 MB per face / 96 MB in total, and the
+// lookups are footprint-bound (bench/skyres: 10.1 ns/lookup at 2048^2, 7.0 at
+// 1024^2, 5.3 at 512^2).  A box-prefiltered SKY_DOWNSAMPLE-square cube is the
+// cheapest sky that still resolves the source.
+#define SKY_DOWNSAMPLE 2
+
+static uint32 *downsampleFace(const uint32 *src, int w, int h) {
+	int nw = w / SKY_DOWNSAMPLE, nh = h / SKY_DOWNSAMPLE;
+	if (nw <= 0 || nh <= 0) return NULL;
+	uint32 *dst = malloc((size_t)nw * nh * sizeof(uint32));
+	if (!dst) return NULL;
+	const uint32 n = SKY_DOWNSAMPLE * SKY_DOWNSAMPLE;
+	for (int y = 0; y < nh; y++) {
+		for (int x = 0; x < nw; x++) {
+			uint32 r = 0, g = 0, b = 0;
+			for (int dy = 0; dy < SKY_DOWNSAMPLE; dy++) {
+				const uint32 *row = src + (size_t)(y * SKY_DOWNSAMPLE + dy) * w + x * SKY_DOWNSAMPLE;
+				for (int dx = 0; dx < SKY_DOWNSAMPLE; dx++) {
+					r += (row[dx] >> 16) & 0xFF;
+					g += (row[dx] >> 8) & 0xFF;
+					b += row[dx] & 0xFF;
+				}
+			}
+			dst[(size_t)y * nw + x] = 0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n);
+		}
+	}
+	return dst;
+}
+
 void LoadSkybox(Skybox *skybox, const char *directory) {
 	if (!skybox || !directory) return;
 	memset(skybox, 0, sizeof(*skybox));
 
-	int w, h;
-	skybox->front  = loadFace(directory, "front",  &w, &h); skybox->imageWidth = w; skybox->imageHeight = h;
-	skybox->back   = loadFace(directory, "back",   &w, &h);
-	skybox->left   = loadFace(directory, "left",   &w, &h);
-	skybox->right  = loadFace(directory, "right",  &w, &h);
-	skybox->top    = loadFace(directory, "top",    &w, &h);
-	skybox->bottom = loadFace(directory, "bottom", &w, &h);
+	static const char *names[6] = {"front", "back", "left", "right", "top", "bottom"};
+	uint32 **slots[6] = {&skybox->front, &skybox->back, &skybox->left,
+	                     &skybox->right, &skybox->top, &skybox->bottom};
+
+	int w = 0, h = 0, uniform = 1;
+	for (int i = 0; i < 6; i++) {
+		int fw = 0, fh = 0;
+		*slots[i] = loadFace(directory, names[i], &fw, &fh);
+		if (i == 0) {
+			w = fw;
+			h = fh;
+		} else if (!*slots[i] || fw != w || fh != h) {
+			uniform = 0;
+		}
+	}
+	if (!skybox->front || w <= 0 || h <= 0) uniform = 0;
+
+	if (uniform && w % SKY_DOWNSAMPLE == 0 && h % SKY_DOWNSAMPLE == 0) {
+		uint32 *small[6] = {NULL, NULL, NULL, NULL, NULL, NULL};
+		int ok = 1;
+		for (int i = 0; i < 6; i++) {
+			if (!(small[i] = downsampleFace(*slots[i], w, h))) { ok = 0; break; }
+		}
+		if (ok) {
+			for (int i = 0; i < 6; i++) {
+				free(*slots[i]);
+				*slots[i] = small[i];
+			}
+			w /= SKY_DOWNSAMPLE;
+			h /= SKY_DOWNSAMPLE;
+		} else {
+			for (int i = 0; i < 6; i++) free(small[i]);
+		}
+	}
+	skybox->imageWidth = w;
+	skybox->imageHeight = h;
 }
 
 void DestroySkybox(Skybox *skybox) {
