@@ -1580,6 +1580,58 @@ def _githubSendJson(url, payload, method="POST", timeout=60):
         raise RuntimeError("GitHub API returned invalid JSON") from None
 
 
+# PR category labels (README "add roles for llmOpt PRs"). One PR carries
+# exactly one category; consolidation and review never mix categories.
+# Colors/descriptions match the labels already created in the repo; missing
+# ones are auto-created so a fresh fork works too.
+PR_LABELS = {
+    "Render Improvements": ("ad1103",
+        "render changes that do not change frame hashes but improve performance"),
+    "Render Improvements [Visual change / Performance]": ("ccc312",
+        "render changes that change visuals minimally but provide uplift"),
+    "Render Improvements Visual [No/Minimal Cost]": ("ea681d",
+        "render changes that improve visuals with no or extremely limited cost"),
+    "Flight Controller": ("9c449b",
+        "flight controller changes that improve performance"),
+    "General Improvements": ("4c7876",
+        "minor fixes and utilities; preserve style and performance"),
+    "ML Improvements": ("5319e7",
+        "machine learning kernel/model changes passing the torch gate"),
+}
+
+
+def _github_ensure_labels(names):
+    """Create missing category labels; a concurrent 422 (already exists) is fine."""
+    owner, repo = _githubRepo()
+    base = f"https://api.github.com/repos/{owner}/{repo}"
+    existing = {item.get("name")
+                for item in _githubGetJson(f"{base}/labels?per_page=100")}
+    for name in names:
+        if name in existing:
+            continue
+        color, description = PR_LABELS[name]
+        try:
+            _githubSendJson(f"{base}/labels",
+                            {"name": name, "color": color,
+                             "description": description})
+        except RuntimeError:
+            # Lost a race or the label exists under different casing; the
+            # follow-up label PUT will surface a real permission problem.
+            pass
+
+
+def _github_set_labels(number, names):
+    """Replace a PR's labels (PUT is replace-semantics, so the PR ends up with
+    exactly the one category label)."""
+    owner, repo = _githubRepo()
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/labels"
+    return _githubSendJson(url, {"labels": list(names)}, method="PUT")
+
+
+def _label_names(pr):
+    return [item.get("name", "") for item in (pr.get("labels") or [])]
+
+
 def listPullRequests(state="all", limit=10, page=1):
     """List repository pull requests and changed paths from GitHub."""
     if state not in ("all", "open", "closed", "merged"):
@@ -1635,6 +1687,7 @@ def listPullRequests(state="all", limit=10, page=1):
             "updatedAt": pr.get("updated_at", ""),
             "closedAt": pr.get("closed_at", ""),
             "mergedAt": merged_at or "",
+            "labels": _label_names(pr),
             "files": files,
             "filesTruncated": len(file_data) > 20 if not files_unavailable else False,
             "filesUnavailable": files_unavailable,
@@ -1650,18 +1703,20 @@ def listPullRequests(state="all", limit=10, page=1):
 
 
 def openPullRequests(limit=10):
-    """Open PRs as {number, title, branch, files}; [] when GitHub is unavailable."""
+    """Open PRs as {number, title, branch, files, labels}; [] when GitHub is
+    unavailable."""
     try:
         history = listPullRequests(state="open", limit=int(limit))
     except Exception:
         return []
     return [{"number": pr["number"], "title": pr["title"],
-             "branch": pr["headBranch"], "files": pr["files"]}
+             "branch": pr["headBranch"], "files": pr["files"],
+             "labels": pr["labels"]}
             for pr in history["pullRequests"]]
 
 
 def _github_find_pr(branch):
-    """Return the open PR URL for branch, or None."""
+    """Return (html_url, number) for the open PR on branch, or (None, None)."""
     import urllib.request, json as _json
     owner, repo = _githubRepo()
     url = (f"https://api.github.com/repos/{owner}/{repo}/pulls"
@@ -1670,12 +1725,16 @@ def _github_find_pr(branch):
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             data = _json.loads(r.read())
-        return data[0]["html_url"] if data else None
+        if data:
+            return data[0]["html_url"], data[0]["number"]
+        return None, None
     except Exception:
-        return None
+        return None, None
 
 
 def _github_create_pr(title, body, head, base="main"):
+    """Open a PR; returns (html_url, number). Idempotent on an existing PR
+    for the same head branch."""
     import urllib.request, json as _json, urllib.error
     owner, repo = _githubRepo()
     payload = _json.dumps({"title": title, "body": body, "head": head, "base": base}).encode()
@@ -1687,12 +1746,12 @@ def _github_create_pr(title, body, head, base="main"):
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             data = _json.loads(r.read())
-        return data["html_url"]
+        return data["html_url"], data["number"]
     except urllib.error.HTTPError as e:
         if e.code == 422:  # validation failed — likely an existing PR for this head
-            existing = _github_find_pr(head)
-            if existing:
-                return existing
+            existing_url, existing_number = _github_find_pr(head)
+            if existing_url:
+                return existing_url, existing_number
         if e.code == 401:
             raise RuntimeError(
                 "GitHub API rejected the token (401 Bad credentials): it is "
@@ -1746,11 +1805,18 @@ def _remoteBranchSha(branch):
 
 
 def createPR(title, body, branch="", commit_msg=None,
-             image_output_change=False, compare_image_paths=None):
+             image_output_change=False, compare_image_paths=None,
+             label=""):
     """Commit sandbox changes, push one focused branch, open a PR.
 
     Guards: target-SHA ancestry, forbidden staging paths, secret patterns,
     empty diff, and idempotent branch/PR reuse. Never force-pushes.
+
+    label: exactly one PR_LABELS category ("Render Improvements", "Render
+    Improvements [Visual change / Performance]", "Render Improvements Visual
+    [No/Minimal Cost]", "Flight Controller", "General Improvements",
+    "ML Improvements"). The prompt makes it mandatory; an unknown name is a
+    ValueError. A label failure after the PR exists is a warning, not an error.
 
     image_output_change=True: the PR deliberately alters the rendered image
     (algorithm variation). compareImagePaths must list the composites written
@@ -1801,6 +1867,10 @@ def createPR(title, body, branch="", commit_msg=None,
         raise RuntimeError(
             f"branch must match llmopt/<7-40 hex sha>/<id>, e.g. "
             f"llmopt/2ac04754/ao-fix: got {branch!r}")
+    if label and label not in PR_LABELS:
+        raise ValueError(
+            f"unknown PR label {label!r}; use one of: "
+            + ", ".join(sorted(PR_LABELS)))
 
     # Switch to (or create) the branch before staging so staged changes carry over.
     if _branchExists(branch):
@@ -1826,10 +1896,17 @@ def createPR(title, body, branch="", commit_msg=None,
     staged = [f for f in cached if f not in forbidden]
     if not staged:
         # Retry path: the branch may already carry the commit and an open PR.
-        existing = _github_find_pr(branch)
-        if existing:
-            print(f"PR already exists: {existing}", file=sys.stderr)
-            return existing
+        existing_url, existing_number = _github_find_pr(branch)
+        if existing_url:
+            print(f"PR already exists: {existing_url}", file=sys.stderr)
+            if label and existing_number:
+                try:
+                    _github_ensure_labels([label])
+                    _github_set_labels(existing_number, [label])
+                except RuntimeError as exc:
+                    print(f"[createPR] label not applied to existing PR: {exc}",
+                          file=sys.stderr)
+            return existing_url
         raise RuntimeError("empty source diff; refusing to create an empty commit or PR")
 
     diff_text = subprocess.run(["git", "diff", "--cached", "-U0"],
@@ -1856,7 +1933,14 @@ def createPR(title, body, branch="", commit_msg=None,
         body = (body.rstrip() + "\n" + _visualEvidenceMarkdown(
             evidence_dirs, branch, evidence_ssim)).strip() + "\n"
 
-    url = _github_create_pr(title, body, head=branch)
+    url, number = _github_create_pr(title, body, head=branch)
+    if label:
+        try:
+            _github_ensure_labels([label])
+            _github_set_labels(number, [label])
+        except RuntimeError as exc:
+            # The PR exists — losing the label is a warning, not a failure.
+            print(f"[createPR] label not applied: {exc}", file=sys.stderr)
     print(f"PR created: {url}", file=sys.stderr)
     return url
 
@@ -1906,8 +1990,23 @@ def fetchPullRequest(number):
     applies_cleanly = bool(diff_text) and git(
         ["apply", "--check", "-"], input_text=diff_text).returncode == 0
 
+    # GitHub-side metadata (labels for the category rules, mergeable for the
+    # repair task). Best-effort: a metadata failure must not lose the git data.
+    title, labels, mergeable = "", [], None
+    try:
+        owner, repo = _githubRepo()
+        pr = _githubGetJson(f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}")
+        title = pr.get("title", "")
+        labels = _label_names(pr)
+        mergeable = pr.get("mergeable")
+    except Exception:
+        pass
+
     return {
         "number": number,
+        "title": title,
+        "labels": labels,
+        "mergeable": mergeable,
         "head": head,
         "mergeBase": merge_base,
         "files": files,
@@ -1915,6 +2014,37 @@ def fetchPullRequest(number):
         "deletions": deletions,
         "appliesCleanly": applies_cleanly,
     }
+
+
+def labelPullRequest(number, labels):
+    """Set the category label(s) on one open pull request.
+
+    Every name must be a PR_LABELS category, so a session can never invent a
+    label or leave a PR unlabeled by typo. Refuses merged PRs (shipped
+    history). PUT is replace-semantics: the PR ends up with exactly `labels`.
+    """
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        raise ValueError("number must be a positive integer")
+    if isinstance(labels, str) or not isinstance(labels, (list, tuple)) or not labels:
+        raise ValueError("labels must be a non-empty list of category names")
+    unknown = [name for name in labels if name not in PR_LABELS]
+    if unknown:
+        raise ValueError(
+            f"unknown PR label(s) {unknown}; use one of: "
+            + ", ".join(sorted(PR_LABELS)))
+
+    owner, repo = _githubRepo()
+    base = f"https://api.github.com/repos/{owner}/{repo}"
+    pr = _githubGetJson(f"{base}/pulls/{number}")
+    if pr.get("merged_at"):
+        raise RuntimeError(f"refusing to relabel #{number}: the PR is merged (shipped history)")
+    if pr.get("state") != "open":
+        raise RuntimeError(f"refusing to relabel #{number}: state is {pr.get('state')!r}, not open")
+
+    _github_ensure_labels(list(labels))
+    _github_set_labels(number, list(labels))
+    return {"number": number, "labels": list(labels),
+            "url": pr.get("html_url", ""), "previousLabels": _label_names(pr)}
 
 
 def closePullRequest(number, comment):

@@ -266,11 +266,15 @@ def make_flame() -> dict:
 
 @mcp.tool()
 def list_pull_requests(state: str = "all", limit: int = 10, page: int = 1) -> str:
-    """List repository pull requests and changed paths without modifying GitHub.
+    """List repository pull requests, their category labels and changed paths
+    without modifying GitHub.
 
     state is all, open, closed, or merged. limit is 1-20. For merged results,
     page refers to GitHub's closed-PR pages and may return fewer than limit;
     sourcePageHasMore indicates whether another source page may have results.
+    Every PR carries `labels` — the category label rules (see the prompt's
+    PR CATEGORIES AND LABELS section); an empty list means the PR is
+    unlabeled and needs backfilling.
     """
     return json.dumps(_main.listPullRequests(state=state, limit=limit, page=page),
                       indent=2)
@@ -279,9 +283,16 @@ def list_pull_requests(state: str = "all", limit: int = 10, page: int = 1) -> st
 @mcp.tool()
 def create_pr(title: str, body: str, imageOutputChange: bool,
               branch: str = "", commit_msg: str = "",
-              compareImagePaths: list[str] | None = None) -> str:
+              compareImagePaths: list[str] | None = None,
+              label: str = "") -> str:
     """Commit sandbox changes, push one focused branch, and open a GitHub PR
     via the REST API (requires GITHUB_TOKEN).
+
+    label is REQUIRED by the workflow rules: exactly one category from
+    Render Improvements, Render Improvements [Visual change / Performance],
+    Render Improvements Visual [No/Minimal Cost], Flight Controller, General
+    Improvements, ML Improvements. One PR = one category; never fold two
+    categories into one PR. An unknown name is rejected.
 
     imageOutputChange is required: False for exact-match optimizations
     (screenshots/ is never staged); True for a deliberate visual change —
@@ -299,19 +310,35 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
     the PR URL."""
     return _main.createPR(title, body, branch, commit_msg or title,
                           image_output_change=imageOutputChange,
-                          compare_image_paths=compareImagePaths)
+                          compare_image_paths=compareImagePaths,
+                          label=label)
 
 
 @mcp.tool()
 def fetch_pull_request(number: int) -> str:
     """Fetch one pull request's head into the sandbox and report how it can be
-    verified: files, diffstat, merge-base, and whether the diff applies to the
-    current tree (`git apply --check`, dry run — the working tree is untouched).
+    verified: title, labels, mergeable, files, diffstat, merge-base, and
+    whether the diff applies to the current tree (`git apply --check`, dry
+    run — the working tree is untouched).
 
     Use during PR consolidation to pick which open PRs to apply as uncommitted
     edits for individual make_bench / flight_bench runs while HEAD stays at the
-    prepared SHA."""
+    prepared SHA. `labels` shows the category (empty = unlabeled, backfill it
+    with label_pull_request); `mergeable: false` flags a PR that needs the
+    repair task."""
     return json.dumps(_main.fetchPullRequest(number), indent=2)
+
+
+@mcp.tool()
+def label_pull_request(number: int, labels: list[str]) -> str:
+    """Set the category label(s) on ONE open pull request (replace-semantics:
+    the PR ends up with exactly these labels — normally exactly one).
+
+    Names must come from the PR CATEGORIES AND LABELS list in the prompt.
+    Refuses merged PRs. Use for: labeling a PR you just opened when
+    create_pr's label param was not honored, backfilling unlabeled open PRs,
+    and correcting a mis-categorized PR during untangling."""
+    return json.dumps(_main.labelPullRequest(number, labels), indent=2)
 
 
 @mcp.tool()

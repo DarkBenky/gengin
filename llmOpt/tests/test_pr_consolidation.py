@@ -93,6 +93,15 @@ class FetchPullRequestTests(unittest.TestCase):
         patcher = mock.patch.object(main.subprocess, "run", side_effect=fake_run)
         self.addCleanup(patcher.stop)
         patcher.start()
+        repo = mock.patch.object(main, "_githubRepo", return_value=("o", "r"))
+        self.addCleanup(repo.stop)
+        repo.start()
+        meta = mock.patch.object(
+            main, "_githubGetJson",
+            return_value={"title": "flight: tune walk", "mergeable": True,
+                          "labels": [{"name": "Flight Controller"}]})
+        self.addCleanup(meta.stop)
+        meta.start()
         return calls
 
     def test_rejects_bad_number(self):
@@ -108,6 +117,8 @@ class FetchPullRequestTests(unittest.TestCase):
         self.assertEqual(report["insertions"], 13)
         self.assertEqual(report["deletions"], 3)
         self.assertTrue(report["appliesCleanly"])
+        self.assertEqual(report["labels"], ["Flight Controller"])
+        self.assertEqual(report["mergeable"], True)
         apply_calls = [c for c in calls if c[0][0] == "apply"]
         self.assertEqual(len(apply_calls), 1)
         self.assertEqual(apply_calls[0][1].get("input"), "DIFFTEXT\n")
@@ -130,6 +141,121 @@ class FetchPullRequestTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as caught:
             main.fetchPullRequest(42)
         self.assertIn("merge base", str(caught.exception))
+
+
+class PrLabelsTests(unittest.TestCase):
+    def test_canonical_labels_present(self):
+        for name in ("Render Improvements",
+                     "Render Improvements [Visual change / Performance]",
+                     "Render Improvements Visual [No/Minimal Cost]",
+                     "Flight Controller", "General Improvements",
+                     "ML Improvements"):
+            self.assertIn(name, main.PR_LABELS)
+
+
+class ListPullRequestLabelsTests(unittest.TestCase):
+    def test_labels_mapped_to_names(self):
+        pr = {"number": 7, "title": "t", "html_url": "u", "state": "open",
+              "user": {"login": "a"}, "head": {"ref": "b"},
+              "base": {"ref": "main"},
+              "labels": [{"name": "Flight Controller"}, {"name": "x"}]}
+
+        def fake_get(url, timeout=30):
+            return [pr] if "/pulls?" in url else []
+
+        with mock.patch.object(main, "_githubRepo", return_value=("o", "r")), \
+                mock.patch.object(main, "_githubGetJson", side_effect=fake_get):
+            out = main.listPullRequests(state="open", limit=1)
+        self.assertEqual(out["pullRequests"][0]["labels"],
+                         ["Flight Controller", "x"])
+
+
+class LabelPullRequestTests(unittest.TestCase):
+    def test_rejects_unknown_label_without_network(self):
+        with mock.patch.object(main, "_githubGetJson") as get:
+            with self.assertRaises(ValueError) as caught:
+                main.labelPullRequest(5, ["Not A Label"])
+        self.assertIn("Not A Label", str(caught.exception))
+        get.assert_not_called()
+
+    def test_rejects_empty_or_string_labels(self):
+        with self.assertRaises(ValueError):
+            main.labelPullRequest(5, [])
+        with self.assertRaises(ValueError):
+            main.labelPullRequest(5, "Flight Controller")
+
+    def test_refuses_merged_pr(self):
+        pr = {"state": "closed", "merged_at": "2026-10-06T22:00:00Z",
+              "html_url": "https://example/pull/5", "labels": []}
+        with mock.patch.object(main, "_githubRepo", return_value=("o", "r")), \
+                mock.patch.object(main, "_githubGetJson", return_value=pr), \
+                mock.patch.object(main, "_githubSendJson") as send:
+            with self.assertRaises(RuntimeError) as caught:
+                main.labelPullRequest(5, ["Flight Controller"])
+        self.assertIn("merged", str(caught.exception))
+        send.assert_not_called()
+
+    def test_sets_labels_with_replace_put(self):
+        pr = {"state": "open", "merged_at": None,
+              "html_url": "https://example/pull/5",
+              "labels": [{"name": "old"}]}
+
+        def fake_get(url, timeout=30):
+            if "/labels" in url:
+                return [{"name": "Flight Controller"}]
+            return pr
+
+        with mock.patch.object(main, "_githubRepo", return_value=("o", "r")), \
+                mock.patch.object(main, "_githubGetJson", side_effect=fake_get), \
+                mock.patch.object(main, "_githubSendJson", return_value={}) as send:
+            report = main.labelPullRequest(5, ["Flight Controller"])
+        self.assertEqual(report["labels"], ["Flight Controller"])
+        self.assertEqual(report["previousLabels"], ["old"])
+        puts = [c for c in send.call_args_list
+                if c.kwargs.get("method") == "PUT"]
+        self.assertEqual(len(puts), 1)
+        self.assertIn("/issues/5/labels", puts[0].args[0])
+        self.assertEqual(puts[0].args[1], {"labels": ["Flight Controller"]})
+
+
+class CreatePRLabelTests(unittest.TestCase):
+    def test_unknown_label_rejected_before_any_work(self):
+        with mock.patch.object(main, "_sandboxHead", return_value="c" * 40):
+            with self.assertRaises(ValueError) as caught:
+                main.createPR("title", "body", branch="llmopt/2ac04754/x",
+                              label="Not A Label")
+        self.assertIn("Not A Label", str(caught.exception))
+
+    def test_existing_pr_retry_applies_label(self):
+        with mock.patch.object(main, "_sandboxHead", return_value="c" * 40), \
+                mock.patch.object(main, "run", return_value=FakeCompleted(0)), \
+                mock.patch.object(main.subprocess, "run",
+                                  return_value=FakeCompleted(0, stdout="")), \
+                mock.patch.object(main, "_branchExists", return_value=False), \
+                mock.patch.object(main, "_github_find_pr",
+                                  return_value=("https://example/pull/7", 7)), \
+                mock.patch.object(main, "_github_ensure_labels") as ensure, \
+                mock.patch.object(main, "_github_set_labels") as set_labels:
+            url = main.createPR("title", "body", branch="llmopt/2ac04754/x",
+                                label="Flight Controller")
+        self.assertEqual(url, "https://example/pull/7")
+        ensure.assert_called_once_with(["Flight Controller"])
+        set_labels.assert_called_once_with(7, ["Flight Controller"])
+
+    def test_label_failure_does_not_lose_pr(self):
+        with mock.patch.object(main, "_sandboxHead", return_value="c" * 40), \
+                mock.patch.object(main, "run", return_value=FakeCompleted(0)), \
+                mock.patch.object(main.subprocess, "run",
+                                  return_value=FakeCompleted(0, stdout="")), \
+                mock.patch.object(main, "_branchExists", return_value=False), \
+                mock.patch.object(main, "_github_find_pr",
+                                  return_value=("https://example/pull/7", 7)), \
+                mock.patch.object(main, "_github_ensure_labels"), \
+                mock.patch.object(main, "_github_set_labels",
+                                  side_effect=RuntimeError("403")):
+            url = main.createPR("title", "body", branch="llmopt/2ac04754/x",
+                                label="Flight Controller")
+        self.assertEqual(url, "https://example/pull/7")
 
 
 if __name__ == "__main__":

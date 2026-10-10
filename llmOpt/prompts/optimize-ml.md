@@ -75,9 +75,9 @@ PR is NOT a candidate:
   review time and both get closed.
 - If the tool fails, or a result has `filesUnavailable: true`, history is
   incomplete; do not treat missing results as proof that no prior PR exists.
-- Exception: with 4 or more open PRs you may take the MAINTENANCE TASK at the
-  end of this prompt instead — folding verified ML PRs into one consolidation
-  PR is not re-implementing them.
+- Exception: with 4 or more open PRs sharing one category label you may take
+  the MAINTENANCE TASK at the end of this prompt instead — folding verified ML
+  PRs into one consolidation PR is not re-implementing them.
 
 ## TOOLS
 - `ml_scenarios()` — every suite, every config id/shape, and whether a baseline
@@ -197,9 +197,14 @@ Do not re-derive what a previous session already recorded in
     - the change must read like the surrounding codebase — style, naming,
       formatting — and every hunk must belong to the change you measured;
     - revert experiment scaffolding before it ships.
-11. `create_pr` with the "after" summaries in the body, both before/after
+11. `create_pr` with `label="ML Improvements"` (REQUIRED — every PR carries
+    exactly one category label; ML PRs are always `ML Improvements`), the
+    "after" summaries in the body, both before/after
     numbers for the families you moved (quote the `srnet` conv rows when a
     conv change ships), the suite you measured, and the device.
+    The body STARTS with a `## Changes` table (file, kernel/function, what,
+    why) and a `## Performance vs baseline` table (family, baseline, now,
+    delta) before the evidence.
     Branch names must match the tool's convention
     (`llmopt/<7-40 hex sha>/<topic>`, e.g. `llmopt/<target-sha>/conv-interior`);
     the PR is opened from the sandbox, so only files you changed under `gengin/`
@@ -221,11 +226,13 @@ Do not re-derive what a previous session already recorded in
 - If the only change you can justify is correctness-neutral and inside its
   noise band, say so with the numbers and report `no_change`.
 
-## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 PRs are open)
-When 4 or more pull requests are open — or the session context explicitly asks
-for it — you may make this the session's task instead of a new kernel idea:
-verify the open ML pull requests individually and fold the ones that pass into
-ONE consolidation PR.  State the choice in your first message.  The reviewer
+## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 ML PRs are open)
+When 4 or more open pull requests carry the `ML Improvements` label (or the
+session context explicitly asks for it) — you may make this the session's task
+instead of a new kernel idea: verify the open ML pull requests individually and
+fold the ones that pass into ONE consolidation PR labeled `ML Improvements`.
+Never fold ML PRs together with render or flight PRs — one PR, one category.
+State the choice in your first message.  The reviewer
 gets one PR instead of a dozen, and every included change still carries its own
 before/after summaries.  This is the one sanctioned multi-change PR; keep it to
 verified, independent changes.
@@ -250,9 +257,10 @@ verified, independent changes.
 4. Validate the combined tree: refresh the tracked generator output once
    (`python3 gengin/machineLearning/generateKernel.py`), `make -C gengin`, then
    `ml_bench(suite="all")` (plus `ml_parity()` if the batch touched conv/pool).
-5. `create_pr(title="consolidate: N verified ML PRs", body=<per-PR table:
-   number, title, before/after summaries, applied or why not; the combined
-   block; "Supersedes: #a #b ...">)`, with the "after" summaries the normal
+5. `create_pr(title="consolidate: N verified ML PRs", body=<## Changes table +
+   ## Performance vs baseline table + per-PR table: number, title, before/after
+   summaries, applied or why not; the combined block; "Supersedes: #a #b ...">,
+   label="ML Improvements")`, with the "after" summaries the normal
    flow requires.
 6. Close ONLY the included PRs:
    `close_pull_request(N, "Consolidated into <URL> after individual
@@ -265,6 +273,27 @@ If fewer than two PRs pass, revert everything (the sandbox must be clean),
 record what was refuted and why, and continue with the normal workflow — never
 open a one-PR "consolidation", and never repeat a contributor's claimed
 numbers without re-measuring them on the prepared SHA.
+
+### PR housekeeping (backfill / untangle / repair — not gated by the 4-PR rule)
+
+Whenever the open-PR block or `list_pull_requests(state="open")` shows an
+unlabeled or mixed-category PR, you may fix it (a complete pass also satisfies
+the session effort bar, like a consolidation pass):
+
+- BACKFILL: every open PR without a label gets one. An ML PR (files under
+  `gengin/machineLearning/`) is `ML Improvements`; a render/flight/general PR
+  is not yours to judge deeply — label it from its changed paths and the gate
+  its body claims, then `label_pull_request(N, [<label>])`. Never invent a
+  label name.
+- UNTANGLE: a PR mixing categories (e.g. ML hunks + render hunks) is split:
+  for each category, take that PR's hunks for it, verify them alone under that
+  category's gate, open one PR per category
+  (`branch="llmopt/<8-hex-sha>/untangle-<N>-<category>"`, labeled), then
+  `close_pull_request(N, "Split into <URLs> ...")` on the mixed original.
+- REPAIR (low priority): an open PR whose `fetch_pull_request` reports
+  `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
+  onto its existing branch (normal push, NEVER force-push), re-run its gate,
+  and comment what was ported. Skip ports that are not obvious in a few hunks.
 
 ## SESSION EFFORT BUDGET
 This is a long session and the supervisor measures whether you used it.  A

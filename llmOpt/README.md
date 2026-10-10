@@ -53,7 +53,7 @@ Suites: `smoke core stress edges chain upscale srnet all`. Baselines in
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
 `llmOpt/.env` on the VM — the agent could mint unlimited keys.
 
-## Tools (30)
+## Tools (31)
 
 | Group              | Tools |
 |--------------------|-------|
@@ -62,7 +62,7 @@ Secrets never live in the checkout. Never put the OpenRouter *management* key in
 | ML layer kernels   | `ml_bench`, `ml_scenarios`, `ml_trace`, `ml_parity` |
 | Micro-bench        | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench` |
 | Visual evidence    | `compare_bench_frames`, `compare_images` |
-| Pull requests      | `list_pull_requests`, `fetch_pull_request`, `close_pull_request` |
+| Pull requests      | `list_pull_requests`, `fetch_pull_request`, `close_pull_request`, `label_pull_request` |
 | Hotspots           | `hot_annotate_func`, `hot_annotate_file` |
 | clangd             | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Session control    | `report_session_result` (supervised only) |
@@ -70,7 +70,11 @@ Secrets never live in the checkout. Never put the OpenRouter *management* key in
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate) ->
 `compare_bench_frames` (before/after/diff in `screenshots/visual/`) ->
 `create_pr(imageOutputChange=true)` opens a `[visual]` PR (min SSIM 0.95).
-With 4+ open PRs a session verifies them and folds survivors into one consolidation PR.
+Every PR carries exactly one category label (`create_pr(label=...)`,
+`label_pull_request`); categories and their gates are defined in
+`prompts/optimize.md` (PR CATEGORIES AND LABELS). With 4+ open PRs sharing one
+label a session verifies them and folds survivors into one consolidation PR —
+never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 
 ## Files
 

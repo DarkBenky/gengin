@@ -66,9 +66,10 @@ were attempt-and-measured-and-refuted in THIS session — switch to the SECOND
 OBJECTIVE (the flight controller), and treat it as a LAST RESORT, not an equal
 half of the session: ending in `no_change` with the render refutations
 recorded is also a valid, honest outcome.  Flight is never mandatory.
-Alternatively, when 4 or more pull requests are open, the MAINTENANCE TASK
-below (PR consolidation) is a valid session goal; a complete pass through it
-also satisfies this bar.
+Alternatively, when 4 or more pull requests share the same category label,
+the MAINTENANCE TASK below (PR consolidation) is a valid session goal; a
+complete pass through it — or through its housekeeping duties (backfill,
+untangle, repair) — also satisfies this bar.
 Candidates come from the `## Node map`, ranked by its flame percentages.  If
 that section is empty (first session on a fresh checkout), seed it from your
 own `make_flame` output — top 5 nodes, one row each — before choosing.  The
@@ -104,9 +105,9 @@ PR is NOT a candidate:
   covered, one `quick_ask(choices=["covered", "not covered"], context=<titles>)`
   call is cheaper than reading every PR; it is advisory — you still make the
   final call.
-- Exception: with 4 or more open PRs you may take the MAINTENANCE TASK below
-  instead — folding verified open PRs into one consolidation PR is not
-  re-implementing them.
+- Exception: with 4 or more open PRs sharing one category label you may take
+  the MAINTENANCE TASK below instead — folding verified open PRs of that one
+  category into one consolidation PR is not re-implementing them.
 
 ## WORKFLOW
 
@@ -235,11 +236,13 @@ END of the session.
       (style, naming, formatting, no reformatting of untouched lines);
     - every hunk must belong to the change you measured — revert experiment
       scaffolding and stray files before it ships.
-19. `create_pr(title, body, imageOutputChange)` — one logical improvement per
-    PR; `imageOutputChange` is REQUIRED — pass `false` for exact-match
-    optimizations, `true` only for a deliberate visual change (see ALGORITHM
-    VARIATION below; also pass `compareImagePaths=[...]` from
-    `compare_bench_frames`).  The body states the measured speedup and the
+19. `create_pr(title, body, imageOutputChange, label)` — one logical
+    improvement per PR, in exactly ONE category; `label` is REQUIRED (see PR
+    CATEGORIES AND LABELS).  `imageOutputChange` is REQUIRED — pass `false`
+    for exact-match optimizations, `true` only for a deliberate visual change
+    (see ALGORITHM VARIATION below; also pass `compareImagePaths=[...]` from
+    `compare_bench_frames`).  The body STARTS with the `## Changes` table and
+    the `## Performance vs baseline` table, then the measured speedup and the
     risk analysis.
     The branch name is derived automatically; do NOT pass one.  In a manual
     (unsupervised) session where the tool asks for one, pass
@@ -326,30 +329,60 @@ when the verdict is not IMPROVED, update `codebase_context.md` (its
 `## Flight node map` section has the same row format), and open ONE PR titled
 for the controller with the before/after block quoted in the body.
 
-## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 PRs are open)
-When 4 or more pull requests are open — or the session context explicitly asks
-for it — you may make this the session's task instead of a new optimization:
-verify the open PRs individually and fold the ones that pass into ONE
-consolidation PR.  State the choice in your first message.  The reviewer gets
-one PR instead of a dozen, and every included change still carries its own
-before/after numbers.  This is the one sanctioned multi-change PR; keep it to
-verified, independent changes.
+## PR CATEGORIES AND LABELS
+
+Every pull request belongs to exactly ONE category and carries exactly ONE
+GitHub label. Never fold two categories into one PR, and never open a PR
+without its label (`create_pr(label=...)`).
+
+| Label | What belongs here | Gate that proves it |
+|---|---|---|
+| `Render Improvements` | render changes that keep the frame hashes identical and improve performance | `make_bench` `PERFORMANCE IMPROVED` with `image_mse` 0.00 and identical frame hashes |
+| `Render Improvements [Visual change / Performance]` | render changes that alter the image minimally but measurably uplift performance | `make_bench(allow_visual_change=true)` IMPROVED + min SSIM >= 0.95 evidence (the `[visual]` path) |
+| `Render Improvements Visual [No/Minimal Cost]` | render changes that IMPROVE visual quality at no or extremely limited performance cost — a side goal, not the hot-path work | visual improvement shown by side-by-side before/after composites (`compare_bench_frames` / `compare_images` attached) AND `make_bench` not REGRESSED (cost <= noise) |
+| `Flight Controller` | flight-controller changes that improve performance | `flight_bench` `OVERALL: IMPROVED` |
+| `General Improvements` | README-driven work, bug fixes, small utilities/functions that reduce testing/review overhead — EXTREMELY low priority | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+
+Category rules:
+- The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
+  the same style as the surrounding codebase — no reformatting, no new
+  abstractions, no struct or data-layout changes unless strictly required.
+- General Improvements must not change underlying structures and must not cost
+  performance. If a "utility" change grows the hot path, it is not one.
+- PR body format (ALL PRs, including consolidation and merged-history
+  summaries): the body STARTS with
+  1. a `## Changes` table — one row per change: file, function, what, why;
+  2. a `## Performance vs baseline` table — one row per metric: baseline
+     value, new value, delta (frame avg/median/p99 + mse for render; miss /
+     hitRate / effort / cost for flight; "n/a (no perf impact)" + measured
+     cost for General/Visual-quality PRs).
+  Evidence sections follow the tables.
+
+## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 PRs share a category)
+
+Compaction is per CATEGORY: take this task when 4 or more open PRs carry the
+same label (or the session context explicitly asks for it). A consolidation PR
+folds PRs of ONE label only — never render + flight, never exact + visual.
+State the choice in your first message. The reviewer gets one PR per category
+instead of a dozen, and every included change still carries its own
+before/after numbers. This is the one sanctioned multi-change PR; keep it to
+verified, independent changes of the same category.
 
 1. Inventory — `list_pull_requests(state="open", limit=20, page=1)`, paging
-   while `sourcePageHasMore`.  Skip drafts, `[visual]` PRs and PRs touching
-   `machineLearning/`, `llmOpt/` or `deps/` (leave those open).  Newest first,
-   at most 6.
+   while `sourcePageHasMore`. Read each PR's `labels`. Skip drafts and PRs
+   touching `machineLearning/`, `llmOpt/` or `deps/` (leave those open).
+   Pick the category with >= 4 eligible PRs; newest first, at most 6.
 2. Verify each PR alone.  HEAD stays the prepared target SHA so the pinned
    baselines keep loading; every candidate is applied as UNCOMMITTED edits:
    - `fetch_pull_request(N)` — head, files, diffstat, and whether it applies.
    - Apply it as uncommitted edits.  If it does not apply, port only
      mechanical conflicts; a port that is not obvious within a few hunks is
      `conflict - skipped`.
-   - `build_project`, then gate what the PR touches:
+   - `build_project`, then gate what the PR touches (the category's gate from
+     the table above):
      render files -> `make_bench`: include only on `PERFORMANCE IMPROVED`
      (repeat once for 1-3% wins) with `image_mse` 0.00.
      flight files -> `flight_bench`: include only on `OVERALL: IMPROVED`.
-     both -> both gates must pass.
    - Record the numbers, then `git checkout -- .` before the next candidate.
 3. Combine the winners in win order (largest measured win first).  If two
    winners conflict, keep the larger win, note the dropped PR in the body and
@@ -357,9 +390,11 @@ verified, independent changes.
 4. Validate the combined tree: `build_project` + EVERY gate the batch touches
    (step 2).  If the combination fails where the PRs passed alone, drop the
    weakest winner and re-run — note the interaction in the PR body.
-5. `create_pr(title="consolidate: N verified PRs (render + flight)",
-   body=<per-PR table: number, title, measured numbers, applied or why not;
-   the combined gate block; "Supersedes: #a #b ...">, imageOutputChange=false)`.
+5. `create_pr(title="consolidate: N verified <category> PRs",
+   body=<## Changes table + ## Performance vs baseline table + per-PR table:
+   number, title, measured numbers, applied or why not; the combined gate
+   block; "Supersedes: #a #b ...">, imageOutputChange=false,
+   label=<the one category label>)`.
    In a manual session pass `branch="llmopt/<8-hex-sha>/consolidate-<yyyymmdd>"`.
 6. Close ONLY the included PRs:
    `close_pull_request(N, "Consolidated into <URL> after individual
@@ -371,6 +406,27 @@ If fewer than two PRs pass, revert everything (the sandbox must be clean),
 record what was refuted and why, and continue with the normal workflow — never
 open a one-PR "consolidation", and never repeat a contributor's claimed
 numbers without re-measuring them on the prepared SHA.
+
+### PR housekeeping (backfill / untangle / repair — not gated by the 4-PR rule)
+
+Whenever the open-PR block or `list_pull_requests(state="open")` shows an
+unlabeled or mixed-category PR, you may fix it (this also satisfies the
+session effort bar when completed, like a consolidation pass):
+
+- BACKFILL: every open PR without a label gets one. Decide the category from
+  its changed paths and body evidence (which gate it claims/passes), then
+  `label_pull_request(N, [<label>])`. Never invent a label name.
+- UNTANGLE: a PR mixing categories (e.g. render hunks + flight hunks) is
+  split: for each category, take that PR's hunks for it, verify them alone
+  under that category's gate, open one PR per category
+  (`branch="llmopt/<8-hex-sha>/untangle-<N>-<category>"`, labeled), then
+  `close_pull_request(N, "Split into <URLs> ...")` on the mixed original.
+  A category whose hunks fail its gate is not re-opened — record the
+  refutation in the close comment.
+- REPAIR (low priority): an open PR whose `fetch_pull_request` reports
+  `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
+  onto its existing branch (normal push, NEVER force-push), re-run its gate,
+  and comment what was ported. Skip ports that are not obvious in a few hunks.
 
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
@@ -418,10 +474,14 @@ kernel shape, tone mapping, noise/dither, data layout) may be landed as a
    `screenshots/visual/my-label/` in the sandbox.  Inspect them: same scene and
    subject, only the intended difference.
 3. `create_pr(title, body, imageOutputChange=true,
-   compareImagePaths=["screenshots/visual/my-label/frame_00.png", ...])` — the
+   compareImagePaths=["screenshots/visual/my-label/frame_00.png", ...],
+   label="Render Improvements [Visual change / Performance]")` — the
    tool rejects min SSIM < 0.95, prefixes the title with `[visual] ` and
    appends the metrics table + evidence images.  Explain in the body WHY the
-   image changes and why that is acceptable.
+   image changes and why that is acceptable.  (A visual change that IMPROVES
+   quality at no/limited cost instead belongs to
+   `Render Improvements Visual [No/Minimal Cost]` and still attaches the
+   side-by-side composites.)
 
 Rules: at most one deliberate visual change per PR; never a side effect of an
 "exact" optimization; exact PRs must pass `imageOutputChange=false` (the tool
@@ -466,14 +526,23 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     necessary, and then only WHY.  No commented-out code, no reformatting of
     untouched lines: the change must read like the surrounding codebase.
 17. NEVER close a pull request you did not include in your consolidation PR —
-    `close_pull_request` is for folded-in sources only, with the evidence
-    comment.
+    `close_pull_request` is for folded-in sources and untangled mixed PRs
+    only, always with the evidence comment.
 18. NEVER sell a consolidation on a contributor's claimed numbers — only runs
     you made on the prepared SHA go into the evidence.
 19. NEVER default to the flight controller — the frame axis is the product;
     flight is a last resort under the SESSION EFFORT BUDGET conditions, not a
     routine next step, and inherited `tried-failed` rows are not proof that
     render is exhausted (re-profile first).
+20. NEVER open a pull request without its category label — every `create_pr`
+    call passes `label=` with exactly one category from PR CATEGORIES AND
+    LABELS; an unlabeled PR is an incomplete session.
+21. NEVER fold categories into one PR — consolidation, review-folding and
+    untangling always stay inside a single label; a render+flight "mega PR" is
+    a defect to untangle, not a win.
+22. NEVER open a PR whose body does not START with the `## Changes` table and
+    the `## Performance vs baseline` table (compared against the session's
+    pinned baseline, never against another PR's numbers).
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

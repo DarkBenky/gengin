@@ -1171,9 +1171,10 @@ def _open_pr_block(limit=10):
              " re-implement one of them (see the prompt rules):"]
     for pr in prs:
         files = ", ".join(pr.get("files") or []) or "(files unavailable)"
-        lines.append("  #%s %s [%s] files: %s"
+        labels = ", ".join(pr.get("labels") or []) or "UNLABELED"
+        lines.append("  #%s %s [%s] labels: %s files: %s"
                      % (pr.get("number"), (pr.get("title") or "")[:90],
-                        pr.get("branch") or "?", files[:220]))
+                        pr.get("branch") or "?", labels, files[:220]))
     return "\n".join(lines) + "\n\n"
 
 
