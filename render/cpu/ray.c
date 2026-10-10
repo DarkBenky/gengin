@@ -1019,7 +1019,6 @@ static void RayTraceRowFunc(void *arg) {
 		// w = geometry reflection strength — use roughGloss^2 so it stays stronger than sky blend
 		float roughGloss = 1.0f - roughness;
 		camera->reflectBuffer[idx] = (float3){reflDir.x, reflDir.y, reflDir.z, roughGloss * roughGloss};
-		camera->bloomBuffer[idx] = (float3){color.x * emission, color.y * emission, color.z * emission};
 		// NOTE: uvBuffer / triangleIdBuffer / motionVectorBuffer are write-only
 		// (no reader in the codebase, no .cl consumer) — the per-pixel UV
 		// barycentrics + motion-vector transform they fed are dead work and
@@ -1138,13 +1137,6 @@ static void RayTraceRowFunc(void *arg) {
 		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
 								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
 								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w);
-
-		float3 ownEmission = camera->bloomBuffer[row * width + x];
-		camera->bloomBuffer[row * width + x] = (float3){
-			ownEmission.x + accumulatedEmission.x,
-			ownEmission.y + accumulatedEmission.y,
-			ownEmission.z + accumulatedEmission.z,
-		};
 
 		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
 
