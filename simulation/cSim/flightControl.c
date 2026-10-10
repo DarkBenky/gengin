@@ -245,6 +245,14 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
 	float finalDist = distanceToTarget(&simPlane, target);
 
+	// The velocity misalignment is scored twice: -(v_hat . LOS) is flat at
+	// perfect alignment, so the walk sees no gradient there, while the chord
+	// |v_hat - LOS| = 2*sin(theta/2) is monotone in the misalignment with a
+	// unit gradient at zero.  The chord alone cannot ship -- it costs the
+	// `step` tier its arrival -- which is why the command damping below is
+	// tuned together with it.
+	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
+
 	// Tuned as a pair: the 3.0 amplification predates the deflection charge, and
 	// once the rudder was priced above the wing controls it pins the search into
 	// the `step` tier's floor -- each knob alone regresses `step` by more than
@@ -276,7 +284,7 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + alignVelChord;
 
 	return loss;
 }
@@ -395,6 +403,22 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 							  gradient[1] * gradient[1] +
 							  gradient[2] * gradient[2]);
 		if (gradMag > 1e-6f) {
+			// The three surfaces do not have comparable authority, so a plain
+			// 3-vector normalization hands nearly the whole step to whichever
+			// axis has the largest slope and leaves the other two at ~0: the
+			// walk then descends along one axis only.  Floor every non-flat
+			// axis at a quarter of the strongest before normalizing so all
+			// three keep steering.  Swept on the pinned suite (floor share ->
+			// aggregate miss / effort / saturated steps): unfloored 231.8 /
+			// 16.78 / 6408, 0.15 -> 230.5 / 16.80 / 6511, 0.25 -> 229.1 /
+			// 16.60 / 6439, 0.50 -> 229.5 / 16.88 / 6555 - 0.25 is the knee,
+			// and the step tier gains the most (+5.7%).
+			const float floorShare = 0.25f * fmaxf(fabsf(gradient[0]), fmaxf(fabsf(gradient[1]), fabsf(gradient[2])));
+			for (int axis = 0; axis < 3; axis++) {
+				float g = gradient[axis];
+				if (g != 0.0f && fabsf(g) < floorShare)
+					gradient[axis] = g < 0.0f ? -floorShare : floorShare;
+			}
 			gradient[0] /= gradMag;
 			gradient[1] /= gradMag;
 			gradient[2] /= gradMag;
@@ -417,10 +441,14 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	}
 
 	// Command the best control the search actually scored, not the iterate the
-	// momentum walk happened to stop on.
-	output.Rudder = bestProbe[0];
-	output.Elevator = bestProbe[1];
-	output.Aileron = bestProbe[2];
+	// momentum walk happened to stop on -- and only half the gap from where
+	// the surfaces already are.  The probe is scored as if the commanded
+	// surface were reached immediately, but the plant slews (the elevator
+	// needs 0.6 s for full travel), so commanding the probe outright leaves
+	// the set point chasing an unachievable jump every frame.
+	output.Rudder = 0.5f * (bestProbe[0] + planeGetRudder01(&ctrl->plane));
+	output.Elevator = 0.5f * (bestProbe[1] + planeGetElevator01(&ctrl->plane));
+	output.Aileron = 0.5f * (bestProbe[2] + planeGetAileron01(&ctrl->plane));
 
 	output.RudderLoss = bestAxisLoss[0];
 	output.ElevatorLoss = bestAxisLoss[1];
