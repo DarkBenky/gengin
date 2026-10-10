@@ -1909,11 +1909,14 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 		r2.x * rayDir.x + r2.y * rayDir.y + r2.z * rayDir.z};
 	float3 invDir = {1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z};
 	float3 bias = {rayOrigin.x * invDir.x, rayOrigin.y * invDir.y, rayOrigin.z * invDir.z};
+	// the second child is entered directly and only the first stays pending, so
+	// an internal node hands over one stack slot instead of two
+	const __m128 farv = _mm_set1_ps(FLT_MAX);
 	int stack[64];
 	int top = 0;
-	stack[top++] = 0;
-	while (top > 0) {
-		const BVHNode *node = &bvh->nodes[stack[--top]];
+	int cur = 0;
+	for (;;) {
+		const BVHNode *node = &bvh->nodes[cur];
 		if (node->triCount > 0) {
 			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
 				if (rayTriangleLeaf4Any(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir, obj->cullBackfaces))
@@ -1927,12 +1930,15 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 				}
 			}
 		} else {
-			float out[2];
-			rayAABB_inv_x2_soa(bias, invDir, node->soa, out);
+			// child0 liveness in bit 0, child1 in bit 2
+			const int live = _mm_movemask_ps(_mm_cmplt_ps(rayAABB_inv_x2_soa_packed(bias, invDir, node->soa), farv));
 			int li = node->leftFirst;
-			if (out[0] < FLT_MAX) stack[top++] = li;
-			if (out[1] < FLT_MAX) stack[top++] = li + 1;
+			if ((live & 5) == 5) { stack[top++] = li; cur = li + 1; continue; }
+			if (live & 4) { cur = li + 1; continue; }
+			if (live & 1) { cur = li; continue; }
 		}
+		if (top == 0) break;
+		cur = stack[--top];
 	}
 	return false;
 }
