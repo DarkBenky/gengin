@@ -384,8 +384,9 @@ static inline float rayAABB_inv(float3 bias, float3 invRd, const float *mn, cons
 
 // Test 2 BVHNode children simultaneously using SSE.
 // soa layout (BVHNode.soa): per axis {child0.mn, child0.mx, child1.mn, child1.mx}
-// out[0] = tmin for child0, out[1] = tmin for child1; FLT_MAX on miss.
-static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *soa, float out[2]) {
+// Packed form of the same test: child0's entry distance in lane 0, child1's in
+// lane 2; FLT_MAX on miss.
+static inline __m128 rayAABB_inv_x2_soa_packed(float3 bias, float3 invRd, const float *soa) {
 	__m128 tx = _mm_fmsub_ps(_mm_loadu_ps(soa + 0), _mm_set1_ps(invRd.x), _mm_set1_ps(bias.x));
 	__m128 ty = _mm_fmsub_ps(_mm_loadu_ps(soa + 4), _mm_set1_ps(invRd.y), _mm_set1_ps(bias.y));
 	__m128 tz = _mm_fmsub_ps(_mm_loadu_ps(soa + 8), _mm_set1_ps(invRd.z), _mm_set1_ps(bias.z));
@@ -397,7 +398,12 @@ static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *so
 	// a box the ray only enters behind the origin cannot hold a hit at t >= 0, so
 	// clipping the entry distance makes it report as a miss and prunes the subtree
 	tmin = _mm_max_ps(tmin, _mm_setzero_ps());
-	__m128 result = _mm_blendv_ps(tmin, _mm_set1_ps(FLT_MAX), _mm_cmplt_ps(tmax, tmin));
+	return _mm_blendv_ps(tmin, _mm_set1_ps(FLT_MAX), _mm_cmplt_ps(tmax, tmin));
+}
+
+// out[0] = tmin for child0, out[1] = tmin for child1; FLT_MAX on miss.
+static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *soa, float out[2]) {
+	__m128 result = rayAABB_inv_x2_soa_packed(bias, invRd, soa);
 	out[0] = _mm_cvtss_f32(result);
 	out[1] = _mm_cvtss_f32(_mm_shuffle_ps(result, result, _MM_SHUFFLE(2, 2, 2, 2)));
 }
