@@ -11,7 +11,8 @@
       - [ ] general improvement that are based mainly on the README.md or bug fixes or ease of use utilities/functions **extremely low priority** changes should be really minimal so like adding few new functions to reduce the testing and review overhead **Important** must follow same style and ideally not change underlined structures if not needed this changes should not make performance lossing changes
    - [ ] session should look if there are badly merge / compacted PRs and untangle them to their categories ( check if there is ability in GitHub to add to PRs tags / labels to make it more clean what category it is) 
    - [ ] the PRs / Merged pr should at begging provide detailed table of chances and always provide table of performance change compared to stating point
-   - [ ] **Low priority** when there is some PR that is still open but the changes made it not able to merge session can look into it and update it to be able to merge it again 
+   - [ ] **Low priority** when there is some PR that is still open but the changes made it not able to merge session can look into it and update it to be able to merge it again
+   - [ ] compaction should be available only when there is 4 or more per category 
 
 - [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
 
