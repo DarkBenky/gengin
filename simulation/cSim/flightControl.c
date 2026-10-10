@@ -416,6 +416,17 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
 	}
 
+	// The probes only ever see points within epsilon of the walk's iterates;
+	// if the loss keeps falling along the momentum direction, the final
+	// iterate beats every probe.  Score it once so it can be commanded too.
+	float finalIterateLoss = lossFunc(ctrl, values, target, deltaTime);
+	if (finalIterateLoss < bestProbeLoss) {
+		bestProbeLoss = finalIterateLoss;
+		bestProbe[0] = values[0];
+		bestProbe[1] = values[1];
+		bestProbe[2] = values[2];
+	}
+
 	// Command the best control the search actually scored, not the iterate the
 	// momentum walk happened to stop on.
 	output.Rudder = bestProbe[0];
