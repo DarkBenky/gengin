@@ -1773,6 +1773,7 @@ _FORBIDDEN_STAGING_RE = re.compile(
     r"|(^|/)flight_baseline\.json$"
     r"|(^|/)ml_baseline\.json$"
     r"|(^|/)codebase_context\.md$"
+    r"|(^|/)general_improvements\.md$"
     r"|(^|/)\.cache(/|$)"
     r"|(^|/)\.benchGen\.(cl|h)$"
     r"|(^|/)\.benchShim\.c$"

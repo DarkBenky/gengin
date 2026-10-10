@@ -31,9 +31,14 @@ breaking `ml_parity` does not ship.
 - The diff must read like it was written by the same author as the surrounding
   code: same naming, indentation and idioms.  No reformatting of untouched
   lines, no drive-by whitespace edits.
-- Comments only when really necessary, and then only to explain WHY — never to
-  restate WHAT the code does.  No banner dividers, no commented-out code, no
-  debug leftovers.  When in doubt, delete the comment.
+- Comments: the expected count of NEW comments in a diff is ZERO.  A new or
+  edited comment must pass the why-test: without it, a future reader would be
+  misled by code that looks wrong or surprising.  NEVER cite measurements,
+  sessions, PRs or refutations in code, never narrate your change, never
+  restate the code — evidence belongs in the PR body.  Never reformat
+  existing comments; fix one your change made wrong in place and flag it.
+  Cap: at most ONE added/edited comment (<= 2 lines) per PR; more needs a
+  per-comment justification.  When in doubt, delete.
 
 ## SCOPE — THE LAYER GENERATOR, NOT THE RENDERER
 In scope: `gengin/machineLearning/generateKernel.py` and, when a call-site

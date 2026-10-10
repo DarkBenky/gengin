@@ -13,9 +13,25 @@ speedup may be applied to the real code.
 - The diff must read like it was written by the same author as the surrounding
   code: same naming, indentation and idioms.  No reformatting of untouched
   lines, no drive-by whitespace edits.
-- Comments only when really necessary, and then only to explain WHY — never to
-  restate WHAT the code does.  No banner dividers, no commented-out code, no
-  debug leftovers.  When in doubt, delete the comment.
+- Comments: the expected count of NEW comments in a diff is ZERO.  These are
+  sparsely commented hot paths; every added comment is review noise.  A new
+  or edited comment must pass the why-test: without it, a future reader would
+  be misled by code that looks wrong or surprising (a non-obvious constant, a
+  subtle invariant, a workaround, an ordering or layout requirement).
+  "Explaining" your own change never qualifies — rationale essays and
+  design-layout blocks above declarations are PR-body material, not comments.
+- NEVER cite measurements, sessions, PRs or refutations in code comments
+  ("+4.5%", "0.3 is the sweep minimum", "refuted 5x", "#88"), never narrate
+  the change ("now capped at 2"), never restate the code — that all belongs
+  in the PR body and `codebase_context.md`.
+- NEVER reformat, re-wrap or "improve" existing comments; fix one your change
+  made factually wrong in place (smallest wording change) and flag it in the
+  PR body.  No banner dividers, no commented-out code, no debug leftovers,
+  no multi-line rationale blocks.
+- Cap: at most ONE added/edited comment (<= 2 lines) per PR; every extra one
+  needs a per-comment justification in the PR body.  When in doubt, delete.
+- Sweep before the PR (Phase 5): every added `//` or `/*` line in the staged
+  diff must pass the why-test, or be deleted.
 
 ## SCOPE — CPU C CODE, NOT OpenCL
 Work the CPU C pipeline: `render/cpu/`, `object/`, `math/`, `util/`,
@@ -69,7 +85,9 @@ recorded is also a valid, honest outcome.  Flight is never mandatory.
 Alternatively, when 4 or more pull requests share the same category label,
 the MAINTENANCE TASK below (PR consolidation) is a valid session goal; a
 complete pass through it — or through its housekeeping duties (backfill,
-untangle, repair) — also satisfies this bar.
+untangle, repair) — also satisfies this bar.  So does ONE completed item from
+the GENERAL IMPROVEMENTS queue (soft-locked final fallback below) — but only
+after the render/flight attempts above are recorded.
 Candidates come from the `## Node map`, ranked by its flame percentages.  If
 that section is empty (first session on a fresh checkout), seed it from your
 own `make_flame` output — top 5 nodes, one row each — before choosing.  The
@@ -230,8 +248,12 @@ END of the session.
     become `tried-failed(<numbers>, <date>)`.
 18. Review the whole diff (`git -C gengin diff`) — the last step before the
     PR, and the last step of every session, even one that ends in `no_change`:
-    - remove comments that are not really necessary, commented-out code and
-      debug leftovers; what stays must explain WHY, not WHAT — the diff has to
+    - comment sweep: list every ADDED comment line in the staged diff
+      (`git -C gengin diff --cached -U0` filtered for `//` and `/*`) — the
+      expected count is ZERO; each survivor must pass the why-test from CODE
+      STYLE or it gets deleted.  Also remove commented-out code and debug
+      leftovers;
+    - what stays must explain WHY, not WHAT — the diff has to
       read like it was written by the same hand as the surrounding code
       (style, naming, formatting, no reformatting of untouched lines);
     - every hunk must belong to the change you measured — revert experiment
@@ -341,7 +363,7 @@ without its label (`create_pr(label=...)`).
 | `Render Improvements [Visual change / Performance]` | render changes that alter the image minimally but measurably uplift performance | `make_bench(allow_visual_change=true)` IMPROVED + min SSIM >= 0.95 evidence (the `[visual]` path) |
 | `Render Improvements Visual [No/Minimal Cost]` | render changes that IMPROVE visual quality at no or extremely limited performance cost — a side goal, not the hot-path work | visual improvement shown by side-by-side before/after composites (`compare_bench_frames` / `compare_images` attached) AND `make_bench` not REGRESSED (cost <= noise) |
 | `Flight Controller` | flight-controller changes that improve performance | `flight_bench` `OVERALL: IMPROVED` |
-| `General Improvements` | README-driven work, bug fixes, small utilities/functions that reduce testing/review overhead — EXTREMELY low priority | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+| `General Improvements` | README-driven work, bug fixes, small utilities/functions that reduce testing/review overhead — EXTREMELY low priority; taken ONLY via the soft-locked fallback below (one curated queue item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
 
 Category rules:
 - The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
@@ -427,6 +449,46 @@ session effort bar when completed, like a consolidation pass):
   `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
   onto its existing branch (normal push, NEVER force-push), re-run its gate,
   and comment what was ported. Skip ports that are not obvious in a few hunks.
+
+## GENERAL IMPROVEMENTS — soft-locked final fallback (at most ONE queue item per session)
+
+Soft lock: this path opens for at most one small chore, and ONLY when ALL of
+these hold:
+- this session's fresh profile shows no untried node >= 2% outside open-PR
+  coverage, and the render/flight attempts above are already recorded;
+- consolidation is not eligible (< 4 open PRs share a label) and the
+  housekeeping duties are clean.
+
+Work comes ONLY from the queue in `general_improvements.md`.  Do NOT sweep
+the README or the codebase for chores, and do NOT implement anything you
+added under "Proposed" yourself — that list is for maintainer review, not a
+work list.  If the file or its queue list is missing, or has no unchecked
+items, the fallback is unavailable — never create entries, never promote
+"Proposed" items, never add your own.
+
+Inspect at most the first TWO unchecked items; take the first that passes:
+- caps: <= 2 files, <= 120 changed lines, ONE logical change, same style AND
+  comment density as the surrounding code (CODE STYLE applies);
+- no struct/data-layout/public-signature changes, no new dependencies, no
+  build-system changes, no visual change; no file covered by an open PR;
+  nothing under `llmOpt/`, `deps/` or `machineLearning/`;
+- a bug fix must first REPRODUCE on the current tree using existing tools; if
+  it does not reproduce, record the refutation and stop;
+- a testing/review-overhead utility must remove existing manual work, not add
+  a feature.
+
+Gate before the PR: `build_project` clean; `make_bench` before/after with both
+numbers recorded in the PR body, NOT worse (`image_mse` 0.00, identical frame
+hashes); `flight_bench` not worse if simulation code is touched.
+
+Open it with `create_pr(..., label="General Improvements",
+imageOutputChange=false)` and the standard body tables (Performance row:
+"n/a (no perf impact)" + the measured before/after).  Then mark the queue item
+`- [x] <id> (PR <number>)` in `general_improvements.md`.
+
+If the change grows past the caps or fails a gate: revert everything, record
+why in `codebase_context.md`, report `no_change` naming the item.  ONE item
+per session — never retry, never take a second.
 
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
@@ -543,6 +605,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
 22. NEVER open a PR whose body does not START with the `## Changes` table and
     the `## Performance vs baseline` table (compared against the session's
     pinned baseline, never against another PR's numbers).
+23. NEVER invent General Improvements work: no README/codebase sweeping for
+    chores, no implementing your own "Proposed" queue entries, no second item
+    after a failure — the fallback is soft-locked to ONE curated queue item
+    per session and the caps are hard.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

@@ -88,6 +88,7 @@ never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 | `scripts/setup-hermes.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
 | `scripts/supervisor-console.sh` | Supervisor in a tmux console (VM) |
 | `codebase_context.md` | Architecture, wins, failures, hotspots (gitignored, per checkout) |
+| `general_improvements.md` | Curated minimal-chore queue for the sessions' General Improvements fallback (tracked, shared) |
 
 ## Sandbox
 
