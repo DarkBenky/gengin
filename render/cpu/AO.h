@@ -1394,6 +1394,43 @@ static void UpsampleAoRows(void *arg) {
 		const float *restrict s1 = src + y1 * srcWidth;
 		float *restrict d = dst + y * dstWidth;
 
+#if AO_SMOOTH_DOWNSCALE == 4
+		// scale 4 makes the x mapping periodic: x=8j+p taps (2j-1)+[0,0,1,1,1,1,2,2]
+		// and +1 with tx cycling .625,.875,.125,.375; head/tail keep the table clamps.
+		int x = 0;
+		while (x < 8 && x < dstWidth) {
+			const int x0 = x0Tab[x];
+			const int x1 = x1Tab[x];
+			const float tx = txTab[x];
+			const float top = s0[x0] + (s0[x1] - s0[x0]) * tx;
+			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
+			d[x++] = top + (bot - top) * ty;
+		}
+		const __m256 txv = _mm256_setr_ps(0.625f, 0.875f, 0.125f, 0.375f, 0.625f, 0.875f, 0.125f, 0.375f);
+		const __m256 tyv = _mm256_set1_ps(ty);
+		const __m256i idxA = _mm256_setr_epi32(0, 0, 1, 1, 1, 1, 2, 2);
+		const __m256i idxB = _mm256_setr_epi32(1, 1, 2, 2, 2, 2, 3, 3);
+		for (; x + 8 <= dstWidth && (x / 8) * 2 + 6 < srcWidth; x += 8) {
+			__m256 w0 = _mm256_loadu_ps(s0 + (x / 8) * 2 - 1);
+			__m256 a = _mm256_permutevar8x32_ps(w0, idxA);
+			__m256 b = _mm256_permutevar8x32_ps(w0, idxB);
+			__m256 top = _mm256_add_ps(a, _mm256_mul_ps(_mm256_sub_ps(b, a), txv));
+			__m256 w1 = _mm256_loadu_ps(s1 + (x / 8) * 2 - 1);
+			__m256 a1 = _mm256_permutevar8x32_ps(w1, idxA);
+			__m256 b1 = _mm256_permutevar8x32_ps(w1, idxB);
+			__m256 bot = _mm256_add_ps(a1, _mm256_mul_ps(_mm256_sub_ps(b1, a1), txv));
+			_mm256_storeu_ps(d + x, _mm256_add_ps(top, _mm256_mul_ps(_mm256_sub_ps(bot, top), tyv)));
+		}
+		for (; x < dstWidth; x++) {
+			const int x0 = x0Tab[x];
+			const int x1 = x1Tab[x];
+			const float tx = txTab[x];
+
+			const float top = s0[x0] + (s0[x1] - s0[x0]) * tx;
+			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
+			d[x] = top + (bot - top) * ty;
+		}
+#else
 		for (int x = 0; x < dstWidth; x++) {
 			const int x0 = x0Tab[x];
 			const int x1 = x1Tab[x];
@@ -1403,6 +1440,7 @@ static void UpsampleAoRows(void *arg) {
 			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
 			d[x] = top + (bot - top) * ty;
 		}
+#endif
 	}
 }
 
