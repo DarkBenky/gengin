@@ -290,9 +290,9 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
 
     label is REQUIRED by the workflow rules: exactly one category from
     Render Improvements, Render Improvements [Visual change / Performance],
-    Render Improvements Visual [No/Minimal Cost], Flight Controller, General
-    Improvements, ML Improvements. One PR = one category; never fold two
-    categories into one PR. An unknown name is rejected.
+    Render Improvements Visual [No/Minimal Cost], Flight Controller, Missile
+    Controller, General Improvements, ML Improvements. One PR = one category;
+    never fold two categories into one PR. An unknown name is rejected.
 
     imageOutputChange is required: False for exact-match optimizations
     (screenshots/ is never staged); True for a deliberate visual change —
@@ -353,7 +353,8 @@ def close_pull_request(number: int, comment: str) -> str:
 
 
 @mcp.tool()
-def flight_bench(steps: int = 0, capture_baseline: bool = False) -> str:
+def flight_bench(steps: int = 0, capture_baseline: bool = False,
+                 model: str = "", missile: str = "") -> str:
     """Run the flight-controller suite (deterministic, ~20 s) and compare it
     against the pinned baseline.  Metrics per tier - static, drift, weave, step,
     jink (moving targets that change direction and speed) - plus an aggregate:
@@ -363,25 +364,33 @@ def flight_bench(steps: int = 0, capture_baseline: bool = False) -> str:
     step.  The first call on a clean controller captures the baseline; pass
     capture_baseline=True to re-capture it.  `steps` overrides the rollout
     length (a non-default length has no baseline and only reports absolute
-    numbers)."""
-    return json.dumps(_main.flightBench(steps=steps, capture_baseline=capture_baseline),
+    numbers).  `model` flies another simModels plane preset instead of the
+    F-16C; `missile` runs the point-mass missile model instead (its guidance
+    lives in flightControl.c).  Every vehicle is its own suite hash with its
+    own pinned baseline."""
+    return json.dumps(_main.flightBench(steps=steps, capture_baseline=capture_baseline,
+                                        model=model, missile=missile),
                       indent=2)
 
 
 @mcp.tool()
-def flight_scenarios() -> str:
+def flight_scenarios(model: str = "", missile: str = "") -> str:
     """List the flight suite: settings, tier list, scenario ids, and whether a
-    baseline exists for the current HEAD and suite hash."""
-    return json.dumps(_main.flightScenarios(), indent=2)
+    baseline exists for the current HEAD and suite hash (model/missile select
+    the vehicle, as in flight_bench)."""
+    return json.dumps(_main.flightScenarios(model=model, missile=missile), indent=2)
 
 
 @mcp.tool()
-def flight_trace(scenario: str, steps: int = 0, label: str = "") -> str:
+def flight_trace(scenario: str, steps: int = 0, label: str = "",
+                 model: str = "", missile: str = "") -> str:
     """Run ONE flight scenario (id like "weave:2" from flight_scenarios) and
     write its trajectory to bench/results/flight_trace_<label>.csv (inside the
     sandbox, never staged), returning the metric block plus the first and last
-    rows.  Use it to see how a controller change actually flies."""
-    return json.dumps(_main.flightTrace(scenario, steps=steps, label=label), indent=2)
+    rows.  Use it to see how a controller change actually flies; model/missile
+    as in flight_bench."""
+    return json.dumps(_main.flightTrace(scenario, steps=steps, label=label,
+                                        model=model, missile=missile), indent=2)
 
 
 @mcp.tool()

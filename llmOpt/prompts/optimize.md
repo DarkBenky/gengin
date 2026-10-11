@@ -10,6 +10,12 @@ benchmarked and validated against the original.  Only a proven, measurable
 speedup may be applied to the real code.
 
 ## CODE STYLE — MATCH THE FILE, COMMENTS ONLY WHEN NECESSARY
+- The repo's own style guide is MANDATORY reading before any edit:
+  `.github/copilot-instructions.md` (+ `.github/instructions/C projects.instructions.md`).
+  Essentials: camelCase functions/variables, PascalCase types,
+  Structure-of-Arrays over Array-of-Structs, arena allocators and buffer
+  reuse, small focused functions, explicit error handling, no emojis or
+  non-ASCII in code or comments, comments only for the non-obvious why.
 - The diff must read like it was written by the same author as the surrounding
   code: same naming, indentation and idioms.  No reformatting of untouched
   lines, no drive-by whitespace edits.
@@ -49,7 +55,8 @@ hotspot.
 ## START HERE
 1. `read_file` the knowledge base at `codebase_context.md` — architecture,
    confirmed wins, failed approaches, and remaining hotspots from prior
-   sessions.
+   sessions.  Also read the repo style guide `.github/copilot-instructions.md`
+   before any edit (see CODE STYLE below).
 2. `terminal`: `git -C gengin status --porcelain` and
    `git -C gengin log --oneline -3` to see the sandbox state (uncommitted
    edits, current branch).
@@ -289,12 +296,14 @@ and refuted in this session.  Do not drift here on inherited evidence — old
 with the render refutations recorded.  When you do switch: at most one switch
 per session, and only after the frame axis has real numbers.
 The target is the interceptor guidance law in `simulation/cSim/flightControl.c`
-(+ `flightControl.h`) — a per-frame iterative search over
-rudder/elevator/aileron that minimises a multi-step simulated loss against a
-moving target.  The objective is two-stage: first close the closest-approach
-gap (miss distance — the only gradient while hitRate is 0.00), then, once
-scenarios start hitting the 25 m radius, minimise the time to target
-(per-scenario `tHit`, aggregated as `tHitMean`).  Frame time is not the metric.
+(+ `flightControl.h`): the plane controller `getControllerOutputV5` — a
+per-frame iterative search over rudder/elevator/aileron that minimises a
+multi-step simulated loss against a moving target — and the missile controller
+`getControllerOutputMissile`, which maps the proportional-navigation accel
+command onto the fin/TVC deflections.  The objective is two-stage: first close
+the closest-approach gap (miss distance), then minimise the time to target
+(per-scenario `tHit`, aggregated as `tHitMean`); hits exist at the baseline
+(hitRate 0.30), so both stages are live.  Frame time is not the metric.
 
 1. `flight_scenarios()` — the fixed suite (20 scenarios, 5 tiers: `static`,
    `drift`, `weave`, `step`, `jink`; the last three change direction and speed
@@ -305,28 +314,40 @@ scenarios start hitting the 25 m radius, minimise the time to target
    effort, saturation steps and the median controller cost in us/step; the
    summary adds a mean-time-to-target line (non-hits count as the full rollout,
    so it improves as hits appear and as hits get faster).
+   - The suite can fly other vehicles: `flight_bench(model="MiG-29")` runs any
+     `simModels` plane preset, `flight_bench(missile="AIM-120C")` the point-mass
+     missile model (`getControllerOutputMissile` in `flightControl.c`); each
+     vehicle is its own suite hash with its own baseline, captured the same way.
+     Both need their `simulation/simModels/<name>.bin` committed to the repo —
+     the sandbox is a clone, so an uncommitted bin fails to load.
 3. `flight_trace("weave:2")` — per-step trace of ONE scenario when a number
    looks wrong; read the miss trajectory before theorising.
 
 The verdict policy, from the baseline run: IMPROVED needs miss to improve
 beyond 1% with no tier losing more than 10%, stability intact (no non-finite
 state), per-step cost not worse than +20%, saturation steps within 10%, and —
-once hits exist — mean time to target not worse beyond 5%.  While hitRate is
-0.000 the time-to-target row reads n/a; the first hits flip the hit-rate row to
-IMPROVED and the mean time to target (non-hits count as the full rollout) starts
-falling from 30 s.  A miss win that costs 3x more per frame is a regression, and
+once hits exist — mean time to target not worse beyond 5%.  At the baseline
+hitRate (0.30) the time-to-target row is live: non-hits count as the full
+rollout (30 s), so more hits and faster hits both pull `tHitMean` down from
+27.1 s.  A miss win that costs 3x more per frame is a regression, and
 a cheap controller that gives away miss distance is also a regression — the
 summary prints both sides, so read the whole block.
-Baseline numbers (current desktop pin, flight-physics batch 2026-10-02):
-aggregate miss ~232 m, hitRate 0.00, tHitMean -1 (no hits), effort ~16.8,
-satSteps 6408, cost machine-dependent (~0.6 ms/step desktop, several ms/step
-on the VM); by tier static 366 / drift 167 / weave 192 / step 96 / jink 338.
-Note: step 1/24 (the trainNN rollout rate) is a different operating point:
-miss ~282 and effort ~27.5 for the same 30 s rollout, so optimize at the rate
-the deployed controller will actually run.
+Baseline numbers (current desktop pin, captured 2026-10-11): aggregate miss
+114.6 m, hitRate 0.30, tHitMean 27.1 s, effort 5.59, satSteps 183, cost
+machine-dependent (~0.4 ms/step desktop, several ms/step on the VM); by tier
+static 92.6 / drift 52.6 / weave 119.7 / step 18.0 / jink 290.0.
+Note: step 1/24 (the trainNN rollout rate) is a different operating point —
+re-measure there before optimizing for it; optimize at the rate the deployed
+controller will actually run.
 
 Leads worth trying (one logical change per attempt, measure every one):
-- `jink` is the weak tier (~338 m): the target fires 0.5-1.5 s impulses while
+- The missile controller is a second, independent target in the same file:
+  `getControllerOutputMissile` maps the PN accel onto the front/back fins via
+  `missileFinAccelPerDeflection` and leaves TVC at neutral (0.5).  Bench it with
+  `flight_bench(missile="AIM-120C")` against its own suite baseline; leads: use
+  TVC during boost, revisit the closing-speed floor in `missileGuidanceAccel`,
+  and the saturation behaviour of the authority inversion.
+- `jink` is the weak tier (~290 m): the target fires 0.5-1.5 s impulses while
   the loss simulates the target straight-line — a target-acceleration or
   turn-rate term is the obvious missing piece.
 - `LOOKAHEAD_STEPS` (16, `flightControl.h`) vs `MAX_ITERATION_PER_AXIS` (128):
@@ -340,16 +361,17 @@ Leads worth trying (one logical change per attempt, measure every one):
   `learningRate *= 0.95` per iteration may converge too fast on 128 iterations.
 - The reported `*Loss` fields keep the best-so-far value, not the final one —
   `LossAngle` (and any logic keyed on it) can be misleading.
-- hitRate is 0.00 at baseline: every scenario ends 88-650 m short.  The first
-  hits are stage one of the stretch goal — any hit flips the hit-rate row to
-  IMPROVED and starts moving the mean time to target; a 25 m hit is not
-  required for IMPROVED on miss alone.
+- hitRate is 0.30 at baseline: `step` (0.75) and `drift` (0.5) hit, `weave` and
+  `jink` never do — closing those two tiers is stage one, faster hits on the
+  hitting tiers is stage two; a miss-only win still counts as IMPROVED.
 
 Discipline is the same as the frame axis: revert with
 `git checkout -- simulation/cSim/flightControl.c simulation/cSim/flightControl.h`
 when the verdict is not IMPROVED, update `codebase_context.md` (its
 `## Flight node map` section has the same row format), and open ONE PR titled
-for the controller with the before/after block quoted in the body.
+for the controller with the before/after block quoted in the body.  Label the
+PR by target: plane controller => `Flight Controller`, missile controller =>
+`Missile Controller`; never mix the two controllers in one PR.
 
 ## PR CATEGORIES AND LABELS
 
@@ -362,7 +384,8 @@ without its label (`create_pr(label=...)`).
 | `Render Improvements` | render changes that keep the frame hashes identical and improve performance | `make_bench` `PERFORMANCE IMPROVED` with `image_mse` 0.00 and identical frame hashes |
 | `Render Improvements [Visual change / Performance]` | render changes that alter the image minimally but measurably uplift performance | `make_bench(allow_visual_change=true)` IMPROVED + min SSIM >= 0.95 evidence (the `[visual]` path) |
 | `Render Improvements Visual [No/Minimal Cost]` | render changes that IMPROVE visual quality at no or extremely limited performance cost — a side goal, not the hot-path work | visual improvement shown by side-by-side before/after composites (`compare_bench_frames` / `compare_images` attached) AND `make_bench` not REGRESSED (cost <= noise) |
-| `Flight Controller` | flight-controller changes that improve performance | `flight_bench` `OVERALL: IMPROVED` |
+| `Flight Controller` | plane-controller changes (`getControllerOutputV5` + the loss) that improve performance | `flight_bench()` `OVERALL: IMPROVED` on the plane suite |
+| `Missile Controller` | missile-controller changes (`getControllerOutputMissile`) that improve performance | `flight_bench(missile="...")` `OVERALL: IMPROVED` on that missile's suite |
 | `General Improvements` | README-driven work, bug fixes, small utilities/functions that reduce testing/review overhead — EXTREMELY low priority; taken ONLY via the soft-locked fallback below (one curated queue item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
 
 Category rules:

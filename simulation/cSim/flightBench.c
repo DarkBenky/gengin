@@ -24,6 +24,7 @@
 #define FLIGHT_BENCH 1
 #endif
 #include "flightControl.c"
+#include "missile.h"
 
 #include <pthread.h>
 #include <stdint.h>
@@ -38,6 +39,16 @@
 #define FB_MAX_SCENARIOS (FB_TIERS * FB_SEEDS)
 
 static const char *tierNames[FB_TIERS] = { "static", "drift", "weave", "step", "jink" };
+
+// Missile launch profiles per seed: {range (m), off-boresight (deg)}.  The mix
+// flies long-range boresight shots, standard and hard off-boresight turns and
+// an extreme-range energy fight, each against every tier's target motion.
+static const float fbMissileProfiles[FB_SEEDS][2] = {
+	{ 9000.0f, 0.0f },
+	{ 7000.0f, 30.0f },
+	{ 7000.0f, 60.0f },
+	{ 11000.0f, 15.0f },
+};
 
 typedef enum { TG_STATIC, TG_DRIFT, TG_WEAVE, TG_STEP, TG_JINK } TargetKind;
 
@@ -222,31 +233,104 @@ static float fbSafe(float v) {
 	return isfinite(v) ? v : 0.0f;
 }
 
+// Rotate about world Y (degrees); keeps the missile launch geometry horizontal.
+static float3 fbRotateY(float3 v, float deg) {
+	float a = deg * 0.01745329f;
+	float c = cosf(a);
+	float s = sinf(a);
+	return (float3){ v.x * c + v.z * s, v.y, -v.x * s + v.z * c, 0.0f };
+}
+
 typedef struct {
 	const Scenario *scenario;
 	int steps;
 	float dt;
+	const char *modelPath;
+	int missile;
 	ScenarioResult result;
 } FbJob;
 
-static ScenarioResult fbRun(const Scenario *s, int steps, float dt, FILE *trace);
+static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *modelPath, int missile, FILE *trace);
 
 static void *fbWorker(void *arg) {
 	FbJob *job = (FbJob *)arg;
-	job->result = fbRun(job->scenario, job->steps, job->dt, NULL);
+	job->result = fbRun(job->scenario, job->steps, job->dt, job->modelPath, job->missile, NULL);
 	return NULL;
 }
 
-static ScenarioResult fbRun(const Scenario *s, int steps, float dt, FILE *trace) {
+static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *modelPath, int missile, FILE *trace) {
 	ScenarioResult r = { 0 };
 	r.scenario = s;
 	r.tHit = -1.0f;
 
+	if (missile) {
+		TargetState target;
+		fbTargetInit(s, &target);
+
+		// Missile launch profile by seed (range + off-boresight), see
+		// fbMissileProfiles; the target keeps flying its tier's motion.
+		const float *profile = fbMissileProfiles[s->seed];
+		float3 axis = Float3_Sub(target.position, (float3){ 0.0f, 1000.0f, 0.0f, 0.0f });
+		axis.y = 0.0f;
+		axis = Float3_Normalize(axis);
+		float3 launchPos = Float3_Sub(target.position, Float3_Scale(axis, profile[0]));
+		float3 launchVel = Float3_Scale(fbRotateY(axis, profile[1]), 180.0f);
+
+		Missile m;
+		if (missileLoadBin(&m, modelPath, launchPos, launchVel) != 0) {
+			fprintf(stderr, "flightBench: cannot load %s\n", modelPath);
+			exit(2);
+		}
+
+		float minDist = FLT_MAX;
+		double costs[FB_MAX_STEPS];
+		int costCount = 0;
+		for (int step = 0; step < steps; step++) {
+			struct timespec begin;
+			struct timespec end;
+			clock_gettime(CLOCK_MONOTONIC, &begin);
+			int alive = missileUpdate(&m, target.position, target.velocity, dt);
+			clock_gettime(CLOCK_MONOTONIC, &end);
+			if (costCount < FB_MAX_STEPS) {
+				costs[costCount++] = (end.tv_sec - begin.tv_sec) * 1e6 + (end.tv_nsec - begin.tv_nsec) / 1e3;
+			}
+			fbTargetStep(s, &target, dt);
+
+			float dist = Float3_Length(Float3_Sub(target.position, m.position));
+			if (dist < minDist) {
+				minDist = dist;
+			}
+			if (r.tHit < 0.0f && dist <= FB_HIT_RADIUS) {
+				r.tHit = (float)(step + 1) * dt;
+			}
+			if (!isfinite(m.position.x) || !isfinite(m.position.y) || !isfinite(m.position.z)
+					|| !isfinite(m.velocity.x) || !isfinite(m.velocity.y) || !isfinite(m.velocity.z)) {
+				r.unstable = 1;
+			}
+			if (trace != NULL) {
+				fprintf(trace, "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+					(float)(step + 1) * dt,
+					fbSafe(m.position.x), fbSafe(m.position.y), fbSafe(m.position.z),
+					fbSafe(target.position.x), fbSafe(target.position.y), fbSafe(target.position.z),
+					0.0f, 0.0f, 0.0f, fbSafe(dist));
+			}
+			if (!alive) {
+				break;
+			}
+		}
+		r.miss = minDist;
+		r.finalDist = Float3_Length(Float3_Sub(target.position, m.position));
+		r.hit = r.miss <= FB_HIT_RADIUS;
+		qsort(costs, (size_t)costCount, sizeof(double), fbCompareDouble);
+		r.costUs = costCount ? costs[costCount / 2] : 0.0;
+		return r;
+	}
+
 	Plane plane;
-	if (loadPlaneBin(&plane, "simulation/simModels/F-16C.bin",
+	if (loadPlaneBin(&plane, modelPath,
 			(float3){ 0.0f, 0.0f, 1.0f, 0.0f }, (float3){ 0.0f, 1000.0f, 0.0f, 1.0f },
 			180.0f, 1.0f) != 0) {
-		fprintf(stderr, "flightBench: cannot load simulation/simModels/F-16C.bin\n");
+		fprintf(stderr, "flightBench: cannot load %s\n", modelPath);
 		exit(2);
 	}
 
@@ -267,7 +351,7 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, FILE *trace)
 		struct timespec begin;
 		struct timespec end;
 		clock_gettime(CLOCK_MONOTONIC, &begin);
-		ControllerOutput out = getControllerOutputV5(&ctrl, targetPos, dt, momentum, &prevLoss, 128, evaluateLossV2PlusTuned2);
+		ControllerOutput out = getControllerOutputV5(&ctrl, targetPos, dt, momentum, &prevLoss, 128);
 		clock_gettime(CLOCK_MONOTONIC, &end);
 		if (costCount < FB_MAX_STEPS) {
 			costs[costCount++] = (end.tv_sec - begin.tv_sec) * 1e6 + (end.tv_nsec - begin.tv_nsec) / 1e3;
@@ -321,12 +405,13 @@ static uint32_t fbHash(uint32_t h, const void *data, size_t len) {
 	return h;
 }
 
-static uint32_t fbSuiteHash(const Scenario *scenarios, int count, float dt) {
+static uint32_t fbSuiteHash(const Scenario *scenarios, int count, float dt, const char *tag) {
 	uint32_t h = 2166136261u;
 	h = fbHash(h, "flightBench-v1", 14);
 	h = fbHash(h, &dt, sizeof(dt));
 	float hitRadius = FB_HIT_RADIUS;
 	h = fbHash(h, &hitRadius, sizeof(hitRadius));
+	h = fbHash(h, tag, strlen(tag));
 	for (int i = 0; i < count; i++) {
 		h = fbHash(h, scenarios[i].id, strlen(scenarios[i].id));
 		h = fbHash(h, &scenarios[i].p0, sizeof(float3));
@@ -347,6 +432,8 @@ int main(int argc, char **argv) {
 	int threads = FB_DEFAULT_THREADS;
 	const char *traceId = NULL;
 	float dt = 1.0f / 60.0f;
+	const char *model = "F-16C";
+	int missile = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--steps") == 0 && i + 1 < argc) {
@@ -369,10 +456,28 @@ int main(int argc, char **argv) {
 				fprintf(stderr, "flightBench: --dt must be in (0, 0.5]\n");
 				return 2;
 			}
+		} else if (strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
+			model = argv[++i];
+		} else if (strcmp(argv[i], "--missile") == 0 && i + 1 < argc) {
+			model = argv[++i];
+			missile = 1;
 		} else {
-			fprintf(stderr, "usage: flightBench [--steps N] [--threads N] [--dt S] [--trace <tier:seed>]\n");
+			fprintf(stderr, "usage: flightBench [--steps N] [--threads N] [--dt S] [--model NAME] [--missile NAME] [--trace <tier:seed>]\n");
 			return 2;
 		}
+	}
+
+	char modelPath[256];
+	snprintf(modelPath, sizeof(modelPath), "simulation/simModels/%s.bin", model);
+	// The default model keeps the original suite id so the pinned baseline
+	// stays valid; every other vehicle is its own suite with its own baseline.
+	char suiteTag[64];
+	if (missile) {
+		snprintf(suiteTag, sizeof(suiteTag), "missile:v2:%s", model);
+	} else if (strcmp(model, "F-16C") != 0) {
+		snprintf(suiteTag, sizeof(suiteTag), "%s", model);
+	} else {
+		suiteTag[0] = '\0';
 	}
 
 	Scenario scenarios[FB_MAX_SCENARIOS];
@@ -394,14 +499,14 @@ int main(int argc, char **argv) {
 				fprintf(stderr, "flightBench: cannot open trace buffer\n");
 				return 2;
 			}
-			ScenarioResult r = fbRun(&scenarios[i], steps, dt, trace);
+			ScenarioResult r = fbRun(&scenarios[i], steps, dt, modelPath, missile, trace);
 			printf("{\"version\":1,\"settings\":{\"steps\":%d,\"dt\":%.9f,\"hitRadius\":%.1f,"
-				   "\"model\":\"F-16C\",\"loss\":\"V2PlusTuned2\",\"maxIterations\":128},"
+				   "\"model\":\"%s\",\"loss\":\"V2PlusTuned2\",\"maxIterations\":128},"
 				   "\"suiteHash\":\"%08x\","
 				   "\"scenario\":{\"id\":\"%s\",\"tier\":\"%s\",\"seed\":%u,\"miss\":%.3f,\"finalDist\":%.3f,"
 				   "\"hit\":%s,\"tHit\":%.3f,\"effort\":%.4f,\"satSteps\":%d,\"unstable\":%d,\"costUs\":%.2f},"
 				   "\"traceHeader\":\"t,px,py,pz,tx,ty,tz,aileron,elevator,rudder,dist\",\"trace\":[",
-				   steps, dt, FB_HIT_RADIUS, fbSuiteHash(scenarios, count, dt),
+				   steps, dt, FB_HIT_RADIUS, model, fbSuiteHash(scenarios, count, dt, suiteTag),
 				   r.scenario->id, r.scenario->tier, r.scenario->seed, r.miss, r.finalDist,
 				   r.hit ? "true" : "false", r.tHit, r.effort, r.satSteps, r.unstable, r.costUs);
 			rewind(trace);
@@ -432,7 +537,7 @@ int main(int argc, char **argv) {
 	for (int base = 0; base < count; base += threads) {
 		int batch = (count - base < threads) ? count - base : threads;
 		for (int k = 0; k < batch; k++) {
-			jobs[base + k] = (FbJob){ &scenarios[base + k], steps, dt, { 0 } };
+			jobs[base + k] = (FbJob){ &scenarios[base + k], steps, dt, modelPath, missile, { 0 } };
 			if (pthread_create(&workers[k], NULL, fbWorker, &jobs[base + k]) != 0) {
 				fprintf(stderr, "flightBench: cannot start worker thread\n");
 				return 2;
@@ -448,9 +553,9 @@ int main(int argc, char **argv) {
 
 	printf("{\n");
 	printf("  \"version\": 1,\n");
-	printf("  \"settings\": {\"steps\": %d, \"dt\": %.9f, \"hitRadius\": %.1f, \"model\": \"F-16C\", "
-		   "\"loss\": \"V2PlusTuned2\", \"maxIterations\": 128},\n", steps, dt, FB_HIT_RADIUS);
-	printf("  \"suiteHash\": \"%08x\",\n", fbSuiteHash(scenarios, count, dt));
+	printf("  \"settings\": {\"steps\": %d, \"dt\": %.9f, \"hitRadius\": %.1f, \"model\": \"%s\", "
+		   "\"loss\": \"V2PlusTuned2\", \"maxIterations\": 128},\n", steps, dt, FB_HIT_RADIUS, model);
+	printf("  \"suiteHash\": \"%08x\",\n", fbSuiteHash(scenarios, count, dt, suiteTag));
 	printf("  \"scenarios\": [\n");
 	for (int i = 0; i < count; i++) {
 		const ScenarioResult *r = &results[i];

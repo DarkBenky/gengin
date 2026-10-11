@@ -3,13 +3,7 @@ import sys
 import math
 from pathlib import Path
 
-def analyze_csv(path):
-    rows = []
-    with open(path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            rows.append(row)
-    
+def analyze_rows(rows):
     if not rows:
         return None
     
@@ -42,7 +36,6 @@ def analyze_csv(path):
         speed_at_min = 0
     
     return {
-        'path': path,
         'steps': len(rows),
         'min_dist': min_dist,
         'min_idx': min_idx,
@@ -59,18 +52,21 @@ def analyze_csv(path):
 
 
 def main():
-    csv_dir = Path('simulation/cSim')
-    csv_files = sorted(csv_dir.glob('flightControlLogs*.csv'))
-    
-    if not csv_files:
-        print("No CSV files found in simulation/cSim/")
+    script_dir = Path(__file__).resolve().parent
+    log_file = script_dir / 'flightControlLogs.csv'
+    if not log_file.exists():
+        print(f"No {log_file.name} found in {script_dir}")
         return
-    
+
+    groups = {}
+    with open(log_file) as f:
+        for row in csv.DictReader(f):
+            groups.setdefault(row['Model'], []).append(row)
+
     results = {}
-    for f in csv_files:
-        res = analyze_csv(f)
+    for label, rows in groups.items():
+        res = analyze_rows(rows)
         if res:
-            label = f.stem.replace('flightControlLogs_', '').replace('flightControlLogs', 'default')
             results[label] = res
     
     # Print summary table

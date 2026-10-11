@@ -766,6 +766,21 @@ def _flightBinary():
     return binary
 
 
+def _flightRequireModelBin(name):
+    """Fail with a clear message when a vehicle's exported .bin is missing.
+
+    Sandboxes are git clones of tracked files: a bin that was never committed
+    does not exist there, and flightBench would only report an opaque
+    "cannot load" exit.
+    """
+    path = os.path.join(PROJECT_DIR, "simulation", "simModels", f"{name}.bin")
+    if not os.path.exists(path):
+        raise RuntimeError(
+            f"{path} is not present in the sandbox - vehicle benches need the "
+            "exported model bins committed (regenerate with `make train`, then "
+            "commit simulation/simModels/*.bin).")
+
+
 def _flightRun(args, timeout=900):
     binary = _flightBinary()
     try:
@@ -808,9 +823,11 @@ def _loadFlightBaseline(suite_hash):
         return None
     if cache.get("fingerprint") and cache["fingerprint"] != environmentFingerprint():
         return None
-    entry = cache.get("baseline") or {}
-    if entry.get("suiteHash") != suite_hash:
-        return None
+    entry = (cache.get("baselines") or {}).get(suite_hash)
+    if entry is None:
+        legacy = cache.get("baseline") or {}
+        if legacy.get("suiteHash") == suite_hash:
+            entry = legacy
     return entry
 
 
@@ -819,7 +836,8 @@ def _saveFlightBaseline(doc):
 
     Unlike the frame baseline only the *controller* has to be clean: the suite
     depends on flightControl.{c,h} + simulate.c, so edits elsewhere in the tree
-    do not invalidate it.
+    do not invalidate it.  One baseline is kept per suite hash, so every
+    vehicle (plane model or missile) gets its own pinned numbers.
     """
     head, _dirty = _projectGitHead()
     if head is None or not _flightControllerClean():
@@ -829,13 +847,20 @@ def _saveFlightBaseline(doc):
         cache = {}
     cache["head"] = head
     cache["fingerprint"] = environmentFingerprint()
-    cache["baseline"] = {
+    baselines = cache.get("baselines")
+    if not isinstance(baselines, dict):
+        baselines = {}
+    legacy = cache.pop("baseline", None)
+    if isinstance(legacy, dict) and legacy.get("suiteHash"):
+        baselines.setdefault(legacy["suiteHash"], legacy)
+    baselines[doc["suiteHash"]] = {
         "suiteHash": doc["suiteHash"],
         "settings": doc["settings"],
         "aggregate": doc["aggregate"],
         "tiers": doc["tiers"],
         "capturedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+    cache["baselines"] = baselines
     tmp = FLIGHT_BASELINE_FILE + f".tmp.{os.getpid()}"
     try:
         with open(tmp, "w") as fh:
@@ -965,11 +990,22 @@ def _flightSummary(doc, baseline, captured=False):
     return "\n".join(lines)
 
 
-def flightBench(steps=0, capture_baseline=False):
-    """Run the flight suite and compare against the pinned baseline."""
+def flightBench(steps=0, capture_baseline=False, model="", missile=""):
+    """Run the flight suite and compare against the pinned baseline.
+
+    `model` flies any simModels plane preset instead of the F-16C; `missile`
+    runs the point-mass missile model instead (its guidance lives in
+    flightControl.c).  Every vehicle is its own suite hash with its own pinned
+    baseline.
+    """
     args = []
     if steps:
         args += ["--steps", str(steps)]
+    if model:
+        args += ["--model", model]
+    if missile:
+        args += ["--missile", missile]
+    _flightRequireModelBin(missile or model or "F-16C")
     doc = _flightRun(args)
     suite = doc["suiteHash"]
     baseline = _loadFlightBaseline(suite)
@@ -995,9 +1031,15 @@ def flightBench(steps=0, capture_baseline=False):
     }
 
 
-def flightScenarios():
+def flightScenarios(model="", missile=""):
     """The suite definition plus whether a baseline exists for it."""
-    doc = _flightRun(["--steps", "1"])
+    args = ["--steps", "1"]
+    if model:
+        args += ["--model", model]
+    if missile:
+        args += ["--missile", missile]
+    _flightRequireModelBin(missile or model or "F-16C")
+    doc = _flightRun(args)
     suite = doc["suiteHash"]
     baseline = _loadFlightBaseline(suite)
     info = {
@@ -1009,8 +1051,10 @@ def flightScenarios():
                       for s in doc["scenarios"]],
     }
     if baseline is None:
-        cached = (_flightCacheRead().get("baseline") or {}).get("suiteHash")
-        if cached == suite:
+        cached = _flightCacheRead()
+        stored = cached.get("baselines") or {}
+        legacy = (cached.get("baseline") or {}).get("suiteHash")
+        if suite in stored or legacy == suite:
             info["baselineNote"] = ("a baseline is stored for this suite but pinned to "
                                     "another HEAD or environment - flight_bench captures one")
         else:
@@ -1019,11 +1063,16 @@ def flightScenarios():
     return info
 
 
-def flightTrace(scenario, steps=0, label=""):
+def flightTrace(scenario, steps=0, label="", model="", missile=""):
     """Run one scenario and write its trajectory as CSV evidence."""
     args = ["--trace", scenario]
     if steps:
         args += ["--steps", str(steps)]
+    if model:
+        args += ["--model", model]
+    if missile:
+        args += ["--missile", missile]
+    _flightRequireModelBin(missile or model or "F-16C")
     doc = _flightRun(args)
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", label or scenario.replace(":", "_"))
     out_dir = os.path.join(PROJECT_DIR, "bench", "results")
@@ -1593,6 +1642,8 @@ PR_LABELS = {
         "render changes that improve visuals with no or extremely limited cost"),
     "Flight Controller": ("9c449b",
         "flight controller changes that improve performance"),
+    "Missile Controller": ("0e8a16",
+        "missile flight controller changes measured on the missile suites"),
     "General Improvements": ("4c7876",
         "minor fixes and utilities; preserve style and performance"),
     "ML Improvements": ("5319e7",
@@ -1815,9 +1866,10 @@ def createPR(title, body, branch="", commit_msg=None,
 
     label: exactly one PR_LABELS category ("Render Improvements", "Render
     Improvements [Visual change / Performance]", "Render Improvements Visual
-    [No/Minimal Cost]", "Flight Controller", "General Improvements",
-    "ML Improvements"). The prompt makes it mandatory; an unknown name is a
-    ValueError. A label failure after the PR exists is a warning, not an error.
+    [No/Minimal Cost]", "Flight Controller", "Missile Controller", "General
+    Improvements", "ML Improvements"). The prompt makes it mandatory; an
+    unknown name is a ValueError. A label failure after the PR exists is a
+    warning, not an error.
 
     image_output_change=True: the PR deliberately alters the rendered image
     (algorithm variation). compareImagePaths must list the composites written

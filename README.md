@@ -31,7 +31,7 @@
   - [ ] integrate it with object so when objects moves the heat haze
 
 - [ ] improve missiles/planes guidance
-  - [ ] add support for missiles flight model and improve flight modeling even more
+  - [X] add support for missiles flight model and improve flight modeling even more
   - [ ] try to train reinforcement learning model for this
 - [ ] Collect images for upscaler
   - [ ] Train torch model for upscaler
@@ -330,9 +330,10 @@
       - [X] render changes that changes visuals minimally but provide uplift => Labels: Render Improvements [Visual change / Performance]
       - [X] render changes that improve visual with no cost or extremely limited costs ( should include side by side before and after, this needs to be added as side goal, code changes should be minimal and when added the style should be same as rest of the code base **Important**) => Labels: Render Improvements Visual [No/Minimal Cost]
       - [X] flight controller changes that improve performance => Labels: Flight Controller
+      - [X] missile controller changes that improve performance => Labels: Missile Controller
       - [X] general improvement that are based mainly on the README.md or bug fixes or ease of use utilities/functions **extremely low priority** changes should be really minimal so like adding few new functions to reduce the testing and review overhead **Important** must follow same style and ideally not change underlined structures if not needed this changes should not make performance losing changes => Labels: General Improvements
   - [X] session should look if there are badly merge / compacted PRs and untangle them to their categories ( check if there is ability in GitHub to add to PRs tags / labels to make it more clean what category it is)
-    - [X] labels available [Flight Controller, General Improvements, Render Improvements, Render Improvements [Visual change / Performance], Render Improvements Visual [No/Minimal Cost]]
+    - [X] labels available [Flight Controller, Missile Controller, General Improvements, Render Improvements, Render Improvements [Visual change / Performance], Render Improvements Visual [No/Minimal Cost]]
   - [X] the PRs / Merged pr should at begging provide detailed table of chances and always provide table of performance change compared to stating point
   - [X] **Low priority** when there is some PR that is still open but the changes made it not able to merge session can look into it and update it to be able to merge it again
   - [X] If there is some PR open with out Label / Tag add them

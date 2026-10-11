@@ -21,6 +21,24 @@ applyTo: '**'
 - **Explicitness**: Prefer explicit code over clever tricks. Clear > clever
 - **Functions**: Small, focused functions with clear inputs/outputs. Avoid side effects when possible
 
+## Code Structure
+Organize every file top to bottom in this order:
+- **Imports/includes**: all at the top of the file.
+- **Helpers**: small utility functions -> if too many, move to a separate file.
+- **Main logic**: the core logic of the module -> if too many, move to a separate file.
+- **Main / entry point** (if present): just uses the functions; high-level flow only, no low-level details:
+
+```python
+entities = loadEntities()
+
+for entity in entities:
+    for step in MAX_STEPS:
+        systems.update(entity, step)
+        logStep(entity, step)
+```
+
+Main only loads, loops, and calls update/log functions; it contains no low-level details or utility code.
+
 ## What to Generate
 - **Minimal Boilerplate**: Skip unnecessary setup code, getters/setters, or wrapper functions
 - **Focused Implementation**: Generate the core logic, not scaffolding

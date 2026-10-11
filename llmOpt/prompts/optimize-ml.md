@@ -28,6 +28,12 @@ fast but wrong is a hard failure, and a change that only helps one shape while
 breaking `ml_parity` does not ship.
 
 ## CODE STYLE — MATCH THE FILE, COMMENTS ONLY WHEN NECESSARY
+- The repo's own style guide is MANDATORY reading before any edit:
+  `.github/copilot-instructions.md` (+ `.github/instructions/C projects.instructions.md`).
+  Essentials: camelCase functions/variables, PascalCase types,
+  Structure-of-Arrays over Array-of-Structs, arena allocators and buffer
+  reuse, small focused functions, explicit error handling, no emojis or
+  non-ASCII in code or comments, comments only for the non-obvious why.
 - The diff must read like it was written by the same author as the surrounding
   code: same naming, indentation and idioms.  No reformatting of untouched
   lines, no drive-by whitespace edits.

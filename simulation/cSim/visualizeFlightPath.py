@@ -1,54 +1,36 @@
 import csv
-import subprocess
 import sys
 from pathlib import Path
 
 import plotly.graph_objects as go
-import plotly.io as pio
+import streamlit as st
 from plotly.subplots import make_subplots
 
-pio.renderers.default = "browser"
+SCRIPT_DIR = Path(__file__).resolve().parent
+LOG_FILE = SCRIPT_DIR / "flightControlLogs.csv"
+
+if not st.runtime.exists():
+    sys.exit("Run with: streamlit run simulation/cSim/visualizeFlightPath.py")
 
 
-def _isWSL():
-    try:
-        return "microsoft" in Path("/proc/version").read_text().lower()
-    except OSError:
-        return False
-
-
-def showFig(fig, htmlPath):
-    """Show a figure, working around WSL's lack of a native browser."""
-    if _isWSL():
-        # Convert the WSL path to a Windows path and open with explorer.exe
-        result = subprocess.run(
-            ["wslpath", "-w", str(htmlPath)],
-            capture_output=True, text=True
-        )
-        winPath = result.stdout.strip()
-        subprocess.Popen(["explorer.exe", winPath])
-    else:
-        fig.show()
-
-
-def loadLogs(csvPath):
-    """Parse the CSV and return lists keyed by column name."""
-    rows = []
-    with open(csvPath, newline="") as f:
+@st.cache_data(show_spinner=False)
+def loadLogs(logPath, mtime):
+    """Parse the combined CSV into {model: {column: [values]}}."""
+    runs = {}
+    with open(logPath, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            rows.append(row)
-
-    # Convert all values to float where possible
-    data = {}
-    if not rows:
-        return data
-    for col in rows[0].keys():
-        try:
-            data[col] = [float(r[col]) for r in rows]
-        except ValueError:
-            data[col] = [r[col] for r in rows]
-    return data
+            run = runs.get(row["Model"])
+            if run is None:
+                run = runs[row["Model"]] = {col: [] for col in row if col != "Model"}
+            for col, value in row.items():
+                if col == "Model":
+                    continue
+                try:
+                    run[col].append(float(value))
+                except ValueError:
+                    run[col].append(value)
+    return runs
 
 
 def plot3dPath(data):
@@ -270,35 +252,40 @@ def plotDashboard(data):
     return fig
 
 
-def main():
-    scriptDir = Path(__file__).resolve().parent
-    csvPath = scriptDir / "flightControlLogs_V2PlusTuned.csv"
+st.set_page_config(page_title="Flight log viewer", layout="wide")
+st.title("Flight controller logs")
 
-    if not csvPath.exists():
-        print(f"CSV not found: {csvPath}", file=sys.stderr)
-        sys.exit(1)
+if not LOG_FILE.exists():
+    st.warning(f"No {LOG_FILE.name} in {SCRIPT_DIR}. Run `make flightController` first.")
+    st.stop()
 
-    data = loadLogs(str(csvPath))
-    if not data:
-        print("CSV is empty or could not be parsed.", file=sys.stderr)
-        sys.exit(1)
+runs = loadLogs(str(LOG_FILE), LOG_FILE.stat().st_mtime)
+if not runs:
+    st.error(f"{LOG_FILE.name} has no runs.")
+    st.stop()
 
-    print(f"Loaded {len(data['Iteration'])} log entries from {csvPath}")
+models = sorted(runs)
+with st.sidebar:
+    st.header("Logs")
+    selected = st.selectbox("Model / loss variant", models)
+    st.caption(f"{len(models)} runs in {LOG_FILE.name}")
 
-    fig3d = plot3dPath(data)
-    figDashboard = plotDashboard(data)
+data = runs[selected]
 
-    # Save HTML files (always works, even without a browser)
-    html3d = scriptDir / "flightPath3d.html"
-    htmlDash = scriptDir / "flightDashboard.html"
-    fig3d.write_html(str(html3d))
-    figDashboard.write_html(str(htmlDash))
-    print(f"Saved: {html3d}")
-    print(f"Saved: {htmlDash}")
+distances = data["DistanceToTarget"]
+minDist = min(distances)
+minStep = distances.index(minDist)
+finalDist = distances[-1]
+overshoot = max(distances[minStep:]) - minDist
+vx, vy, vz = data["PlaneVelocityX"][minStep], data["PlaneVelocityY"][minStep], data["PlaneVelocityZ"][minStep]
+speedAtMin = (vx * vx + vy * vy + vz * vz) ** 0.5
 
-    showFig(fig3d, html3d)
-    showFig(figDashboard, htmlDash)
+with st.container(horizontal=True):
+    st.metric("Closest approach", f"{minDist:.1f} m", border=True)
+    st.metric("Final distance", f"{finalDist:.1f} m", border=True)
+    st.metric("Closest at", f"step {minStep}", border=True)
+    st.metric("Speed at closest", f"{speedAtMin:.0f} m/s", border=True)
+    st.metric("Overshoot", f"{overshoot:.1f} m", border=True)
 
-
-if __name__ == "__main__":
-    main()
+st.plotly_chart(plot3dPath(data))
+st.plotly_chart(plotDashboard(data))

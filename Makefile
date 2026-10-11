@@ -56,7 +56,7 @@ TEST_COMMON   = load/loadObj.c util/bbox.c util/threadPool.c util/saveImage.c te
                 render/cpu/font.c render/color/color.c skybox/skybox.c
 
 # Goals passed alongside 'test', e.g. make test testRay → _SPECIFIC = testRay
-_SPECIFIC         = $(filter-out build/% tests/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen maneuverTest, $(MAKECMDGOALS))
+_SPECIFIC         = $(filter-out build/% tests/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen maneuverTest missileTest flightViewer help, $(MAKECMDGOALS))
 _RUN_TESTS        = $(if $(_SPECIFIC), $(addprefix $(TEST_DIR)/, $(_SPECIFIC)), $(TEST_BINS))
 
 # Named tests (make test AOBench) get a perf flame graph; FLAME=1 extends that
@@ -68,7 +68,7 @@ _FLAME_BINS       = $(if $(_FLAME_ENABLED),$(addsuffix _flame,$(_RUN_TESTS)))
 BENCH_FUNC_DIR    = bench
 BENCH_FUNC_SRCS   = $(wildcard $(BENCH_FUNC_DIR)/*.c)
 BENCH_FUNC_BINS   = $(patsubst $(BENCH_FUNC_DIR)/%.c, $(BENCH_DIR)/%, $(BENCH_FUNC_SRCS))
-_BENCH_FUNC_SPECIFIC = $(filter-out build/% tests/% bench/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d maneuverTest, $(MAKECMDGOALS))
+_BENCH_FUNC_SPECIFIC = $(filter-out build/% tests/% bench/% main test all clean debug run flame pgo bench benchUnOpt exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d maneuverTest missileTest flightViewer help, $(MAKECMDGOALS))
 _RUN_BENCH_FUNCS  = $(if $(_BENCH_FUNC_SPECIFIC), $(addprefix $(BENCH_DIR)/, $(_BENCH_FUNC_SPECIFIC)))
 
 EXAMPLE_SERVER_SRC = server/example.c server/server.c object/format.c
@@ -77,16 +77,17 @@ EXAMPLE_CLIENT_SRC = client/example.c client/client.c object/format.c
 GAME_CLIENT_SRC    = client/gameClient.c client/client.c object/format.c object/object.c object/scene.c object/material/material.c load/loadObj.c util/bbox.c util/threadPool.c hexDump/hexDump.c
 HEX_DUMP_SRC       = hexDump/hexDump.c
 TRAIN_SRC          = simulation/cSim/trainNN.c simulation/cSim/dense.c simulation/cSim/simulate.c simulation/cSim/import.c client/client.c util/threadPool.c
-FLIGHT_CONTROL_SRC = simulation/cSim/flightControl.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c
-FLIGHT_BENCH_SRC   = simulation/cSim/flightBench.c simulation/cSim/simulate.c simulation/cSim/import.c object/format.c
+FLIGHT_CONTROL_SRC = simulation/cSim/flightControl.c simulation/cSim/simulate.c simulation/cSim/import.c simulation/cSim/missile.c simulation/cSim/missileImport.c object/format.c
+FLIGHT_BENCH_SRC   = simulation/cSim/flightBench.c simulation/cSim/simulate.c simulation/cSim/import.c simulation/cSim/missile.c simulation/cSim/missileImport.c object/format.c
 FLIGHT_BENCH_HDR   = $(wildcard simulation/cSim/*.h) $(wildcard math/*.h) $(wildcard object/*.h)
 MANEUVER_TEST_SRC  = simulation/cSim/maneuverTest.c simulation/cSim/simulate.c simulation/cSim/import.c
+MISSILE_TEST_SRC   = simulation/cSim/missileTest.c simulation/cSim/missile.c simulation/cSim/missileImport.c simulation/cSim/flightControl.c simulation/cSim/simulate.c simulation/cSim/import.c
 TEST_SOUND_SRC      = sound/soundTest.c
 TEST_SOUND3D_SRC    = sound/soundTest3d.c
 
 TEST_RADAR_SCREEN_SRC = radarScreen/testRadarScreen.c util/saveImage.c render/cpu/font.c render/cpu/tile.c
 
-.PHONY: all main clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen maneuverTest $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
+.PHONY: all main clean debug run flame pgo test bench benchUnOpt callgraph perf-report exampleServer gameServer exampleClient gameClient hexDump train flightController flightController-debug flightBench benchFunc testSound testSound3d testRadarScreen maneuverTest missileTest flightViewer help $(if $(_SPECIFIC), $(_SPECIFIC)) $(if $(_BENCH_FUNC_SPECIFIC), $(_BENCH_FUNC_SPECIFIC))
 
 all: $(TARGET)
 
@@ -163,6 +164,17 @@ maneuverTest: $(MANEUVER_TEST_SRC)
 	@mkdir -p $(BUILD_DIR)/maneuverTest
 	$(CC) $(CFLAGS_BASE) -Isimulation -I. -o $(BUILD_DIR)/maneuverTest/maneuverTest $^ $(LDFLAGS) -lm
 	./$(BUILD_DIR)/maneuverTest/maneuverTest
+
+# Missile demo/regression: point-mass model with the proportional-navigation
+# guidance from flightControl.c (compiled with -DFLIGHT_BENCH to hide its main).
+missileTest: $(MISSILE_TEST_SRC)
+	@mkdir -p $(BUILD_DIR)/missileTest
+	$(CC) $(CFLAGS_BASE) -DFLIGHT_BENCH -Isimulation -I. -o $(BUILD_DIR)/missileTest/missileTest $^ $(LDFLAGS) -lm
+	./$(BUILD_DIR)/missileTest/missileTest
+
+# Streamlit viewer for the controller logs (single browser tab, model selector).
+flightViewer:
+	streamlit run simulation/cSim/visualizeFlightPath.py
 
 testSound: $(TEST_SOUND_SRC)
 	@mkdir -p $(BUILD_DIR)/testSound
@@ -282,3 +294,35 @@ perf-report:
 # file would count as dirt and block the clean-baseline capture.
 clean:
 	find $(BUILD_DIR) -type f ! -name '*.svg' -delete 2>/dev/null || true
+
+help:
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Build & run"
+	@echo "  all, main                     build the renderer (default)"
+	@echo "  debug                         debug build"
+	@echo "  run                           build and run"
+	@echo "  clean                         delete build outputs"
+	@echo ""
+	@echo "Benches"
+	@echo "  bench [BENCH_DURATION=N]      renderer bench (default $(BENCH_DURATION) s)"
+	@echo "  benchUnOpt                    unoptimized renderer bench"
+	@echo "  benchFunc <name>              micro-bench from bench/ (e.g. exampleBench)"
+	@echo ""
+	@echo "Tests"
+	@echo "  test [<name>] [FLAME=1]       all tests, or one from tests/ (e.g. make test testRay)"
+	@echo "  hexDump, testSound, testSound3d, testRadarScreen"
+	@echo "  exampleServer, gameServer, exampleClient, gameClient"
+	@echo ""
+	@echo "Simulation"
+	@echo "  train                         export model bins + train the NN controller"
+	@echo "  flightController, flightController-debug"
+	@echo "  flightBench                   controller scenario suite (--model NAME, --missile NAME, --trace id)"
+	@echo "  flightViewer                  streamlit viewer for the controller logs"
+	@echo "  maneuverTest                  flight-model regression tests"
+	@echo "  missileTest                   missile model demo/regression"
+	@echo ""
+	@echo "Profiling"
+	@echo "  flame                         frame-pointer twin + flamegraph"
+	@echo "  callgraph, perf-report        from the last 'make flame' data"
+	@echo "  pgo                           profile-guided rebuild"

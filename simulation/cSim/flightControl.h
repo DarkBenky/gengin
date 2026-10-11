@@ -21,6 +21,7 @@
 #include "../../object/format.h"
 #include "../../math/vector3.h"
 #include "simulate.h"
+#include "missile.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -50,4 +51,19 @@ typedef struct {
     float Rudder;
     float RudderLoss;
     float LossAngle;
-} ControllerOutput; 
+} ControllerOutput;
+
+typedef struct {
+    float FrontPitch; // 01 units, 0.5 neutral
+    float FrontYaw;
+    float BackPitch;
+    float BackYaw;
+    float ThrustPitch;
+    float ThrustYaw;
+} MissileControllerOutput;
+
+// Proportional-navigation command for the point-mass missile model.
+float3 missileGuidanceAccel(float3 position, float3 velocity, float3 targetPosition, float3 targetVelocity, float pnGain);
+
+// Missile controller; deflections come back in 01 units.
+MissileControllerOutput getControllerOutputMissile(const Missile *missile, float3 targetPosition, float3 targetVelocity, float deltaTime);
