@@ -149,7 +149,6 @@
   - [ ] GPU - per pixel bBox check -> store hit object index -> CPU - BVH travers for this object -> if no hit continue with normal traverse
 
 - [ ] Wire frame rendering
-- [ ] Crete shader that will simulate hot air fluctuations for jet engine or missiles
 
 - [ ] Create Optimizes versions of this functions
   - [ ] RayCast
@@ -208,8 +207,6 @@
       - [ ] Normal map
       - [ ] Roughness
       - [ ] Metallic
-
-- [ ] model editor / object editor / texture editor
 
 - [ ] GPU rendering (keep it simple — port current CPU pipeline (**later**)
   - [X] clouds
