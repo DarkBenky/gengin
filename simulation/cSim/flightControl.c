@@ -342,7 +342,12 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 
 // PN accel command mapped to fin deflections via the plant's per-deflection authority.
 MissileControllerOutput getControllerOutputMissile(const Missile *missile, float3 targetPosition, float3 targetVelocity, float deltaTime) {
-	float3 accelCmd = missileGuidanceAccel(missile->position, missile->velocity, targetPosition, targetVelocity, missile->spec.pnGain);
+	float speed = Float3_Length(missile->velocity);
+	float range = Float3_Length(Float3_Sub(targetPosition, missile->position));
+	float lead = fminf(2.0f * deltaTime, 0.5f * range / (speed + 1.0f));
+	float3 leadPos = Float3_Add(missile->position, Float3_Scale(missile->velocity, lead));
+	float3 leadTarget = Float3_Add(targetPosition, Float3_Scale(targetVelocity, lead));
+	float3 accelCmd = missileGuidanceAccel(leadPos, missile->velocity, leadTarget, targetVelocity, missile->spec.pnGain);
 
 	float3 fwd = Float3_Normalize(missile->velocity);
 	float3 rightRaw = Float3_Cross(fwd, (float3){0.0f, 1.0f, 0.0f, 0.0f});
