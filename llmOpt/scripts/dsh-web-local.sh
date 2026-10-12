@@ -15,6 +15,8 @@
 # DSH_HOME is scoped to llmOpt/.dsh so the global ~/.dsh is never touched. The
 # web profile patch is rendered fresh on every run. Proprietary-code opt-out:
 # the DeepSeek session-log row is disabled and OTel export is switched off.
+# The login token is pinned (llmOpt/.dsh/web-launch-token) so the bookmark URL
+# and the browser cookie keep working across service restarts.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -102,12 +104,55 @@ cat > "$PATCH_FILE" <<YAML
 YAML
 chmod 600 "$PATCH_FILE"
 
+# The web UI mints a random launch token per process, so every restart breaks
+# bookmarks and forces re-authentication from the journal. Pin a stable token
+# (DSH_LAUNCH_TOKEN) and make the installed dsh-client-connection bundle read
+# it; the patch is re-applied on every run, so a dsh update self-heals.
+TOKEN_FILE="$DSH_DIR/web-launch-token"
+if [[ ! -s "$TOKEN_FILE" ]]; then
+  python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$TOKEN_FILE"
+  chmod 600 "$TOKEN_FILE"
+fi
+export DSH_LAUNCH_TOKEN="$(cat "$TOKEN_FILE")"
+
+patch_launch_token() {
+  local dsh_root bundle backup needle
+  dsh_root="$(cd "$(dirname "$(command -v dsh)")/.." && pwd)"
+  bundle="$dsh_root/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js"
+  [[ -f "$bundle" ]] || bundle="$(find "$dsh_root" -type f -path '*dsh-client-connection/lib/index.js' 2>/dev/null | head -1)"
+  if [[ -z "$bundle" || ! -f "$bundle" ]]; then
+    echo "warning: dsh-client-connection bundle not found - login token stays per-run" >&2
+    return 0
+  fi
+  if grep -q 'DSH_LAUNCH_TOKEN' "$bundle"; then
+    return 0
+  fi
+  needle='const created = encodeBase64Url(randomBytes(SECRET_BYTES));'
+  if ! grep -qF "$needle" "$bundle"; then
+    echo "warning: token patch point not found (dsh updated?) - login token stays per-run" >&2
+    return 0
+  fi
+  backup="$bundle.orig-backup"
+  [[ -f "$backup" ]] || cp "$bundle" "$backup"
+  python3 - "$bundle" <<'PY'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+old = "const created = encodeBase64Url(randomBytes(SECRET_BYTES));"
+new = "const created = process.env.DSH_LAUNCH_TOKEN || encodeBase64Url(randomBytes(SECRET_BYTES));"
+open(path, "w").write(src.replace(old, new))
+PY
+  echo "web login: patched $bundle for a stable token"
+}
+patch_launch_token
+
 # The OTel row is launcher-owned (config cannot disable it): opt out via env.
 export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
 
 echo "dsh web: model '$MODEL_ID' via $BASE_URL"
 echo "DSH_HOME: $DSH_DIR   patch: $PATCH_FILE"
 echo "open http://127.0.0.1:$PORT  (Ctrl+C to stop)"
+echo "bookmark (stable login token): http://127.0.0.1:$PORT/?token=$DSH_LAUNCH_TOKEN"
 echo
 
 DSH_HOME="$DSH_DIR" exec dsh web --port "$PORT" --no-open
