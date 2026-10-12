@@ -50,6 +50,7 @@
 // effort moves less than any single tier.
 #define SEARCH_STEP_DECAY 0.91f
 #define SEARCH_MIN_TAIL_WALK 0.14f
+#define TARGET_MANOEUVER_ACCEL 20.0f
 
 static const float3 PLANE_TARGET_OFFSET = {1000.0f, 1000.0f, 1000.0f, 0.0f};
 // Missiles get a longer engagement: at 1.7 km a Mach 2+ missile overflies the
@@ -129,6 +130,14 @@ static void writeLogRows(FILE *file, const char *label, const Logs *logs) {
 }
 
 // ---- guidance -------------------------------------------------------------
+
+static inline float rollMisalignment(const Plane *plane, float3 target) {
+	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
+	float3 forward = planeGetForwardVector(plane);
+	float3 up = planeGetUpVector(plane);
+	float3 idealUp = Float3_Sub(toTarget, Float3_Scale(forward, Float3_Dot(toTarget, forward)));
+	return Float3_Dot(Float3_Cross(up, idealUp), forward);
+}
 
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
@@ -214,11 +223,72 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	return loss;
 }
 
+// The deployed loss plus a bank-error term (banking is the only fast heading
+// change), as a separate function so the straight path keeps the deployed loss.
+static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+	Plane simPlane = ctrl->plane;
+
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
+
+	const float simDeltaTime = deltaTime * 2.25f;
+
+	float currentDist = distanceToTarget(&ctrl->plane, target);
+	float minDist = currentDist;
+	float runningAlignment = 0.0f;
+	float runningAlignVel = 0.0f;
+	float runningBank = 0.0f;
+
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, simDeltaTime, NULL);
+		runningAlignment += alignmentLoss(&simPlane, target);
+		runningAlignVel += alignmentLossVelocity(&simPlane, target);
+		const float bank = rollMisalignment(&simPlane, target);
+		runningBank += bank * bank;
+		float d = distanceToTarget(&simPlane, target);
+		if (d < minDist) minDist = d;
+	}
+
+	float finalAlignment = alignmentLoss(&simPlane, target);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
+	const float finalBank = rollMisalignment(&simPlane, target);
+	float finalDist = distanceToTarget(&simPlane, target);
+
+	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 0.55f;
+	float overshootTerm = (finalDist - minDist) * 1.0f;
+
+	float alignWeight = 1.0f + 1.5f / (1.0f + currentDist * 0.0065f);
+
+	const float effortWeight = 1.0f;
+	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+
+	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+
+	return loss;
+}
+
+typedef float (*ControllerLossFn)(const Controller *ctrl, float values[3], float3 target, float deltaTime);
+
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
 
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
+static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
 	ControllerOutput output = {0};
+
+	if (ctrl->hasPrevTarget && deltaTime > 1e-6f) {
+		float3 velocity = Float3_Scale(Float3_Sub(target, ctrl->prevTarget), 1.0f / deltaTime);
+		if (ctrl->hasPrevTarget > 1)
+			ctrl->targetAccel = Float3_Scale(Float3_Sub(velocity, ctrl->targetVelocity), 1.0f / deltaTime);
+		ctrl->targetVelocity = velocity;
+		ctrl->hasPrevTarget = 2;
+	} else {
+		ctrl->targetAccel = (float3){0.0f, 0.0f, 0.0f, 0.0f};
+		ctrl->hasPrevTarget = 1;
+	}
+	ctrl->prevTarget = target;
+
+	ControllerLossFn lossFn = Float3_Length(ctrl->targetAccel) > TARGET_MANOEUVER_ACCEL ? evaluateLossV2PlusTuned2Manoeuver : evaluateLossV2PlusTuned2;
 
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
@@ -250,7 +320,7 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// returns the un-deflected command rather than a probe picked by loop
 	// order (one shared loss evaluation per controller call, ~0.1% of cost).
 	float bestProbe[3] = {0.5f, 0.5f, 0.5f};
-	float bestProbeLoss = evaluateLossV2PlusTuned2(ctrl, bestProbe, target, deltaTime);
+	float bestProbeLoss = lossFn(ctrl, bestProbe, target, deltaTime);
 
 	for (int iter = 0; iter < maxIterations; iter++) {
 		// Compute gradient for ALL axes simultaneously
@@ -265,8 +335,8 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			float perturbedNegative[3] = {values[0], values[1], values[2]};
 			perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
 
-			float lossPos = evaluateLossV2PlusTuned2(ctrl, perturbedPositive, target, deltaTime);
-			float lossNeg = evaluateLossV2PlusTuned2(ctrl, perturbedNegative, target, deltaTime);
+			float lossPos = lossFn(ctrl, perturbedPositive, target, deltaTime);
+			float lossNeg = lossFn(ctrl, perturbedNegative, target, deltaTime);
 
 			if (lossPos < bestAxisLoss[axis]) {
 				bestAxisLoss[axis] = lossPos;
