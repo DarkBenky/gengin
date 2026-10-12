@@ -47,6 +47,12 @@
 - id: session-log-deepseek
   disabled: true
 
+# The bash tool's 60 s foreground deadline kills ordinary builds and bench
+# runs; the optimizer workflow needs the long-command budget Hermes had.
+- id: bash-sandbox
+  config:
+    timeoutMs: 1800000
+
 # The gengin optimizer tools (mcp_server.py). The bridge plugin ships inside
 # the dsh CLI, so no `dsh plugin add` is needed - each server is one row.
 # The bridge scrubs credential-named and DSH_* variables from the child's
@@ -59,6 +65,9 @@
       config:
         serverName: gengin
         transport: stdio
+        # Build/bench tools run for many minutes (make_bench is 5 runs); the
+        # 60 s default aborts them mid-flight.
+        toolCallTimeoutMs: 1800000
         command: __PYTHON__
         args: ["__LLMOPT_DIR__/mcp_server.py"]
         env:

@@ -160,6 +160,11 @@ YAML
 # Proprietary code: no session-log contribution to DeepSeek.
 - id: session-log-deepseek
   disabled: true
+# The bash tool's 60 s foreground deadline kills ordinary builds and bench
+# runs; the optimizer workflow needs the long-command budget Hermes had.
+- id: bash-sandbox
+  config:
+    timeoutMs: 1800000
 # The gengin optimizer tools (same wiring as the headless profile).
 - insert:
     - id: mcp-gengin
@@ -167,6 +172,9 @@ YAML
       config:
         serverName: gengin
         transport: stdio
+        # Build/bench tools run for many minutes (make_bench is 5 runs); the
+        # 60 s default aborts them mid-flight.
+        toolCallTimeoutMs: 1800000
         command: ${python_bin:-python3}
         args: ["$LLMOPT_DIR/mcp_server.py"]
         env:
