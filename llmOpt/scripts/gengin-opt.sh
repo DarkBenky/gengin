@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Launch a gengin optimization session under the Hermes Agent harness.
+# Launch a gengin optimization session under an agent harness (dsh default,
+# Hermes with --harness hermes or GENGIN_HARNESS=hermes).
 #
-#   gengin-opt.sh                       default model from .hermes/config.yaml
+#   gengin-opt.sh                       default model from the harness config
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
 #   gengin-opt.sh local [model]         local llama.cpp server on :8013
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
@@ -10,7 +11,7 @@
 #   gengin-opt.sh ml [local|openrouter|deepseek] [model]  ML layer objective
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report
-#   gengin-opt.sh --harness dsh         run on DeepSeek Harness instead of Hermes
+#   gengin-opt.sh --harness hermes      run on Hermes Agent instead of dsh
 #   gengin-opt.sh --dry-run             print the resolved command and exit
 set -euo pipefail
 
@@ -35,7 +36,7 @@ ROUTE_MAX_CONTEXT=""
 ROUTE_FALLBACK=""
 ROUTE_BUDGET=""
 WAIT_OFFPEAK=0
-HARNESS="${GENGIN_HARNESS:-hermes}"
+HARNESS="${GENGIN_HARNESS:-dsh}"
 
 usage() {
   echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
@@ -44,7 +45,7 @@ usage() {
   echo "       $0 openrouter PRIMARY --max-context 99K --budget 15 deepseek"
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
   echo "       --budget USD session spend cap; --wait-offpeak waits for half-price hours"
-  echo "       --harness hermes|dsh selects the agent harness (default: hermes)"
+  echo "       --harness dsh|hermes selects the agent harness (default: dsh)"
 }
 
 parse_tokens() {
@@ -253,6 +254,9 @@ if [[ "$SUPERVISED" -eq 1 ]]; then
     # reader of the path still sees valid JSON.
     printf '{"harness":"dsh","note":"usage is tracked via the capped OpenRouter key"}\n' \
       >"$USAGE_FILE_ARG"
+    # Proprietary code: the OTel row is launcher-owned, so the opt-out is the
+    # environment switch (the session-log row is disabled in the patch layer).
+    export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
     DSH_HOME="$DSH_HOME_RESOLVED" dsh --profile headless "$(cat "$QUERY_FILE_ARG")"
   else
     maybe_update_hermes
@@ -501,10 +505,11 @@ QUERY_FILE="$HARNESS_DIR/cache/query-$(date +%s).md"
   fi
 } > "$QUERY_FILE"
 if [[ "$HARNESS" == "dsh" ]]; then
-  # dsh reads the model and endpoint from the profile settings
-  # (llmOpt/.dsh/settings.yaml); provider/model CLI flags are Hermes-only.
+  # dsh reads the model and endpoint from the rendered profile patch layer
+  # (llmOpt/.dsh/profiles/headless/cordis.patch.yml); provider/model CLI flags
+  # are Hermes-only.
   if [[ ${#PROVIDER_ARGS[@]} -gt 0 ]]; then
-    echo "note: --provider/-m are ignored on dsh — set the model in llmOpt/.dsh/settings.yaml" >&2
+    echo "note: --provider/-m are ignored on dsh — set GENGIN_OPENROUTER_MODEL and re-run setup-dsh.sh" >&2
   fi
   CMD=(dsh --profile headless "$(cat "$QUERY_FILE")")
   DISPLAY_CMD=(dsh --profile headless "<query: $(wc -c <"$QUERY_FILE") bytes>")
@@ -594,6 +599,8 @@ if [[ "$HARNESS" == "dsh" ]]; then
   echo "Query:     $QUERY_FILE"
   echo
   cd "$LLMOPT_DIR"
+  # Proprietary code: opt out of the launcher-owned OTel row (see above).
+  export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
   DSH_HOME="$HARNESS_DIR" exec "${CMD[@]}"
 else
   echo "=== gengin optimizer (Hermes) ==="

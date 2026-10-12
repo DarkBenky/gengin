@@ -1,0 +1,68 @@
+# Project-scoped DeepSeek Harness (dsh) patch layer for the gengin optimizer.
+# Rendered by llmOpt/scripts/setup-dsh.sh into
+# llmOpt/.dsh/profiles/headless/cordis.patch.yml (DSH_HOME=llmOpt/.dsh, so the
+# global ~/.dsh stays untouched). The supervisor renders the same template
+# into each session's DSH_HOME.
+#
+# dsh composes its config from shipped bundle layers plus this user patch: a
+# patch row addresses a shipped row by id and REPLACES its whole config, or
+# inserts new rows. Field names below were verified against dsh 0.2.x
+# (docs/user/guide/providers.md, packages/mcp/mcp-client/README.md). Re-check
+# them after every dsh upgrade - developer preview, breaking changes promised.
+#
+# The OpenRouter key is never rendered here: apiKeyEnv resolves
+# OPENROUTER_API_KEY from the dsh process environment per request.
+
+# Model route: every request goes through the local filtering proxy
+# (quantization allowlist, :floor, budget cap, mid-session model switching).
+# The endpoint is not in pi-ai's catalog, so compat switches pin the request
+# shape (system role, max_tokens) instead of OpenAI-native guesses.
+- id: llm-pi-ai
+  config:
+    providers:
+      gengin-proxy:
+        apiKeyEnv: OPENROUTER_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:8787/api/v1
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          - id: __MODEL__
+
+# Headless sessions have no model picker: pin the default selection to the
+# proxy route above (the shipped default names the official DeepSeek route).
+- id: agent-default-model
+  config:
+    provider: gengin-proxy
+    model: __MODEL__
+
+# Proprietary code: no session-log contribution to DeepSeek. The OTel row is
+# launcher-owned (config cannot disable it) - the launcher exports
+# DSH_TELEMETRY_MODE=DISABLED + DSH_TELEMETRY_DISABLED=1 instead.
+- id: session-log-deepseek
+  disabled: true
+
+# The gengin optimizer tools (mcp_server.py). The bridge plugin ships inside
+# the dsh CLI, so no `dsh plugin add` is needed - each server is one row.
+# The bridge scrubs credential-named and DSH_* variables from the child's
+# inherited environment, so those must be re-declared here; GENGIN_* session
+# variables are NOT scrubbed and ride the inherited environment. !!js
+# expressions evaluate in the dsh host process at spawn time.
+- insert:
+    - id: mcp-gengin
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gengin
+        transport: stdio
+        command: __PYTHON__
+        args: ["__LLMOPT_DIR__/mcp_server.py"]
+        env:
+          PYTHONUNBUFFERED: "1"
+          # Bench runs need an X display; :2 is this machine's headless Xorg.
+          DISPLAY: !!js process.env.DISPLAY ?? '__DISPLAY__'
+          # Credential-named vars are scrubbed from the child's inherited
+          # environment, so they are re-declared here. setup-dsh.sh (manual
+          # runs) and the supervisor (per session) each replace the marker
+          # below with these !!js lines exactly once - never duplicate them.
+          # __SESSION_ENV__

@@ -3,8 +3,8 @@
 
 Watches the newest commit on the configured remote branch, prepares an
 exact-SHA sandbox, creates a budget-capped temporary OpenRouter key,
-supervises an optimization session (Hermes Agent, or DeepSeek Harness when
-GENGIN_HARNESS=dsh), and opens one pull request per
+supervises an optimization session (DeepSeek Harness by default, Hermes Agent
+when GENGIN_HARNESS=hermes), and opens one pull request per
 validated optimization.
 
 Commands:
@@ -90,8 +90,9 @@ KNOWN_KEYS = {
     "MAX_SETUP_RETRIES",
     "RETRY_BASE_SECONDS",
     "RETRY_MAX_SECONDS",
-    # Agent harness for supervised sessions: hermes (default) or dsh
-    # (DeepSeek Harness pilot; dsh requires AGENT_USER to stay empty).
+    # Agent harness for supervised sessions: dsh (default) or hermes.
+    # dsh requires AGENT_USER to stay empty (the two-user launch helper is
+    # Hermes-only), so two-user deployments must pin GENGIN_HARNESS=hermes.
     "GENGIN_HARNESS",
     "OPENROUTER_MODEL",
     "OPENROUTER_BUDGET_USD",
@@ -316,7 +317,7 @@ class Config:
     session_log_dir: str
     run_dir: str
     agent_user: str = ""
-    harness: str = "hermes"
+    harness: str = "dsh"
     mcp_venv: str = ""
     # quick_ask overrides; "" / 0 means unset (the tool defaults apply).
     quick_ask_model: str = ""
@@ -464,7 +465,7 @@ def load_config(require_management_key=True):
     agent_user = values.get("AGENT_USER", "").strip()
     if agent_user and not re.fullmatch(r"[a-z_][a-z0-9_-]*", agent_user):
         errors.append(f"AGENT_USER: invalid user name {agent_user!r}")
-    harness = (values.get("GENGIN_HARNESS") or "hermes").strip().lower()
+    harness = (values.get("GENGIN_HARNESS") or "dsh").strip().lower()
     if harness not in ("hermes", "dsh"):
         errors.append(f"GENGIN_HARNESS: expected hermes or dsh, got {harness!r}")
     if harness == "dsh" and agent_user:
@@ -1645,10 +1646,12 @@ def _quick_ask_env(config):
 def _session_mcp_env(config, target_sha, session_id, result_path):
     """Variables the MCP server needs, delivered through the config env block.
 
-    The harness filters the MCP child environment, so arbitrary parent
-    variables do NOT reach mcp_server.py. The supported channel is the gengin
-    env block in the per-session config, where ${VAR} expands from the harness
-    process environment (which _build_session_env populates).
+    Both harnesses scrub credential-named variables from the MCP child's
+    inherited environment, so the key must be re-declared in the config. The
+    per-harness channel differs: Hermes expands ${VAR} in its mcp_servers env
+    block from its process environment (which _build_session_env populates);
+    dsh evaluates !!js expressions in the host process at spawn time (the
+    session's cordis.patch.yml marker renders those).
     """
     session_env = {
         "GENGIN_TARGET_SHA": target_sha,
@@ -1677,7 +1680,7 @@ def _build_session_env(config, session_id, session_home, query_file, usage_file,
 
     Contains only required values; explicitly excludes the management key and
     unrelated secrets. The GENGIN_*/GITHUB_TOKEN entries are also the expansion
-    sources for the per-session config env block.
+    sources for the per-session config env block (Hermes ${VAR} / dsh !!js).
     """
     env = {
         "HOME": _agent_home(config),
@@ -1937,10 +1940,18 @@ def run_session(config, state, target_sha):
     os.makedirs(config.session_log_dir, exist_ok=True)
 
     # Build the per-session harness home from the template (no credentials).
-    template = os.path.join(
-        LLMOPT_DIR, harness_dir_name,
-        "config.yaml.template" if config.harness == "hermes"
-        else "settings.yaml.template")
+    # Hermes: config.yaml under HERMES_HOME. dsh: a cordis.patch.yml user patch
+    # layer under DSH_HOME/profiles/headless (dsh composes it over the shipped
+    # headless bundle; a bare profile dir auto-initializes on first boot).
+    if config.harness == "hermes":
+        template = os.path.join(LLMOPT_DIR, "hermes", "config.yaml.template")
+        config_path = os.path.join(session_home, "config.yaml")
+    else:
+        template = os.path.join(LLMOPT_DIR, "dsh",
+                                "headless.cordis.patch.yml.template")
+        config_path = os.path.join(session_home, "profiles", "headless",
+                                   "cordis.patch.yml")
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
     if not os.path.isfile(template):
         log("ERROR", "session.template_missing", session=session_id, path=template)
         return EXIT_RUNTIME
@@ -1952,20 +1963,23 @@ def run_session(config, state, target_sha):
                       .replace("__DISPLAY__", config.gengin_display)
                       .replace("__MODEL__", config.openrouter_model))
     # The harness filters the MCP child environment; the session variables must
-    # be delivered through the config env block (${VAR} expands from the
-    # harness process environment built by _build_session_env).
+    # be delivered through the config env block. Hermes expands ${VAR} from its
+    # process environment; dsh evaluates !!js expressions in the host process
+    # (both sources are populated by _build_session_env).
     if "# __SESSION_ENV__" not in cfg_text:
         log("ERROR", "session.config_no_marker", session=session_id,
             detail="the config template lacks the __SESSION_ENV__ marker; "
                    "refusing to run without session variables")
         return EXIT_RUNTIME
-    env_lines = "\n".join(
-        f'      {key}: "${{{key}}}"'
-        for key in _session_mcp_env(config, target_sha, session_id, result_path))
+    if config.harness == "hermes":
+        env_lines = "\n".join(
+            f'      {key}: "${{{key}}}"'
+            for key in _session_mcp_env(config, target_sha, session_id, result_path))
+    else:
+        env_lines = "\n".join(
+            f'          {key}: !!js "process.env.{key} ?? \'\'"'
+            for key in _session_mcp_env(config, target_sha, session_id, result_path))
     cfg_text = cfg_text.replace("# __SESSION_ENV__", "\n" + env_lines)
-    config_path = os.path.join(
-        session_home,
-        "config.yaml" if config.harness == "hermes" else "settings.yaml")
     with open(config_path, "w") as fh:
         fh.write(cfg_text)
     if config.agent_user:
@@ -1981,25 +1995,6 @@ def run_session(config, state, target_sha):
     else:
         os.chmod(config_path, 0o600)
         os.chmod(run_dir, 0o700)
-
-    if config.harness == "dsh":
-        # A fresh per-session DSH_HOME has no plugins; without the MCP client
-        # plugin the session runs without the gengin tools. Best effort, same
-        # registration as setup-dsh.sh.
-        dsh_bin = shutil.which("dsh")
-        if dsh_bin:
-            try:
-                subprocess.run(
-                    [dsh_bin, "plugin", "--profile", "headless", "add",
-                     "@deepseek-ai/dsh-mcp-client"],
-                    env={**os.environ, "DSH_HOME": session_home},
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    timeout=120, check=True)
-            except (OSError, subprocess.SubprocessError):
-                log("WARN", "session.dsh_plugin_failed", session=session_id)
-        else:
-            log("WARN", "session.dsh_plugin_failed", session=session_id,
-                detail="dsh not on PATH")
 
     # Generate the session query (prompt + session context block).
     prompt = os.path.join(LLMOPT_DIR, "prompts", "optimize.md")
