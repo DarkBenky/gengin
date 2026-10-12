@@ -57,9 +57,10 @@ so `--provider`/`-m` are ignored in this mode — set `GENGIN_OPENROUTER_MODEL`
 and re-run `setup-dsh.sh` to change the model. The proxy still sits in front of
 OpenRouter, so quantization, routing and budget keep working.
 
-The two-user VM deployment (`AGENT_USER` set) is Hermes-only: the root-owned
-`agent-launch` helper has no dsh path, so a two-user supervisor must pin
-`GENGIN_HARNESS=hermes` in `llmOpt/.env`.
+Two-user VM deployments (`AGENT_USER` set) run either harness: the root-owned
+`agent-launch` helper is harness-aware, and `setup-vm.sh` installs Node.js and
+`@deepseek-ai/dsh` system-wide so the agent user can launch dsh. Pin
+`GENGIN_HARNESS=hermes` to keep Hermes instead.
 
 Verified against dsh 0.2.x (developer preview — breaking changes are promised):
 
@@ -85,6 +86,18 @@ Verified against dsh 0.2.x (developer preview — breaking changes are promised)
   that row).
 - dsh has no `--usage-file`; spend is tracked through the capped OpenRouter key
   and the proxy cost log.
+
+**Local browser UI (desktop).** `scripts/dsh-web-local.sh` serves the dsh Web
+UI at `http://127.0.0.1:3080` against the local model server (default
+`http://localhost:8013/v1`, the local router) - model-only: no MCP tools, no
+workspace wiring, no session-log/OTel export. `systemd/dsh-web-local.service`
+runs it at login (ordered after the router, retrying until `/v1/models`
+answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
+
+    cp llmOpt/systemd/dsh-web-local.service ~/.config/systemd/user/
+    systemctl --user daemon-reload
+    systemctl --user enable --now dsh-web-local.service
+    journalctl --user -u dsh-web-local -n 20   # prints the URL + its per-run token
 
 ## Changing things
 
@@ -156,9 +169,9 @@ preflight + clean baseline, mints a budget-capped temporary OpenRouter key, runs
 one agent session under Xvfb, and deletes the key on every exit path. One session
 at a time; new commits coalesce to the newest. `GENGIN_OFFPEAK_WAIT=1` in
 `llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window.
-The harness is `dsh` by default; `GENGIN_HARNESS=hermes` switches to Hermes. A
-two-user deployment (`AGENT_USER` set) must pin `GENGIN_HARNESS=hermes` — the
-two-user launch helper is Hermes-only (see the dsh section above).
+The harness is `dsh` by default; `GENGIN_HARNESS=hermes` switches to Hermes.
+Two-user deployments (`AGENT_USER` set) support both harnesses - the launch
+helper is harness-aware (see the dsh section above).
 
     git clone git@github.com:DarkBenky/gengin.git <checkout>
     sudo bash <checkout>/llmOpt/scripts/setup-vm.sh --checkout <checkout>   # Ubuntu 22.04/24.04

@@ -1,0 +1,33 @@
+# DeepSeek Harness Web UI on the local model router (desktop, per-user unit).
+#
+# Model-only browser chat against the local OpenAI-compatible endpoint (no MCP
+# tools, no optimizer wiring; telemetry is disabled by the launcher script).
+# Login autostart, like the rest of the local LLM stack - the UI is useless
+# without the router, so it is ordered after the router unit and retries until
+# /v1/models answers (DSH_WEB_WAIT_SECONDS).
+#
+# Install:
+#   cp llmOpt/systemd/dsh-web-local.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now dsh-web-local.service
+# The UI URL carries a per-run token and is printed to the journal:
+#   journalctl --user -u dsh-web-local -n 20 | grep -o 'http://127.0.0.1:[0-9]*[^ ]*'
+[Unit]
+Description=DeepSeek Harness Web UI (local model, browser chat)
+After=llama-qwen-auto-router.service
+Wants=llama-qwen-auto-router.service
+
+[Service]
+Type=simple
+# The unit gets a bare PATH: the nvm node (dsh) and the python used by the
+# launcher must be named explicitly.
+Environment=PATH=/home/user/.nvm/versions/node/v24.19.0/bin:/home/user/miniconda3/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DSH_WEB_WAIT_SECONDS=180
+ExecStart=%h/Desktop/gengin/llmOpt/scripts/dsh-web-local.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

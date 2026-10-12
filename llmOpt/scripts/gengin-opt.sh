@@ -222,6 +222,10 @@ if [[ "$SUPERVISED" -eq 1 ]]; then
       echo "error: DSH_HOME not found: $DSH_HOME_RESOLVED" >&2
       exit 2
     fi
+    if ! command -v dsh >/dev/null 2>&1; then
+      echo "error: dsh not installed (install: npm install -g @deepseek-ai/dsh)" >&2
+      exit 127
+    fi
   else
     HERMES_HOME_RESOLVED="${HERMES_HOME:-$HERMES_DIR}"
     if [[ ! -d "$HERMES_HOME_RESOLVED" ]]; then

@@ -90,9 +90,9 @@ KNOWN_KEYS = {
     "MAX_SETUP_RETRIES",
     "RETRY_BASE_SECONDS",
     "RETRY_MAX_SECONDS",
-    # Agent harness for supervised sessions: dsh (default) or hermes.
-    # dsh requires AGENT_USER to stay empty (the two-user launch helper is
-    # Hermes-only), so two-user deployments must pin GENGIN_HARNESS=hermes.
+    # Agent harness for supervised sessions: dsh (default) or hermes. Both
+    # work two-user; dsh needs the CLI on the agent's PATH (setup-vm.sh
+    # installs Node.js + @deepseek-ai/dsh system-wide).
     "GENGIN_HARNESS",
     "OPENROUTER_MODEL",
     "OPENROUTER_BUDGET_USD",
@@ -468,9 +468,6 @@ def load_config(require_management_key=True):
     harness = (values.get("GENGIN_HARNESS") or "dsh").strip().lower()
     if harness not in ("hermes", "dsh"):
         errors.append(f"GENGIN_HARNESS: expected hermes or dsh, got {harness!r}")
-    if harness == "dsh" and agent_user:
-        errors.append("GENGIN_HARNESS=dsh requires AGENT_USER to stay empty: "
-                      "the two-user agent-launch helper is Hermes-only for now")
     mcp_venv = values.get("MCP_VENV", "").strip()
     if mcp_venv and not os.path.isabs(mcp_venv):
         errors.append("MCP_VENV: must be an absolute path")
@@ -1708,14 +1705,13 @@ def _launch_command(config, session_home, query_file, usage_file):
     """Command that starts one supervised agent session.
 
     Two-user mode goes through the fixed root-owned sudo helper (validated
-    paths, no shell); single-user mode runs the project launcher directly.
-    The helper stays Hermes-only; dsh with AGENT_USER is rejected at config
-    load.
+    paths, no shell; it is harness-aware); single-user mode runs the project
+    launcher directly.
     """
     if config.agent_user:
         return ["sudo", "-n", "-u", config.agent_user, AGENT_LAUNCH_HELPER,
                 REPO_ROOT, session_home, query_file, usage_file,
-                config.openrouter_model]
+                config.openrouter_model, config.harness]
     launcher = os.path.join(LLMOPT_DIR, "scripts", "gengin-opt.sh")
     return [launcher, "openrouter", "--supervised",
             "--harness", config.harness,

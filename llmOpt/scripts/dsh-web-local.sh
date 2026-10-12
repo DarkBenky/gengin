@@ -8,7 +8,9 @@
 # the local OpenAI-compatible endpoint (default http://localhost:8013/v1, the
 # llmOpt router: fast 7B by default, Strata/27B in big mode). Override the
 # endpoint with LOCAL_LLM_BASE, the model id with the first argument (or it is
-# discovered from /v1/models).
+# discovered from /v1/models). Runs as the dsh-web-local systemd user unit
+# (llmOpt/systemd/) for login autostart; DSH_WEB_WAIT_SECONDS then makes
+# startup wait for the router instead of serving a bogus model id.
 #
 # DSH_HOME is scoped to llmOpt/.dsh so the global ~/.dsh is never touched. The
 # web profile patch is rendered fresh on every run. Proprietary-code opt-out:
@@ -30,11 +32,37 @@ if ! command -v dsh >/dev/null 2>&1; then
   exit 127
 fi
 
-# Model id: argument wins, else discover from the endpoint, else a sane default.
+# Model id: argument wins, else discover from the endpoint. The router answers
+# /v1/models in OpenAI shape when the big model is loaded and in llama.cpp
+# native shape otherwise, so both are parsed; the id is display-only (the
+# router ignores it when forwarding). DSH_WEB_WAIT_SECONDS (set by the systemd
+# unit) waits for the endpoint to come up - login autostart can outrun the
+# router - and fails hard after the deadline so the unit restarts.
+discover_model() {
+  curl -fsS --max-time 5 "$BASE_URL/models" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for m in (d.get("data") or []) + (d.get("models") or []):
+    if isinstance(m, dict) and (m.get("id") or m.get("name") or m.get("model")):
+        print(m.get("id") or m.get("name") or m.get("model"))
+        break
+' 2>/dev/null || true
+}
+endpoint_ready() { curl -fsS --max-time 5 -o /dev/null "$BASE_URL/models" 2>/dev/null; }
+
 MODEL_ID="${1:-}"
-if [[ -z "$MODEL_ID" ]]; then
-  MODEL_ID="$(curl -fsS --max-time 5 "$BASE_URL/models" 2>/dev/null \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"][0]["id"])' 2>/dev/null || true)"
+[[ -n "$MODEL_ID" ]] || MODEL_ID="$(discover_model)"
+WAIT_SECONDS="${DSH_WEB_WAIT_SECONDS:-0}"
+if [[ -z "$MODEL_ID" && "$WAIT_SECONDS" -gt 0 ]]; then
+  deadline=$((SECONDS + WAIT_SECONDS))
+  until endpoint_ready; do
+    if [[ $SECONDS -ge $deadline ]]; then
+      echo "error: $BASE_URL/models not reachable after ${WAIT_SECONDS}s" >&2
+      exit 1
+    fi
+    sleep 2
+  done
+  MODEL_ID="$(discover_model)"
 fi
 if [[ -z "$MODEL_ID" ]]; then
   echo "warning: could not discover a model from $BASE_URL/models - is the server up?" >&2
