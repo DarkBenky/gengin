@@ -952,23 +952,35 @@ static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
 				float occlusion = 0.0f;
 				int validSamples = 0;
 
+				// all 8 sample coords, bounds and indices in one AVX2 pass; the
+				// depth/position gathers stay scalar so skipped samples cost nothing
 				const float2 *pattern = SAMPLES_PATTERN[h % VARIATIONS];
+				__m256 p0 = _mm256_loadu_ps(&pattern[0].x);
+				__m256 p1 = _mm256_loadu_ps(&pattern[4].x);
+				__m256i pidx = _mm256_setr_epi32(0, 1, 4, 5, 2, 3, 6, 7);
+				__m256 vsx = _mm256_permutevar8x32_ps(_mm256_shuffle_ps(p0, p1, 0x88), pidx);
+				__m256 vsy = _mm256_permutevar8x32_ps(_mm256_shuffle_ps(p0, p1, 0xDD), pidx);
+				__m256 vca = _mm256_set1_ps(ca), vsa = _mm256_set1_ps(sa);
+				__m256 vpr = _mm256_set1_ps(pixelRadius);
+				__m256 vrx = _mm256_sub_ps(_mm256_mul_ps(vsx, vca), _mm256_mul_ps(vsy, vsa));
+				__m256 vry = _mm256_add_ps(_mm256_mul_ps(vsx, vsa), _mm256_mul_ps(vsy, vca));
+				__m256 vsX = _mm256_add_ps(_mm256_set1_ps((float)j), _mm256_mul_ps(vrx, vpr));
+				__m256 vsY = _mm256_add_ps(_mm256_set1_ps((float)row), _mm256_mul_ps(vry, vpr));
+				__m256 in = _mm256_and_ps(
+					_mm256_and_ps(_mm256_cmp_ps(vsX, _mm256_setzero_ps(), _CMP_GE_OQ),
+						_mm256_cmp_ps(vsX, _mm256_set1_ps((float)width), _CMP_LT_OQ)),
+					_mm256_and_ps(_mm256_cmp_ps(vsY, _mm256_setzero_ps(), _CMP_GE_OQ),
+						_mm256_cmp_ps(vsY, _mm256_set1_ps((float)height), _CMP_LT_OQ)));
+				int mask = _mm256_movemask_ps(in);
+				__m256i vidx = _mm256_add_epi32(
+					_mm256_mullo_epi32(_mm256_cvttps_epi32(vsY), _mm256_set1_epi32(width)),
+					_mm256_cvttps_epi32(vsX));
+				int idxs[SAMPLES] __attribute__((aligned(32)));
+				_mm256_store_si256((__m256i *)idxs, vidx);
 
 				for (int k = 0; k < SAMPLES; k++) {
-					float sx = pattern[k].x;
-					float sy = pattern[k].y;
-					float rx = sx * ca - sy * sa;
-					float ry = sx * sa + sy * ca;
-
-					float sampleX = j + rx * pixelRadius;
-					float sampleY = row + ry * pixelRadius;
-
-					if (sampleX < 0 || sampleX >= width ||
-						sampleY < 0 || sampleY >= height) {
-						continue;
-					}
-
-					int sampleIndex = (int)sampleY * width + (int)sampleX;
+					if (!((mask >> k) & 1)) continue;
+					int sampleIndex = idxs[k];
 
 					if (camera->depthBuffer[sampleIndex] >= DEPTH_FAR || camera->depthBuffer[sampleIndex] <= 0.0f) {
 						continue;
@@ -1394,6 +1406,43 @@ static void UpsampleAoRows(void *arg) {
 		const float *restrict s1 = src + y1 * srcWidth;
 		float *restrict d = dst + y * dstWidth;
 
+#if AO_SMOOTH_DOWNSCALE == 4
+		// scale 4 makes the x mapping periodic: x=8j+p taps (2j-1)+[0,0,1,1,1,1,2,2]
+		// and +1 with tx cycling .625,.875,.125,.375; head/tail keep the table clamps.
+		int x = 0;
+		while (x < 8 && x < dstWidth) {
+			const int x0 = x0Tab[x];
+			const int x1 = x1Tab[x];
+			const float tx = txTab[x];
+			const float top = s0[x0] + (s0[x1] - s0[x0]) * tx;
+			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
+			d[x++] = top + (bot - top) * ty;
+		}
+		const __m256 txv = _mm256_setr_ps(0.625f, 0.875f, 0.125f, 0.375f, 0.625f, 0.875f, 0.125f, 0.375f);
+		const __m256 tyv = _mm256_set1_ps(ty);
+		const __m256i idxA = _mm256_setr_epi32(0, 0, 1, 1, 1, 1, 2, 2);
+		const __m256i idxB = _mm256_setr_epi32(1, 1, 2, 2, 2, 2, 3, 3);
+		for (; x + 8 <= dstWidth && (x / 8) * 2 + 6 < srcWidth; x += 8) {
+			__m256 w0 = _mm256_loadu_ps(s0 + (x / 8) * 2 - 1);
+			__m256 a = _mm256_permutevar8x32_ps(w0, idxA);
+			__m256 b = _mm256_permutevar8x32_ps(w0, idxB);
+			__m256 top = _mm256_add_ps(a, _mm256_mul_ps(_mm256_sub_ps(b, a), txv));
+			__m256 w1 = _mm256_loadu_ps(s1 + (x / 8) * 2 - 1);
+			__m256 a1 = _mm256_permutevar8x32_ps(w1, idxA);
+			__m256 b1 = _mm256_permutevar8x32_ps(w1, idxB);
+			__m256 bot = _mm256_add_ps(a1, _mm256_mul_ps(_mm256_sub_ps(b1, a1), txv));
+			_mm256_storeu_ps(d + x, _mm256_add_ps(top, _mm256_mul_ps(_mm256_sub_ps(bot, top), tyv)));
+		}
+		for (; x < dstWidth; x++) {
+			const int x0 = x0Tab[x];
+			const int x1 = x1Tab[x];
+			const float tx = txTab[x];
+
+			const float top = s0[x0] + (s0[x1] - s0[x0]) * tx;
+			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
+			d[x] = top + (bot - top) * ty;
+		}
+#else
 		for (int x = 0; x < dstWidth; x++) {
 			const int x0 = x0Tab[x];
 			const int x1 = x1Tab[x];
@@ -1403,6 +1452,7 @@ static void UpsampleAoRows(void *arg) {
 			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
 			d[x] = top + (bot - top) * ty;
 		}
+#endif
 	}
 }
 
