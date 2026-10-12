@@ -77,6 +77,107 @@ ensure_route_proxy() {
   return 1
 }
 
+discover_local_model() {
+  # The router answers /v1/models in OpenAI shape when the big model is loaded
+  # and in llama.cpp native shape otherwise; the id is display-only (the router
+  # ignores it when forwarding).
+  curl -fsS --max-time 5 "${LOCAL_LLM_BASE:-http://localhost:8013/v1}/models" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for m in (d.get("data") or []) + (d.get("models") or []):
+    if isinstance(m, dict) and (m.get("id") or m.get("name") or m.get("model")):
+        print(m.get("id") or m.get("name") or m.get("model"))
+        break
+' 2>/dev/null || true
+}
+
+render_local_dsh_profile() {
+  # The `local` preset gets its own dsh profile: the local router instead of
+  # the OpenRouter proxy. The scaffolding makes the profile name resolvable
+  # (non-shipped names need a manifest; the bundles resolve from the dsh
+  # installation); the patch is regenerated on every run so the model id
+  # follows the router state. Same MCP wiring as the headless profile.
+  local home="$1" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
+  local model python_bin display_value patch_dir
+  model="$(discover_local_model)"
+  if [[ -z "$model" ]]; then
+    echo "warning: no model from $base/models - is the local router up?" >&2
+    model="local-model"
+  fi
+  python_bin="$(command -v python3 || true)"
+  display_value="${GENGIN_DISPLAY:-:2}"
+  patch_dir="$home/profiles/local"
+  mkdir -p "$patch_dir"
+  if [[ ! -f "$patch_dir/package.json" ]]; then
+    cat > "$patch_dir/package.json" <<'JSON'
+{
+  "name": "dsh-profile-local",
+  "private": true,
+  "dependencies": {},
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-headless"
+      ]
+    }
+  }
+}
+JSON
+    cat > "$patch_dir/cordis.yml" <<'YAML'
+# dsh profile root — an empty entry list. The tree is composed as patches:
+# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml.
+[]
+YAML
+    cat > "$patch_dir/pnpm-workspace.yaml" <<'YAML'
+packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false
+YAML
+  fi
+  cat > "$patch_dir/cordis.patch.yml" <<YAML
+# Rendered by llmOpt/scripts/gengin-opt.sh (local preset) - the local
+# OpenAI-compatible router instead of the OpenRouter proxy. Regenerated on
+# every local run; edit the script, not this file.
+- id: llm-pi-ai
+  config:
+    providers:
+      local-gengin:
+        apiKeyEnv: LOCAL_LLM_KEY
+        api: openai-completions
+        baseURL: $base
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          - id: $model
+- id: agent-default-model
+  config:
+    provider: local-gengin
+    model: $model
+# Proprietary code: no session-log contribution to DeepSeek.
+- id: session-log-deepseek
+  disabled: true
+# The gengin optimizer tools (same wiring as the headless profile).
+- insert:
+    - id: mcp-gengin
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gengin
+        transport: stdio
+        command: ${python_bin:-python3}
+        args: ["$LLMOPT_DIR/mcp_server.py"]
+        env:
+          PYTHONUNBUFFERED: "1"
+          DISPLAY: !!js process.env.DISPLAY ?? '$display_value'
+          OPENROUTER_API_KEY: !!js "process.env.OPENROUTER_API_KEY ?? ''"
+          GITHUB_TOKEN: !!js "process.env.GITHUB_TOKEN ?? ''"
+YAML
+  chmod 600 "$patch_dir/cordis.patch.yml"
+}
+
 # A chain request changes how bare model words are interpreted, no matter
 # where the flags appear relative to the models.
 ROUTE_FLAG=0
@@ -509,14 +610,20 @@ QUERY_FILE="$HARNESS_DIR/cache/query-$(date +%s).md"
   fi
 } > "$QUERY_FILE"
 if [[ "$HARNESS" == "dsh" ]]; then
-  # dsh reads the model and endpoint from the rendered profile patch layer
-  # (llmOpt/.dsh/profiles/headless/cordis.patch.yml); provider/model CLI flags
-  # are Hermes-only.
-  if [[ ${#PROVIDER_ARGS[@]} -gt 0 ]]; then
+  # dsh reads the model and endpoint from a rendered profile patch layer under
+  # DSH_HOME; provider/model CLI flags are Hermes-only. The local preset is
+  # honored: it renders profiles/local against the local router instead of the
+  # headless profile (OpenRouter proxy route).
+  DSH_PROFILE="headless"
+  if [[ "$PRESET" == "local" ]]; then
+    DSH_PROFILE="local"
+    render_local_dsh_profile "$HARNESS_DIR"
+    export LOCAL_LLM_KEY="${LOCAL_LLM_KEY:-none}"
+  elif [[ ${#PROVIDER_ARGS[@]} -gt 0 ]]; then
     echo "note: --provider/-m are ignored on dsh — set GENGIN_OPENROUTER_MODEL and re-run setup-dsh.sh" >&2
   fi
-  CMD=(dsh --profile headless "$(cat "$QUERY_FILE")")
-  DISPLAY_CMD=(dsh --profile headless "<query: $(wc -c <"$QUERY_FILE") bytes>")
+  CMD=(dsh --profile "$DSH_PROFILE" "$(cat "$QUERY_FILE")")
+  DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" "<query: $(wc -c <"$QUERY_FILE") bytes>")
 elif [[ "$HEADLESS" -eq 1 ]]; then
   # `-z` is the scripted one-shot entry point (final answer only) and the only
   # form that supports --usage-file.
@@ -600,6 +707,7 @@ fi
 if [[ "$HARNESS" == "dsh" ]]; then
   echo "=== gengin optimizer (DeepSeek Harness) ==="
   echo "DSH_HOME:  $HARNESS_DIR"
+  echo "Profile:   ${DSH_PROFILE:-headless}"
   echo "Query:     $QUERY_FILE"
   echo
   cd "$LLMOPT_DIR"

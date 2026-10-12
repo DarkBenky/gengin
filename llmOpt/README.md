@@ -52,10 +52,14 @@ default for both the launcher and the supervisor; `--harness hermes` (or
 `GENGIN_HARNESS=hermes`) selects Hermes instead. Everything around the session
 (sandbox, proxy, budget cap, PR gates) is unchanged; only the agent process
 differs. dsh reads the model and endpoint from a rendered profile patch layer
-`llmOpt/.dsh/profiles/headless/cordis.patch.yml` (from `scripts/setup-dsh.sh`),
-so `--provider`/`-m` are ignored in this mode — set `GENGIN_OPENROUTER_MODEL`
-and re-run `setup-dsh.sh` to change the model. The proxy still sits in front of
-OpenRouter, so quantization, routing and budget keep working.
+under `DSH_HOME`; the default (`profiles/headless`, from `scripts/setup-dsh.sh`)
+routes through the OpenRouter proxy, so `--provider`/`-m` are ignored in this
+mode — set `GENGIN_OPENROUTER_MODEL` and re-run `setup-dsh.sh` to change the
+model. The `local` preset renders its own `profiles/local` profile against the
+local router instead (`LOCAL_LLM_BASE`, default `http://localhost:8013/v1`,
+model id discovered from `/v1/models`), keeping the full MCP toolset. The proxy
+still sits in front of OpenRouter for the headless route, so quantization,
+routing and budget keep working there.
 
 Two-user VM deployments (`AGENT_USER` set) run either harness: the root-owned
 `agent-launch` helper is harness-aware, and `setup-vm.sh` installs Node.js and
