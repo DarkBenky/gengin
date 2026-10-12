@@ -45,6 +45,9 @@ llmOpt/gengin
 # llmOpt project-scoped Hermes Agent state (config, sessions, logs)
 llmOpt/.hermes/
 
+# llmOpt project-scoped DeepSeek Harness state (profile patches, sessions, logs)
+llmOpt/.dsh/
+
 # llmOpt supervisor runtime (state, session logs, per-session run artifacts)
 llmOpt/state/
 llmOpt/logs/

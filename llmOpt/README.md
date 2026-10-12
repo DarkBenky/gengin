@@ -1,17 +1,21 @@
 # llmOpt — MCP tool server for the gengin optimizer
 
 Build / bench / profile / PR tools for the `gengin` CPU ray tracer, exposed over
-MCP (stdio) and driven by the [Hermes Agent](https://hermes-agent.nousresearch.com/docs).
-Hermes edits and searches; this server owns the pipeline (sandbox, make/flame/bench,
+MCP (stdio) and driven by an agent harness — [DeepSeek Harness
+(dsh)](https://github.com/deepseek-ai/deepseek-harness) by default, or the
+[Hermes Agent](https://hermes-agent.nousresearch.com/docs). The harness edits
+and searches; this server owns the pipeline (sandbox, make/flame/bench,
 micro-bench, perf, bisection, clangd).
 
 ## Setup
 
     pip install -r llmOpt/requirements-mcp.txt
-    llmOpt/scripts/setup-hermes.sh        # renders llmOpt/.hermes/{config.yaml,.env} from secrets
+    llmOpt/scripts/setup-dsh.sh           # renders llmOpt/.dsh/profiles/headless/cordis.patch.yml (default harness)
+    llmOpt/scripts/setup-hermes.sh        # optional: renders llmOpt/.hermes/{config.yaml,.env} (Hermes harness)
 
-Project-scoped only — the global `~/.hermes` config is never touched.
-Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash`.
+Project-scoped only — the global `~/.hermes` / `~/.dsh` configs are never
+touched. dsh itself: `npm install -g @deepseek-ai/dsh` (Node 18+, developer
+preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash`.
 
 ## Launch
 
@@ -21,6 +25,7 @@ Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
     llmOpt/scripts/gengin-opt.sh --headless            # unattended oneshot (-z)
+    llmOpt/scripts/gengin-opt.sh --harness hermes      # same session on Hermes Agent
     llmOpt/scripts/gengin-opt.sh ml [provider]         # ML/OpenCL-kernel objective (needs a GPU)
 
 Provider words (`local` / `deepseek` / `openrouter <id>`) work in any order and
@@ -39,6 +44,61 @@ reporting speed — a wrong kernel fails, it is never "fast".
 Suites: `smoke core stress edges chain upscale srnet all`. Baselines in
 `llmOpt/ml_baseline.json` (gitignored, per suite hash + GPU; capture on a clean tree).
 
+## DeepSeek Harness (dsh) — default harness
+
+`dsh` runs the same MCP tool server and the same prompt through
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It is the
+default for both the launcher and the supervisor; `--harness hermes` (or
+`GENGIN_HARNESS=hermes`) selects Hermes instead. Everything around the session
+(sandbox, proxy, budget cap, PR gates) is unchanged; only the agent process
+differs. dsh reads the model and endpoint from a rendered profile patch layer
+`llmOpt/.dsh/profiles/headless/cordis.patch.yml` (from `scripts/setup-dsh.sh`),
+so `--provider`/`-m` are ignored in this mode — set `GENGIN_OPENROUTER_MODEL`
+and re-run `setup-dsh.sh` to change the model. The proxy still sits in front of
+OpenRouter, so quantization, routing and budget keep working.
+
+Two-user VM deployments (`AGENT_USER` set) run either harness: the root-owned
+`agent-launch` helper is harness-aware, and `setup-vm.sh` installs Node.js and
+`@deepseek-ai/dsh` system-wide so the agent user can launch dsh. Pin
+`GENGIN_HARNESS=hermes` to keep Hermes instead.
+
+Verified against dsh 0.2.x (developer preview — breaking changes are promised):
+
+- dsh composes config from shipped bundle layers plus a user `cordis.patch.yml`
+  patch (a row addresses a shipped row by id and replaces its whole `config`, or
+  inserts new rows). The provider lives under entry `llm-pi-ai` →
+  `config.providers.gengin-proxy` (`apiKeyEnv`, `api: openai-completions`,
+  `baseURL`, `compat`, `models`); the default model is pinned by
+  `agent-default-model`. Re-check these ids/fields in
+  `dsh/headless.cordis.patch.yml.template` after any dsh upgrade.
+- The gengin MCP server is one `insert` row (`mcp-gengin`,
+  `@deepseek-ai/dsh-mcp-client`, stdio). The bridge ships inside the dsh CLI, so
+  no `dsh plugin add` is needed. It bridges MCP Tools only (Resources/Prompts
+  deferred) and its discovery timeout is 60 s (not configurable).
+- The bridge scrubs credential-named and `DSH_*` variables from the MCP child's
+  inherited environment, so `OPENROUTER_API_KEY`/`GITHUB_TOKEN` are re-declared
+  in the row's `env` as `!!js process.env.X` expressions (evaluated in the dsh
+  host at spawn). `GENGIN_*` session vars are not scrubbed and ride the
+  inherited environment.
+- Proprietary code opt-out: the session-log-to-DeepSeek row is `disabled: true`
+  in the patch; the launcher-owned OTel row is disabled by exporting
+  `DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1` (config cannot disable
+  that row).
+- dsh has no `--usage-file`; spend is tracked through the capped OpenRouter key
+  and the proxy cost log.
+
+**Local browser UI (desktop).** `scripts/dsh-web-local.sh` serves the dsh Web
+UI at `http://127.0.0.1:3080` against the local model server (default
+`http://localhost:8013/v1`, the local router) - model-only: no MCP tools, no
+workspace wiring, no session-log/OTel export. `systemd/dsh-web-local.service`
+runs it at login (ordered after the router, retrying until `/v1/models`
+answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
+
+    cp llmOpt/systemd/dsh-web-local.service ~/.config/systemd/user/
+    systemctl --user daemon-reload
+    systemctl --user enable --now dsh-web-local.service
+    journalctl --user -u dsh-web-local -n 20   # prints the URL + its per-run token
+
 ## Changing things
 
 | Want to change       | Where                                                        |
@@ -48,6 +108,7 @@ Suites: `smoke core stress edges chain upscale srnet all`. Baselines in
 | Session behaviour    | `prompts/optimize.md` / `prompts/optimize-ml.md` (read per session) |
 | Tuning / model (VM)  | `llmOpt/.env` from `.env.example`; model via `scripts/set-openrouter-model.sh <id>` |
 | Hermes config        | `hermes/config.yaml.template` + `setup-hermes.sh`            |
+| dsh config           | `dsh/headless.cordis.patch.yml.template` + `setup-dsh.sh`    |
 | Display for benches  | `GENGIN_DISPLAY=:2 llmOpt/scripts/setup-hermes.sh`           |
 
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
@@ -84,8 +145,8 @@ never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 | `supervisor.py` | Unattended commit-triggered supervisor (VM) |
 | `getFunc.py`, `perf.py`, `lsp_client.py`, `gen_compile_commands.py` | C index + perf annotation, perf parsing, clangd client, compile DB |
 | `ml_bench.py`, `ml_baseline.json` | Layer suites + PyTorch gate + verdicts, pinned timings |
-| `scripts/gengin-opt.sh` | Session launcher |
-| `scripts/setup-hermes.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
+| `scripts/gengin-opt.sh` | Session launcher (`--harness hermes|dsh`) |
+| `scripts/setup-hermes.sh`, `setup-dsh.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
 | `scripts/supervisor-console.sh` | Supervisor in a tmux console (VM) |
 | `codebase_context.md` | Architecture, wins, failures, hotspots (gitignored, per checkout) |
 | `general_improvements.md` | Curated minimal-chore queue for the sessions' General Improvements fallback (tracked, shared) |
@@ -105,9 +166,12 @@ Benches open a MiniFB window, so the server needs a display (`DISPLAY=:2` here).
 
 Watches `origin/main`; on a new commit it prepares an exact-SHA sandbox, runs
 preflight + clean baseline, mints a budget-capped temporary OpenRouter key, runs
-one Hermes session under Xvfb, and deletes the key on every exit path. One session
+one agent session under Xvfb, and deletes the key on every exit path. One session
 at a time; new commits coalesce to the newest. `GENGIN_OFFPEAK_WAIT=1` in
 `llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window.
+The harness is `dsh` by default; `GENGIN_HARNESS=hermes` switches to Hermes.
+Two-user deployments (`AGENT_USER` set) support both harnesses - the launch
+helper is harness-aware (see the dsh section above).
 
     git clone git@github.com:DarkBenky/gengin.git <checkout>
     sudo bash <checkout>/llmOpt/scripts/setup-vm.sh --checkout <checkout>   # Ubuntu 22.04/24.04

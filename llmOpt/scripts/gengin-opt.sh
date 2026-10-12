@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Launch a gengin optimization session under the Hermes Agent harness.
+# Launch a gengin optimization session under an agent harness (dsh default,
+# Hermes with --harness hermes or GENGIN_HARNESS=hermes).
 #
-#   gengin-opt.sh                       default model from .hermes/config.yaml
+#   gengin-opt.sh                       default model from the harness config
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
 #   gengin-opt.sh local [model]         local llama.cpp server on :8013
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
@@ -10,12 +11,14 @@
 #   gengin-opt.sh ml [local|openrouter|deepseek] [model]  ML layer objective
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report
+#   gengin-opt.sh --harness hermes      run on Hermes Agent instead of dsh
 #   gengin-opt.sh --dry-run             print the resolved command and exit
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLMOPT_DIR="$(dirname "$SCRIPT_DIR")"
 HERMES_DIR="$LLMOPT_DIR/.hermes"
+DSH_DIR="$LLMOPT_DIR/.dsh"
 PROMPT_FILE="$LLMOPT_DIR/prompts/optimize.md"
 
 PROVIDER_ARGS=()
@@ -33,6 +36,7 @@ ROUTE_MAX_CONTEXT=""
 ROUTE_FALLBACK=""
 ROUTE_BUDGET=""
 WAIT_OFFPEAK=0
+HARNESS="${GENGIN_HARNESS:-dsh}"
 
 usage() {
   echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
@@ -41,6 +45,7 @@ usage() {
   echo "       $0 openrouter PRIMARY --max-context 99K --budget 15 deepseek"
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
   echo "       --budget USD session spend cap; --wait-offpeak waits for half-price hours"
+  echo "       --harness dsh|hermes selects the agent harness (default: dsh)"
 }
 
 parse_tokens() {
@@ -128,6 +133,9 @@ while [[ $# -gt 0 ]]; do
       ROUTE_BUDGET="$2"; shift 2 ;;
     --wait-offpeak)
       WAIT_OFFPEAK=1; shift ;;
+    --harness)
+      [[ $# -ge 2 ]] || { echo "error: --harness needs a value (hermes|dsh)" >&2; exit 2; }
+      HARNESS="$2"; shift 2 ;;
     --dry-run)
       DRY_RUN=1; shift ;;
     -h|--help)
@@ -142,6 +150,11 @@ while [[ $# -gt 0 ]]; do
       fi ;;
   esac
 done
+
+case "$HARNESS" in
+  hermes|dsh) ;;
+  *) echo "error: --harness expects hermes or dsh, got: $HARNESS" >&2; exit 2 ;;
+esac
 
 # `--provider` is not accepted without `--model`; fall back to defaults
 # per preset (override with GENGIN_<PRESET>_MODEL or a bare model argument).
@@ -202,28 +215,58 @@ if [[ "$SUPERVISED" -eq 1 ]]; then
     exit 2
   fi
   # Use the supervisor-provided per-session home (isolated, credential-free).
-  # $HERMES_DIR is only a fallback for manual invocations.
-  HERMES_HOME_RESOLVED="${HERMES_HOME:-$HERMES_DIR}"
-  if [[ ! -d "$HERMES_HOME_RESOLVED" ]]; then
-    echo "error: HERMES_HOME not found: $HERMES_HOME_RESOLVED" >&2
-    exit 2
+  # $HERMES_DIR/$DSH_DIR are only a fallback for manual invocations.
+  if [[ "$HARNESS" == "dsh" ]]; then
+    DSH_HOME_RESOLVED="${DSH_HOME:-$DSH_DIR}"
+    if [[ ! -d "$DSH_HOME_RESOLVED" ]]; then
+      echo "error: DSH_HOME not found: $DSH_HOME_RESOLVED" >&2
+      exit 2
+    fi
+    if ! command -v dsh >/dev/null 2>&1; then
+      echo "error: dsh not installed (install: npm install -g @deepseek-ai/dsh)" >&2
+      exit 127
+    fi
+  else
+    HERMES_HOME_RESOLVED="${HERMES_HOME:-$HERMES_DIR}"
+    if [[ ! -d "$HERMES_HOME_RESOLVED" ]]; then
+      echo "error: HERMES_HOME not found: $HERMES_HOME_RESOLVED" >&2
+      exit 2
+    fi
   fi
   export PYTHONUNBUFFERED=1
   # Shared-group umask: files the agent creates must stay writable by the
   # supervisor (it snapshots/restores the sandbox and reads diffs).
   umask 002
   echo "=== gengin optimizer (supervised) ==="
-  echo "HERMES_HOME: $HERMES_HOME_RESOLVED"
+  if [[ "$HARNESS" == "dsh" ]]; then
+    echo "harness:     DeepSeek Harness (dsh)"
+    echo "DSH_HOME:    $DSH_HOME_RESOLVED"
+  else
+    echo "harness:     Hermes Agent"
+    echo "HERMES_HOME: $HERMES_HOME_RESOLVED"
+  fi
   echo "model:       $MODEL"
   echo "query:       $QUERY_FILE_ARG"
   echo "usage:       $USAGE_FILE_ARG"
   echo
   cd "$LLMOPT_DIR"
-  maybe_update_hermes
   # No exec: the supervisor owns the process group and needs a stable wrapper
   # to reap the child and preserve its exit code.
-  HERMES_HOME="$HERMES_HOME_RESOLVED" hermes -z "$(cat "$QUERY_FILE_ARG")" --yolo \
-    --usage-file "$USAGE_FILE_ARG" --provider openrouter -m "$MODEL"
+  if [[ "$HARNESS" == "dsh" ]]; then
+    # dsh has no --usage-file equivalent: the supervisor tracks spend through
+    # the capped OpenRouter key (and the proxy cost log). Write a stub so any
+    # reader of the path still sees valid JSON.
+    printf '{"harness":"dsh","note":"usage is tracked via the capped OpenRouter key"}\n' \
+      >"$USAGE_FILE_ARG"
+    # Proprietary code: the OTel row is launcher-owned, so the opt-out is the
+    # environment switch (the session-log row is disabled in the patch layer).
+    export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
+    DSH_HOME="$DSH_HOME_RESOLVED" dsh --profile headless "$(cat "$QUERY_FILE_ARG")"
+  else
+    maybe_update_hermes
+    HERMES_HOME="$HERMES_HOME_RESOLVED" hermes -z "$(cat "$QUERY_FILE_ARG")" --yolo \
+      --usage-file "$USAGE_FILE_ARG" --provider openrouter -m "$MODEL"
+  fi
   exit $?
 fi
 
@@ -243,7 +286,18 @@ if [[ "$ML_MODE" == "1" ]]; then
   echo "[ml] provider: ${PRESET:-default} model: ${MODEL_ARGS[1]:-default}"
 fi
 
-if [[ ! -d "$HERMES_DIR" ]]; then
+# Manual runs use the rendered harness home; supervised runs get their own
+# per-session home from the supervisor.
+if [[ "$HARNESS" == "dsh" ]]; then
+  HARNESS_DIR="$DSH_DIR"
+else
+  HARNESS_DIR="$HERMES_DIR"
+fi
+if [[ ! -d "$HARNESS_DIR" ]]; then
+  if [[ "$HARNESS" == "dsh" ]]; then
+    echo "error: $HARNESS_DIR not found - run $SCRIPT_DIR/setup-dsh.sh first" >&2
+    exit 1
+  fi
   echo "error: $HERMES_DIR not found — run $SCRIPT_DIR/setup-hermes.sh first" >&2
   exit 1
 fi
@@ -435,8 +489,8 @@ if prs:
 PY
 )" || PR_BLOCK=""
 
-mkdir -p "$HERMES_DIR/cache"
-QUERY_FILE="$HERMES_DIR/cache/query-$(date +%s).md"
+mkdir -p "$HARNESS_DIR/cache"
+QUERY_FILE="$HARNESS_DIR/cache/query-$(date +%s).md"
 {
   cat "$PROMPT_FILE"
   echo
@@ -454,10 +508,19 @@ QUERY_FILE="$HERMES_DIR/cache/query-$(date +%s).md"
     echo "Start now. Work the profile -> micro-benchmark -> pre-mortem -> apply -> validate -> PR loop."
   fi
 } > "$QUERY_FILE"
-if [[ "$HEADLESS" -eq 1 ]]; then
+if [[ "$HARNESS" == "dsh" ]]; then
+  # dsh reads the model and endpoint from the rendered profile patch layer
+  # (llmOpt/.dsh/profiles/headless/cordis.patch.yml); provider/model CLI flags
+  # are Hermes-only.
+  if [[ ${#PROVIDER_ARGS[@]} -gt 0 ]]; then
+    echo "note: --provider/-m are ignored on dsh — set GENGIN_OPENROUTER_MODEL and re-run setup-dsh.sh" >&2
+  fi
+  CMD=(dsh --profile headless "$(cat "$QUERY_FILE")")
+  DISPLAY_CMD=(dsh --profile headless "<query: $(wc -c <"$QUERY_FILE") bytes>")
+elif [[ "$HEADLESS" -eq 1 ]]; then
   # `-z` is the scripted one-shot entry point (final answer only) and the only
   # form that supports --usage-file.
-  USAGE_FILE="$HERMES_DIR/cache/usage-$(date +%s).json"
+  USAGE_FILE="$HARNESS_DIR/cache/usage-$(date +%s).json"
   CMD=(hermes -z "$(cat "$QUERY_FILE")" --yolo --usage-file "$USAGE_FILE")
   DISPLAY_CMD=(hermes -z "<query: $(wc -c <"$QUERY_FILE") bytes>" --yolo --usage-file "$USAGE_FILE")
 else
@@ -466,16 +529,29 @@ else
 fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  printf 'HERMES_HOME=%q ' "$HERMES_DIR"
-  printf '%q ' "${DISPLAY_CMD[@]}" "${PROVIDER_ARGS[@]}" "${MODEL_ARGS[@]}"
+  if [[ "$HARNESS" == "dsh" ]]; then
+    printf 'DSH_HOME=%q ' "$HARNESS_DIR"
+    printf '%q ' "${DISPLAY_CMD[@]}"
+  else
+    printf 'HERMES_HOME=%q ' "$HARNESS_DIR"
+    printf '%q ' "${DISPLAY_CMD[@]}" "${PROVIDER_ARGS[@]}" "${MODEL_ARGS[@]}"
+  fi
   echo
   exit 0
 fi
 
-if ! command -v hermes >/dev/null 2>&1; then
-  echo "error: hermes not installed" >&2
-  echo "  install: curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash" >&2
-  exit 127
+if [[ "$HARNESS" == "dsh" ]]; then
+  if ! command -v dsh >/dev/null 2>&1; then
+    echo "error: dsh not installed" >&2
+    echo "  install: npm install -g @deepseek-ai/dsh  (Node.js 18+; developer preview)" >&2
+    exit 127
+  fi
+else
+  if ! command -v hermes >/dev/null 2>&1; then
+    echo "error: hermes not installed" >&2
+    echo "  install: curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash" >&2
+    exit 127
+  fi
 fi
 
 # run_perf_stat / make_flame need unprivileged perf counters; offer the
@@ -517,11 +593,25 @@ except Exception as exc:
 PY
 fi
 
-maybe_update_hermes
+if [[ "$HARNESS" != "dsh" ]]; then
+  maybe_update_hermes
+fi
 
-echo "=== gengin optimizer (Hermes) ==="
-echo "HERMES_HOME: $HERMES_DIR"
-echo "Query:       $QUERY_FILE"
-echo
-cd "$LLMOPT_DIR"
-HERMES_HOME="$HERMES_DIR" exec "${CMD[@]}" "${PROVIDER_ARGS[@]}" "${MODEL_ARGS[@]}"
+if [[ "$HARNESS" == "dsh" ]]; then
+  echo "=== gengin optimizer (DeepSeek Harness) ==="
+  echo "DSH_HOME:  $HARNESS_DIR"
+  echo "Query:     $QUERY_FILE"
+  echo
+  cd "$LLMOPT_DIR"
+  # Proprietary code: opt out of the launcher-owned OTel row (see above).
+  export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
+  DSH_HOME="$HARNESS_DIR" exec "${CMD[@]}"
+else
+  echo "=== gengin optimizer (Hermes) ==="
+  echo "HERMES_HOME: $HARNESS_DIR"
+  echo "Query:       $QUERY_FILE"
+  echo
+  cd "$LLMOPT_DIR"
+  HERMES_HOME="$HARNESS_DIR" exec "${CMD[@]}" "${PROVIDER_ARGS[@]}" "${MODEL_ARGS[@]}"
+fi
+

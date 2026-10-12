@@ -12,7 +12,7 @@
 #
 # What it does:
 #   - verifies the distro is a supported Ubuntu LTS
-#   - installs build/display/OpenCL/perf tooling
+#   - installs build/display/OpenCL/perf tooling and Node.js + dsh
 #   - creates llmopt-supervisor and llmopt-agent Unix users
 #   - installs a root-owned agent-launch helper + exact sudoers rule
 #   - provisions GENGIN_INPUTS_DIR with a verified manifest
@@ -88,6 +88,22 @@ fi
 # gprof2dot is a python package; install into the system python for the helper.
 python3 -m pip install --quiet gprof2dot 2>/dev/null || log "gprof2dot pip install skipped (will use conda/system if present)"
 
+# --- Node.js + dsh (agent harness) ------------------------------------------
+# dsh is a current Node app (zstd session logs, bundled plugin manager): the
+# distro default is too old (Ubuntu 22.04 ships Node 12), so use NodeSource's
+# Node 24. System-wide install so both the supervisor preflight and the agent
+# user (whose PATH the two-user helper uses) see `dsh`.
+if ! command -v node >/dev/null 2>&1 \
+   || [[ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 22 ]]; then
+  log "installing Node.js 24 (NodeSource)"
+  curl -fsSL https://deb.nodesource.com/setup_24.x | bash - >/dev/null \
+    || die "NodeSource setup failed"
+  apt-get install -y -qq nodejs || die "nodejs install failed"
+fi
+log "installing dsh + pnpm (npm -g)"
+npm install -g --no-fund --no-audit @deepseek-ai/dsh pnpm >/dev/null \
+  || die "npm install -g @deepseek-ai/dsh failed"
+
 # --- users ------------------------------------------------------------------
 log "creating users"
 id -u llmopt-supervisor >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin llmopt-supervisor
@@ -158,16 +174,17 @@ cat > "$HELPER" <<'HELPER_EOF'
 # Validates every received path, then execs the project launcher in supervised
 # mode. No shell is invoked and no arbitrary command can be selected.
 #
-# Usage: agent-launch <checkout> <hermes_home> <query_file> <usage_file> <model>
+# Usage: agent-launch <checkout> <session_home> <query_file> <usage_file> <model> <harness>
 set -euo pipefail
 
 checkout="${1:-}"
-hermes_home="${2:-}"
+session_home="${2:-}"
 query_file="${3:-}"
 usage_file="${4:-}"
 model="${5:-}"
+harness="${6:-}"
 
-[[ -n "$checkout" && -n "$hermes_home" && -n "$query_file" && -n "$usage_file" && -n "$model" ]] \
+[[ -n "$checkout" && -n "$session_home" && -n "$query_file" && -n "$usage_file" && -n "$model" && -n "$harness" ]] \
   || { echo "agent-launch: missing arguments" >&2; exit 2; }
 
 [[ "$checkout" == /* && -d "$checkout" ]] \
@@ -181,24 +198,29 @@ under() { # under ROOT PATH -> 0 if the canonical PATH is strictly under ROOT
   return 0
 }
 
-under "$run_root" "$hermes_home" || { echo "agent-launch: hermes_home outside $run_root" >&2; exit 2; }
+under "$run_root" "$session_home" || { echo "agent-launch: session_home outside $run_root" >&2; exit 2; }
 under "$run_root" "$query_file"  || { echo "agent-launch: query_file outside $run_root" >&2; exit 2; }
 under "$run_root" "$usage_file"  || { echo "agent-launch: usage_file outside $run_root" >&2; exit 2; }
-[[ -d "$hermes_home" && -f "$query_file" ]] \
-  || { echo "agent-launch: hermes_home or query_file missing" >&2; exit 2; }
+[[ -d "$session_home" && -f "$query_file" ]] \
+  || { echo "agent-launch: session_home or query_file missing" >&2; exit 2; }
 # Model ids may carry an OpenRouter routing variant suffix (`:floor`, `:free`).
 [[ "$model" =~ ^[A-Za-z0-9._:/-]+$ ]] || { echo "agent-launch: bad model" >&2; exit 2; }
 
 # Secrets arrive through the preserved environment (sudoers env_keep), never
-# via argv.
+# via argv. The per-session harness home does too (HERMES_HOME or DSH_HOME,
+# depending on the harness).
 [[ -n "${OPENROUTER_API_KEY:-}" ]] || { echo "agent-launch: OPENROUTER_API_KEY not set" >&2; exit 2; }
-[[ -n "${HERMES_HOME:-}" ]] || { echo "agent-launch: HERMES_HOME not set" >&2; exit 2; }
+case "$harness" in
+  hermes) [[ -n "${HERMES_HOME:-}" ]] || { echo "agent-launch: HERMES_HOME not set" >&2; exit 2; } ;;
+  dsh)    [[ -n "${DSH_HOME:-}" ]]    || { echo "agent-launch: DSH_HOME not set" >&2; exit 2; } ;;
+  *) echo "agent-launch: bad harness: $harness" >&2; exit 2 ;;
+esac
 
 launcher="$checkout/llmOpt/scripts/gengin-opt.sh"
 [[ -x "$launcher" ]] || { echo "agent-launch: launcher not executable: $launcher" >&2; exit 2; }
 
 export PATH="$HOME/.local/bin:$PATH"
-exec "$launcher" openrouter --supervised \
+exec "$launcher" openrouter --supervised --harness "$harness" \
   --model "$model" --query-file "$query_file" --usage-file "$usage_file"
 HELPER_EOF
 chown root:root "$HELPER"
@@ -237,9 +259,9 @@ log "installing sudoers rule"
 cat > "$SUDOERS" <<SUDOERS_EOF
 # gengin-llmopt: supervisor may run the fixed agent-launch helper as llmopt-agent.
 # Only the environment variables the helper needs survive the UID switch
-# (GENGIN_* are the expansion sources for the per-session Hermes config).
+# (GENGIN_* are the expansion sources for the per-session harness config).
 Defaults:llmopt-supervisor env_reset
-Defaults:llmopt-supervisor env_keep += "OPENROUTER_API_KEY HERMES_HOME DISPLAY LIBGL_ALWAYS_SOFTWARE PYTHONUNBUFFERED GENGIN_TARGET_SHA GENGIN_REPO_URL GENGIN_TARGET_BRANCH GENGIN_SESSION_ID GENGIN_SESSION_RESULT_PATH GENGIN_INPUTS_DIR GITHUB_TOKEN HOME PATH"
+Defaults:llmopt-supervisor env_keep += "OPENROUTER_API_KEY HERMES_HOME DSH_HOME DISPLAY LIBGL_ALWAYS_SOFTWARE PYTHONUNBUFFERED GENGIN_TARGET_SHA GENGIN_REPO_URL GENGIN_TARGET_BRANCH GENGIN_SESSION_ID GENGIN_SESSION_RESULT_PATH GENGIN_INPUTS_DIR GITHUB_TOKEN HOME PATH"
 llmopt-supervisor ALL=(llmopt-agent) NOPASSWD: $HELPER
 # Signal relay: the supervisor cannot signal the agent UID; this fixed helper
 # (root) may SIGTERM/SIGKILL a validated process group.
