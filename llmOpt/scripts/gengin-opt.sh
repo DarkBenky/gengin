@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: 8ce45fbff2173c3c7d0a520eaf8a11c28a4cdf05)#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Launch a gengin optimization session under the Hermes Agent harness.
 #
 #   gengin-opt.sh                       default model from .hermes/config.yaml

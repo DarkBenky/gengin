@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: e3596f4d6b0cf9497447b4452b121c9b152af500)#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Prepare the project-scoped DeepSeek Harness (dsh) config for the gengin
 # optimizer. Idempotent — re-run after template changes.
 #

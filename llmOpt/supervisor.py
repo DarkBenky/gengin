@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: 6dd8e8a942c58b14ebf497dc2415d1014e7438b2)#!/usr/bin/env python3
+#!/usr/bin/env python3
 """gengin-llmopt supervisor.
 
 Watches the newest commit on the configured remote branch, prepares an

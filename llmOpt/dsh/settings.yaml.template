@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: c991455fe421209c5104dfd0aca3c09752ac17f0)# Project-scoped DeepSeek Harness (dsh) config for the gengin optimizer.
+# Project-scoped DeepSeek Harness (dsh) config for the gengin optimizer.
 # Rendered by llmOpt/scripts/setup-dsh.sh into llmOpt/.dsh/settings.yaml;
 # DSH_HOME points at llmOpt/.dsh, so the global ~/.dsh config stays untouched.
 #
