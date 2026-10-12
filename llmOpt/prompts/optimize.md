@@ -88,7 +88,10 @@ frame time.  Only then — and only after at least two fresh render candidates
 were attempt-and-measured-and-refuted in THIS session — switch to the SECOND
 OBJECTIVE (the flight controller), and treat it as a LAST RESORT, not an equal
 half of the session: ending in `no_change` with the render refutations
-recorded is also a valid, honest outcome.  Flight is never mandatory.
+recorded is also a valid, honest outcome.  Flight is never mandatory — but a
+flight phase that does run is a real exploration phase, not a quick constant
+sweep: at least one structural candidate must be attempt-and-measured there
+(see the structural families under SECOND OBJECTIVE).
 Alternatively, when 4 or more pull requests share the same category label,
 the MAINTENANCE TASK below (PR consolidation) is a valid session goal; a
 complete pass through it — or through its housekeeping duties (backfill,
@@ -340,7 +343,7 @@ Note: step 1/24 (the trainNN rollout rate) is a different operating point —
 re-measure there before optimizing for it; optimize at the rate the deployed
 controller will actually run.
 
-Leads worth trying (one logical change per attempt, measure every one):
+Cheap leads worth trying (one logical change per attempt, measure every one):
 - The missile controller is a second, independent target in the same file:
   `getControllerOutputMissile` maps the PN accel onto the front/back fins via
   `missileFinAccelPerDeflection` and leaves TVC at neutral (0.5).  Bench it with
@@ -365,13 +368,48 @@ Leads worth trying (one logical change per attempt, measure every one):
   `jink` never do — closing those two tiers is stage one, faster hits on the
   hitting tiers is stage two; a miss-only win still counts as IMPROVED.
 
+The lead list is a warm-up, not the search space.  Every bullet above is a
+constant tweak; a flight phase that ends there is under-delivering.  At least
+ONE candidate per flight phase must change the CONTROL STRUCTURE instead of a
+constant — same two files, same gate: the dynamic suite judges the result and
+diff size is irrelevant.  Only the bench's own loss, hit radius and
+`flightBench.c` stay off limits (anti-pattern 15).  Structural families worth
+a session, unless `codebase_context.md` already settled them:
+- closed-form guidance: solve the predicted intercept point / zero-effort-miss
+  analytically from the target state and map the demanded acceleration onto
+  the deflections the way `getControllerOutputMissile` maps PN onto fins; the
+  iterative search survives as a short local polish or goes entirely.
+- hybrid seed: keep the search but warm-start it from the closed-form solution
+  or the previous frame's output — expect better miss AND fewer iterations.
+- target-state estimation: finite differences / an alpha-beta filter over the
+  last N frames estimating target acceleration for an augmented-PN or
+  turn-rate term; `jink` is the tier that proves it.
+- search upgrades: multi-start or pattern search, per-axis adaptive steps,
+  momentum, or carrying the best axis vector across frames, instead of the
+  fixed normalized 3-axis gradient with `learningRate *= 0.95`.
+- loss redesign: a zero-effort-miss / time-to-go shaped objective, or split
+  midcourse and terminal weights — the alignment family may be the wrong
+  objective for a manoeuvring target.
+- gain scheduling: different behaviour in cruise vs terminal phase keyed on
+  time-to-go, closure rate or miss distance; coordinated turn / energy
+  management when overshooting.
+The missile controller follows the same principle — augmented PN with an
+estimated target acceleration, TVC authority scheduling across boost/coast, a
+midcourse/terminal split — its leads list is equally a warm-up.
+A structural candidate may take a couple of refine-measure rounds before its
+keep/revert verdict (a new law's constants are unknown by construction); that
+stays ONE logical change for the PR as long as the final diff is coherent.
+
 Discipline is the same as the frame axis: revert with
 `git checkout -- simulation/cSim/flightControl.c simulation/cSim/flightControl.h`
-when the verdict is not IMPROVED, update `codebase_context.md` (its
-`## Flight node map` section has the same row format), and open ONE PR titled
-for the controller with the before/after block quoted in the body.  Label the
-PR by target: plane controller => `Flight Controller`, missile controller =>
-`Missile Controller`; never mix the two controllers in one PR.
+when the verdict is not IMPROVED.  A bold structural attempt that measures
+worse and is reverted with numbers is a healthy result, not a wasted one:
+record it as `tried-failed` and try the NEXT family, not a smaller nudge of
+the same idea.  Then update `codebase_context.md` (its `## Flight node map`
+section has the same row format), and open ONE PR titled for the controller
+with the before/after block quoted in the body.  Label the PR by target: plane
+controller => `Flight Controller`, missile controller => `Missile
+Controller`; never mix the two controllers in one PR.
 
 ## PR CATEGORIES AND LABELS
 
@@ -632,6 +670,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     chores, no implementing your own "Proposed" queue entries, no second item
     after a failure — the fallback is soft-locked to ONE curated queue item
     per session and the caps are hard.
+24. NEVER let a flight phase be constant tweaks alone — the cheap leads are a
+    warm-up; at least one structural candidate must be attempt-and-measured
+    (see the structural families under SECOND OBJECTIVE), and one refuted
+    structural attempt beats three more scalar nudges.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and
