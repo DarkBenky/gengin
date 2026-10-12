@@ -71,9 +71,13 @@ measures whether you USED it.  A session that ends after a single profile run
 and a quick `no_change` verdict is a FAILED session.  Minimum effort bar before
 you may report `no_change`:
 - at least 3 distinct candidate optimizations attempt-and-measured (different
-  functions and/or strategies), with the numbers recorded; AND
-- at least one full profile -> micro-bench -> pre-mortem cycle per candidate;
-  AND
+  functions and/or strategies), with the numbers recorded — and at least ONE
+  of them STRUCTURAL (a different algorithm, data layout, decomposition or
+  caching scheme, see STRUCTURAL CANDIDATES), not three variations of the same
+  loop; AND
+- at least one full profile -> micro-bench -> pre-mortem cycle per candidate
+  that fits one (a whole-subsystem structural candidate that cannot be
+  isolated goes straight to `make_bench`, and says so in the PR body); AND
 - every `untried` row of the `## Node map` (in `codebase_context.md`) tried
   or refuted with measured evidence.
 If a candidate fails, record WHY in `codebase_context.md` and immediately pick
@@ -98,9 +102,11 @@ complete pass through it — or through its housekeeping duties (backfill,
 untangle, repair) — also satisfies this bar.  So does ONE completed item from
 the GENERAL IMPROVEMENTS queue (soft-locked final fallback below) — but only
 after the render/flight attempts above are recorded.
-Candidates come from the `## Node map`, ranked by its flame percentages.  If
-that section is empty (first session on a fresh checkout), seed it from your
-own `make_flame` output — top 5 nodes, one row each — before choosing.  The
+Candidates come from the `## Node map`, ranked by its flame percentages — a
+structural candidate may target the subsystem around a node rather than the
+function itself.  If that section is empty (first session on a fresh
+checkout), seed it from your own `make_flame` output — top 5 nodes, one row
+each — before choosing.  The
 renderClouds OpenCL pass is OUT OF SCOPE — see the SCOPE section.  Expect
 those kernels at the top of the profile: the GPU pass dominates the frame, so
 frame-level CPU wins are small by construction — 1-3% on avg/median with
@@ -208,7 +214,39 @@ B. Cache-line alignment, padding, false sharing:
      (52 KB per-thread stacks already pressure L1/TLB — see pre-mortem);
    - keep the hottest stream within one 4K page when possible.
 Measure each change in isolation; alignment/`restrict` edits must still clear
-the Phase 2/3 gate — no change purely for tidiness.
+the Phase 2/3 gate — no change purely for tidiness.  These plays are cheap
+warm-ups, not the search space: they do not satisfy the structural candidate
+requirement below.
+
+## STRUCTURAL CANDIDATES — MICRO-OPTIMIZATION IS NOT THE SEARCH SPACE
+The node map, the per-function micro-bench and the compiler-assist plays all
+steer toward function-local tweaks; a session that ends after three variations
+of the same loop is under-delivering.  At least ONE candidate per session must
+change the STRUCTURE of the computation, not its implementation, and it is
+gated exactly the same way: micro-bench where it is isolable, `make_bench`
+always, `image_mse` 0.00 for exact changes — or the `[visual]` path when the
+algorithm deliberately changes the image.  Structural families worth a
+session, unless `codebase_context.md` already settled them:
+- algorithmic reformulation: the same output for less work (tighter analytic
+  bounds, incremental updates instead of rebuilds, cheaper intersection math,
+  early-outs the profile justifies);
+- data layout: SoA/packing-convert a hot subsystem (traversal nodes,
+  per-thread state, tile buffers) and prove it on the real scene, not only in
+  the micro-bench;
+- higher-level caching / precomputation: per-scene, per-frame, per-tile reuse
+  of visibility, bounds, shading inputs or denoiser state — "why is this
+  recomputed at all?" is a structural play;
+- decomposition & threading: tile/work scheduling, batching, per-thread buffer
+  locality, less cross-thread traffic — 32-thread scaling is the product;
+- acceleration-structure changes: traversal order, SIMD packet traversal,
+  bounds layout/compaction, split strategy — kept exact;
+- pipeline reorganization: merge passes, reorder, defer or skip work that is
+  provably invisible or amortizable across frames.
+A structural candidate may take a couple of refine-measure rounds before its
+keep/revert verdict; that stays ONE logical change for the PR as long as the
+final diff is coherent.  A bold structural attempt that measures worse and is
+reverted with numbers is a healthy result: record it and try the next family,
+not a smaller nudge of the same idea.
 
 ### Phase 3 — Pre-Mortem Check (CRITICAL)
 10. Explain WHY the micro-bench win survives the jump to 32 threads.  Known
@@ -674,6 +712,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     warm-up; at least one structural candidate must be attempt-and-measured
     (see the structural families under SECOND OBJECTIVE), and one refuted
     structural attempt beats three more scalar nudges.
+25. NEVER let a session be function-local micro-tweaks alone — at least one
+    structural candidate must be attempt-and-measured (see STRUCTURAL
+    CANDIDATES); `restrict`/alignment plays are warm-ups, and one refuted
+    structural attempt beats a third variation of the same loop.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and
