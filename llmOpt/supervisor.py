@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+successfully downloaded text file (SHA: 6dd8e8a942c58b14ebf497dc2415d1014e7438b2)#!/usr/bin/env python3
 """gengin-llmopt supervisor.
 
 Watches the newest commit on the configured remote branch, prepares an
@@ -819,8 +819,9 @@ def prepare_sandbox(config, target_sha, session_id):
 def _harness_bin(config):
     """Path to the harness CLI: the agent's own install in two-user mode."""
     if config.harness == "dsh":
-        # dsh is an npm global; npx works as a slower fallback.
-        return shutil.which("dsh") or shutil.which("npx")
+        # The launcher runs `dsh` directly; npx on PATH would pass preflight
+        # without the CLI being installed.
+        return shutil.which("dsh")
     if config.agent_user:
         cand = os.path.join(_agent_home(config), ".local", "bin", "hermes")
         if os.path.isfile(cand) and os.access(cand, os.X_OK):
@@ -1948,7 +1949,8 @@ def run_session(config, state, target_sha):
     cfg_text = (cfg_text.replace("__LLMOPT_DIR__", LLMOPT_DIR)
                       .replace("__PYTHON__", config.mcp_python())
                       .replace("__LOCAL_MODEL__", "local-model")
-                      .replace("__DISPLAY__", config.gengin_display))
+                      .replace("__DISPLAY__", config.gengin_display)
+                      .replace("__MODEL__", config.openrouter_model))
     # The harness filters the MCP child environment; the session variables must
     # be delivered through the config env block (${VAR} expands from the
     # harness process environment built by _build_session_env).
@@ -1979,6 +1981,25 @@ def run_session(config, state, target_sha):
     else:
         os.chmod(config_path, 0o600)
         os.chmod(run_dir, 0o700)
+
+    if config.harness == "dsh":
+        # A fresh per-session DSH_HOME has no plugins; without the MCP client
+        # plugin the session runs without the gengin tools. Best effort, same
+        # registration as setup-dsh.sh.
+        dsh_bin = shutil.which("dsh")
+        if dsh_bin:
+            try:
+                subprocess.run(
+                    [dsh_bin, "plugin", "--profile", "headless", "add",
+                     "@deepseek-ai/dsh-mcp-client"],
+                    env={**os.environ, "DSH_HOME": session_home},
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=120, check=True)
+            except (OSError, subprocess.SubprocessError):
+                log("WARN", "session.dsh_plugin_failed", session=session_id)
+        else:
+            log("WARN", "session.dsh_plugin_failed", session=session_id,
+                detail="dsh not on PATH")
 
     # Generate the session query (prompt + session context block).
     prompt = os.path.join(LLMOPT_DIR, "prompts", "optimize.md")
@@ -2287,4 +2308,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         log("WARN", "supervisor.interrupted")
         sys.exit(EXIT_RUNTIME)
-

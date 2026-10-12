@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+successfully downloaded text file (SHA: 8ce45fbff2173c3c7d0a520eaf8a11c28a4cdf05)#!/usr/bin/env bash
 # Launch a gengin optimization session under the Hermes Agent harness.
 #
 #   gengin-opt.sh                       default model from .hermes/config.yaml
@@ -171,7 +171,7 @@ fi
 
 # --- best-effort harness self-update ---------------------------------------
 # Keep the Hermes Agent checkout at origin/main: a cheap `update --check` on
-# every launch, the full update only when commits are pending. Never fatal â
+# every launch, the full update only when commits are pending. Never fatal —
 # a failed or slow update leaves the current version in place.
 # GENGIN_SKIP_HARNESS_UPDATE=1 disables; GENGIN_HARNESS_UPDATE_TIMEOUT (seconds).
 maybe_update_hermes() {
@@ -186,12 +186,12 @@ maybe_update_hermes() {
     *"Update available"*|*"commits behind"*) ;;
     *) return 0 ;;
   esac
-  echo "[harness] update available â installing the latest Hermes Agent (log: $log)"
+  echo "[harness] update available — installing the latest Hermes Agent (log: $log)"
   budget="${GENGIN_HARNESS_UPDATE_TIMEOUT:-420}"
   if timeout "$budget" hermes update --yes >>"$log" 2>&1; then
     echo "[harness] Hermes Agent updated"
   else
-    echo "[harness] warning: harness update failed â continuing with the current version (log: $log)" >&2
+    echo "[harness] warning: harness update failed — continuing with the current version (log: $log)" >&2
   fi
   return 0
 }
@@ -290,7 +290,7 @@ if [[ ! -d "$HARNESS_DIR" ]]; then
     echo "error: $HARNESS_DIR not found - run $SCRIPT_DIR/setup-dsh.sh first" >&2
     exit 1
   fi
-  echo "error: $HERMES_DIR not found â run $SCRIPT_DIR/setup-hermes.sh first" >&2
+  echo "error: $HERMES_DIR not found — run $SCRIPT_DIR/setup-hermes.sh first" >&2
   exit 1
 fi
 
@@ -324,10 +324,10 @@ route_enabled=0
 if [[ -n "$route_max_context" || -n "$route_fallback" ]]; then
   if [[ "$PRESET" == "local" || "$PRESET" == "deepseek" ]]; then
     if [[ "$ROUTE_FLAG" -eq 1 ]]; then
-      echo "error: a chain needs OpenRouter models â the '${PRESET}' preset bypasses the proxy (chain syntax: PRIMARY --max-context 99K FALLBACK)" >&2
+      echo "error: a chain needs OpenRouter models — the '${PRESET}' preset bypasses the proxy (chain syntax: PRIMARY --max-context 99K FALLBACK)" >&2
       exit 2
     fi
-    echo "warning: GENGIN_ROUTE_* is set but the '${PRESET}' preset bypasses the proxy â route disabled" >&2
+    echo "warning: GENGIN_ROUTE_* is set but the '${PRESET}' preset bypasses the proxy — route disabled" >&2
   elif [[ -z "$route_max_context" || -z "$route_fallback" ]]; then
     echo "error: a route needs both a threshold and a fallback model (use --max-context + --fallback-model, or GENGIN_ROUTE_MAX_CONTEXT + GENGIN_ROUTE_FALLBACK_MODEL in .env)" >&2
     exit 2
@@ -418,7 +418,7 @@ if [[ "$route_enabled" -eq 1 ]]; then
   else
     PROXY_PORT="${GENGIN_PROXY_PORT:-8787}"
     if ! ensure_route_proxy "$PROXY_PORT"; then
-      echo "error: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT â start it with $SCRIPT_DIR/setup-openrouter-proxy.sh" >&2
+      echo "error: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT — start it with $SCRIPT_DIR/setup-openrouter-proxy.sh" >&2
       exit 2
     fi
     route_json="$(printf '{"members":["%s",%s],"maxContext":%s,"ttlSeconds":%s,"label":"gengin-opt"%s%s}' \
@@ -439,7 +439,7 @@ fi
 if [[ "$PRESET" != "local" && "$PRESET" != "deepseek" ]]; then
   PROXY_PORT="${GENGIN_PROXY_PORT:-8787}"
   if ! curl -fsS --max-time 2 "http://127.0.0.1:$PROXY_PORT/health" >/dev/null 2>&1; then
-    echo "warning: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT â start it with llmOpt/scripts/setup-openrouter-proxy.sh" >&2
+    echo "warning: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT — start it with llmOpt/scripts/setup-openrouter-proxy.sh" >&2
   fi
 fi
 if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
@@ -552,16 +552,16 @@ if ! perf stat -e cycles true >/dev/null 2>&1; then
     echo "perf counters are blocked (perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid))."
     read -r -p "Enable them now via sudo? [y/N] " answer
     if [[ "$answer" == [yY] ]]; then
-      "$SCRIPT_DIR/enable-perf.sh" || echo "warning: perf could not be enabled â continuing without counters" >&2
+      "$SCRIPT_DIR/enable-perf.sh" || echo "warning: perf could not be enabled — continuing without counters" >&2
     fi
   else
-    echo "note: perf counters blocked â run $SCRIPT_DIR/enable-perf.sh once (needs sudo)" >&2
+    echo "note: perf counters blocked — run $SCRIPT_DIR/enable-perf.sh once (needs sudo)" >&2
   fi
 fi
 
 # A session must start from the newest commit: advance the sandbox to the remote
 # tip of the target branch before the harness boots.  Supervised sessions skip
-# this â the supervisor pinned GENGIN_TARGET_SHA and baselined that commit.
+# this — the supervisor pinned GENGIN_TARGET_SHA and baselined that commit.
 if [[ -z "${GENGIN_TARGET_SHA:-}" && "${GENGIN_SKIP_SANDBOX_SYNC:-0}" != "1" ]]; then
   LLMOPT_DIR="$LLMOPT_DIR" python3 - <<'PY'
 import os, sys

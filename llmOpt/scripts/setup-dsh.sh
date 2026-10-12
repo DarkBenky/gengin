@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+successfully downloaded text file (SHA: e3596f4d6b0cf9497447b4452b121c9b152af500)#!/usr/bin/env bash
 # Prepare the project-scoped DeepSeek Harness (dsh) config for the gengin
 # optimizer. Idempotent — re-run after template changes.
 #
@@ -27,10 +27,12 @@ mkdir -p "$DSH_DIR"
 PYTHON_BIN="$(command -v python3 || true)"
 # Bench runs need an X display; :2 is this machine's headless Xorg (auth-free).
 DISPLAY_VALUE="${GENGIN_DISPLAY:-:2}"
+MODEL_VALUE="${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}"
 
 sed -e "s|__LLMOPT_DIR__|$LLMOPT_DIR|g" \
     -e "s|__PYTHON__|${PYTHON_BIN:-python3}|g" \
     -e "s|__DISPLAY__|$DISPLAY_VALUE|g" \
+    -e "s|__MODEL__|$MODEL_VALUE|g" \
     "$TEMPLATE" > "$DSH_DIR/settings.yaml"
 chmod 600 "$DSH_DIR/settings.yaml"
 echo "wrote $DSH_DIR/settings.yaml"

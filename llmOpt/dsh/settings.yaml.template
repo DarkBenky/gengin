@@ -1,4 +1,4 @@
-# Project-scoped DeepSeek Harness (dsh) config for the gengin optimizer.
+successfully downloaded text file (SHA: c991455fe421209c5104dfd0aca3c09752ac17f0)# Project-scoped DeepSeek Harness (dsh) config for the gengin optimizer.
 # Rendered by llmOpt/scripts/setup-dsh.sh into llmOpt/.dsh/settings.yaml;
 # DSH_HOME points at llmOpt/.dsh, so the global ~/.dsh config stays untouched.
 #
@@ -15,7 +15,9 @@ providers:
   gengin-proxy:
     api: openai-completions
     base_url: http://127.0.0.1:8787/api/v1
-    model: deepseek/deepseek-v4-flash-0731
+    # Rendered from OPENROUTER_MODEL (supervisor) or GENGIN_OPENROUTER_MODEL
+    # (setup-dsh.sh); the default matches gengin-opt.sh.
+    model: __MODEL__
     api_key_env: OPENROUTER_API_KEY
 
 # MCP: the gengin optimizer tools (mcp_server.py). Register the client plugin
