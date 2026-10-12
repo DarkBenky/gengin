@@ -132,21 +132,59 @@ func NewAIM7E() MissileSpec {
 	return m
 }
 
-// NewAIM120C: fire-and-forget ARH BVR missile (1999).
+// NewAIM120A: baseline AMRAAM.
+func NewAIM120A() MissileSpec {
+	m := baseMissile("AIM-120A", 3.66, 0.178, 95, 62, 0, 0.12, 0.35, 32)
+	m.FinSpanFront, m.FinSpanBack = 0, 0.53
+	m.StageCount = 2
+	m.Stages[0] = MissileStage{50000, 2.0}
+	m.Stages[1] = MissileStage{11000, 3.5}
+	m.PnGain = 3.8
+	return m
+}
+
+// NewAIM120B: upgraded electronics.
+// Guidance gain difference is a gameplay approximation.
+func NewAIM120B() MissileSpec {
+	m := baseMissile("AIM-120B", 3.66, 0.178, 95, 62, 0, 0.12, 0.35, 32)
+	m.FinSpanFront, m.FinSpanBack = 0, 0.53
+	m.StageCount = 2
+	m.Stages[0] = MissileStage{50000, 2.0}
+	m.Stages[1] = MissileStage{11000, 3.5}
+	m.PnGain = 4.1
+	return m
+}
+
+// NewAIM120C: clipped-fin AMRAAM.
+// Handling values approximate a later C-family variant.
 func NewAIM120C() MissileSpec {
-	m := baseMissile("AIM-120C", 3.66, 0.178, 95, 62, 0, 0.12, 0.35, 45)
-	m.FinSpanFront, m.FinSpanBack = 0, 0.45
-	m.Stages[0] = MissileStage{54600, 2.5}
+	m := baseMissile("AIM-120C", 3.66, 0.178, 95, 62, 0, 0.12, 0.33, 38)
+	m.FinSpanFront, m.FinSpanBack = 0, 0.48
+	m.StageCount = 2
+	m.Stages[0] = MissileStage{50000, 2.0}
+	m.Stages[1] = MissileStage{11000, 3.5}
+	m.PnGain = 4.2
+	return m
+}
+
+// NewAIM120C7: enhanced-motor gameplay variant.
+func NewAIM120C7() MissileSpec {
+	m := baseMissile("AIM-120C7", 3.66, 0.178, 95, 66.5, 0, 0.12, 0.33, 40)
+	m.FinSpanFront, m.FinSpanBack = 0, 0.48
+	m.StageCount = 2
+	m.Stages[0] = MissileStage{50000, 2.0}
+	m.Stages[1] = MissileStage{13000, 4.0}
+	m.PnGain = 4.4
 	return m
 }
 
 // NewAIM54C: very long range two-stage Phoenix (1976).
 func NewAIM54C() MissileSpec {
-	m := baseMissile("AIM-54C", 3.85, 0.38, 300, 163, 0, 0.22, 0.50, 6)
+	m := baseMissile("AIM-54C", 3.85, 0.38, 300, 163, 0, 0.22, 0.36, 6)
 	m.FinSpanFront, m.FinSpanBack = 0, 0.90
 	m.StageCount = 2
-	m.Stages[0] = MissileStage{48600, 2.7}
-	m.Stages[1] = MissileStage{15500, 14.7}
+	m.Stages[0] = MissileStage{135000, 2.6}
+	m.Stages[1] = MissileStage{18000, 12.4}
 	return m
 }
 
@@ -169,11 +207,11 @@ func NewR73() MissileSpec {
 
 // NewR27ER: long-range two-stage SARH missile (1980).
 func NewR27ER() MissileSpec {
-	m := baseMissile("R-27ER", 4.85, 0.23, 400, 220, 0, 0.20, 0.45, 20)
+	m := baseMissile("R-27ER", 4.85, 0.23, 400, 220, 0, 0.20, 0.40, 20)
 	m.FinSpanFront, m.FinSpanBack = 0, 0.70
 	m.StageCount = 2
-	m.Stages[0] = MissileStage{62900, 2.7}
-	m.Stages[1] = MissileStage{26000, 11.7}
+	m.Stages[0] = MissileStage{110000, 2.7}
+	m.Stages[1] = MissileStage{28000, 11.0}
 	return m
 }
 
@@ -187,11 +225,11 @@ func NewR77() MissileSpec {
 
 // NewR33: long-range, low-agility S-300V-derived AAM (1980s).
 func NewR33() MissileSpec {
-	m := baseMissile("R-33", 4.15, 0.38, 320, 168, 0, 0.20, 0.45, 8)
+	m := baseMissile("R-33", 4.15, 0.38, 320, 168, 0, 0.20, 0.36, 8)
 	m.FinSpanFront, m.FinSpanBack = 0, 0.90
 	m.StageCount = 2
-	m.Stages[0] = MissileStage{48400, 2.5}
-	m.Stages[1] = MissileStage{17600, 14.1}
+	m.Stages[0] = MissileStage{125000, 2.5}
+	m.Stages[1] = MissileStage{17000, 12.0}
 	return m
 }
 

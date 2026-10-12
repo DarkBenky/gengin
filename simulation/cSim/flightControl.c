@@ -52,9 +52,28 @@
 #define SEARCH_MIN_TAIL_WALK 0.14f
 
 static const float3 PLANE_TARGET_OFFSET = {1000.0f, 1000.0f, 1000.0f, 0.0f};
-// Missiles get a longer engagement: at 1.7 km a Mach 2+ missile overflies the
-// target before its turn develops.
-static const float3 MISSILE_TARGET_OFFSET = {5000.0f, 1000.0f, 5000.0f, 0.0f};
+
+// Missile sweep geometries.  Main is the long lead shot (at 1.7 km a Mach 2+
+// missile overflies the target before its turn develops); beam is a close
+// crossing that forces a hard pull.  A non-zero switchTime reverses the target
+// lateral velocity mid-flight (jink).
+typedef struct {
+	const char *tag;
+	float3 targetOffset;
+	float3 targetVel;
+	float3 targetVel2;
+	float switchTime;
+} MissileScenario;
+
+static const MissileScenario MISSILE_SCENARIOS[] = {
+	{"", {5000.0f, 1000.0f, 5000.0f, 0.0f}, {0.0f, 0.0f, -250.0f, 0.0f}},
+	{" beam", {2500.0f, 1000.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -350.0f, 0.0f}},
+	{" head-on", {6000.0f, 1000.0f, 0.0f, 0.0f}, {-250.0f, 0.0f, 0.0f, 0.0f}},
+	{" tail", {4000.0f, 1000.0f, 0.0f, 0.0f}, {250.0f, 0.0f, 0.0f, 0.0f}},
+	{" jink", {5000.0f, 1000.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -250.0f, 0.0f}, {0.0f, 0.0f, 250.0f, 0.0f}, 3.0f},
+	{" long", {9000.0f, 1000.0f, 9000.0f, 0.0f}, {0.0f, 0.0f, -250.0f, 0.0f}},
+	{" extreme", {14000.0f, 1000.0f, 14000.0f, 0.0f}, {0.0f, 0.0f, -250.0f, 0.0f}},
+};
 
 typedef struct {
 	int iteration;
@@ -128,7 +147,6 @@ static void writeLogRows(FILE *file, const char *label, const Logs *logs) {
 	}
 }
 
-// ---- guidance -------------------------------------------------------------
 
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
@@ -385,8 +403,6 @@ float3 missileGuidanceAccel(float3 position, float3 velocity, float3 targetPosit
 	return Float3_Sub(cmd, Float3_Scale(velocity, Float3_Dot(cmd, velocity) / (speed * speed)));
 }
 
-// ---- main -----------------------------------------------------------------
-
 #ifndef FLIGHT_BENCH
 // One plane: control, physics and log for simSteps.
 static void runPlaneModel(const char *name, int simSteps, float deltaTime, FILE *file) {
@@ -451,25 +467,29 @@ static void runPlaneModel(const char *name, int simSteps, float deltaTime, FILE 
 
 // One missile: control, physics and log for simSteps.
 // Elevator = front pitch, Rudder = front yaw, Aileron = back pitch; LossAngle = phase.
-static void runMissileModel(const char *name, int simSteps, float deltaTime, FILE *file) {
+static void runMissileModel(const char *name, const MissileScenario *sc, int simSteps, float deltaTime, FILE *file) {
 	char modelPath[256];
 	snprintf(modelPath, sizeof(modelPath), "simulation/simModels/%s.bin", name);
+	char key[96];
+	snprintf(key, sizeof(key), "%s%s", name, sc->tag);
 
 	float3 spawn = {0.0f, 1000.0f, 0.0f, 0.0f};
 	float3 velocity = {180.0f, 0.0f, 0.0f, 0.0f};
-	float3 targetVel = {0.0f, 0.0f, -250.0f, 0.0f};
+	float3 targetVel = sc->targetVel;
 
 	Missile missile;
 	if (missileLoadBin(&missile, modelPath, spawn, velocity) != 0) {
 		printf("Failed to load missile: %s\n", modelPath);
 		return;
 	}
-	float3 target = Float3_Add(spawn, MISSILE_TARGET_OFFSET);
+	float3 target = Float3_Add(spawn, sc->targetOffset);
 
 	Logs logs = {0};
 	float minDist = FLT_MAX;
 	int iter = 0;
 	for (; iter < simSteps; iter++) {
+		float t = (float)iter * deltaTime;
+		if (sc->switchTime > 0.0f && t >= sc->switchTime) targetVel = sc->targetVel2;
 		MissileControllerOutput out = getControllerOutputMissile(&missile, target, targetVel, deltaTime);
 		missileSetFrontPitch01(&missile, out.FrontPitch);
 		missileSetFrontYaw01(&missile, out.FrontYaw);
@@ -508,8 +528,8 @@ static void runMissileModel(const char *name, int simSteps, float deltaTime, FIL
 		addLog(&logs, log);
 	}
 
-	writeLogRows(file, name, &logs);
-	printf("%s: minDist=%.2f finalDist=%.2f hit=%d\n", name, minDist, Float3_Length(Float3_Sub(target, missile.position)), missile.hit);
+	writeLogRows(file, key, &logs);
+	printf("%s: minDist=%.2f finalDist=%.2f hit=%d\n", key, minDist, Float3_Length(Float3_Sub(target, missile.position)), missile.hit);
 	freeLogs(&logs);
 }
 
@@ -565,7 +585,9 @@ int main() {
 
 	printf("=== missile sweep ===\n");
 	for (int i = 0; i < missileCount; i++) {
-		runMissileModel(missiles[i], simSteps, deltaTime, file);
+		for (int s = 0; s < (int)(sizeof(MISSILE_SCENARIOS) / sizeof(MISSILE_SCENARIOS[0])); s++) {
+			runMissileModel(missiles[i], &MISSILE_SCENARIOS[s], simSteps, deltaTime, file);
+		}
 	}
 
 	fclose(file);

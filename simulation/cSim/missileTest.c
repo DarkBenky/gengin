@@ -11,9 +11,9 @@
 #define DT (1.0f / 60.0f)
 #define MAX_STEPS ((int)(MISSILE_LIFETIME / DT))
 
-typedef enum { SC_TAIL, SC_HEADON, SC_CROSS, SC_JINK } ScenarioKind;
+typedef enum { SC_TAIL, SC_HEADON, SC_CROSS, SC_JINK, SC_BEAM } ScenarioKind;
 
-static const char *scenarioNames[] = {"tail", "head-on", "cross", "jink"};
+static const char *scenarioNames[] = {"tail", "head-on", "cross", "jink", "beam"};
 
 typedef struct {
 	float3 targetPos;
@@ -46,6 +46,10 @@ static Scenario makeScenario(ScenarioKind kind) {
 		s.targetVel2 = (float3){-250.0f, 0.0f, 0.0f, 0.0f};
 		s.switchTime = 3.0f;
 		break;
+	case SC_BEAM:
+		s.targetPos = (float3){0.0f, 1000.0f, 2500.0f, 0.0f};
+		s.targetVel = (float3){350.0f, 0.0f, 0.0f, 0.0f};
+		break;
 	}
 	return s;
 }
@@ -58,10 +62,12 @@ static float clampf01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
 
 // The outcomes a working guidance law must produce (regression gate): every
 // class connects head-on and in the tail chase; this agile set must also
-// re-lead the reversing jink.  Heavy/older airframes and the cross geometry are
-// informational (printed, not gated).
+// re-lead the reversing jink and the close fast beam crossing.  Heavy, slow or
+// older airframes and the cross geometry are informational (printed, not
+// gated).
 static int shouldHit(const char *model, ScenarioKind kind) {
 	static const char *jinkSet[] = {"AIM-9B", "AIM-9X", "R-3S", "R-73", "R-77", "AIM-120C", "MISSILE"};
+	static const char *beamSet[] = {"AIM-9B", "AIM-9X", "R-3S", "R-73", "R-77", "MISSILE"};
 	switch (kind) {
 	case SC_HEADON:
 	case SC_TAIL:
@@ -69,6 +75,11 @@ static int shouldHit(const char *model, ScenarioKind kind) {
 	case SC_JINK:
 		for (int i = 0; i < (int)(sizeof(jinkSet) / sizeof(jinkSet[0])); i++) {
 			if (strcmp(model, jinkSet[i]) == 0) return 1;
+		}
+		return 0;
+	case SC_BEAM:
+		for (int i = 0; i < (int)(sizeof(beamSet) / sizeof(beamSet[0])); i++) {
+			if (strcmp(model, beamSet[i]) == 0) return 1;
 		}
 		return 0;
 	case SC_CROSS:
@@ -200,11 +211,11 @@ static int runTurn(const char *model, float *outHeading) {
 }
 
 int main(void) {
-	static const char *models[] = {"AIM-9B", "AIM-9X", "AIM-7E", "AIM-120C", "AIM-54C",
+	static const char *models[] = {"AIM-9B", "AIM-9X", "AIM-7E", "AIM-120A", "AIM-120B", "AIM-120C", "AIM-120C7", "AIM-54C",
 								   "R-3S", "R-73", "R-27ER", "R-77", "R-33", "MISSILE"};
 	int ok = 1;
 	for (int mi = 0; mi < (int)(sizeof(models) / sizeof(models[0])); mi++) {
-		for (int sc = 0; sc < 4; sc++) {
+		for (int sc = 0; sc < 5; sc++) {
 			if (!runMissile(models[mi], (ScenarioKind)sc)) ok = 0;
 		}
 		if (!runDeflect(models[mi])) ok = 0;

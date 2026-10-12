@@ -33,6 +33,27 @@ def loadLogs(logPath, mtime):
     return runs
 
 
+def scenarioTags(runs):
+    """Suffix tags of keys like 'R-77 beam' whose base ('R-77') is also a run."""
+    tags = set()
+    for name in runs:
+        base, sep, tag = name.rpartition(" ")
+        if sep and base in runs:
+            tags.add(tag)
+    return tags
+
+
+def scenarioRuns(runs, scenario):
+    """The subset of runs belonging to one sweep scenario ('main' = untagged)."""
+    selected = {}
+    for name, data in runs.items():
+        base, sep, tag = name.rpartition(" ")
+        tagged = bool(sep) and base in runs
+        if (scenario == "main" and not tagged) or (tagged and tag == scenario):
+            selected[name] = data
+    return selected
+
+
 def plot3dPath(data):
     """Interactive 3D plot of the plane trajectory and target."""
     fig = go.Figure()
@@ -252,6 +273,49 @@ def plotDashboard(data):
     return fig
 
 
+def plotSideViewSpeed(runs):
+    """Side view (ground range vs altitude) plus speed for every logged model."""
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Side view - range vs altitude", "Speed |V| vs time"),
+        horizontal_spacing=0.08,
+    )
+
+    names = sorted(runs)
+    colors = [f"hsl({int(360 * i / len(names))}, 70%, 50%)" for i in range(len(names))]
+    for name, color in zip(names, colors):
+        data = runs[name]
+        px, py, pz = data["PlanePositionX"], data["PlanePositionY"], data["PlanePositionZ"]
+        vx, vy, vz = data["PlaneVelocityX"], data["PlaneVelocityY"], data["PlaneVelocityZ"]
+        n = len(px)
+        groundRange = [(px[i] ** 2 + pz[i] ** 2) ** 0.5 for i in range(n)]
+        speed = [(vx[i] ** 2 + vy[i] ** 2 + vz[i] ** 2) ** 0.5 for i in range(n)]
+        time = [i / 60.0 for i in range(n)]
+
+        fig.add_trace(go.Scatter(
+            x=groundRange, y=py, mode="lines", name=name, legendgroup=name,
+            line=dict(color=color, width=1.6),
+            customdata=list(zip(time, speed)),
+            hovertemplate="range %{x:.0f} m, alt %{y:.0f} m<br>t %{customdata[0]:.1f} s, %{customdata[1]:.0f} m/s<extra>" + name + "</extra>",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=time, y=speed, mode="lines", name=name, legendgroup=name, showlegend=False,
+            line=dict(color=color, width=1.6),
+            hovertemplate="t %{x:.1f} s, %{y:.0f} m/s<extra>" + name + "</extra>",
+        ), row=1, col=2)
+
+    fig.update_xaxes(title_text="Ground range (m)", row=1, col=1)
+    fig.update_yaxes(title_text="Altitude (m)", row=1, col=1)
+    fig.update_xaxes(title_text="Time (s)", row=1, col=2)
+    fig.update_yaxes(title_text="Speed (m/s)", row=1, col=2)
+    fig.update_layout(
+        title="Side view and speeds",
+        height=650,
+        hovermode="closest",
+    )
+    return fig
+
+
 st.set_page_config(page_title="Flight log viewer", layout="wide")
 st.title("Flight controller logs")
 
@@ -269,6 +333,13 @@ with st.sidebar:
     st.header("Logs")
     selected = st.selectbox("Model / loss variant", models)
     st.caption(f"{len(models)} runs in {LOG_FILE.name}")
+
+with st.sidebar:
+    st.header("Side view")
+    scenario = st.selectbox("Scenario", ["main"] + sorted(scenarioTags(runs)))
+    scoped = scenarioRuns(runs, scenario)
+    shown = st.multiselect("Models", sorted(scoped), default=sorted(scoped))
+    st.caption(f"{len(scoped)} runs in this scenario")
 
 data = runs[selected]
 
@@ -288,4 +359,5 @@ with st.container(horizontal=True):
     st.metric("Overshoot", f"{overshoot:.1f} m", border=True)
 
 st.plotly_chart(plot3dPath(data))
+st.plotly_chart(plotSideViewSpeed({name: scoped[name] for name in shown}))
 st.plotly_chart(plotDashboard(data))
