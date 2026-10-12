@@ -381,7 +381,7 @@ float3 missileGuidanceAccel(float3 position, float3 velocity, float3 targetPosit
 	// Closing speed is floored so guidance stays alive in opening geometry.
 	float closing = fmaxf(-Float3_Dot(relVel, los), 0.25f * speed);
 	float3 losRate = Float3_Scale(Float3_Cross(rel, relVel), 1.0f / (range * range));
-	float3 cmd = Float3_Scale(Float3_Cross(losRate, los), pnGain * closing);
+	float3 cmd = Float3_Scale(Float3_Cross(losRate, Float3_Scale(velocity, 1.0f / speed)), pnGain * closing);
 	return Float3_Sub(cmd, Float3_Scale(velocity, Float3_Dot(cmd, velocity) / (speed * speed)));
 }
 
