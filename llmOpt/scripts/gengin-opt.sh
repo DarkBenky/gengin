@@ -257,6 +257,13 @@ case "$HARNESS" in
   *) echo "error: --harness expects hermes or dsh, got: $HARNESS" >&2; exit 2 ;;
 esac
 
+# dsh sandboxes shell commands (bwrap: no /dev, no X sockets) by default,
+# which breaks the GPU benches; optimizer sessions need the full host access
+# the Hermes harness always had.
+if [[ "$HARNESS" == "dsh" ]]; then
+  export DSH_PERMISSION_MODE="${DSH_PERMISSION_MODE:-danger-full-access}"
+fi
+
 # `--provider` is not accepted without `--model`; fall back to defaults
 # per preset (override with GENGIN_<PRESET>_MODEL or a bare model argument).
 if [[ "$ML_MODE" == "1" && ${#PROVIDER_ARGS[@]} -eq 0 && "$ROUTE_FLAG" -eq 0 ]]; then

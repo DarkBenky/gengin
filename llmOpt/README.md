@@ -88,6 +88,11 @@ Verified against dsh 0.2.x (developer preview — breaking changes are promised)
   in the patch; the launcher-owned OTel row is disabled by exporting
   `DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1` (config cannot disable
   that row).
+- dsh sandboxes shell commands with bubblewrap by default (no `/dev/nvidia*`,
+  no X sockets - the GPU benches fail inside it): `gengin-opt.sh` exports
+  `DSH_PERMISSION_MODE=danger-full-access` for every dsh run (manual and
+  supervised), restoring the full host access the Hermes sessions had. Export
+  the variable yourself when invoking `dsh` directly.
 - dsh has no `--usage-file`; spend is tracked through the capped OpenRouter key
   and the proxy cost log.
 

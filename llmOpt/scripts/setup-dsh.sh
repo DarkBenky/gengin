@@ -82,7 +82,9 @@ fi
 
 echo
 echo "verify before an unattended run:"
-echo "  - DSH_HOME=$DSH_DIR dsh --profile headless \"say OK\"   # boots, reaches the proxy, answers"
+echo "  - DSH_PERMISSION_MODE=danger-full-access DSH_HOME=$DSH_DIR dsh --profile headless \"say OK\""
+echo "    (dsh sandboxes shell tools with bwrap by default - no /dev, no X;"
+echo "     gengin-opt.sh exports danger-full-access for session runs)"
 echo "  - confirm the gengin MCP tools are listed (dsh-mcp-client discovery has"
 echo "    a fixed 60 s timeout; a cold start of mcp_server.py must beat it)"
 echo

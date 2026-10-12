@@ -55,7 +55,10 @@ def run(cmd, **kwargs):
 
     Never writes to stdout: that channel carries the MCP stdio protocol.
     """
-    result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    # Bench output can carry non-UTF-8 bytes (GPU driver logs); replace them
+    # instead of crashing the tool.
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            errors="replace", **kwargs)
 
     print(f"[{' '.join(cmd)}]", file=sys.stderr)
     print(result.stdout, file=sys.stderr)
@@ -785,6 +788,7 @@ def _flightRun(args, timeout=900):
     binary = _flightBinary()
     try:
         result = subprocess.run([binary] + args, capture_output=True, text=True,
+                                errors="replace",
                                 cwd=os.path.abspath(PROJECT_DIR), timeout=timeout)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"flightBench timed out after {timeout}s")

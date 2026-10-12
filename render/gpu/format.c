@@ -45,11 +45,17 @@ CL_Pipeline CL_Pipeline_FromSource(CL_Context *ctx, const char *src, const char 
 
 	err = clBuildProgram(pip.program, 1, &ctx->device, options, NULL, NULL);
 	if (err != CL_SUCCESS) {
-		size_t log_size;
+		size_t log_size = 0;
 		clGetProgramBuildInfo(pip.program, ctx->device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
-		char *log = malloc(log_size);
-		clGetProgramBuildInfo(pip.program, ctx->device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
-		printf("[CL] build error in '%s':\n%s\n", kernel_name, log);
+		/* The build log is not guaranteed null-terminated and can be empty;
+		   an uninitialized buffer here printed binary garbage downstream. */
+		char *log = calloc(log_size + 1, 1);
+		if (clGetProgramBuildInfo(pip.program, ctx->device, CL_PROGRAM_BUILD_LOG,
+		                          log_size, log, NULL) != CL_SUCCESS) {
+			log[0] = '\0';
+		}
+		log[log_size] = '\0';
+		printf("[CL] build error in '%s' (err %d):\n%s\n", kernel_name, err, log);
 		free(log);
 		return pip;
 	}

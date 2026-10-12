@@ -12,6 +12,10 @@
 #
 # The OpenRouter key is never rendered here: apiKeyEnv resolves
 # OPENROUTER_API_KEY from the dsh process environment per request.
+#
+# Sandbox: dsh wraps shell commands in a bwrap sandbox by default (no /dev,
+# no X sockets), which breaks the benches. The launchers export
+# DSH_PERMISSION_MODE=danger-full-access; keep that when invoking dsh directly.
 
 # Model route: every request goes through the local filtering proxy
 # (quantization allowlist, :floor, budget cap, mid-session model switching).
