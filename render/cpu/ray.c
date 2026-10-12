@@ -1034,25 +1034,23 @@ static void RayTraceRowFunc(void *arg) {
 			int inShadow = shadowHit >= 0;
 			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
 
-			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
-			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
-			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
-			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
+			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS] = {FLT_MAX, FLT_MAX, FLT_MAX};
+			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS] = {-1, -1, -1};
+			float emissiveDistances[numberOfLightSamples];
 			for (int e = 0; e < emissiveObjectCount; e++) {
 				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
-				float dist = Float3_Length(toEmissive);
-				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
-					if (dist < topEmissiveDistances[t]) {
-						// insert into sorted list
-						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
-							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
-							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
-						}
-						topEmissiveDistances[t] = dist;
-						topEmissiveIndices[t] = emissiveObjectIndices[e];
-						break;
-					}
+				emissiveDistances[e] = Float3_Length(toEmissive);
+			}
+			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+				int best = -1;
+				float bestDist = FLT_MAX;
+				for (int e = 0; e < emissiveObjectCount; e++) {
+					if (emissiveDistances[e] < bestDist) { bestDist = emissiveDistances[e]; best = e; }
 				}
+				if (best < 0) break;
+				topEmissiveDistances[t] = bestDist;
+				topEmissiveIndices[t] = emissiveObjectIndices[best];
+				emissiveDistances[best] = FLT_MAX;
 			}
 
 			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
@@ -1575,25 +1573,23 @@ static void RayTraceColumnFunc(void *arg) {
 			int inShadow = shadowHit >= 0;
 			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
 
-			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
-			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
-			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
-			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
+			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS] = {FLT_MAX, FLT_MAX, FLT_MAX};
+			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS] = {-1, -1, -1};
+			float emissiveDistances[numberOfLightSamples];
 			for (int e = 0; e < emissiveObjectCount; e++) {
 				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
-				float dist = Float3_Length(toEmissive);
-				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
-					if (dist < topEmissiveDistances[t]) {
-						// insert into sorted list
-						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
-							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
-							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
-						}
-						topEmissiveDistances[t] = dist;
-						topEmissiveIndices[t] = emissiveObjectIndices[e];
-						break;
-					}
+				emissiveDistances[e] = Float3_Length(toEmissive);
+			}
+			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+				int best = -1;
+				float bestDist = FLT_MAX;
+				for (int e = 0; e < emissiveObjectCount; e++) {
+					if (emissiveDistances[e] < bestDist) { bestDist = emissiveDistances[e]; best = e; }
 				}
+				if (best < 0) break;
+				topEmissiveDistances[t] = bestDist;
+				topEmissiveIndices[t] = emissiveObjectIndices[best];
+				emissiveDistances[best] = FLT_MAX;
 			}
 
 			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
