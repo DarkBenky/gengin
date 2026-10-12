@@ -7,8 +7,9 @@
 #   tmux new-session -d -s llmopt <checkout>/llmOpt/scripts/supervisor-console.sh
 #
 # Inside tmux it also opens an "agent session" pane (session-follow.sh) so the
-# model's turns and tool calls are visible while it works; `hermes -z` only
-# prints the final answer, so this pane alone would sit silent for hours.
+# model's turns and tool calls are visible while it works: Hermes keeps them in
+# state.db (followed live), dsh streams a transcript that the supervisor tees
+# into logs/sessions/<id>.log.
 #
 # The OpenRouter filtering proxy is managed here, not enabled at boot: if it is
 # not already healthy it is started via the systemd unit when one is installed

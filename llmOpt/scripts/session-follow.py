@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Live view of the newest supervised session.
 
-`hermes -z` prints only the final answer, so the console pane sits silent for
-hours while the agent works.  Everything the agent does (turns, tool calls,
-tool results) lands in the session's state.db as it happens, so this tails that
-database instead.
+`hermes -z` prints only the final answer, so Hermes sessions are followed
+through the session's state.db (turns, tool calls and results land there as
+they happen).  dsh prints a running transcript, which the supervisor tees into
+logs/sessions/<id>.log, so dsh sessions are followed through that log.
+The console pane already shows the merged supervisor stream; this pane is the
+agent-only transcript.
 
     llmOpt/scripts/session-follow.py [checkout] [--interval SECONDS] [--ticks N]
 
@@ -20,10 +22,11 @@ import sqlite3
 import sys
 import time
 
-IDLE_RESET_SECONDS = 600   # an older DB is a finished session: wait for a new one
+IDLE_RESET_SECONDS = 600   # an older session is a finished one: wait for a new one
 HEARTBEAT_SECONDS = 30
 CONTEXT_ROWS = 8           # rows of history printed when attaching mid-session
 PREVIEW = 200
+DSH_TAIL_LINES = 25        # log lines shown when attaching to a dsh session
 
 
 def default_checkout():
@@ -31,15 +34,26 @@ def default_checkout():
     return os.path.dirname(os.path.dirname(os.path.dirname(here)))
 
 
-def newest_db(checkout):
-    paths = glob.glob(os.path.join(checkout, "llmOpt", "run", "*", "hermes", "state.db"))
-    if not paths:
-        return None
-    return max(paths, key=os.path.getmtime)
-
-
 def session_id(path):
     return path.split(os.sep + "run" + os.sep)[1].split(os.sep)[0]
+
+
+def newest_session(checkout):
+    """(kind, sid, path) for the most recently active supervised session."""
+    run_glob = os.path.join(checkout, "llmOpt", "run", "*")
+    candidates = []
+    for path in glob.glob(os.path.join(run_glob, "hermes", "state.db")):
+        candidates.append((os.path.getmtime(path), "hermes", path))
+    for path in glob.glob(os.path.join(run_glob, "dsh", "sessions", "**", "session*.zstd"),
+                          recursive=True):
+        candidates.append((os.path.getmtime(path), "dsh", path))
+    # A just-prepared dsh session may not have written its session store yet.
+    for path in glob.glob(os.path.join(run_glob, "dsh")):
+        candidates.append((os.path.getmtime(path), "dsh", path))
+    if not candidates:
+        return None
+    _mtime, kind, path = max(candidates)
+    return kind, session_id(path), path
 
 
 def session_finished(checkout, sid):
@@ -103,6 +117,43 @@ def print_new(con, last_id):
     return rows[-1][0] if rows else last_id
 
 
+def read_log_tail(path, lines=DSH_TAIL_LINES):
+    """(tail_text, size) of the session log, best effort."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return "", 0
+    text = data.decode("utf-8", "replace")
+    return "\n".join(text.splitlines()[-lines:]), len(data)
+
+
+def drain_log(state):
+    """Print new complete lines from the followed session log.
+
+    state is {"path", "pos", "buf"}; partial lines stay buffered.  Returns
+    True when new output arrived.
+    """
+    try:
+        size = os.path.getsize(state["path"])
+    except OSError:
+        return False
+    if size <= state["pos"]:
+        return False
+    try:
+        with open(state["path"], "rb") as fh:
+            fh.seek(state["pos"])
+            chunk = fh.read()
+            state["pos"] = fh.tell()
+    except OSError:
+        return False
+    state["buf"] += chunk.decode("utf-8", "replace")
+    while "\n" in state["buf"]:
+        line, state["buf"] = state["buf"].split("\n", 1)
+        print(line, flush=True)
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("checkout", nargs="?", default=default_checkout())
@@ -112,9 +163,11 @@ def main():
                         help="treat a session quiet for this many seconds as finished")
     args = parser.parse_args()
 
-    print("[follow] watching %s/llmOpt/run/*/hermes/state.db" % args.checkout, flush=True)
+    print("[follow] watching %s/llmOpt/run/ (hermes state.db / dsh session log)"
+          % args.checkout, flush=True)
     current = None
-    last_id = 0
+    last_id = 0                # hermes: highest message id printed
+    log_state = None           # dsh: {"path", "pos", "buf"} of the session log
     last_event = time.time()
     heartbeat = time.time() - HEARTBEAT_SECONDS   # report state on the first poll
     finished = set()
@@ -122,48 +175,82 @@ def main():
 
     while True:
         ticks += 1
-        path = newest_db(args.checkout)
-        if path is None:
+        newest = newest_session(args.checkout)
+        if newest is None:
             if time.time() - heartbeat >= HEARTBEAT_SECONDS:
                 print("[follow] waiting for the first session ...", flush=True)
                 heartbeat = time.time()
         else:
-            sid = session_id(path)
-            fresh = path != current
+            kind, sid, path = newest
+            fresh = (kind, sid) != current
             if fresh:
-                current, last_id = path, 0
-            try:
-                con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
-                if fresh:
-                    newest = con.execute("select max(id) from messages").fetchone()
-                    last_id = max(0, int(newest[0] or 0) - CONTEXT_ROWS)
-                    if sid not in finished:
-                        print("[follow] session %s" % sid, flush=True)
-                activity = last_activity(con)
+                current = (kind, sid)
+                last_id = 0
+                log_state = None
+                if sid not in finished:
+                    print("[follow] session %s (%s)" % (sid, kind), flush=True)
+
+            if kind == "hermes":
+                try:
+                    con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+                    if fresh:
+                        newest_row = con.execute("select max(id) from messages").fetchone()
+                        last_id = max(0, int(newest_row[0] or 0) - CONTEXT_ROWS)
+                    activity = last_activity(con)
+                    if sid in finished:
+                        pass
+                    elif session_finished(args.checkout, sid) or (
+                            last_id and time.time() - last_event > args.idle_reset):
+                        finished.add(sid)
+                        print("[follow] session %s finished; waiting for the next one" % sid,
+                              flush=True)
+                        heartbeat = time.time()
+                    elif last_id == 0 and activity and time.time() - activity > args.idle_reset:
+                        if time.time() - heartbeat >= HEARTBEAT_SECONDS:
+                            print("[follow] last session ended %d min ago, waiting for a new one"
+                                  % ((time.time() - activity) / 60), flush=True)
+                            heartbeat = time.time()
+                    else:
+                        new_id = print_new(con, last_id)
+                        if new_id != last_id:
+                            last_id, last_event, heartbeat = new_id, time.time(), time.time()
+                        elif time.time() - heartbeat >= HEARTBEAT_SECONDS:
+                            print("[follow]   ... %s | last event %d s ago"
+                                  % (usage_line(con), time.time() - last_event), flush=True)
+                            heartbeat = time.time()
+                except sqlite3.Error as exc:
+                    if time.time() - heartbeat >= HEARTBEAT_SECONDS:
+                        print("[follow] state.db not readable yet: %s" % exc, flush=True)
+                        heartbeat = time.time()
+            else:
+                # dsh: follow the supervisor's tee of the agent's stdout/stderr.
+                if log_state is None:
+                    log_path = os.path.join(args.checkout, "llmOpt", "logs", "sessions",
+                                            sid + ".log")
+                    tail, size = read_log_tail(log_path)
+                    log_state = {"path": log_path, "pos": size, "buf": ""}
+                    if tail:
+                        print("[follow] --- last output ---", flush=True)
+                        print(tail, flush=True)
                 if sid in finished:
                     pass
                 elif session_finished(args.checkout, sid) or (
-                        last_id and time.time() - last_event > args.idle_reset):
+                        log_state["pos"] and time.time() - last_event > args.idle_reset):
+                    drain_log(log_state)
+                    if log_state["buf"]:
+                        print(log_state["buf"], flush=True)
+                        log_state["buf"] = ""
                     finished.add(sid)
-                    print("[follow] session %s finished; waiting for the next one" % sid, flush=True)
+                    print("[follow] session %s finished; waiting for the next one" % sid,
+                          flush=True)
                     heartbeat = time.time()
-                elif last_id == 0 and activity and time.time() - activity > args.idle_reset:
-                    if time.time() - heartbeat >= HEARTBEAT_SECONDS:
-                        print("[follow] last session ended %d min ago, waiting for a new one"
-                              % ((time.time() - activity) / 60), flush=True)
-                        heartbeat = time.time()
-                else:
-                    new_id = print_new(con, last_id)
-                    if new_id != last_id:
-                        last_id, last_event, heartbeat = new_id, time.time(), time.time()
-                    elif time.time() - heartbeat >= HEARTBEAT_SECONDS:
-                        print("[follow]   ... %s | last event %d s ago"
-                              % (usage_line(con), time.time() - last_event), flush=True)
-                        heartbeat = time.time()
-            except sqlite3.Error as exc:
-                if time.time() - heartbeat >= HEARTBEAT_SECONDS:
-                    print("[follow] state.db not readable yet: %s" % exc, flush=True)
+                elif drain_log(log_state):
+                    last_event = heartbeat = time.time()
+                elif time.time() - heartbeat >= HEARTBEAT_SECONDS:
+                    print("[follow]   ... session log %d bytes, last output %d s ago"
+                          % (log_state["pos"], time.time() - last_event), flush=True)
                     heartbeat = time.time()
+
         if args.ticks and ticks >= args.ticks:
             return 0
         time.sleep(args.interval)
