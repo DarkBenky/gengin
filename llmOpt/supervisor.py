@@ -3,7 +3,8 @@
 
 Watches the newest commit on the configured remote branch, prepares an
 exact-SHA sandbox, creates a budget-capped temporary OpenRouter key,
-supervises a Hermes optimization session, and opens one pull request per
+supervises an optimization session (Hermes Agent, or DeepSeek Harness when
+GENGIN_HARNESS=dsh), and opens one pull request per
 validated optimization.
 
 Commands:
@@ -89,6 +90,9 @@ KNOWN_KEYS = {
     "MAX_SETUP_RETRIES",
     "RETRY_BASE_SECONDS",
     "RETRY_MAX_SECONDS",
+    # Agent harness for supervised sessions: hermes (default) or dsh
+    # (DeepSeek Harness pilot; dsh requires AGENT_USER to stay empty).
+    "GENGIN_HARNESS",
     "OPENROUTER_MODEL",
     "OPENROUTER_BUDGET_USD",
     # cost-aware route: switch to a cheap fallback once the prompt crosses a
@@ -312,6 +316,7 @@ class Config:
     session_log_dir: str
     run_dir: str
     agent_user: str = ""
+    harness: str = "hermes"
     mcp_venv: str = ""
     # quick_ask overrides; "" / 0 means unset (the tool defaults apply).
     quick_ask_model: str = ""
@@ -459,6 +464,12 @@ def load_config(require_management_key=True):
     agent_user = values.get("AGENT_USER", "").strip()
     if agent_user and not re.fullmatch(r"[a-z_][a-z0-9_-]*", agent_user):
         errors.append(f"AGENT_USER: invalid user name {agent_user!r}")
+    harness = (values.get("GENGIN_HARNESS") or "hermes").strip().lower()
+    if harness not in ("hermes", "dsh"):
+        errors.append(f"GENGIN_HARNESS: expected hermes or dsh, got {harness!r}")
+    if harness == "dsh" and agent_user:
+        errors.append("GENGIN_HARNESS=dsh requires AGENT_USER to stay empty: "
+                      "the two-user agent-launch helper is Hermes-only for now")
     mcp_venv = values.get("MCP_VENV", "").strip()
     if mcp_venv and not os.path.isabs(mcp_venv):
         errors.append("MCP_VENV: must be an absolute path")
@@ -589,6 +600,7 @@ def load_config(require_management_key=True):
         session_log_dir=config_resolve(session_log_dir, "SESSION_LOG_DIR", errors),
         run_dir=config_resolve(run_dir, "RUN_DIR", errors),
         agent_user=agent_user,
+        harness=harness,
         mcp_venv=mcp_venv,
         quick_ask_model=quick_ask_model,
         quick_ask_decisions_url=quick_ask_decisions_url,
@@ -804,8 +816,11 @@ def prepare_sandbox(config, target_sha, session_id):
     return result
 
 
-def _hermes_bin(config):
-    """Path to the hermes CLI: the agent's own install in two-user mode."""
+def _harness_bin(config):
+    """Path to the harness CLI: the agent's own install in two-user mode."""
+    if config.harness == "dsh":
+        # dsh is an npm global; npx works as a slower fallback.
+        return shutil.which("dsh") or shutil.which("npx")
     if config.agent_user:
         cand = os.path.join(_agent_home(config), ".local", "bin", "hermes")
         if os.path.isfile(cand) and os.access(cand, os.X_OK):
@@ -824,8 +839,9 @@ def check_tools(config):
     for name in ("git", "make", "clang", "python3", "clangd", "rsync",
                  "Xvfb", "xdpyinfo", "glxinfo", "clinfo", "perl"):
         which(name)
-    hermes = _hermes_bin(config)
-    results.append(("hermes", hermes is not None, hermes or "not found"))
+    harness_bin = _harness_bin(config)
+    results.append((config.harness, harness_bin is not None,
+                    harness_bin or "not found"))
     results.append(("/usr/bin/ld", os.path.exists("/usr/bin/ld"),
                     "/usr/bin/ld" if os.path.exists("/usr/bin/ld") else "not found"))
     if config.require_perf:
@@ -1253,6 +1269,7 @@ def print_dry_run(config, state):
     print(f"  watch ref:     refs/heads/{config.watch_branch}")
     print(f"  poll interval: {config.poll_interval_seconds}s")
     print(f"  run on start:  {config.run_on_start}")
+    print(f"  harness:       {config.harness}")
     print(f"  model:         {config.openrouter_model}")
     if config.route_fallback_model:
         ttl = (f"{config.route_ttl_seconds}s" if config.route_ttl_seconds
@@ -1282,7 +1299,7 @@ def print_dry_run(config, state):
     if state["activeSession"]:
         print("  NOTE: an active session is recorded; a new session will not start until it is reconciled.")
     print("  action: would poll the remote ref and, on a new SHA, prepare the exact-SHA")
-    print("          sandbox, run preflight, create a capped temporary key, and launch Hermes.")
+    print("          sandbox, run preflight, create a capped temporary key, and launch the agent.")
 
 
 def _offpeak_status():
@@ -1452,7 +1469,7 @@ def run_loop(config, state):
 
 
 def cleanup_stale_keys(config, state):
-    """--cleanup-stale-keys: reconcile without launching Hermes."""
+    """--cleanup-stale-keys: reconcile without launching an agent session."""
     log("INFO", "cleanup_stale_keys.started")
     ok = reconcile_keys(config, state)
     save_state(config.state_dir, state)
@@ -1600,7 +1617,7 @@ def _agent_home(config):
 def _quick_ask_env(config):
     """QUICK_ASK_* overrides that are explicitly configured.
 
-    Added both to the Hermes child environment (the ${VAR} expansion source)
+    Added both to the harness child environment (the ${VAR} expansion source)
     and to the config.yaml mcp env block, so the supervised MCP process sees
     the same values a manual run would get from its shell.
     """
@@ -1627,9 +1644,9 @@ def _quick_ask_env(config):
 def _session_mcp_env(config, target_sha, session_id, result_path):
     """Variables the MCP server needs, delivered through the config env block.
 
-    Hermes filters the MCP child environment, so arbitrary parent variables do
-    NOT reach mcp_server.py. The supported channel is `mcp_servers.gengin.env`
-    in the per-session config.yaml, where ${VAR} expands from the Hermes
+    The harness filters the MCP child environment, so arbitrary parent
+    variables do NOT reach mcp_server.py. The supported channel is the gengin
+    env block in the per-session config, where ${VAR} expands from the harness
     process environment (which _build_session_env populates).
     """
     session_env = {
@@ -1639,10 +1656,11 @@ def _session_mcp_env(config, target_sha, session_id, result_path):
         "GENGIN_SESSION_ID": session_id,
         "GENGIN_SESSION_RESULT_PATH": result_path,
     }
-    # Hermes' stdio env filter strips API keys from the parent environment, so
-    # the capped inference key quick_ask calls OpenRouter with must be listed
-    # here. The renderer uses key names only; Hermes resolves
-    # ${OPENROUTER_API_KEY} from its process environment at spawn time.
+    # The harness's stdio env filter strips API keys from the parent
+    # environment, so the capped inference key quick_ask calls OpenRouter with
+    # must be listed here. The renderer uses key names only; the harness
+    # resolves ${OPENROUTER_API_KEY} from its process environment at spawn
+    # time.
     session_env["OPENROUTER_API_KEY"] = ""
     if config.gengin_inputs_dir and os.path.isdir(config.gengin_inputs_dir):
         session_env["GENGIN_INPUTS_DIR"] = config.gengin_inputs_dir
@@ -1652,18 +1670,17 @@ def _session_mcp_env(config, target_sha, session_id, result_path):
     return session_env
 
 
-def _build_session_env(config, session_id, hermes_home, query_file, usage_file,
+def _build_session_env(config, session_id, session_home, query_file, usage_file,
                        inference_key, result_path):
-    """Fresh environment allowlist for the Hermes child.
+    """Fresh environment allowlist for the harness child.
 
     Contains only required values; explicitly excludes the management key and
     unrelated secrets. The GENGIN_*/GITHUB_TOKEN entries are also the expansion
-    sources for the per-session config.yaml env block.
+    sources for the per-session config env block.
     """
     env = {
         "HOME": _agent_home(config),
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "HERMES_HOME": hermes_home,
         "OPENROUTER_API_KEY": inference_key,
         "DISPLAY": config.gengin_display,
         "LIBGL_ALWAYS_SOFTWARE": config.libgl_always_software,
@@ -1679,21 +1696,25 @@ def _build_session_env(config, session_id, hermes_home, query_file, usage_file,
     if os.environ.get("GITHUB_TOKEN"):
         env["GITHUB_TOKEN"] = os.environ["GITHUB_TOKEN"]
     env.update(_quick_ask_env(config))
+    env["HERMES_HOME" if config.harness == "hermes" else "DSH_HOME"] = session_home
     return env
 
 
-def _launch_command(config, hermes_home, query_file, usage_file):
-    """Command that starts one supervised Hermes session.
+def _launch_command(config, session_home, query_file, usage_file):
+    """Command that starts one supervised agent session.
 
     Two-user mode goes through the fixed root-owned sudo helper (validated
     paths, no shell); single-user mode runs the project launcher directly.
+    The helper stays Hermes-only; dsh with AGENT_USER is rejected at config
+    load.
     """
     if config.agent_user:
         return ["sudo", "-n", "-u", config.agent_user, AGENT_LAUNCH_HELPER,
-                REPO_ROOT, hermes_home, query_file, usage_file,
+                REPO_ROOT, session_home, query_file, usage_file,
                 config.openrouter_model]
     launcher = os.path.join(LLMOPT_DIR, "scripts", "gengin-opt.sh")
     return [launcher, "openrouter", "--supervised",
+            "--harness", config.harness,
             "--model", config.openrouter_model,
             "--query-file", query_file, "--usage-file", usage_file]
 
@@ -1895,7 +1916,7 @@ def clear_route(route):
 
 
 def run_session(config, state, target_sha):
-    """Create a capped key, launch Hermes, supervise to completion, clean up.
+    """Create a capped key, launch the agent, supervise to completion, clean up.
 
     Returns the exit code. Persists state through each phase.
     """
@@ -1904,17 +1925,21 @@ def run_session(config, state, target_sha):
 
     session_id = _session_id(target_sha)
     run_dir = os.path.join(config.run_dir, session_id)
-    hermes_home = os.path.join(run_dir, "hermes")
+    harness_dir_name = "hermes" if config.harness == "hermes" else "dsh"
+    session_home = os.path.join(run_dir, harness_dir_name)
     query_file = os.path.join(run_dir, "query.md")
     usage_file = os.path.join(run_dir, "usage.json")
     result_path = os.path.join(run_dir, "result.json")
     log_path = os.path.join(config.session_log_dir, f"{session_id}.log")
     os.makedirs(run_dir, exist_ok=True)
-    os.makedirs(hermes_home, exist_ok=True)
+    os.makedirs(session_home, exist_ok=True)
     os.makedirs(config.session_log_dir, exist_ok=True)
 
-    # Build the per-session Hermes home from the template (no credentials).
-    template = os.path.join(LLMOPT_DIR, "hermes", "config.yaml.template")
+    # Build the per-session harness home from the template (no credentials).
+    template = os.path.join(
+        LLMOPT_DIR, harness_dir_name,
+        "config.yaml.template" if config.harness == "hermes"
+        else "settings.yaml.template")
     if not os.path.isfile(template):
         log("ERROR", "session.template_missing", session=session_id, path=template)
         return EXIT_RUNTIME
@@ -1924,26 +1949,28 @@ def run_session(config, state, target_sha):
                       .replace("__PYTHON__", config.mcp_python())
                       .replace("__LOCAL_MODEL__", "local-model")
                       .replace("__DISPLAY__", config.gengin_display))
-    # Hermes filters the MCP child environment; the session variables must be
-    # delivered through the config env block (${VAR} expands from the Hermes
-    # process environment built by _build_session_env).
+    # The harness filters the MCP child environment; the session variables must
+    # be delivered through the config env block (${VAR} expands from the
+    # harness process environment built by _build_session_env).
     if "# __SESSION_ENV__" not in cfg_text:
         log("ERROR", "session.config_no_marker", session=session_id,
-            detail="config.yaml.template lacks the __SESSION_ENV__ marker; "
+            detail="the config template lacks the __SESSION_ENV__ marker; "
                    "refusing to run without session variables")
         return EXIT_RUNTIME
     env_lines = "\n".join(
         f'      {key}: "${{{key}}}"'
         for key in _session_mcp_env(config, target_sha, session_id, result_path))
     cfg_text = cfg_text.replace("# __SESSION_ENV__", "\n" + env_lines)
-    config_path = os.path.join(hermes_home, "config.yaml")
+    config_path = os.path.join(
+        session_home,
+        "config.yaml" if config.harness == "hermes" else "settings.yaml")
     with open(config_path, "w") as fh:
         fh.write(cfg_text)
     if config.agent_user:
         # Group-shared (setgid) dirs: the agent must read config/query and write
         # usage/result/session artifacts; the supervisor owns the directory.
         # The setgid bit makes files created here inherit the shared group.
-        for path, mode in ((run_dir, 0o2770), (hermes_home, 0o2770),
+        for path, mode in ((run_dir, 0o2770), (session_home, 0o2770),
                            (config_path, 0o640)):
             try:
                 os.chmod(path, mode)
@@ -2028,10 +2055,10 @@ def run_session(config, state, target_sha):
         state["activeSession"]["phase"] = "launching"
         save_state(config.state_dir, state)
 
-        env = _build_session_env(config, session_id, hermes_home, query_file,
+        env = _build_session_env(config, session_id, session_home, query_file,
                                  usage_file, inference_key, result_path)
         env["GENGIN_TARGET_SHA"] = target_sha
-        cmd = _launch_command(config, hermes_home, query_file, usage_file)
+        cmd = _launch_command(config, session_home, query_file, usage_file)
         log("INFO", "agent.launching", session=session_id,
             mode="helper" if config.agent_user else "launcher")
 
@@ -2045,7 +2072,7 @@ def run_session(config, state, target_sha):
         state["activeSession"]["processGroupId"] = proc.pid
         state["activeSession"]["pidStartTicks"] = _proc_start_ticks(proc.pid)
         save_state(config.state_dir, state)
-        # Mark the SHA processed now that Hermes has started.
+        # Mark the SHA processed now that the agent has started.
         state["lastProcessedSha"] = target_sha
         state["pendingSha"] = None
         save_state(config.state_dir, state)
@@ -2260,3 +2287,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         log("WARN", "supervisor.interrupted")
         sys.exit(EXIT_RUNTIME)
+

@@ -9,6 +9,7 @@ micro-bench, perf, bisection, clangd).
 
     pip install -r llmOpt/requirements-mcp.txt
     llmOpt/scripts/setup-hermes.sh        # renders llmOpt/.hermes/{config.yaml,.env} from secrets
+    llmOpt/scripts/setup-dsh.sh           # optional: renders llmOpt/.dsh/settings.yaml (pilot)
 
 Project-scoped only — the global `~/.hermes` config is never touched.
 Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash`.
@@ -21,6 +22,7 @@ Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
     llmOpt/scripts/gengin-opt.sh --headless            # unattended oneshot (-z)
+    llmOpt/scripts/gengin-opt.sh --harness dsh         # same session on DeepSeek Harness
     llmOpt/scripts/gengin-opt.sh ml [provider]         # ML/OpenCL-kernel objective (needs a GPU)
 
 Provider words (`local` / `deepseek` / `openrouter <id>`) work in any order and
@@ -39,6 +41,31 @@ reporting speed — a wrong kernel fails, it is never "fast".
 Suites: `smoke core stress edges chain upscale srnet all`. Baselines in
 `llmOpt/ml_baseline.json` (gitignored, per suite hash + GPU; capture on a clean tree).
 
+## DeepSeek Harness (dsh) pilot
+
+`--harness dsh` runs the same MCP tool server and the same prompt through
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) instead of
+Hermes. Everything around the session (sandbox, proxy, budget cap, PR gates) is
+unchanged; only the agent process differs. dsh reads the model and endpoint from
+`llmOpt/.dsh/settings.yaml` (rendered by `scripts/setup-dsh.sh`), so
+`--provider`/`-m` are ignored in this mode. The proxy still sits in front of
+OpenRouter, so quantization, routing and budget keep working.
+
+Set `GENGIN_HARNESS=dsh` in `llmOpt/.env` to make the supervisor use it
+(single-user only for now: the two-user `agent-launch` helper is Hermes-only).
+
+Pilot caveats, verify before trusting an unattended dsh run:
+
+- dsh is a v0.1 developer preview; breaking changes are promised. Pin the version
+  you test against and re-check the field names in `dsh/settings.yaml.template`.
+- dsh-mcp-client bridges MCP Tools only (Resources and Prompts are deferred) and
+  its server discovery timeout is 60 s (not configurable).
+- env passthrough to the MCP child (`DISPLAY`, `GENGIN_TARGET_SHA`, ...) follows
+  the same `__SESSION_ENV__` block mechanism; confirm dsh expands `${VAR}` the
+  same way Hermes does.
+- dsh has no `--usage-file`; spend is tracked through the capped OpenRouter key
+  and the proxy cost log.
+
 ## Changing things
 
 | Want to change       | Where                                                        |
@@ -48,6 +75,7 @@ Suites: `smoke core stress edges chain upscale srnet all`. Baselines in
 | Session behaviour    | `prompts/optimize.md` / `prompts/optimize-ml.md` (read per session) |
 | Tuning / model (VM)  | `llmOpt/.env` from `.env.example`; model via `scripts/set-openrouter-model.sh <id>` |
 | Hermes config        | `hermes/config.yaml.template` + `setup-hermes.sh`            |
+| dsh config           | `dsh/settings.yaml.template` + `setup-dsh.sh`                |
 | Display for benches  | `GENGIN_DISPLAY=:2 llmOpt/scripts/setup-hermes.sh`           |
 
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
@@ -84,8 +112,8 @@ never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 | `supervisor.py` | Unattended commit-triggered supervisor (VM) |
 | `getFunc.py`, `perf.py`, `lsp_client.py`, `gen_compile_commands.py` | C index + perf annotation, perf parsing, clangd client, compile DB |
 | `ml_bench.py`, `ml_baseline.json` | Layer suites + PyTorch gate + verdicts, pinned timings |
-| `scripts/gengin-opt.sh` | Session launcher |
-| `scripts/setup-hermes.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
+| `scripts/gengin-opt.sh` | Session launcher (`--harness hermes|dsh`) |
+| `scripts/setup-hermes.sh`, `setup-dsh.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
 | `scripts/supervisor-console.sh` | Supervisor in a tmux console (VM) |
 | `codebase_context.md` | Architecture, wins, failures, hotspots (gitignored, per checkout) |
 | `general_improvements.md` | Curated minimal-chore queue for the sessions' General Improvements fallback (tracked, shared) |
@@ -105,9 +133,11 @@ Benches open a MiniFB window, so the server needs a display (`DISPLAY=:2` here).
 
 Watches `origin/main`; on a new commit it prepares an exact-SHA sandbox, runs
 preflight + clean baseline, mints a budget-capped temporary OpenRouter key, runs
-one Hermes session under Xvfb, and deletes the key on every exit path. One session
+one agent session under Xvfb, and deletes the key on every exit path. One session
 at a time; new commits coalesce to the newest. `GENGIN_OFFPEAK_WAIT=1` in
 `llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window.
+The harness is `hermes` by default; `GENGIN_HARNESS=dsh` switches to DeepSeek
+Harness (single-user deployments only, see the pilot section above).
 
     git clone git@github.com:DarkBenky/gengin.git <checkout>
     sudo bash <checkout>/llmOpt/scripts/setup-vm.sh --checkout <checkout>   # Ubuntu 22.04/24.04

@@ -1,0 +1,35 @@
+# Project-scoped DeepSeek Harness (dsh) config for the gengin optimizer.
+# Rendered by llmOpt/scripts/setup-dsh.sh into llmOpt/.dsh/settings.yaml;
+# DSH_HOME points at llmOpt/.dsh, so the global ~/.dsh config stays untouched.
+#
+# PILOT CAVEAT: dsh is a v0.1 developer preview and its config schema is still
+# moving. The field names below follow the dsh 0.1.x provider and dsh-mcp-client
+# conventions; re-check them against the README of the version you run before
+# an unattended session.
+
+# Model route: every OpenAI-compatible request goes through the local filtering
+# proxy (quantization allowlist, :floor, budget cap, mid-session model
+# switching). The key arrives through the environment per session; never put a
+# key in this file.
+providers:
+  gengin-proxy:
+    api: openai-completions
+    base_url: http://127.0.0.1:8787/api/v1
+    model: deepseek/deepseek-v4-flash-0731
+    api_key_env: OPENROUTER_API_KEY
+
+# MCP: the gengin optimizer tools (mcp_server.py). Register the client plugin
+# once per profile (setup-dsh.sh attempts this):
+#   dsh plugin --profile headless add @deepseek-ai/dsh-mcp-client
+# dsh bridges MCP Tools only (Resources and Prompts are deferred) and its
+# server discovery timeout is 60 s.
+mcp:
+  gengin:
+    command: __PYTHON__
+    args: ["__LLMOPT_DIR__/mcp_server.py"]
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Bench runs need an X display; :2 is this machine's headless Xorg.
+      # The supervisor replaces the marker below with the session variables
+      # (GENGIN_TARGET_SHA etc.); the comment is inert for manual runs.
+      DISPLAY: "__DISPLAY__" # __SESSION_ENV__
