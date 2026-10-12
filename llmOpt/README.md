@@ -20,12 +20,13 @@ preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResea
 ## Launch
 
     llmOpt/scripts/gengin-opt.sh                       # default model (OpenRouter flash)
-    llmOpt/scripts/gengin-opt.sh local                 # local llama.cpp on :8013
+    llmOpt/scripts/gengin-opt.sh local                 # local llama.cpp on :8013 (dsh)
+    llmOpt/scripts/gengin-opt.sh local --hermes        # same, on the legacy Hermes Agent
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
     llmOpt/scripts/gengin-opt.sh --headless            # unattended oneshot (-z)
-    llmOpt/scripts/gengin-opt.sh --harness hermes      # same session on Hermes Agent
+    llmOpt/scripts/gengin-opt.sh --harness hermes      # same session on Hermes Agent (shorthand: --hermes)
     llmOpt/scripts/gengin-opt.sh ml [provider]         # ML/OpenCL-kernel objective (needs a GPU)
 
 Provider words (`local` / `deepseek` / `openrouter <id>`) work in any order and
@@ -48,8 +49,10 @@ Suites: `smoke core stress edges chain upscale srnet all`. Baselines in
 
 `dsh` runs the same MCP tool server and the same prompt through
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It is the
-default for both the launcher and the supervisor; `--harness hermes` (or
-`GENGIN_HARNESS=hermes`) selects Hermes instead. Everything around the session
+default for both the launcher and the supervisor; `--hermes` (or
+`--harness hermes` / `GENGIN_HARNESS=hermes`) selects the legacy Hermes Agent
+instead — `gengin-opt.sh local --hermes` runs the local preset on Hermes — and
+`--dsh` forces dsh back for a single run. Everything around the session
 (sandbox, proxy, budget cap, PR gates) is unchanged; only the agent process
 differs. dsh reads the model and endpoint from a rendered profile patch layer
 under `DSH_HOME`; the default (`profiles/headless`, from `scripts/setup-dsh.sh`)

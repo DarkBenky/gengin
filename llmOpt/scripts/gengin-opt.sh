@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launch a gengin optimization session under an agent harness (dsh default,
-# Hermes with --harness hermes or GENGIN_HARNESS=hermes).
+# Hermes with --hermes / --harness hermes or GENGIN_HARNESS=hermes).
 #
 #   gengin-opt.sh                       default model from the harness config
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
@@ -12,6 +12,7 @@
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report
 #   gengin-opt.sh --harness hermes      run on Hermes Agent instead of dsh
+#   gengin-opt.sh local --hermes        shorthand for --harness hermes (--dsh for dsh)
 #   gengin-opt.sh --dry-run             print the resolved command and exit
 set -euo pipefail
 
@@ -46,6 +47,7 @@ usage() {
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
   echo "       --budget USD session spend cap; --wait-offpeak waits for half-price hours"
   echo "       --harness dsh|hermes selects the agent harness (default: dsh)"
+  echo "       --hermes / --dsh are shorthand for --harness hermes|dsh"
 }
 
 parse_tokens() {
@@ -242,6 +244,10 @@ while [[ $# -gt 0 ]]; do
       ROUTE_BUDGET="$2"; shift 2 ;;
     --wait-offpeak)
       WAIT_OFFPEAK=1; shift ;;
+    --hermes)
+      HARNESS=hermes; shift ;;
+    --dsh)
+      HARNESS=dsh; shift ;;
     --harness)
       [[ $# -ge 2 ]] || { echo "error: --harness needs a value (hermes|dsh)" >&2; exit 2; }
       HARNESS="$2"; shift 2 ;;
