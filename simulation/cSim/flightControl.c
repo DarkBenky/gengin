@@ -50,6 +50,7 @@
 // effort moves less than any single tier.
 #define SEARCH_STEP_DECAY 0.91f
 #define SEARCH_MIN_TAIL_WALK 0.14f
+#define TARGET_MANOEUVER_ACCEL 20.0f
 
 static const float3 PLANE_TARGET_OFFSET = {1000.0f, 1000.0f, 1000.0f, 0.0f};
 
@@ -148,6 +149,14 @@ static void writeLogRows(FILE *file, const char *label, const Logs *logs) {
 }
 
 
+static inline float rollMisalignment(const Plane *plane, float3 target) {
+	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
+	float3 forward = planeGetForwardVector(plane);
+	float3 up = planeGetUpVector(plane);
+	float3 idealUp = Float3_Sub(toTarget, Float3_Scale(forward, Float3_Dot(toTarget, forward)));
+	return Float3_Dot(Float3_Cross(up, idealUp), forward);
+}
+
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
 	float3 forward = planeGetForwardVector(plane);
@@ -219,6 +228,14 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
 	float finalDist = distanceToTarget(&simPlane, target);
 
+	// The velocity misalignment is scored twice: -(v_hat . LOS) is flat at
+	// perfect alignment, so the walk sees no gradient there, while the chord
+	// |v_hat - LOS| = 2*sin(theta/2) is monotone in the misalignment with a
+	// unit gradient at zero.  The chord alone cannot ship -- it costs the
+	// `step` tier its arrival -- which is why the command damping below is
+	// tuned together with it.
+	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
+
 	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 0.55f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
 
@@ -227,16 +244,78 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + alignVelChord;
 
 	return loss;
 }
 
+// The deployed loss plus a bank-error term (banking is the only fast heading
+// change), as a separate function so the straight path keeps the deployed loss.
+static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+	Plane simPlane = ctrl->plane;
+
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
+
+	const float simDeltaTime = deltaTime * 2.25f;
+
+	float currentDist = distanceToTarget(&ctrl->plane, target);
+	float minDist = currentDist;
+	float runningAlignment = 0.0f;
+	float runningAlignVel = 0.0f;
+	float runningBank = 0.0f;
+
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, simDeltaTime, NULL);
+		runningAlignment += alignmentLoss(&simPlane, target);
+		runningAlignVel += alignmentLossVelocity(&simPlane, target);
+		const float bank = rollMisalignment(&simPlane, target);
+		runningBank += bank * bank;
+		float d = distanceToTarget(&simPlane, target);
+		if (d < minDist) minDist = d;
+	}
+
+	float finalAlignment = alignmentLoss(&simPlane, target);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
+	const float finalBank = rollMisalignment(&simPlane, target);
+	float finalDist = distanceToTarget(&simPlane, target);
+	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
+
+	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 0.55f;
+	float overshootTerm = (finalDist - minDist) * 1.0f;
+
+	float alignWeight = 1.0f + 1.5f / (1.0f + currentDist * 0.0065f);
+
+	const float effortWeight = 1.0f;
+	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+
+	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort + alignVelChord;
+
+	return loss;
+}
+
+typedef float (*ControllerLossFn)(const Controller *ctrl, float values[3], float3 target, float deltaTime);
+
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
 
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
+static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
 	ControllerOutput output = {0};
+
+	if (ctrl->hasPrevTarget && deltaTime > 1e-6f) {
+		float3 velocity = Float3_Scale(Float3_Sub(target, ctrl->prevTarget), 1.0f / deltaTime);
+		if (ctrl->hasPrevTarget > 1)
+			ctrl->targetAccel = Float3_Scale(Float3_Sub(velocity, ctrl->targetVelocity), 1.0f / deltaTime);
+		ctrl->targetVelocity = velocity;
+		ctrl->hasPrevTarget = 2;
+	} else {
+		ctrl->targetAccel = (float3){0.0f, 0.0f, 0.0f, 0.0f};
+		ctrl->hasPrevTarget = 1;
+	}
+	ctrl->prevTarget = target;
+
+	ControllerLossFn lossFn = Float3_Length(ctrl->targetAccel) > TARGET_MANOEUVER_ACCEL ? evaluateLossV2PlusTuned2Manoeuver : evaluateLossV2PlusTuned2;
 
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
@@ -268,7 +347,7 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// returns the un-deflected command rather than a probe picked by loop
 	// order (one shared loss evaluation per controller call, ~0.1% of cost).
 	float bestProbe[3] = {0.5f, 0.5f, 0.5f};
-	float bestProbeLoss = evaluateLossV2PlusTuned2(ctrl, bestProbe, target, deltaTime);
+	float bestProbeLoss = lossFn(ctrl, bestProbe, target, deltaTime);
 
 	for (int iter = 0; iter < maxIterations; iter++) {
 		// Compute gradient for ALL axes simultaneously
@@ -283,8 +362,8 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			float perturbedNegative[3] = {values[0], values[1], values[2]};
 			perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
 
-			float lossPos = evaluateLossV2PlusTuned2(ctrl, perturbedPositive, target, deltaTime);
-			float lossNeg = evaluateLossV2PlusTuned2(ctrl, perturbedNegative, target, deltaTime);
+			float lossPos = lossFn(ctrl, perturbedPositive, target, deltaTime);
+			float lossNeg = lossFn(ctrl, perturbedNegative, target, deltaTime);
 
 			if (lossPos < bestAxisLoss[axis]) {
 				bestAxisLoss[axis] = lossPos;
@@ -318,6 +397,22 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 							  gradient[1] * gradient[1] +
 							  gradient[2] * gradient[2]);
 		if (gradMag > 1e-6f) {
+			// The three surfaces do not have comparable authority, so a plain
+			// 3-vector normalization hands nearly the whole step to whichever
+			// axis has the largest slope and leaves the other two at ~0: the
+			// walk then descends along one axis only.  Floor every non-flat
+			// axis at a quarter of the strongest before normalizing so all
+			// three keep steering.  Swept on the pinned suite (floor share ->
+			// aggregate miss / effort / saturated steps): unfloored 231.8 /
+			// 16.78 / 6408, 0.15 -> 230.5 / 16.80 / 6511, 0.25 -> 229.1 /
+			// 16.60 / 6439, 0.50 -> 229.5 / 16.88 / 6555 - 0.25 is the knee,
+			// and the step tier gains the most (+5.7%).
+			const float floorShare = 0.25f * fmaxf(fabsf(gradient[0]), fmaxf(fabsf(gradient[1]), fabsf(gradient[2])));
+			for (int axis = 0; axis < 3; axis++) {
+				float g = gradient[axis];
+				if (g != 0.0f && fabsf(g) < floorShare)
+					gradient[axis] = g < 0.0f ? -floorShare : floorShare;
+			}
 			gradient[0] /= gradMag;
 			gradient[1] /= gradMag;
 			gradient[2] /= gradMag;
@@ -339,11 +434,26 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
 	}
 
+	// The probes only ever see points within epsilon of the walk's iterates;
+	// if the loss keeps falling along the momentum direction, the final
+	// iterate beats every probe.  Score it once so it can be commanded too.
+	float finalIterateLoss = lossFn(ctrl, values, target, deltaTime);
+	if (finalIterateLoss < bestProbeLoss) {
+		bestProbeLoss = finalIterateLoss;
+		bestProbe[0] = values[0];
+		bestProbe[1] = values[1];
+		bestProbe[2] = values[2];
+	}
+
 	// Command the best control the search actually scored, not the iterate the
-	// momentum walk happened to stop on.
-	output.Rudder = bestProbe[0];
-	output.Elevator = bestProbe[1];
-	output.Aileron = bestProbe[2];
+	// momentum walk happened to stop on -- and only half the gap from where
+	// the surfaces already are.  The probe is scored as if the commanded
+	// surface were reached immediately, but the plant slews (the elevator
+	// needs 0.6 s for full travel), so commanding the probe outright leaves
+	// the set point chasing an unachievable jump every frame.
+	output.Rudder = 0.5f * (bestProbe[0] + planeGetRudder01(&ctrl->plane));
+	output.Elevator = 0.5f * (bestProbe[1] + planeGetElevator01(&ctrl->plane));
+	output.Aileron = 0.5f * (bestProbe[2] + planeGetAileron01(&ctrl->plane));
 
 	output.RudderLoss = bestAxisLoss[0];
 	output.ElevatorLoss = bestAxisLoss[1];
