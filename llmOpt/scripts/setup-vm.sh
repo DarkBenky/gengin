@@ -95,6 +95,12 @@ python3 -m pip install --quiet gprof2dot 2>/dev/null || log "gprof2dot pip insta
 # user (whose PATH the two-user helper uses) see `dsh`.
 if ! command -v node >/dev/null 2>&1 \
    || [[ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 22 ]]; then
+  # Ubuntu's libnode-dev owns /usr/include/node/* and makes the NodeSource
+  # package fail to unpack; nothing depends on it once the distro node goes.
+  if dpkg -s libnode-dev >/dev/null 2>&1; then
+    log "removing conflicting libnode-dev (Ubuntu Node 12 headers)"
+    apt-get remove -y -qq libnode-dev >/dev/null || die "could not remove libnode-dev"
+  fi
   log "installing Node.js 24 (NodeSource)"
   curl -fsSL https://deb.nodesource.com/setup_24.x | bash - >/dev/null \
     || die "NodeSource setup failed"
