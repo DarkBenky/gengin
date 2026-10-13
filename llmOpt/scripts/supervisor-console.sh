@@ -24,6 +24,9 @@
 # Rotate keys by editing /etc/gengin-llmopt/secrets.env (management key +
 # GITHUB_TOKEN). The systemd unit must be stopped first: it and this console
 # must not poll at the same time (systemctl disable --now gengin-llmopt.service).
+#
+# Signals: one Ctrl-C cancels the running session (the summary records
+# `interrupted`) and the supervisor keeps polling; a second Ctrl-C stops it.
 
 set -euo pipefail
 
@@ -138,7 +141,8 @@ ensure_proxy() {
 
 echo "gengin-llmopt supervisor console — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "checkout: $CHECKOUT"
-echo "(Ctrl-b d detaches; stopping this pane stops the loop)"
+echo "(Ctrl-b d detaches; Ctrl-C cancels the running session, a second Ctrl-C"
+echo " stops the loop - closing this pane also stops it)"
 echo
 
 ensure_proxy || exit 1

@@ -161,13 +161,23 @@ class LockHeldError(Exception):
 
 
 _shutdown = threading.Event()
+# Console Ctrl-C (SIGINT): the first one cancels the running session and keeps
+# the poll loop alive; a second one (or one while idle) stops.
+_cancel_session = threading.Event()
+_active_session_id = None
 
 
 def _install_signal_handlers():
-    """Orderly shutdown on SIGTERM/SIGINT: the active session is terminated and
-    the temporary key deleted before exit."""
+    """SIGTERM stops the supervisor (orderly: the active session is terminated
+    and the temporary key deleted). SIGINT cancels only the active session and
+    keeps polling; a second SIGINT, or one while no session runs, stops."""
     def handle(signum, _frame):
-        log("WARN", "supervisor.signal", signum=signum)
+        if (signum == signal.SIGINT and _active_session_id is not None
+                and not _cancel_session.is_set()):
+            log("WARN", "supervisor.signal", signum=signum, action="cancel_session")
+            _cancel_session.set()
+            return
+        log("WARN", "supervisor.signal", signum=signum, action="shutdown")
         _shutdown.set()
 
     signal.signal(signal.SIGTERM, handle)
@@ -2078,6 +2088,10 @@ def run_session(config, state, target_sha):
             cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, cwd=LLMOPT_DIR)
 
+        # Register the session so a Ctrl-C can cancel exactly this run.
+        global _active_session_id
+        _active_session_id = session_id
+
         # Phase: running.
         state["activeSession"]["phase"] = "running"
         state["activeSession"]["pid"] = proc.pid
@@ -2104,6 +2118,11 @@ def run_session(config, state, target_sha):
                 exit_reason = "operator_shutdown"
                 log("WARN", "agent.terminating", session=session_id,
                     reason="operator_shutdown")
+                break
+            if _cancel_session.is_set():
+                exit_reason = "interrupted"
+                log("WARN", "agent.terminating", session=session_id,
+                    reason="interrupted", keep_polling=True)
                 break
             if time.monotonic() >= deadline_mono:
                 exit_reason = "timeout"
@@ -2132,7 +2151,8 @@ def run_session(config, state, target_sha):
             remaining = deadline_mono - time.monotonic()
             budget_wait = min(config.budget_poll_seconds, max(0.25, remaining))
             waited = 0.0
-            while waited < budget_wait and not _shutdown.is_set():
+            while (waited < budget_wait and not _shutdown.is_set()
+                   and not _cancel_session.is_set()):
                 if proc.poll() is not None:
                     break
                 time.sleep(0.25)
@@ -2192,6 +2212,8 @@ def run_session(config, state, target_sha):
                        usage_usd, pr_url, {}, warnings, started_at, ended_at)
         log("INFO", "session.finished", session=session_id, reason=exit_reason,
             exit_code=exit_code, usage=usage_usd)
+        _active_session_id = None
+        _cancel_session.clear()
         state["activeSession"] = None
         save_state(config.state_dir, state)
         log_handle.close()
