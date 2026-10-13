@@ -1,7 +1,5 @@
 # Tasks
 
-- [X] render scene in HDR to avoid permanent HDR to LDR to HDR steps
-
 - [ ] **high** Particle simulation for aerodynamics
   - [ ] struct will need to hold object, bounding box of simulated volume, and spawner probability some surface
   - [ ] this will be expensive we should probably bake it maybe also bake some texture
@@ -229,6 +227,8 @@
     - [ ] Doppler radar: filter out stationary objects (terrain), track only moving targets (missiles, planes); requires relative velocity per object
 
 - [ ] Missile guidance and control
+
+- [X] render scene in HDR to avoid permanent HDR to LDR to HDR steps
 
 - [X] new import / export format to support textures
   - [X] add new high quality models
