@@ -1295,10 +1295,11 @@ async function load() {
   $('range').textContent = (windowSec ? '(' + rows.length + ' rows shown)' : '(all time)') + ' - ' + bucketName(bucket) + ' buckets';
   $('cards').innerHTML = card('requests', totals.requests || 0) + card('cost', fmtCost(totals.cost)) + card('input', fmtTok(totals.prompt)) + card('output', fmtTok(totals.completion)) + card('cache-hit', fmtTok(totals.cache_hit)) + card('cache-hit %', fmtPct(totals.cache_hit, totals.cache_miss));
   const acc = new Map();
-  const slot = (key) => { let a = acc.get(key); if (!a) { a = { v: 0, hit: 0, miss: 0 }; acc.set(key, a); } return a; };
+  const slot = (key) => { let a = acc.get(key); if (!a) { a = { v: 0, hit: 0, miss: 0, t0: Infinity }; acc.set(key, a); } return a; };
   for (const r of rows) {
     const key = metric === 'cost_session' ? sessionName(r) : Math.floor(Number(r.ts) / bucket) * bucket;
     const a = slot(key);
+    if (Number(r.ts) < a.t0) a.t0 = Number(r.ts);
     a.hit += r.cache_hit || 0;
     a.miss += r.cache_miss || 0;
     if (metric === 'cost' || metric === 'cost_session') a.v += r.cost || 0;
@@ -1308,11 +1309,13 @@ async function load() {
   }
   const value = (a) => metric === 'hit_pct' ? ((a.hit + a.miss) > 0 ? 100 * a.hit / (a.hit + a.miss) : 0) : a.v;
   let items = [...acc.entries()];
-  if (metric === 'cost_session') { items.sort((a, b) => value(b[1]) - value(a[1])); items = items.slice(0, 24); }
+  // cost/session bars run in date order (each session's first request); the
+  // bucketed metrics already sort by date.
+  if (metric === 'cost_session') { items.sort((a, b) => a[1].t0 - b[1].t0); }
   else { items.sort((a, b) => a[0] - b[0]); }
   const max = Math.max(...items.map((pair) => value(pair[1])), 0.000001);
   $('chart').innerHTML = items.length ? items.map((pair) => {
-    const label = metric === 'cost_session' ? pair[0] : fmtBucket(pair[0], bucket);
+    const label = metric === 'cost_session' ? pair[0] + ' (' + fmtBucket(pair[1].t0, 86400) + ')' : fmtBucket(pair[0], bucket);
     const v = value(pair[1]);
     const shown = metric === 'hit_pct' ? v.toFixed(1) + '%' : metric.includes('cost') ? fmtCost(v) : fmtTok(Math.round(v));
     return '<div class="bar" style="height:' + Math.max(2, (v / max) * 100) + '%"><span class="barlabel">' + esc(label) + ' - ' + shown + '</span></div>';
