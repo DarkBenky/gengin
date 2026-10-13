@@ -239,13 +239,14 @@ render_local_tui_overlay() {
   # applied as a launcher --patch overlay on top, regenerated on every run.
   # Interactive sessions persist a model selection, so the provider id is the
   # stable local-router (the router ignores ids; its reported id flips with
-  # backend mode).
+  # backend mode). GENGIN_TUI_MODEL overrides it for endpoints that validate
+  # model names (e.g. the VM's OpenRouter proxy behind LOCAL_LLM_BASE).
   local home="$1" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
   local model python_bin display_value overlay
   if [[ -z "$(discover_local_model)" ]]; then
     echo "warning: no model from $base/models - is the local router up?" >&2
   fi
-  model="local-router"
+  model="${GENGIN_TUI_MODEL:-local-router}"
   python_bin="$(command -v python3 || true)"
   display_value="${GENGIN_DISPLAY:-:2}"
   overlay="$home/cache/gengin-tui-overlay.yml"
