@@ -347,6 +347,9 @@ case "$HARNESS" in
   *) echo "error: --harness expects hermes or dsh, got: $HARNESS" >&2; exit 2 ;;
 esac
 
+# Exported for child processes (the MCP server banner names its setup script).
+export GENGIN_HARNESS="$HARNESS"
+
 # dsh sandboxes shell commands (bwrap: no /dev, no X sockets) by default,
 # which breaks the GPU benches; optimizer sessions need the full host access
 # the Hermes harness always had.

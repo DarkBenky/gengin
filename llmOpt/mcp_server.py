@@ -2,10 +2,10 @@
 
 Deterministic build/bench/profile/PR tools for the llmOpt/gengin sandbox.
 File editing, code search, and terminal work are provided by the driving
-harness (Hermes Agent) — this server only exposes what the harness cannot do
-itself: sandbox lifecycle, make/flame/bench orchestration, perf annotation,
-regression bisection, clangd semantic queries, and the cheap advisory
-quick_ask classifier (Jev decisions).
+harness (dsh, or the legacy Hermes Agent) — this server only exposes what
+the harness cannot do itself: sandbox lifecycle, make/flame/bench
+orchestration, perf annotation, regression bisection, clangd semantic
+queries, and the cheap advisory quick_ask classifier (Jev decisions).
 """
 
 import json
@@ -691,8 +691,10 @@ def quick_ask(question: str = "", context: str = "",
 
 
 if __name__ == "__main__":
+    harness = (os.environ.get("GENGIN_HARNESS") or "dsh").strip().lower()
+    setup_script = "setup-hermes.sh" if harness == "hermes" else "setup-dsh.sh"
     print(f"gengin-optimizer MCP server (stdio) — sandbox: {_gengin_dir}", file=sys.stderr)
     print(f"Indexed {len(_gf._functions)} functions in {len(_gf._sources)} source files.", file=sys.stderr)
     print("18 domain tools; file editing/navigation is provided by the harness.", file=sys.stderr)
-    print("Configure: llmOpt/scripts/setup-hermes.sh — run: llmOpt/scripts/gengin-opt.sh", file=sys.stderr)
+    print(f"Configure: llmOpt/scripts/{setup_script} — run: llmOpt/scripts/gengin-opt.sh", file=sys.stderr)
     mcp.run()
