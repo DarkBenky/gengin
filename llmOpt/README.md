@@ -20,7 +20,8 @@ preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResea
 ## Launch
 
     llmOpt/scripts/gengin-opt.sh                       # default model (OpenRouter flash)
-    llmOpt/scripts/gengin-opt.sh local                 # local llama.cpp on :8013 (dsh)
+    llmOpt/scripts/gengin-opt.sh local                 # local model; boots the steerable dsh Web UI (no browser popup)
+    llmOpt/scripts/gengin-opt.sh local --headless      # local model; auto-run one-shot, no UI
     llmOpt/scripts/gengin-opt.sh local --hermes        # same, on the legacy Hermes Agent
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
@@ -58,11 +59,18 @@ differs. dsh reads the model and endpoint from a rendered profile patch layer
 under `DSH_HOME`; the default (`profiles/headless`, from `scripts/setup-dsh.sh`)
 routes through the OpenRouter proxy, so `--provider`/`-m` are ignored in this
 mode — set `GENGIN_OPENROUTER_MODEL` and re-run `setup-dsh.sh` to change the
-model. The `local` preset renders its own `profiles/local` profile against the
-local router instead (`LOCAL_LLM_BASE`, default `http://localhost:8013/v1`,
-model id discovered from `/v1/models`), keeping the full MCP toolset. The proxy
-still sits in front of OpenRouter for the headless route, so quantization,
-routing and budget keep working there.
+model. The `local` preset renders its own dsh profiles against the local
+router instead (`LOCAL_LLM_BASE`, default `http://localhost:8013/v1`, model id
+discovered from `/v1/models`), keeping the full MCP toolset. An interactive
+`local` run boots the steerable Web UI (`profiles/local-web`): the launcher
+prints a bookmark URL for `http://127.0.0.1:3081` (`GENGIN_WEB_PORT` overrides)
+and the session brief path, and never opens a browser - start a session in the
+UI and send the one-line brief reference it prints. `local --headless` keeps
+the auto-run one-shot (`profiles/local`); a running one-shot cannot be steered
+(its process owns the session, it is only visible in a web UI's history). The
+terminal owns the web host: Ctrl+C stops it, sessions persist and are resumable
+from the next local run. The proxy still sits in front of OpenRouter for the
+headless route, so quantization, routing and budget keep working there.
 
 Two-user VM deployments (`AGENT_USER` set) run either harness: the root-owned
 `agent-launch` helper is harness-aware, and `setup-vm.sh` installs Node.js and
@@ -102,7 +110,9 @@ Verified against dsh 0.2.x (developer preview — breaking changes are promised)
 **Local browser UI (desktop).** `scripts/dsh-web-local.sh` serves the dsh Web
 UI at `http://127.0.0.1:3080` against the local model server (default
 `http://localhost:8013/v1`, the local router) - model-only: no MCP tools, no
-workspace wiring, no session-log/OTel export. `systemd/dsh-web-local.service`
+workspace wiring, no session-log/OTel export. The optimizer's own per-run UI
+(:3081, see the `local` preset above) is separate; both share the pinned login
+token (`scripts/dsh-web-common.sh`). `systemd/dsh-web-local.service`
 runs it at login (ordered after the router, retrying until `/v1/models`
 answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
 
@@ -157,7 +167,8 @@ never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 | `supervisor.py` | Unattended commit-triggered supervisor (VM) |
 | `getFunc.py`, `perf.py`, `lsp_client.py`, `gen_compile_commands.py` | C index + perf annotation, perf parsing, clangd client, compile DB |
 | `ml_bench.py`, `ml_baseline.json` | Layer suites + PyTorch gate + verdicts, pinned timings |
-| `scripts/gengin-opt.sh` | Session launcher (`--harness hermes|dsh`) |
+| `scripts/gengin-opt.sh` | Session launcher (`--harness hermes|dsh`; `local` = steerable Web UI, `--headless` = auto-run one-shot) |
+| `scripts/dsh-web-local.sh`, `dsh-web-common.sh` | Model-only web chat UI (:3080) + shared stable-token helper for both web hosts |
 | `scripts/setup-hermes.sh`, `setup-dsh.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
 | `scripts/supervisor-console.sh` | Supervisor in a tmux console (VM) |
 | `codebase_context.md` | Architecture, wins, failures, hotspots (gitignored, per checkout) |

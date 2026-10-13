@@ -4,7 +4,9 @@
 #
 #   gengin-opt.sh                       default model from the harness config
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
-#   gengin-opt.sh local [model]         local llama.cpp server on :8013
+#   gengin-opt.sh local [model]         local llama.cpp server on :8013; dsh boots the
+#                                       steerable Web UI (no browser popup; the URL is
+#                                       printed; --headless runs the one-shot instead)
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
 #   gengin-opt.sh openrouter PRIMARY --max-context 99K FALLBACK
 #                                       switch to FALLBACK at 99K prompt tokens
@@ -26,6 +28,7 @@ PROVIDER_ARGS=()
 MODEL_ARGS=()
 PRESET=""
 HEADLESS=0
+WEB_MODE=0
 DRY_RUN=0
 GOAL=""
 ML_MODE=0
@@ -48,6 +51,8 @@ usage() {
   echo "       --budget USD session spend cap; --wait-offpeak waits for half-price hours"
   echo "       --harness dsh|hermes selects the agent harness (default: dsh)"
   echo "       --hermes / --dsh are shorthand for --harness hermes|dsh"
+  echo "       local (dsh) boots the steerable Web UI at http://127.0.0.1:3081"
+  echo "       (GENGIN_WEB_PORT overrides); --headless keeps the auto-run one-shot"
 }
 
 parse_tokens() {
@@ -94,13 +99,19 @@ for m in (d.get("data") or []) + (d.get("models") or []):
 }
 
 render_local_dsh_profile() {
-  # The `local` preset gets its own dsh profile: the local router instead of
-  # the OpenRouter proxy. The scaffolding makes the profile name resolvable
-  # (non-shipped names need a manifest; the bundles resolve from the dsh
-  # installation); the patch is regenerated on every run so the model id
-  # follows the router state. Same MCP wiring as the headless profile.
-  local home="$1" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
-  local model python_bin display_value patch_dir
+  # The `local` preset renders its own dsh profiles: `local` (the headless
+  # one-shot runner) and `local-web` (the interactive Web UI). The scaffolding
+  # makes the profile name resolvable (non-shipped names need a manifest; the
+  # bundles resolve from the dsh installation); the patch is regenerated on
+  # every run so the model id follows the router state. Same MCP wiring as the
+  # headless profile.
+  local home="$1" profile="${2:-local}" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
+  local model python_bin display_value patch_dir app_bundle
+  case "$profile" in
+    local)     app_bundle='"@deepseek-ai/dsh-headless"' ;;
+    local-web) app_bundle='"@deepseek-ai/dsh-web-app"' ;;
+    *) echo "error: unknown local dsh profile: $profile" >&2; return 1 ;;
+  esac
   model="$(discover_local_model)"
   if [[ -z "$model" ]]; then
     echo "warning: no model from $base/models - is the local router up?" >&2
@@ -108,26 +119,26 @@ render_local_dsh_profile() {
   fi
   python_bin="$(command -v python3 || true)"
   display_value="${GENGIN_DISPLAY:-:2}"
-  patch_dir="$home/profiles/local"
+  patch_dir="$home/profiles/$profile"
   mkdir -p "$patch_dir"
   if [[ ! -f "$patch_dir/package.json" ]]; then
-    cat > "$patch_dir/package.json" <<'JSON'
+    cat > "$patch_dir/package.json" <<JSON
 {
-  "name": "dsh-profile-local",
+  "name": "dsh-profile-$profile",
   "private": true,
   "dependencies": {},
   "dsh": {
     "profile": {
       "bundles": [
         "@deepseek-ai/dsh-base",
-        "@deepseek-ai/dsh-headless"
+        $app_bundle
       ]
     }
   }
 }
 JSON
     cat > "$patch_dir/cordis.yml" <<'YAML'
-# dsh profile root — an empty entry list. The tree is composed as patches:
+# dsh profile root - an empty entry list. The tree is composed as patches:
 # each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml.
 []
 YAML
@@ -140,9 +151,9 @@ autoInstallPeers: false
 YAML
   fi
   cat > "$patch_dir/cordis.patch.yml" <<YAML
-# Rendered by llmOpt/scripts/gengin-opt.sh (local preset) - the local
-# OpenAI-compatible router instead of the OpenRouter proxy. Regenerated on
-# every local run; edit the script, not this file.
+# Rendered by llmOpt/scripts/gengin-opt.sh (local preset: $profile) - the
+# local OpenAI-compatible router instead of the OpenRouter proxy. Regenerated
+# on every local run; edit the script, not this file.
 - id: llm-pi-ai
   config:
     providers:
@@ -633,18 +644,36 @@ QUERY_FILE="$HARNESS_DIR/cache/query-$(date +%s).md"
 if [[ "$HARNESS" == "dsh" ]]; then
   # dsh reads the model and endpoint from a rendered profile patch layer under
   # DSH_HOME; provider/model CLI flags are Hermes-only. The local preset is
-  # honored: it renders profiles/local against the local router instead of the
-  # headless profile (OpenRouter proxy route).
+  # honored: it renders profiles/local (headless one-shot) and
+  # profiles/local-web (the interactive Web UI) against the local router
+  # instead of the headless profile (OpenRouter proxy route). Interactive
+  # local runs boot the Web UI so the session can be steered; --headless
+  # keeps the auto-run one-shot.
   DSH_PROFILE="headless"
   if [[ "$PRESET" == "local" ]]; then
-    DSH_PROFILE="local"
-    render_local_dsh_profile "$HARNESS_DIR"
     export LOCAL_LLM_KEY="${LOCAL_LLM_KEY:-none}"
+    if [[ "$HEADLESS" -eq 1 ]]; then
+      DSH_PROFILE="local"
+    else
+      DSH_PROFILE="local-web"
+      WEB_MODE=1
+      WEB_PORT="${GENGIN_WEB_PORT:-3081}"
+      if [[ ! "$WEB_PORT" =~ ^[0-9]+$ ]] || (( 10#$WEB_PORT < 1024 || 10#$WEB_PORT > 65535 )); then
+        echo "error: GENGIN_WEB_PORT must be a port number 1024..65535, got: $WEB_PORT" >&2
+        exit 2
+      fi
+    fi
+    render_local_dsh_profile "$HARNESS_DIR" "$DSH_PROFILE"
   elif [[ ${#PROVIDER_ARGS[@]} -gt 0 ]]; then
     echo "note: --provider/-m are ignored on dsh — set GENGIN_OPENROUTER_MODEL and re-run setup-dsh.sh" >&2
   fi
-  CMD=(dsh --profile "$DSH_PROFILE" "$(cat "$QUERY_FILE")")
-  DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" "<query: $(wc -c <"$QUERY_FILE") bytes>")
+  if [[ "$WEB_MODE" -eq 1 ]]; then
+    CMD=(dsh --profile "$DSH_PROFILE" --no-open --port "$WEB_PORT")
+    DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" --no-open --port "$WEB_PORT")
+  else
+    CMD=(dsh --profile "$DSH_PROFILE" "$(cat "$QUERY_FILE")")
+    DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" "<query: $(wc -c <"$QUERY_FILE") bytes>")
+  fi
 elif [[ "$HEADLESS" -eq 1 ]]; then
   # `-z` is the scripted one-shot entry point (final answer only) and the only
   # form that supports --usage-file.
@@ -658,6 +687,10 @@ fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   if [[ "$HARNESS" == "dsh" ]]; then
+    if [[ "$WEB_MODE" -eq 1 ]]; then
+      echo "# local Web UI mode: no browser popup; start the session in the UI with"
+      echo "# the brief at $HARNESS_DIR/cache/query-latest.md (written at launch)"
+    fi
     printf 'DSH_HOME=%q ' "$HARNESS_DIR"
     printf '%q ' "${DISPLAY_CMD[@]}"
   else
@@ -726,14 +759,44 @@ if [[ "$HARNESS" != "dsh" ]]; then
 fi
 
 if [[ "$HARNESS" == "dsh" ]]; then
+  # Proprietary code: opt out of the launcher-owned OTel row (see above).
+  export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
+  if [[ "$WEB_MODE" -eq 1 ]]; then
+    if (exec 3<>"/dev/tcp/127.0.0.1/$WEB_PORT") 2>/dev/null; then
+      echo "error: port $WEB_PORT is already in use - another local run's web UI? open it, or set GENGIN_WEB_PORT" >&2
+      exit 2
+    fi
+    source "$SCRIPT_DIR/dsh-web-common.sh"
+    dshWebPrepareLaunch "$HARNESS_DIR"
+    BRIEF_FILE="$HARNESS_DIR/cache/query-latest.md"
+    cp "$QUERY_FILE" "$BRIEF_FILE"
+    echo "=== gengin optimizer (DeepSeek Harness, Web UI) ==="
+    echo "DSH_HOME:  $HARNESS_DIR"
+    echo "Profile:   $DSH_PROFILE"
+    echo "Web UI:    http://127.0.0.1:$WEB_PORT"
+    echo "Bookmark:  http://127.0.0.1:$WEB_PORT/?token=$DSH_LAUNCH_TOKEN"
+    echo "Brief:     $BRIEF_FILE"
+    echo
+    echo "The browser is not opened for you. Open the bookmark, start a session,"
+    echo "and send this first message:"
+    echo
+    echo "  Read $BRIEF_FILE and execute the work it describes."
+    echo
+    echo "Note: the UI starts in its own default workspace - use \"Choose workspace\""
+    echo "to add $(dirname "$LLMOPT_DIR") so sessions run from the checkout."
+    echo
+    echo "Ctrl+C stops the host (a running turn is aborted); sessions persist and"
+    echo "are resumable from the next local run."
+    echo
+    cd "$LLMOPT_DIR"
+    DSH_HOME="$HARNESS_DIR" exec "${CMD[@]}"
+  fi
   echo "=== gengin optimizer (DeepSeek Harness) ==="
   echo "DSH_HOME:  $HARNESS_DIR"
   echo "Profile:   ${DSH_PROFILE:-headless}"
   echo "Query:     $QUERY_FILE"
   echo
   cd "$LLMOPT_DIR"
-  # Proprietary code: opt out of the launcher-owned OTel row (see above).
-  export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
   DSH_HOME="$HARNESS_DIR" exec "${CMD[@]}"
 else
   echo "=== gengin optimizer (Hermes) ==="
