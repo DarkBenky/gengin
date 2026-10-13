@@ -261,6 +261,75 @@ render_local_tui_overlay() {
   TUI_OVERLAY="$overlay"
 }
 
+launch_supervised_tui() {
+  # Run a supervised session inside a real dsh-tui in a tmux session so a
+  # human can attach and watch it live (GENGIN_SUPERVISED_TUI=1). The session
+  # home already carries the rendered patch layer with the proxy route, the
+  # MCP wiring and the session variables (GENGIN_SESSION_RESULT_PATH), so the
+  # same completion artifact the headless run writes drives this wrapper.
+  # Returns when the agent reports its result; non-zero if the TUI dies first.
+  # Args: session DSH_HOME.
+  local home="$1"
+  local result_file="${GENGIN_SESSION_RESULT_PATH:-}"
+  local run_tmux="gengin-run"
+  local patch_file="$home/profiles/headless/cordis.patch.yml"
+  local attach_sock="/tmp/tmux-$(id -u)/default"
+
+  if [[ -z "$result_file" ]]; then
+    echo "warning: GENGIN_SESSION_RESULT_PATH is not set (not a supervised session)" >&2
+    return 2
+  fi
+  if [[ ! -f "$patch_file" ]]; then
+    echo "warning: session patch layer missing: $patch_file" >&2
+    return 2
+  fi
+  # The TUI plugin owns its profile and dsh regenerates parts of it at boot;
+  # give the session its own writable copy of the version-matched checkout
+  # profile (a symlink would be read-only for the agent).
+  mkdir -p "$home/profiles"
+  rm -rf "$home/profiles/dsh-tui"
+  if ! cp -a "$LLMOPT_DIR/.dsh/profiles/dsh-tui" "$home/profiles/dsh-tui"; then
+    echo "warning: could not copy the dsh-tui profile into the session home" >&2
+    return 2
+  fi
+
+  # One run at a time: take over the agent user's tmux server so the pane
+  # inherits this session's environment (capped key, session variables).
+  tmux kill-server 2>/dev/null || true
+  if tmux has-session -t "$run_tmux" 2>/dev/null; then
+    echo "warning: stale tmux session '$run_tmux' survived kill-server" >&2
+    return 2
+  fi
+  if ! tmux new-session -d -s "$run_tmux" -x 220 -y 50 -c "$LLMOPT_DIR" \
+    "DSH_HOME='$home' dsh-tui --patch '$patch_file' -- \"\$(cat '$QUERY_FILE_ARG')\""; then
+    echo "warning: could not start the tmux session for the TUI" >&2
+    tmux kill-server 2>/dev/null || true
+    return 2
+  fi
+  # Ctrl-a is this TUI's prefix so detaching from the console pane (whose
+  # prefix is Ctrl-b) is just Ctrl-a d.
+  tmux set -g prefix C-a 2>/dev/null || true
+
+  echo "tui:         live session UI: tmux session '$run_tmux'"
+  echo "tui:         attach: gengin-tui  (or tmux -S $attach_sock attach -t $run_tmux)"
+  echo "tui:         detach: Ctrl-a d  (the session keeps running)"
+
+  trap 'tmux kill-server 2>/dev/null || true; exit 130' TERM INT HUP
+  while :; do
+    if [[ -f "$result_file" ]]; then
+      echo "tui:         session reported: $(tr '\n' ' ' < "$result_file" | head -c 240)"
+      break
+    fi
+    if ! tmux has-session -t "$run_tmux" 2>/dev/null; then
+      echo "error: the TUI session exited before reporting a result" >&2
+      return 1
+    fi
+    sleep 5
+  done
+  echo "tui:         session complete - the TUI stays open for reading"
+  return 0
+}
+
 # A chain request changes how bare model words are interpreted, no matter
 # where the flags appear relative to the models.
 ROUTE_FLAG=0
@@ -477,6 +546,26 @@ if [[ "$SUPERVISED" -eq 1 ]]; then
     # Proprietary code: the OTel row is launcher-owned, so the opt-out is the
     # environment switch (the session-log row is disabled in the patch layer).
     export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
+    # Opt-in TUI-hosted sessions (GENGIN_SUPERVISED_TUI=1 in the environment
+    # or llmOpt/.env): run inside a real dsh-tui in tmux so a human can watch
+    # the session live; the supervisor contract (result.json, exit code,
+    # budget, key cleanup) is unchanged.
+    supervised_tui="${GENGIN_SUPERVISED_TUI:-}"
+    if [[ -z "$supervised_tui" ]]; then
+      supervised_tui="$(grep -E '^GENGIN_SUPERVISED_TUI=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]' || true)"
+    fi
+    if [[ "$supervised_tui" == "1" ]] && command -v tmux >/dev/null 2>&1 \
+        && command -v dsh-tui >/dev/null 2>&1; then
+      launch_supervised_tui "$DSH_HOME_RESOLVED"
+      tui_rc=$?
+      if [[ "$tui_rc" -ne 2 ]]; then
+        exit "$tui_rc"
+      fi
+      echo "warning: TUI hosting unavailable - running headless" >&2
+    fi
+    if [[ "$supervised_tui" == "1" ]]; then
+      echo "warning: GENGIN_SUPERVISED_TUI=1 but tmux/dsh-tui is missing - running headless" >&2
+    fi
     DSH_HOME="$DSH_HOME_RESOLVED" dsh --profile headless "$(cat "$QUERY_FILE_ARG")"
   else
     maybe_update_hermes

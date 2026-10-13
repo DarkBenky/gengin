@@ -213,6 +213,9 @@ preflight + clean baseline, mints a budget-capped temporary OpenRouter key, runs
 one agent session under Xvfb, and deletes the key on every exit path. One session
 at a time; new commits coalesce to the newest. `GENGIN_OFFPEAK_WAIT=1` in
 `llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window.
+`GENGIN_SUPERVISED_TUI=1` runs the session inside a real `dsh-tui` in a tmux
+session (`gengin-tui` attaches to it; Ctrl-a d detaches; pre-flight failures
+fall back to headless).
 The harness is `dsh` by default; `GENGIN_HARNESS=hermes` switches to Hermes.
 Two-user deployments (`AGENT_USER` set) support both harnesses - the launch
 helper is harness-aware (see the dsh section above).

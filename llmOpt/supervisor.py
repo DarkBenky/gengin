@@ -105,6 +105,8 @@ KNOWN_KEYS = {
     # Hold a pending commit (re-checked every poll) until DeepSeek's off-peak
     # (half-price) window before preparing or launching a session.
     "GENGIN_OFFPEAK_WAIT",
+    # Opt-in: run the session inside a real dsh-tui in tmux (watchable live).
+    "GENGIN_SUPERVISED_TUI",
     "SESSION_TIMEOUT_SECONDS",
     "BUDGET_POLL_SECONDS",
     "KEY_EXPIRY_GRACE_SECONDS",
