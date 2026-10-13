@@ -106,8 +106,11 @@ follow_pane() {
   command -v tmux >/dev/null 2>&1 || return 0
   [[ -n "${TMUX:-}" ]] || return 0
   tmux list-panes -F '#{pane_title}' 2>/dev/null | grep -qx "agent session" && return 0
+  # Ctrl-C must only end the follower, never the pane: without the trap the
+  # zsh -c wrapper dies with it and tmux closes the pane (refresh = C-c +
+  # re-run the script).
   tmux split-window -v -l 35% -c "$CHECKOUT" \
-    "'$SCRIPT_DIR/session-follow.sh'; echo; echo '[follow] ended - Ctrl-b x closes this pane'; exec bash" \
+    "trap ':' INT; '$SCRIPT_DIR/session-follow.sh'; echo; echo '[follow] ended - Ctrl-b x closes this pane'; exec bash" \
     2>/dev/null || return 0
   tmux select-pane -T "agent session" 2>/dev/null || true
   tmux select-pane -l 2>/dev/null || true
