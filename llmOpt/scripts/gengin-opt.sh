@@ -88,6 +88,21 @@ ensure_route_proxy() {
   return 1
 }
 
+ensure_tty_stdout() {
+  # Interactive UIs (dsh TUI, hermes chat) need a real terminal on stdout.
+  # Shell capture hooks (e.g. a zsh preexec doing `exec > >(tee log)`) pipe
+  # the stdout of every command; the frontends then see a non-interactive
+  # host and silently skip. Re-attach to the controlling terminal.
+  if [[ -t 1 ]]; then
+    return 0
+  fi
+  if [[ -w /dev/tty ]]; then
+    exec >/dev/tty
+  else
+    echo "note: stdout is not a terminal - the interactive UI may not start" >&2
+  fi
+}
+
 discover_local_model() {
   # The router answers /v1/models in OpenAI shape when the big model is loaded
   # and in llama.cpp native shape otherwise; the id is display-only (the router
@@ -733,10 +748,18 @@ if [[ "$HARNESS" == "dsh" ]]; then
       # Interactive default: the dsh TUI (a terminal UI plugin for dsh). The
       # plugin profile is initialized once into DSH_HOME; our wiring rides as
       # a regenerated --patch overlay so the TUI keeps owning its own files.
+      # Boot through the dsh-tui LAUNCHER (it tags the launch for the plugin);
+      # the plain `dsh --profile dsh-tui` route silently skips the frontend
+      # whenever stdout is not a TTY (capture hooks, pipes) - no error, no UI.
       DSH_PROFILE="dsh-tui"
       TUI_MODE=1
-      if [[ ! -d "$HARNESS_DIR/profiles/dsh-tui" ]]; then
-        echo "error: the dsh TUI is not initialized in $HARNESS_DIR" >&2
+      if command -v dsh-tui >/dev/null 2>&1; then
+        TUI_LAUNCHER=(dsh-tui)
+      elif [[ -f "$HARNESS_DIR/profiles/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js" ]]; then
+        # The global command is a shim over exactly this profile copy.
+        TUI_LAUNCHER=(node "$HARNESS_DIR/profiles/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js")
+      else
+        echo "error: the dsh TUI is not installed (no dsh-tui command, no profile copy)" >&2
         echo "  install: npm install -g @deepseek-harness-tui/dsh-tui" >&2
         echo "           DSH_HOME=\"$HARNESS_DIR\" dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui" >&2
         echo "  or use:  $0 local --web | $0 local --hermes | $0 local --headless" >&2
@@ -751,8 +774,10 @@ if [[ "$HARNESS" == "dsh" ]]; then
     CMD=(dsh --profile "$DSH_PROFILE" --no-open --port "$WEB_PORT")
     DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" --no-open --port "$WEB_PORT")
   elif [[ "$TUI_MODE" -eq 1 ]]; then
-    CMD=(dsh --profile "$DSH_PROFILE" --patch "$TUI_OVERLAY" -- -- "$(cat "$QUERY_FILE")")
-    DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" --patch "$TUI_OVERLAY" -- -- "<query: $(wc -c <"$QUERY_FILE") bytes>")
+    # dsh-tui takes host options before `--` and the literal prompt after it;
+    # the plugin auto-submits that prompt once the UI is up.
+    CMD=("${TUI_LAUNCHER[@]}" --patch "$TUI_OVERLAY" -- "$(cat "$QUERY_FILE")")
+    DISPLAY_CMD=("${TUI_LAUNCHER[@]}" --patch "$TUI_OVERLAY" -- "<query: $(wc -c <"$QUERY_FILE") bytes>")
   else
     CMD=(dsh --profile "$DSH_PROFILE" "$(cat "$QUERY_FILE")")
     DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" "<query: $(wc -c <"$QUERY_FILE") bytes>")
@@ -892,6 +917,7 @@ if [[ "$HARNESS" == "dsh" ]]; then
     echo "Mode:      dsh TUI (first launch shows its own setup wizard)"
     echo "Overlay:   $TUI_OVERLAY"
     echo "If it starts without the brief, paste: Read $QUERY_FILE and execute the work it describes."
+    ensure_tty_stdout
   fi
   echo
   cd "$LLMOPT_DIR"
@@ -901,6 +927,9 @@ else
   echo "HERMES_HOME: $HARNESS_DIR"
   echo "Query:       $QUERY_FILE"
   echo
+  if [[ "$HEADLESS" -eq 0 ]]; then
+    ensure_tty_stdout
+  fi
   cd "$LLMOPT_DIR"
   HERMES_HOME="$HARNESS_DIR" exec "${CMD[@]}" "${PROVIDER_ARGS[@]}" "${MODEL_ARGS[@]}"
 fi

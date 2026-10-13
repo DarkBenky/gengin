@@ -67,9 +67,13 @@ the full MCP toolset. An interactive `local` run boots the dsh TUI
 plugin for dsh; primary target dsh 0.2.0-rc.2): one-time install is
 `npm install -g @deepseek-harness-tui/dsh-tui` plus
 `DSH_HOME=llmOpt/.dsh dsh plugin --profile dsh-tui add
-@deepseek-harness-tui/dsh-tui`; the launcher then boots `dsh --profile dsh-tui`
+@deepseek-harness-tui/dsh-tui`; the launcher then boots the TUI via the
+`dsh-tui` launcher itself (it tags the launch so the plugin mounts; a plain
+`dsh --profile dsh-tui` silently skips the frontend when stdout is not a TTY)
 with a regenerated `--patch` overlay (same provider/MCP wiring, provider id
-`local-router`) and passes the session brief as the first prompt. The TUI keeps
+`local-router`) and passes the session brief as the first prompt. Interactive
+runs re-attach stdout to `/dev/tty` first, so shell capture hooks (e.g. a zsh
+preexec doing `exec > >(tee log)`) cannot blank the UI. The TUI keeps
 dsh's session store, so its sessions resume in the TUI and also show up in the
 Web UI. First launch shows the TUI's own setup wizard (language/theme/workspace);
 the model is pre-wired by the overlay. `local --web` boots the steerable Web UI
@@ -219,6 +223,9 @@ helper is harness-aware (see the dsh section above).
     sudo systemctl enable --now gengin-xvfb.service gengin-llmopt.service
     journalctl -u gengin-llmopt.service -f
     # or in tmux instead: <checkout>/llmOpt/scripts/supervisor-console.sh
+
+In the console, one Ctrl-C cancels the running session (its summary records
+`interrupted`) and the supervisor keeps polling; a second Ctrl-C stops it.
 
 After pulling new code: `git pull` then `sudo systemctl restart gengin-llmopt`
 (the MCP server and prompts are re-read per session; the restart is for
