@@ -182,18 +182,18 @@ never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `mcp_server.py` / `main.py` | MCP server (stdio) / build-bench-flame-PR-bisect logic |
-| `supervisor.py` | Unattended commit-triggered supervisor (VM) |
-| `getFunc.py`, `perf.py`, `lsp_client.py`, `gen_compile_commands.py` | C index + perf annotation, perf parsing, clangd client, compile DB |
-| `ml_bench.py`, `ml_baseline.json` | Layer suites + PyTorch gate + verdicts, pinned timings |
-| `scripts/gengin-opt.sh` | Session launcher (`--harness hermes|dsh`; `local` = dsh TUI, `--web` = Web UI, `--headless` = auto-run one-shot) |
-| `scripts/dsh-web-local.sh`, `dsh-web-common.sh` | Model-only web chat UI (:3080) + shared stable-token helper for both web hosts |
-| `scripts/setup-hermes.sh`, `setup-dsh.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
-| `scripts/supervisor-console.sh` | Supervisor in a tmux console (VM) |
-| `codebase_context.md` | Architecture, wins, failures, hotspots (gitignored, per checkout) |
-| `general_improvements.md` | Curated minimal-chore queue for the sessions' General Improvements fallback (tracked, shared) |
+| File                                                                                                    | Purpose                                                                                                          |
+|---------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `mcp_server.py` / `main.py`                                                                             | MCP server (stdio) / build-bench-flame-PR-bisect logic                                                           |
+| `supervisor.py`                                                                                         | Unattended commit-triggered supervisor (VM)                                                                      |
+| `getFunc.py`, `perf.py`, `lsp_client.py`, `gen_compile_commands.py`                                     | C index + perf annotation, perf parsing, clangd client, compile DB                                               |
+| `ml_bench.py`, `ml_baseline.json`                                                                       | Layer suites + PyTorch gate + verdicts, pinned timings                                                           |
+| `scripts/gengin-opt.sh`                                                                                 | Session launcher (`--harness hermes\|dsh`; `local` = dsh TUI, `--web` = Web UI, `--headless` = auto-run one-shot) |
+| `scripts/dsh-web-local.sh`, `dsh-web-common.sh`                                                         | Model-only web chat UI (:3080) + shared stable-token helper for both web hosts                                   |
+| `scripts/setup-hermes.sh`, `setup-dsh.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup                                                                                                   |
+| `scripts/supervisor-console.sh`                                                                         | Supervisor in a tmux console (VM)                                                                                |
+| `codebase_context.md`                                                                                   | Architecture, wins, failures, hotspots (gitignored, per checkout)                                                |
+| `general_improvements.md`                                                                               | Curated minimal-chore queue for the sessions' General Improvements fallback (tracked, shared)                    |
 
 ## Sandbox
 
