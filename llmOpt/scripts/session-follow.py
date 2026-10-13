@@ -187,6 +187,9 @@ def main():
                 current = (kind, sid)
                 last_id = 0
                 log_state = None
+                # A stale idle gap from the previous session must not mark
+                # this one finished on attach; restart the idle clock.
+                last_event = time.time()
                 if sid not in finished:
                     print("[follow] session %s (%s)" % (sid, kind), flush=True)
 
