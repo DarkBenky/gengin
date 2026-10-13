@@ -79,6 +79,9 @@ mkdir -p "$PATCH_DIR"
 cat > "$PATCH_FILE" <<YAML
 # Rendered by llmOpt/scripts/dsh-web-local.sh - interactive browser chat on the
 # local model only. Regenerated every run; edit the script, not this file.
+# The provider id is display-only (the router ignores it) but must be STABLE:
+# saved per-session selections outlive re-renders, and the router's reported id
+# flips between backend modes (fast 7B path vs big-model id).
 - id: llm-pi-ai
   config:
     providers:
@@ -90,11 +93,11 @@ cat > "$PATCH_FILE" <<YAML
           supportsDeveloperRole: false
           maxTokensField: max_tokens
         models:
-          - id: $MODEL_ID
+          - id: local-router
 - id: agent-default-model
   config:
     provider: local-gengin
-    model: $MODEL_ID
+    model: local-router
 # Proprietary code: no session-log contribution to DeepSeek.
 - id: session-log-deepseek
   disabled: true
@@ -116,7 +119,7 @@ dshWebPrepareLaunch "$DSH_DIR"
 # The OTel row is launcher-owned (config cannot disable it): opt out via env.
 export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
 
-echo "dsh web: model '$MODEL_ID' via $BASE_URL"
+echo "dsh web: model 'local-router' (router reports '$MODEL_ID') via $BASE_URL"
 echo "DSH_HOME: $DSH_DIR   patch: $PATCH_FILE"
 echo "open http://127.0.0.1:$PORT  (Ctrl+C to stop)"
 echo "bookmark (stable login token): http://127.0.0.1:$PORT/?token=$DSH_LAUNCH_TOKEN"

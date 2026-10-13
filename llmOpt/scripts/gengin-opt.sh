@@ -4,9 +4,10 @@
 #
 #   gengin-opt.sh                       default model from the harness config
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
-#   gengin-opt.sh local [model]         local llama.cpp server on :8013; dsh boots the
-#                                       steerable Web UI (no browser popup; the URL is
-#                                       printed; --headless runs the one-shot instead)
+#   gengin-opt.sh local [model]         local llama.cpp server on :8013; boots the
+#                                       dsh TUI (interactive terminal UI)
+#   gengin-opt.sh local --web           dsh Web UI instead (no browser popup; :3081)
+#   gengin-opt.sh local --headless      auto-run one-shot instead of a UI
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
 #   gengin-opt.sh openrouter PRIMARY --max-context 99K FALLBACK
 #                                       switch to FALLBACK at 99K prompt tokens
@@ -29,6 +30,8 @@ MODEL_ARGS=()
 PRESET=""
 HEADLESS=0
 WEB_MODE=0
+WEB_REQ=0
+TUI_REQ=0
 DRY_RUN=0
 GOAL=""
 ML_MODE=0
@@ -51,8 +54,9 @@ usage() {
   echo "       --budget USD session spend cap; --wait-offpeak waits for half-price hours"
   echo "       --harness dsh|hermes selects the agent harness (default: dsh)"
   echo "       --hermes / --dsh are shorthand for --harness hermes|dsh"
-  echo "       local (dsh) boots the steerable Web UI at http://127.0.0.1:3081"
-  echo "       (GENGIN_WEB_PORT overrides); --headless keeps the auto-run one-shot"
+  echo "       local boots the dsh TUI (interactive terminal UI); --web boots the"
+  echo "       dsh Web UI instead (:3081, GENGIN_WEB_PORT overrides); --headless"
+  echo "       keeps the auto-run one-shot; --hermes runs the Hermes TUI instead"
 }
 
 parse_tokens() {
@@ -98,62 +102,13 @@ for m in (d.get("data") or []) + (d.get("models") or []):
 ' 2>/dev/null || true
 }
 
-render_local_dsh_profile() {
-  # The `local` preset renders its own dsh profiles: `local` (the headless
-  # one-shot runner) and `local-web` (the interactive Web UI). The scaffolding
-  # makes the profile name resolvable (non-shipped names need a manifest; the
-  # bundles resolve from the dsh installation); the patch is regenerated on
-  # every run so the model id follows the router state. Same MCP wiring as the
-  # headless profile.
-  local home="$1" profile="${2:-local}" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
-  local model python_bin display_value patch_dir app_bundle
-  case "$profile" in
-    local)     app_bundle='"@deepseek-ai/dsh-headless"' ;;
-    local-web) app_bundle='"@deepseek-ai/dsh-web-app"' ;;
-    *) echo "error: unknown local dsh profile: $profile" >&2; return 1 ;;
-  esac
-  model="$(discover_local_model)"
-  if [[ -z "$model" ]]; then
-    echo "warning: no model from $base/models - is the local router up?" >&2
-    model="local-model"
-  fi
-  python_bin="$(command -v python3 || true)"
-  display_value="${GENGIN_DISPLAY:-:2}"
-  patch_dir="$home/profiles/$profile"
-  mkdir -p "$patch_dir"
-  if [[ ! -f "$patch_dir/package.json" ]]; then
-    cat > "$patch_dir/package.json" <<JSON
-{
-  "name": "dsh-profile-$profile",
-  "private": true,
-  "dependencies": {},
-  "dsh": {
-    "profile": {
-      "bundles": [
-        "@deepseek-ai/dsh-base",
-        $app_bundle
-      ]
-    }
-  }
-}
-JSON
-    cat > "$patch_dir/cordis.yml" <<'YAML'
-# dsh profile root - an empty entry list. The tree is composed as patches:
-# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml.
-[]
-YAML
-    cat > "$patch_dir/pnpm-workspace.yaml" <<'YAML'
-packages:
-  - .
-
-nodeLinker: hoisted
-autoInstallPeers: false
-YAML
-  fi
-  cat > "$patch_dir/cordis.patch.yml" <<YAML
-# Rendered by llmOpt/scripts/gengin-opt.sh (local preset: $profile) - the
-# local OpenAI-compatible router instead of the OpenRouter proxy. Regenerated
-# on every local run; edit the script, not this file.
+local_patch_rows() {
+  # The patch body shared by every local surface (headless one-shot, Web UI,
+  # TUI overlay): the local router provider, the default model, the
+  # session-log opt-out, the longer bash deadline and the gengin MCP wiring.
+  # Args: base_url model python_bin display_value.
+  local base="$1" model="$2" python_bin="$3" display_value="$4"
+  cat <<YAML
 - id: llm-pi-ai
   config:
     providers:
@@ -196,7 +151,98 @@ YAML
           OPENROUTER_API_KEY: !!js "process.env.OPENROUTER_API_KEY ?? ''"
           GITHUB_TOKEN: !!js "process.env.GITHUB_TOKEN ?? ''"
 YAML
+}
+
+render_local_dsh_profile() {
+  # The `local` preset renders its own dsh profiles: `local` (the headless
+  # one-shot runner) and `local-web` (the interactive Web UI). The scaffolding
+  # makes the profile name resolvable (non-shipped names need a manifest; the
+  # bundles resolve from the dsh installation); the patch is regenerated on
+  # every run so the model id follows the router state. Same MCP wiring as the
+  # headless profile.
+  local home="$1" profile="${2:-local}" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
+  local model python_bin display_value patch_dir app_bundle
+  case "$profile" in
+    local)     app_bundle='"@deepseek-ai/dsh-headless"' ;;
+    local-web) app_bundle='"@deepseek-ai/dsh-web-app"' ;;
+    *) echo "error: unknown local dsh profile: $profile" >&2; return 1 ;;
+  esac
+  model="$(discover_local_model)"
+  if [[ -z "$model" ]]; then
+    echo "warning: no model from $base/models - is the local router up?" >&2
+    model="local-model"
+  fi
+  # Web sessions persist a per-session model selection that outlives patch
+  # re-renders; the router's reported id flips with its backend mode, so pin a
+  # stable provider id for the interactive Web UI.
+  [[ "$profile" == "local-web" ]] && model="local-router"
+  python_bin="$(command -v python3 || true)"
+  display_value="${GENGIN_DISPLAY:-:2}"
+  patch_dir="$home/profiles/$profile"
+  mkdir -p "$patch_dir"
+  if [[ ! -f "$patch_dir/package.json" ]]; then
+    cat > "$patch_dir/package.json" <<JSON
+{
+  "name": "dsh-profile-$profile",
+  "private": true,
+  "dependencies": {},
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        $app_bundle
+      ]
+    }
+  }
+}
+JSON
+    cat > "$patch_dir/cordis.yml" <<'YAML'
+# dsh profile root - an empty entry list. The tree is composed as patches:
+# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml.
+[]
+YAML
+    cat > "$patch_dir/pnpm-workspace.yaml" <<'YAML'
+packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false
+YAML
+  fi
+  {
+    echo "# Rendered by llmOpt/scripts/gengin-opt.sh (local preset: $profile) - the"
+    echo "# local OpenAI-compatible router instead of the OpenRouter proxy. Regenerated"
+    echo "# on every local run; edit the script, not this file."
+    local_patch_rows "$base" "$model" "$python_bin" "$display_value"
+  } > "$patch_dir/cordis.patch.yml"
   chmod 600 "$patch_dir/cordis.patch.yml"
+}
+
+render_local_tui_overlay() {
+  # The dsh-tui profile is owned by the TUI plugin (its settings live in
+  # ~/.dsh-tui/settings.json and the profile dir), so the optimizer wiring is
+  # applied as a launcher --patch overlay on top, regenerated on every run.
+  # Interactive sessions persist a model selection, so the provider id is the
+  # stable local-router (the router ignores ids; its reported id flips with
+  # backend mode).
+  local home="$1" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
+  local model python_bin display_value overlay
+  if [[ -z "$(discover_local_model)" ]]; then
+    echo "warning: no model from $base/models - is the local router up?" >&2
+  fi
+  model="local-router"
+  python_bin="$(command -v python3 || true)"
+  display_value="${GENGIN_DISPLAY:-:2}"
+  overlay="$home/cache/gengin-tui-overlay.yml"
+  mkdir -p "$home/cache"
+  {
+    echo "# Rendered by llmOpt/scripts/gengin-opt.sh - optimizer overlay for the"
+    echo "# dsh-tui profile (--patch). Regenerated on every local run; edit the"
+    echo "# script, not this file."
+    local_patch_rows "$base" "$model" "$python_bin" "$display_value"
+  } > "$overlay"
+  chmod 600 "$overlay"
+  TUI_OVERLAY="$overlay"
 }
 
 # A chain request changes how bare model words are interpreted, no matter
@@ -236,6 +282,10 @@ while [[ $# -gt 0 ]]; do
       GOAL="$2"; shift 2 ;;
     --headless)
       HEADLESS=1; shift ;;
+    --web)
+      WEB_REQ=1; shift ;;
+    --tui)
+      TUI_REQ=1; shift ;;
     --supervised)
       SUPERVISED=1; shift ;;
     --query-file)
@@ -301,6 +351,20 @@ if [[ -n "$PRESET" && ${#MODEL_ARGS[@]} -eq 0 ]]; then
     deepseek)   MODEL_ARGS=(-m "${GENGIN_DEEPSEEK_MODEL:-deepseek-v4-flash}") ;;
     openrouter) MODEL_ARGS=(-m "${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}") ;;
   esac
+fi
+
+# UI selection: `local` (dsh) is interactive by default -> the dsh TUI. The
+# Web UI is opt-in (--web), the one-shot via --headless; --hermes selects the
+# Hermes TUI. Only one interactive surface per run.
+if [[ "$TUI_REQ" -eq 1 ]]; then
+  [[ "$HEADLESS" -eq 0 && "$WEB_REQ" -eq 0 && "$HARNESS" == "dsh" && "$PRESET" == "local" ]] || {
+    echo "error: --tui needs the local preset on dsh and conflicts with --web/--headless/--hermes" >&2
+    exit 2; }
+fi
+if [[ "$WEB_REQ" -eq 1 ]]; then
+  [[ "$HEADLESS" -eq 0 ]] || { echo "error: --web cannot be combined with --headless" >&2; exit 2; }
+  [[ "$HARNESS" == "dsh" ]] || { echo "error: --web is dsh-only (drop --hermes)" >&2; exit 2; }
+  [[ "$PRESET" == "local" ]] || { echo "error: --web needs the local preset - run: $0 local --web" >&2; exit 2; }
 fi
 
 # --- best-effort harness self-update ---------------------------------------
@@ -650,11 +714,13 @@ if [[ "$HARNESS" == "dsh" ]]; then
   # local runs boot the Web UI so the session can be steered; --headless
   # keeps the auto-run one-shot.
   DSH_PROFILE="headless"
+  TUI_MODE=0
   if [[ "$PRESET" == "local" ]]; then
     export LOCAL_LLM_KEY="${LOCAL_LLM_KEY:-none}"
     if [[ "$HEADLESS" -eq 1 ]]; then
       DSH_PROFILE="local"
-    else
+      render_local_dsh_profile "$HARNESS_DIR" "$DSH_PROFILE"
+    elif [[ "$WEB_REQ" -eq 1 ]]; then
       DSH_PROFILE="local-web"
       WEB_MODE=1
       WEB_PORT="${GENGIN_WEB_PORT:-3081}"
@@ -662,14 +728,31 @@ if [[ "$HARNESS" == "dsh" ]]; then
         echo "error: GENGIN_WEB_PORT must be a port number 1024..65535, got: $WEB_PORT" >&2
         exit 2
       fi
+      render_local_dsh_profile "$HARNESS_DIR" "$DSH_PROFILE"
+    else
+      # Interactive default: the dsh TUI (a terminal UI plugin for dsh). The
+      # plugin profile is initialized once into DSH_HOME; our wiring rides as
+      # a regenerated --patch overlay so the TUI keeps owning its own files.
+      DSH_PROFILE="dsh-tui"
+      TUI_MODE=1
+      if [[ ! -d "$HARNESS_DIR/profiles/dsh-tui" ]]; then
+        echo "error: the dsh TUI is not initialized in $HARNESS_DIR" >&2
+        echo "  install: npm install -g @deepseek-harness-tui/dsh-tui" >&2
+        echo "           DSH_HOME=\"$HARNESS_DIR\" dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui" >&2
+        echo "  or use:  $0 local --web | $0 local --hermes | $0 local --headless" >&2
+        exit 1
+      fi
+      render_local_tui_overlay "$HARNESS_DIR"
     fi
-    render_local_dsh_profile "$HARNESS_DIR" "$DSH_PROFILE"
   elif [[ ${#PROVIDER_ARGS[@]} -gt 0 ]]; then
     echo "note: --provider/-m are ignored on dsh — set GENGIN_OPENROUTER_MODEL and re-run setup-dsh.sh" >&2
   fi
   if [[ "$WEB_MODE" -eq 1 ]]; then
     CMD=(dsh --profile "$DSH_PROFILE" --no-open --port "$WEB_PORT")
     DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" --no-open --port "$WEB_PORT")
+  elif [[ "$TUI_MODE" -eq 1 ]]; then
+    CMD=(dsh --profile "$DSH_PROFILE" --patch "$TUI_OVERLAY" -- -- "$(cat "$QUERY_FILE")")
+    DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" --patch "$TUI_OVERLAY" -- -- "<query: $(wc -c <"$QUERY_FILE") bytes>")
   else
     CMD=(dsh --profile "$DSH_PROFILE" "$(cat "$QUERY_FILE")")
     DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" "<query: $(wc -c <"$QUERY_FILE") bytes>")
@@ -690,6 +773,9 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     if [[ "$WEB_MODE" -eq 1 ]]; then
       echo "# local Web UI mode: no browser popup; start the session in the UI with"
       echo "# the brief at $HARNESS_DIR/cache/query-latest.md (written at launch)"
+    elif [[ "$TUI_MODE" -eq 1 ]]; then
+      echo "# local TUI mode: the session brief is the first prompt; overlay at"
+      echo "# $TUI_OVERLAY"
     fi
     printf 'DSH_HOME=%q ' "$HARNESS_DIR"
     printf '%q ' "${DISPLAY_CMD[@]}"
@@ -763,7 +849,14 @@ if [[ "$HARNESS" == "dsh" ]]; then
   export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
   if [[ "$WEB_MODE" -eq 1 ]]; then
     if (exec 3<>"/dev/tcp/127.0.0.1/$WEB_PORT") 2>/dev/null; then
-      echo "error: port $WEB_PORT is already in use - another local run's web UI? open it, or set GENGIN_WEB_PORT" >&2
+      if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$WEB_PORT/" || true)" == "401" ]]; then
+        echo "note: a local web UI is already running on :$WEB_PORT - nothing to start."
+        echo "Open it:  http://127.0.0.1:$WEB_PORT/?token=$(cat "$HARNESS_DIR/web-launch-token" 2>/dev/null || true)"
+        echo "Stop it (Ctrl+C in its terminal), or use another port:"
+        echo "  GENGIN_WEB_PORT=3082 $0 local --web"
+        exit 0
+      fi
+      echo "error: port $WEB_PORT is already in use by something else - use GENGIN_WEB_PORT" >&2
       exit 2
     fi
     source "$SCRIPT_DIR/dsh-web-common.sh"
@@ -795,6 +888,11 @@ if [[ "$HARNESS" == "dsh" ]]; then
   echo "DSH_HOME:  $HARNESS_DIR"
   echo "Profile:   ${DSH_PROFILE:-headless}"
   echo "Query:     $QUERY_FILE"
+  if [[ "$TUI_MODE" -eq 1 ]]; then
+    echo "Mode:      dsh TUI (first launch shows its own setup wizard)"
+    echo "Overlay:   $TUI_OVERLAY"
+    echo "If it starts without the brief, paste: Read $QUERY_FILE and execute the work it describes."
+  fi
   echo
   cd "$LLMOPT_DIR"
   DSH_HOME="$HARNESS_DIR" exec "${CMD[@]}"

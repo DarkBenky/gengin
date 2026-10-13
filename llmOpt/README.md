@@ -20,9 +20,10 @@ preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResea
 ## Launch
 
     llmOpt/scripts/gengin-opt.sh                       # default model (OpenRouter flash)
-    llmOpt/scripts/gengin-opt.sh local                 # local model; boots the steerable dsh Web UI (no browser popup)
-    llmOpt/scripts/gengin-opt.sh local --headless      # local model; auto-run one-shot, no UI
-    llmOpt/scripts/gengin-opt.sh local --hermes        # same, on the legacy Hermes Agent
+    llmOpt/scripts/gengin-opt.sh local                 # local model; dsh TUI (interactive terminal UI)
+    llmOpt/scripts/gengin-opt.sh local --web           # dsh Web UI instead (browser; :3081)
+    llmOpt/scripts/gengin-opt.sh local --headless      # auto-run one-shot, no UI
+    llmOpt/scripts/gengin-opt.sh local --hermes        # Hermes TUI instead
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
@@ -60,17 +61,27 @@ under `DSH_HOME`; the default (`profiles/headless`, from `scripts/setup-dsh.sh`)
 routes through the OpenRouter proxy, so `--provider`/`-m` are ignored in this
 mode — set `GENGIN_OPENROUTER_MODEL` and re-run `setup-dsh.sh` to change the
 model. The `local` preset renders its own dsh profiles against the local
-router instead (`LOCAL_LLM_BASE`, default `http://localhost:8013/v1`, model id
-discovered from `/v1/models`), keeping the full MCP toolset. An interactive
-`local` run boots the steerable Web UI (`profiles/local-web`): the launcher
-prints a bookmark URL for `http://127.0.0.1:3081` (`GENGIN_WEB_PORT` overrides)
-and the session brief path, and never opens a browser - start a session in the
-UI and send the one-line brief reference it prints. `local --headless` keeps
-the auto-run one-shot (`profiles/local`); a running one-shot cannot be steered
-(its process owns the session, it is only visible in a web UI's history). The
-terminal owns the web host: Ctrl+C stops it, sessions persist and are resumable
-from the next local run. The proxy still sits in front of OpenRouter for the
-headless route, so quantization, routing and budget keep working there.
+router instead (`LOCAL_LLM_BASE`, default `http://localhost:8013/v1`), keeping
+the full MCP toolset. An interactive `local` run boots the dsh TUI
+([dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI), a third-party terminal UI
+plugin for dsh; primary target dsh 0.2.0-rc.2): one-time install is
+`npm install -g @deepseek-harness-tui/dsh-tui` plus
+`DSH_HOME=llmOpt/.dsh dsh plugin --profile dsh-tui add
+@deepseek-harness-tui/dsh-tui`; the launcher then boots `dsh --profile dsh-tui`
+with a regenerated `--patch` overlay (same provider/MCP wiring, provider id
+`local-router`) and passes the session brief as the first prompt. The TUI keeps
+dsh's session store, so its sessions resume in the TUI and also show up in the
+Web UI. First launch shows the TUI's own setup wizard (language/theme/workspace);
+the model is pre-wired by the overlay. `local --web` boots the steerable Web UI
+instead (`profiles/local-web`): the launcher prints a bookmark URL for
+`http://127.0.0.1:3081` (`GENGIN_WEB_PORT` overrides) and never opens a browser;
+if a host is already running on that port it prints the bookmark and exits.
+`local --headless` keeps the auto-run one-shot (`profiles/local`); a running
+one-shot cannot be steered (its process owns the session, it is only visible in
+a web UI's history). The terminal owns the TUI/Web-UI process: exit stops it,
+sessions persist and are resumable from the next run. The proxy still sits in
+front of OpenRouter for the headless route, so quantization, routing and budget
+keep working there.
 
 Two-user VM deployments (`AGENT_USER` set) run either harness: the root-owned
 `agent-launch` helper is harness-aware, and `setup-vm.sh` installs Node.js and
@@ -90,6 +101,12 @@ Verified against dsh 0.2.x (developer preview — breaking changes are promised)
   `@deepseek-ai/dsh-mcp-client`, stdio). The bridge ships inside the dsh CLI, so
   no `dsh plugin add` is needed. It bridges MCP Tools only (Resources/Prompts
   deferred) and its discovery timeout is 60 s (not configurable).
+- Interactive surfaces (Web UI, dsh TUI) pin the provider model id
+  `local-router`: the router ignores ids (display-only), but dsh sessions
+  persist a per-session selection, and the router's reported id flips between
+  backend modes (fast 7B gguf path vs big-model id) - a stale saved id fails
+  prompts with "provider 'local-gengin' has no configured model" until picked
+  again.
 - The bridge scrubs credential-named and `DSH_*` variables from the MCP child's
   inherited environment, so `OPENROUTER_API_KEY`/`GITHUB_TOKEN` are re-declared
   in the row's `env` as `!!js process.env.X` expressions (evaluated in the dsh
@@ -167,7 +184,7 @@ never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 | `supervisor.py` | Unattended commit-triggered supervisor (VM) |
 | `getFunc.py`, `perf.py`, `lsp_client.py`, `gen_compile_commands.py` | C index + perf annotation, perf parsing, clangd client, compile DB |
 | `ml_bench.py`, `ml_baseline.json` | Layer suites + PyTorch gate + verdicts, pinned timings |
-| `scripts/gengin-opt.sh` | Session launcher (`--harness hermes|dsh`; `local` = steerable Web UI, `--headless` = auto-run one-shot) |
+| `scripts/gengin-opt.sh` | Session launcher (`--harness hermes|dsh`; `local` = dsh TUI, `--web` = Web UI, `--headless` = auto-run one-shot) |
 | `scripts/dsh-web-local.sh`, `dsh-web-common.sh` | Model-only web chat UI (:3080) + shared stable-token helper for both web hosts |
 | `scripts/setup-hermes.sh`, `setup-dsh.sh`, `setup-vm.sh`, `setup-openrouter-proxy.sh`, `enable-perf.sh` | One-time setup |
 | `scripts/supervisor-console.sh` | Supervisor in a tmux console (VM) |
