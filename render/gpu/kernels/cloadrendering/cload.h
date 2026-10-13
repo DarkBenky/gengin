@@ -15,7 +15,7 @@ typedef struct {
 	CL_Buffer godRayBuf;
 	CL_Buffer godRaySrcBuf; // fused transmittance*isSky, one float per pixel
 	CL_Pipeline compositePipeline;
-	CL_Buffer framebufferBuf; // pinned uint32 buffer — upload framebuffer, composite on GPU, read back
+	CL_Buffer framebufferBuf; // pinned float4 HDR framebuffer — upload framebufferHdr, composite on GPU, read back
 	CL_Pipeline blurPipeline;
 	CL_Buffer outputBlurBuf;
 	int width;
@@ -44,7 +44,7 @@ typedef struct {
 // Render clouds for one frame. vol->gpuDensity must already be uploaded via UploadVolumeToGpu.
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params);
 
-// Blend cloud luminance into cam->framebuffer via GPU composite kernel (call after CloudRenderer_Render).
+// Blend clouds + god rays into cam->framebufferHdr via GPU composite kernel (call after CloudRenderer_Render).
 void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam);
 
 void CloudRenderer_Destroy(CloudRenderer *cr);

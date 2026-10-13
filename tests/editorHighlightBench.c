@@ -1,5 +1,6 @@
 #include "timings.h"
 #include "saveImage.h"
+#include "../render/color/color.h"
 #include "../ui/editor/editor.h"
 #include "../object/material/material.h"
 #include "../render/render.h"
@@ -47,20 +48,17 @@ static void BuildScene(ObjectList *scene, MaterialLib *matLib) {
 	             (float3){0.20f, 0.70f, 0.80f}, matLib, 0.0f, 0.15f, 0.4f);
 }
 
-static Color TintColor(Color c) {
-	float3 color = UnpackColor(c);
+static float3 TintColor(float3 color) {
 	color.x *= highlightColor.x;
 	color.y *= highlightColor.y;
 	color.z *= highlightColor.z;
-	return PackColor(color.x, color.y, color.z);
+	return color;
 }
 
-static int ChannelsClose(Color a, Color b, int tolerance) {
-	for (int shift = 16; shift >= 0; shift -= 8) {
-		int diff = (int)((a >> shift) & 0xFF) - (int)((b >> shift) & 0xFF);
-		if (diff > tolerance || diff < -tolerance) return 0;
-	}
-	return 1;
+static int PixelClose(float3 a, float3 b, float tolerance) {
+	return fabsf(a.x - b.x) <= tolerance &&
+	       fabsf(a.y - b.y) <= tolerance &&
+	       fabsf(a.z - b.z) <= tolerance;
 }
 
 typedef void (*highlightFn)(editorUi *ui, ThreadPool *pool, int px, int py);
@@ -83,8 +81,8 @@ static int CheckHighlight(editorUi *ui, ThreadPool *pool, Camera *camera, Object
 
 	const int width = camera->screenWidth;
 	const int height = camera->screenHeight;
-	uint32 *reference = malloc(sizeof(uint32) * width * height);
-	memcpy(reference, camera->framebuffer, sizeof(uint32) * width * height);
+	float3 *reference = malloc(sizeof(float3) * width * height);
+	memcpy(reference, camera->framebufferHdr, sizeof(float3) * width * height);
 
 	apply(ui, pool, px, py);
 
@@ -96,25 +94,27 @@ static int CheckHighlight(editorUi *ui, ThreadPool *pool, Camera *camera, Object
 			const int objectId = camera->objectIdBuffer[idx];
 			int onCursor = (y == py && abs(x - px) <= CURSOR_ARM) ||
 			               (x == px && abs(y - py) <= CURSOR_ARM);
-			Color expected;
-			int tolerance = 0;
+			float3 expected;
+			float tolerance = 0.0f;
 			if (onCursor) {
-				expected = PackColor(1.0f, 1.0f, 1.0f);
+				expected = (float3){1.0f, 1.0f, 1.0f};
 			} else if (objectId == targetId) {
 				targetPixels++;
 				if (outline && IsEdgePixel(camera->objectIdBuffer, x, y, width, height, targetId)) {
-					expected = PackColor(1.0f, 1.0f, 1.0f);
+					expected = (float3){1.0f, 1.0f, 1.0f};
 				} else {
 					expected = TintColor(reference[idx]);
-					tolerance = 1; // fast-math may reassociate the channel multiplies between call sites
+					tolerance = 1e-4f; // fast-math may reassociate the channel multiplies between call sites
 				}
 			} else {
 				expected = reference[idx];
 			}
-			if (!ChannelsClose(camera->framebuffer[idx], expected, tolerance)) {
-				if (mismatches < 5)
-					printf("MISMATCH at %d: %08X vs %08X\n", idx,
-					       camera->framebuffer[idx], expected);
+			if (!PixelClose(camera->framebufferHdr[idx], expected, tolerance)) {
+				if (mismatches < 5) {
+					float3 got = camera->framebufferHdr[idx];
+					printf("MISMATCH at %d: (%.6f, %.6f, %.6f) vs (%.6f, %.6f, %.6f)\n", idx,
+					       got.x, got.y, got.z, expected.x, expected.y, expected.z);
+				}
 				mismatches++;
 			}
 		}
@@ -144,8 +144,12 @@ int main(void) {
 	Skybox skybox;
 	LoadSkybox(&skybox, "skybox");
 
+	struct Alphabet alphabet;
+	LoadAlphabet(&alphabet, "assets/chars");
+
 	editorUi ui;
-	createEditorUi(&scene, &ui, &camera);
+	Input input = {0};
+	createEditorUi(&scene, &ui, &camera, &input, &alphabet);
 
 	long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
 	ThreadPool *pool = poolCreate(ncpu > 1 ? (int)ncpu - 1 : 1, WIDTH);
@@ -233,11 +237,13 @@ int main(void) {
 	// Correctness: each variant gets its own fresh frame and pre-apply reference
 	// (the timed loops compound the tint, so those pixels are not a valid reference).
 	int mismatchesV1 = CheckHighlight(&ui, pool, &camera, &scene, &matLib, &rayTaskQueue, &skybox, px, py, targetId, applyHighlight, 0);
+	ConvertToLdr(camera.framebufferHdr, camera.framebufferLdr, WIDTH, HEIGHT);
 	SaveImage("tests/img/editor_highlight.bmp", &camera);
 	printf("Image dumped to tests/img/editor_highlight.bmp\n");
 
 	int mismatchesV2 = CheckHighlight(&ui, pool, &camera, &scene, &matLib, &rayTaskQueue, &skybox, px, py, targetId, applyHighlightV2, 0);
 	int mismatchesEdge = CheckHighlight(&ui, pool, &camera, &scene, &matLib, &rayTaskQueue, &skybox, px, py, targetId, applyHighlightEdge, 1);
+	ConvertToLdr(camera.framebufferHdr, camera.framebufferLdr, WIDTH, HEIGHT);
 	SaveImage("tests/img/editor_highlight_edge.bmp", &camera);
 	printf("Image dumped to tests/img/editor_highlight_edge.bmp\n");
 
@@ -253,6 +259,26 @@ int main(void) {
 		printf("CORRECTNESS FAIL: applyHighlightEdge %d mismatching pixels\n", mismatchesEdge);
 	else
 		printf("Correctness: OK (applyHighlightEdge outline white, interior tinted, cursor drawn)\n");
+
+	// Stat panel showcase: the editor's stats overlay at two panel sizes. Full
+	// editor stack (highlight + cursor + panel), tonemapped once on save.
+	struct {
+		const char *path;
+		int width;
+		int height;
+	} statVariants[2] = {
+		{"tests/img/editor_stats_small.bmp", 300, 260},
+		{"tests/img/editor_stats_large.bmp", 600, 520},
+	};
+	for (int v = 0; v < 2; v++) {
+		RenderSetup(scene.objects, scene.count, &camera);
+		RayTraceScene(scene.objects, scene.count, &camera, &matLib, &rayTaskQueue, pool, &skybox);
+		applyHighlight(&ui, pool, px, py);
+		drawStats(&ui, 20, 20, statVariants[v].width, statVariants[v].height);
+		ConvertToLdr(camera.framebufferHdr, camera.framebufferLdr, WIDTH, HEIGHT);
+		SaveImage(statVariants[v].path, &camera);
+		printf("Image dumped to %s\n", statVariants[v].path);
+	}
 
 	poolDestroy(pool);
 	DestroySkybox(&skybox);

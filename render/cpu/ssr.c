@@ -68,34 +68,29 @@ static void SSRProcessRow(Camera *camera, int row) {
 			float diff = depth - sceneDepth;
 
 			if (sceneDepth > 0.01f && diff > 0.0f && diff < threshold) {
-				// Bilinear fetch from the stable pre-pass copy in tempFramebuffer
+				// Bilinear fetch from the stable pre-pass copy in tempFramebufferHdr
 				int x1 = px + 1 < W ? px + 1 : px;
 				int y1 = py + 1 < H ? py + 1 : py;
 				float fx = sx - px, fy = sy - py;
 
-#define CH(c, sh) (((c) >> (sh)) & 0xFFu)
-				Color c00 = camera->tempFramebuffer[py * W + px];
-				Color c10 = camera->tempFramebuffer[py * W + x1];
-				Color c01 = camera->tempFramebuffer[y1 * W + px];
-				Color c11 = camera->tempFramebuffer[y1 * W + x1];
-#define BLERP(a, b, t) ((uint32)((a) + (int)((int)(b) - (int)(a)) * (t)))
-				uint32 sr = BLERP(BLERP(CH(c00, 16), CH(c10, 16), fx), BLERP(CH(c01, 16), CH(c11, 16), fx), fy);
-				uint32 sg = BLERP(BLERP(CH(c00, 8), CH(c10, 8), fx), BLERP(CH(c01, 8), CH(c11, 8), fx), fy);
-				uint32 sb = BLERP(BLERP(CH(c00, 0), CH(c10, 0), fx), BLERP(CH(c01, 0), CH(c11, 0), fx), fy);
-#undef CH
-#undef BLERP
+				float3 c00 = camera->tempFramebufferHdr[py * W + px];
+				float3 c10 = camera->tempFramebufferHdr[py * W + x1];
+				float3 c01 = camera->tempFramebufferHdr[y1 * W + px];
+				float3 c11 = camera->tempFramebufferHdr[y1 * W + x1];
+				float3 top = {c00.x + (c10.x - c00.x) * fx, c00.y + (c10.y - c00.y) * fx, c00.z + (c10.z - c00.z) * fx};
+				float3 bot = {c01.x + (c11.x - c01.x) * fx, c01.y + (c11.y - c01.y) * fx, c01.z + (c11.z - c01.z) * fx};
+				float3 sr = {top.x + (bot.x - top.x) * fy, top.y + (bot.y - top.y) * fy, top.z + (bot.z - top.z) * fy};
 
-				if (sr + sg + sb <= 3u) break; // black hit — no useful data
+				if (sr.x + sr.y + sr.z <= (3.0f / 255.0f)) break; // black hit — no useful data
 
-				uint32 st = (uint32)(reflectStrength * 255.0f);
-				if (st > 255u) st = 255u;
-				uint32 sit = 255u - st;
+				float st = fminf(reflectStrength, 1.0f);
+				float sit = 1.0f - st;
 
-				Color base = camera->tempFramebuffer[idx];
-				uint32 nr = (((base >> 16) & 0xFF) * sit + sr * st) >> 8;
-				uint32 ng = (((base >> 8) & 0xFF) * sit + sg * st) >> 8;
-				uint32 nb = ((base & 0xFF) * sit + sb * st) >> 8;
-				camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
+				float3 base = camera->tempFramebufferHdr[idx];
+				camera->framebufferHdr[idx] = (float3){
+					base.x * sit + sr.x * st,
+					base.y * sit + sr.y * st,
+					base.z * sit + sr.z * st};
 				break;
 			}
 		}
@@ -112,7 +107,7 @@ static void SSRRowTask(void *arg) {
 void SSRPostProcessSingleThreaded(Camera *camera) {
 	if (!camera) return;
 	int size = camera->screenWidth * camera->screenHeight;
-	memcpy(camera->tempFramebuffer, camera->framebuffer, size * sizeof(Color));
+	memcpy(camera->tempFramebufferHdr, camera->framebufferHdr, size * sizeof(float3));
 	for (int row = 0; row < camera->screenHeight; row++)
 		SSRProcessRow(camera, row);
 }
@@ -121,8 +116,8 @@ void SSRPostProcess(Camera *camera, ThreadPool *threadPool, SSRTask *tasks, int 
 	if (!camera || !threadPool || !tasks) return;
 	int size = camera->screenWidth * camera->screenHeight;
 	int taskCount = (camera->screenHeight + rowsPerTask - 1) / rowsPerTask;
-	// Snapshot must happen before any task reads tempFramebuffer
-	memcpy(camera->tempFramebuffer, camera->framebuffer, size * sizeof(Color));
+	// Snapshot must happen before any task reads tempFramebufferHdr
+	memcpy(camera->tempFramebufferHdr, camera->framebufferHdr, size * sizeof(float3));
 	for (int t = 0; t < taskCount; t++) {
 		tasks[t].row = t * rowsPerTask;
 		tasks[t].rowCount = rowsPerTask;

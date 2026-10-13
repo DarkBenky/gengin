@@ -386,8 +386,8 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 		finalColor.z = MinF(1.0f, finalColor.z);
 
 		// packedColor = 0xFF000000 | (R<<16) | (G<<8) | B  — kept for lit mode, see framebuffer write below
-		uint32 packedColor = 0xFF000000 | ((uint8)(finalColor.x * 255.0f) << 16) | ((uint8)(finalColor.y * 255.0f) << 8) | (uint8)(finalColor.z * 255.0f);
-		(void)packedColor;
+		// uint32 packedColor = 0xFF000000 | ((uint8)(finalColor.x * 255.0f) << 16) | ((uint8)(finalColor.y * 255.0f) << 8) | (uint8)(finalColor.z * 255.0f);
+		// (void)packedColor;
 		float invArea = 1.0f / area;
 		float w0dx = sy2 - sy1;
 		float w0dy = -(sx2 - sx1);
@@ -437,7 +437,7 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 							bRay[bCount] = Float3_Sub(worldPos, camera->position);
 							bIdx[bCount] = idx;
 							bCount++;
-							camera->framebuffer[idx] = packedColor;
+							camera->framebufferHdr[idx] = finalColor;
 						}
 					}
 				}
@@ -476,7 +476,7 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 							(v0.z * p0 + v1.z * p1 + v2.z * p2) * invPSum};
 						camera->positionBuffer[idx] = worldPos;
 						camera->reflectBuffer[idx] = Float3_Reflect(Float3_Sub(worldPos, camera->position), normal);
-						camera->framebuffer[idx] = packedColor;
+						camera->framebufferHdr[idx] = finalColor;
 					}
 				}
 				w0 += w0dx;

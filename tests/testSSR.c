@@ -12,7 +12,7 @@
 
 #define SKY_COLOR 0xFF5588BBu
 
-// Fills framebuffer, depthBuffer, normalBuffer, positionBuffer, reflectBuffer for one row.
+// Fills framebufferHdr, depthBuffer, normalBuffer, positionBuffer, reflectBuffer for one row.
 static void RenderRow(const Object *objects, int objectCount, const MaterialLib *lib, Camera *camera, int row) {
 	int W = camera->screenWidth;
 	int H = camera->screenHeight;
@@ -67,7 +67,7 @@ static void RenderRow(const Object *objects, int objectCount, const MaterialLib 
 		}
 
 		if (bestObj < 0) {
-			camera->framebuffer[idx] = SKY_COLOR;
+			camera->framebufferHdr[idx] = UnpackColor(SKY_COLOR);
 			camera->depthBuffer[idx] = DEPTH_FAR;
 			camera->normalBuffer[idx] = (float3){0};
 			camera->positionBuffer[idx] = (float3){0};
@@ -107,14 +107,13 @@ static void RenderRow(const Object *objects, int objectCount, const MaterialLib 
 		float spec = spec2 * spec2 * spec2 * spec2 * (1.0f - roughness) * 0.4f;
 		if (diff <= 0.0f) spec = 0.0f;
 
-		uint8 r = (uint8)(fminf(color.x * lit + spec + color.x * emission, 1.0f) * 255.0f);
-		uint8 g = (uint8)(fminf(color.y * lit + spec + color.y * emission, 1.0f) * 255.0f);
-		uint8 b = (uint8)(fminf(color.z * lit + spec + color.z * emission, 1.0f) * 255.0f);
-
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		camera->framebuffer[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | b;
+		camera->framebufferHdr[idx] = (float3){
+			color.x * lit + spec + color.x * emission,
+			color.y * lit + spec + color.y * emission,
+			color.z * lit + spec + color.z * emission};
 		// Store view-Z (dot with forward) so SSR depth comparison is consistent
 		camera->depthBuffer[idx] = (bestHit.x - orig.x) * fwd.x + (bestHit.y - orig.y) * fwd.y + (bestHit.z - orig.z) * fwd.z;
 		camera->normalBuffer[idx] = n;
@@ -207,6 +206,7 @@ int main() {
 
 	// Render base scene without SSR and save
 	RenderSceneParallel(objects, objectCount, &matLib, &camera, pool, renderTasks);
+	ConvertToLdr(camera.framebufferHdr, camera.framebufferLdr, camera.screenWidth, camera.screenHeight);
 	SaveImage("tests/img/ssr_base.bmp", &camera);
 
 	// ── Single-threaded SSR baseline ──────────────────────────────────────
@@ -219,6 +219,7 @@ int main() {
 		clock_gettime(CLOCK_MONOTONIC, &t1);
 		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
+	ConvertToLdr(camera.framebufferHdr, camera.framebufferLdr, camera.screenWidth, camera.screenHeight);
 	SaveImage("tests/img/ssr_single.bmp", &camera);
 	PerformanceMetrics metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
 	printf("========================================\n");
@@ -248,6 +249,7 @@ int main() {
 		RunSSRMultiThreaded(objects, objectCount, &matLib, &camMT, pool, renderTasks, ssrTasks, rowsPerTaskValues[t]);
 	}
 	printf("========================================\n");
+	ConvertToLdr(camMT.framebufferHdr, camMT.framebufferLdr, camMT.screenWidth, camMT.screenHeight);
 	SaveImage("tests/img/ssr_multi.bmp", &camMT);
 
 	// Correctness: final multi result (1-row tasks same as single-threaded scan order)
@@ -258,8 +260,10 @@ int main() {
 	SSRPostProcess(&camCheck, pool, ssrTasks, 1);
 
 	for (int i = 0; i < camRef.screenWidth * camRef.screenHeight; i++) {
-		if (camRef.framebuffer[i] != camCheck.framebuffer[i]) {
-			printf("Pixel %d mismatch: single = 0x%08X, multi = 0x%08X\n", i, camRef.framebuffer[i], camCheck.framebuffer[i]);
+		float3 single = camRef.framebufferHdr[i];
+		float3 multi = camCheck.framebufferHdr[i];
+		if (single.x != multi.x || single.y != multi.y || single.z != multi.z) {
+			printf("Pixel %d mismatch: single = (%f, %f, %f), multi = (%f, %f, %f)\n", i, single.x, single.y, single.z, multi.x, multi.y, multi.z);
 			free(renderTasks);
 			free(ssrTasks);
 			poolDestroy(pool);

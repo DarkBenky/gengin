@@ -169,3 +169,22 @@ void RenderText(uint32 *dst, int dstWidth, int dstHeight, struct Alphabet *alpha
 		}
 	}
 }
+
+void RenderTextHdr(float3 *dst, int dstWidth, int dstHeight, struct Alphabet *alphabet, const char *text, int x, int y, float scale, float3 color) {
+	if (!dst || !alphabet || !text) return;
+
+	if (scale <= 0.0f) scale = 1.0f;
+
+	int cursorX = x;
+	for (size_t i = 0; text[i] != '\0'; i++) {
+		unsigned char code = (unsigned char)text[i];
+		Tile tile = alphabet->letters[code].tile;
+
+		if (tile.pixels && tile.width > 0 && tile.height > 0) {
+			drawTileColorScaledHdr(dst, dstWidth, dstHeight, tile, cursorX, y, scale, scale, color);
+			cursorX += (int)((float)tile.width * scale);
+		} else {
+			cursorX += (int)(8.0f * scale);
+		}
+	}
+}

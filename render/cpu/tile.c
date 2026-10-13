@@ -125,3 +125,34 @@ void drawTileColorScaled(uint32 *dst, int dstWidth, int dstHeight, Tile tile, in
 		}
 	}
 }
+
+
+void drawTileColorScaledHdr(float3 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y, float scaleX, float scaleY, float3 color) {
+	int scaledW = (int)(tile.width * scaleX);
+	int scaledH = (int)(tile.height * scaleY);
+
+	int dstX = x, dstY = y;
+	int srcX = 0, srcY = 0;
+	if (dstX < 0) {
+		srcX -= (int)(dstX / scaleX);
+		dstX = 0;
+	}
+	if (dstY < 0) {
+		srcY -= (int)(dstY / scaleY);
+		dstY = 0;
+	}
+	if (dstX + scaledW > dstWidth) scaledW = dstWidth - dstX;
+	if (dstY + scaledH > dstHeight) scaledH = dstHeight - dstY;
+
+	if (scaledW <= 0 || scaledH <= 0) return;
+
+	for (int row = 0; row < scaledH; row++) {
+		for (int col = 0; col < scaledW; col++) {
+			int srcCol = srcX + (int)(col / scaleX);
+			int srcRow = srcY + (int)(row / scaleY);
+			uint32 src = tile.pixels[srcRow * tile.width + srcCol];
+			if (src != 0x00000000)
+				dst[(dstY + row) * dstWidth + (dstX + col)] = color;
+		}
+	}
+}

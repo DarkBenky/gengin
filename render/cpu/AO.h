@@ -493,13 +493,13 @@ static void CalculateAmbientOcclusionV2Row(void *arg) {
 			float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			camera->ambientOcclusionBuffer[idx] = ao;
 
-			// float3 baseColor = UnpackColor(camera->framebuffer[idx]);
+			// float3 baseColor = camera->framebufferHdr[idx];
 
 			// baseColor.x = baseColor.x * ao;
 			// baseColor.y = baseColor.y * ao;
 			// baseColor.z = baseColor.z * ao;
 
-			// camera->framebuffer[idx]= PackColorF(baseColor);
+			// camera->framebufferHdr[idx] = baseColor;
 		}
 	}
 }
@@ -582,13 +582,13 @@ static void CalculateAmbientOcclusionV2RowPlus(void *arg) {
 			float ao = Clamp(1.0f - occlusion * INV_VALID[validSamples], 0.0f, 1.0f);
 			rowValues[j] = ao;
 
-			// float3 baseColor = UnpackColor(camera->framebuffer[idx]);
+			// float3 baseColor = camera->framebufferHdr[idx];
 
 			// baseColor.x = baseColor.x * ao;
 			// baseColor.y = baseColor.y * ao;
 			// baseColor.z = baseColor.z * ao;
 
-			// camera->framebuffer[idx]= PackColorF(baseColor);
+			// camera->framebufferHdr[idx] = baseColor;
 		}
 
 		// start from kernel size half and end early to avoid bound checks
@@ -1578,7 +1578,7 @@ typedef struct {
 	int height;
 	float *AOBuffer;
 	float strength; // 1 = full occlusion, >1 boosts contrast
-	uint32 *Framebuffer;
+	float3 *FramebufferHdr;
 } ApplyTask;
 
 static void ApplyAoRows(void *arg) {
@@ -1589,7 +1589,7 @@ static void ApplyAoRows(void *arg) {
 	const int endColumn = width - KERNEL_SIZE_HALF;
 	const float strength = task->strength;
 	float *restrict aoBuffer = task->AOBuffer;
-	uint32 *restrict framebuffer = task->Framebuffer;
+	float3 *restrict framebuffer = task->FramebufferHdr;
 
 	// Skip the outer columns: the AO passes never write them (stale data)
 	for (int y = task->row; y < endRow; y++) {
@@ -1597,12 +1597,8 @@ static void ApplyAoRows(void *arg) {
 		for (int x = firstColumn; x < endColumn; x++) {
 			const int idx = rowBase + x;
 			const float ao = Clamp(1.0f - (1.0f - aoBuffer[idx]) * strength, 0.0f, 1.0f);
-			const uint32 px = framebuffer[idx];
-			const uint32 r = (uint32)(((px >> 16) & 0xFFu) * ao);
-			const uint32 g = (uint32)(((px >> 8) & 0xFFu) * ao);
-			const uint32 b = (uint32)((px & 0xFFu) * ao);
-
-			framebuffer[idx] = (px & 0xFF000000u) | (r << 16) | (g << 8) | b;
+			const float3 px = framebuffer[idx];
+			framebuffer[idx] = (float3){px.x * ao, px.y * ao, px.z * ao, 0.0f};
 		}
 	}
 }
@@ -1620,7 +1616,7 @@ static void applyAmbientOcclusion(Camera *camera, ThreadPool *threadPool, float 
 	for (int t = 0; t < taskCount; t++) {
 		const int row = t * AO_ROWS_PER_TASK;
 		const int rows = height - row < AO_ROWS_PER_TASK ? height - row : AO_ROWS_PER_TASK;
-		tasks[t] = (ApplyTask){row, rows, width, height, camera->ambientOcclusionBuffer, strength, camera->framebuffer};
+		tasks[t] = (ApplyTask){row, rows, width, height, camera->ambientOcclusionBuffer, strength, camera->framebufferHdr};
 		poolAdd(threadPool, ApplyAoRows, &tasks[t]);
 	}
 	poolWait(threadPool);

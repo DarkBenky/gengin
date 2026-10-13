@@ -314,13 +314,13 @@ __kernel void godRays(
     output[idx] = (float4)(godRayColor.x * v, godRayColor.y * v, godRayColor.z * v, 0.0f);
 }
 
-// Composites cloud + god-ray results onto the uint ARGB framebuffer.
+// Composites cloud + god-ray results onto the linear HDR framebuffer.
 // Equivalent to the CPU CloudRenderer_Composite loop, but runs parallel on GPU.
-// framebuffer format: 0xFF000000 | R<<16 | G<<8 | B (same as cpu-side Color)
+// framebuffer is float4 (x,y,z = linear RGB; no clamp — tonemapping happens later).
 __kernel void compositeFrame(
     __global const float4 *cloudBuf,
     __global const float4 *godRayBuf,
-    __global uint         *framebuffer,
+    __global float4       *framebuffer,
     int screenWidth,
     int screenHeight
 ) {
@@ -336,24 +336,12 @@ __kernel void compositeFrame(
 
     if (transmittance > 0.998f && gr.x < 0.001f && gr.y < 0.001f && gr.z < 0.001f) return;
 
-    uint   bg  = framebuffer[idx];
-    float  br  = ((bg >> 16) & 0xFFu) * (1.0f / 255.0f);
-    float  bgi = ((bg >>  8) & 0xFFu) * (1.0f / 255.0f);
-    float  bb  = ( bg        & 0xFFu) * (1.0f / 255.0f);
-
-    float fr = br, fg = bgi, fb = bb;
+    float4 bg = framebuffer[idx];
+    float3 fr = bg.xyz;
     if (transmittance < 0.998f) {
-        fr = br  * transmittance + cloud.x;
-        fg = bgi * transmittance + cloud.y;
-        fb = bb  * transmittance + cloud.z;
+        fr = bg.xyz * transmittance + cloud.xyz;
     }
+    fr += gr.xyz;
 
-    fr = clamp(fr + gr.x, 0.0f, 1.0f);
-    fg = clamp(fg + gr.y, 0.0f, 1.0f);
-    fb = clamp(fb + gr.z, 0.0f, 1.0f);
-
-    framebuffer[idx] = 0xFF000000u
-                     | ((uint)(fr * 255.0f) << 16)
-                     | ((uint)(fg * 255.0f) <<  8)
-                     |  (uint)(fb * 255.0f);
+    framebuffer[idx] = (float4)(fr.xyz, 0.0f);
 }

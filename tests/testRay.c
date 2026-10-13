@@ -13,7 +13,7 @@ void RenderScene(const Object *objects, int objectCount, Camera *camera) {
 		for (int col = 0; col < camera->screenWidth; col++) {
 			float3 rayDir = ComputeRayDirection(camera, col, row);
 			Color color = IntersectBBoxColor(objects, objectCount, camera->position, rayDir);
-			camera->framebuffer[row * camera->screenWidth + col] = color;
+			camera->framebufferLdr[row * camera->screenWidth + col] = color;
 		}
 	}
 }
@@ -24,7 +24,7 @@ void RenderSceneRow(const Object *objects, int objectCount, Camera *camera, int 
 		for (int col = 0; col < camera->screenWidth; col++) {
 			float3 rayDir = ComputeRayDirection(camera, col, r);
 			Color color = IntersectBBoxColor(objects, objectCount, camera->position, rayDir);
-			camera->framebuffer[r * camera->screenWidth + col] = color;
+			camera->framebufferLdr[r * camera->screenWidth + col] = color;
 		}
 	}
 }
@@ -155,8 +155,8 @@ int main() {
 	RunMultiThreaded(objects, objectCount, &camCheck, 1);
 
 	for (int i = 0; i < camera.screenWidth * camera.screenHeight; i++) {
-		if (camera.framebuffer[i] != camCheck.framebuffer[i]) {
-			printf("Pixel %d mismatch: single = 0x%08X, multi = 0x%08X\n", i, camera.framebuffer[i], camCheck.framebuffer[i]);
+		if (camera.framebufferLdr[i] != camCheck.framebufferLdr[i]) {
+			printf("Pixel %d mismatch: single = 0x%08X, multi = 0x%08X\n", i, camera.framebufferLdr[i], camCheck.framebufferLdr[i]);
 			Scene_Destroy(objects, objectCount);
 			MaterialLib_Destroy(&matLib);
 			destroyCamera(&camera);

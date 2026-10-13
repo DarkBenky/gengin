@@ -1,6 +1,10 @@
 # Tasks
 
-- [ ] render scene in HDR to avoid permanent HDR to LDR to HDR steps
+- [X] render scene in HDR to avoid permanent HDR to LDR to HDR steps
+
+- [ ] **high** Particle simulation for aerodynamics
+  - [ ] struct will need to hold object, bounding box of simulated volume, and spawner probability some surface
+  - [ ] this will be expensive we should probably bake it maybe also bake some texture
 
 - [ ] Map loading files
   - [X] More primitives like toroid, cone, pyramid ...

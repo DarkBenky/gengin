@@ -103,8 +103,9 @@ typedef struct Camera {
 	
 	float seed;
 	
-	uint32 *framebuffer;
-	int4 *accumulationBuffer;
+	uint32 *framebufferLdr;
+	float3 *framebufferHdr;
+	float3 *tempFramebufferHdr; // stable snapshot for post passes (SSR) that read the HDR buffer
 	float3 *normalBuffer;
 	float3 *positionBuffer;
 	float3 *reflectBuffer;
@@ -120,8 +121,7 @@ typedef struct Camera {
 
 	float *ambientOcclusionBuffer;
 	float2 *motionVectorBuffer;
-	Color *reflectCache;
-	Color *tempFramebuffer;
+	float3 *reflectCache;
 	float *tempBuffer_1;
 	float *tempBuffer_2;
 	float *shadowCache; 

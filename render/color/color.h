@@ -2,6 +2,7 @@
 #define COLOR_H
 
 #include "../../object/format.h"
+#include "../../util/threadPool.h"
 #include <math.h>
 
 
@@ -67,6 +68,10 @@ Color DarkenColor(Color c, float amount);
 Color HueShiftColor(Color c, float shift);
 Color ApplyColorCorrection(Color c, float gamma, float exposure, float contrast, float saturation, float hueShift, float3 modulate);
 Color ScaleChannel(Color c, float rScale, float gScale, float bScale);
+// Single HDR -> LDR stage of the frame: tonemap (overflow spread + clamp) and pack to 0xFFRRGGBB.
+void ConvertToLdr(const float3 *inHdr, uint32 *outLdr, int width, int height);
+// Row-banded parallel variant: dispatches on the caller's pool and waits for completion.
+void ConvertToLdrMp(const float3 *inHdr, uint32 *outLdr, int width, int height, ThreadPool *threadPool);
 void VisualizeBuffer(const Camera *camera, int mode);
 
 #endif // COLOR_H

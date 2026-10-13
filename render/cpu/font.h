@@ -13,5 +13,6 @@ struct Alphabet {
 
 void LoadAlphabet(struct Alphabet *alphabet, const char *dirname); // index directory load binary data letter is set by filename, tile is set by binary data
 void RenderText(uint32 *dst, int dstWidth, int dstHeight, struct Alphabet *alphabet, const char *text, int x, int y, float scale, uint32 color);
+void RenderTextHdr(float3 *dst, int dstWidth, int dstHeight, struct Alphabet *alphabet, const char *text, int x, int y, float scale, float3 color);
 
 #endif // FONT_H

@@ -19,6 +19,55 @@ Color PackColorSafe(float r, float g, float b) {
 	return 0xFF000000 | (Color)(R << 16) | (Color)(G << 8) | B;
 }
 
+// Single HDR -> LDR stage for the whole frame. Tonemap matches the old per-pixel
+// hdrToLDR: overflow spreads from the max channel into the others, then clamps; no gamma.
+static inline uint32 ConvertPixelToLdr(float3 c) {
+	float e = fmaxf(c.x, fmaxf(c.y, c.z)) - 1.0f;
+	if (e > 0.0f) {
+		c.x = fminf(c.x + e, 1.0f);
+		c.y = fminf(c.y + e, 1.0f);
+		c.z = fminf(c.z + e, 1.0f);
+	}
+	return PackColorSafe(c.x, c.y, c.z);
+}
+
+void ConvertToLdr(const float3 *inHdr, uint32 *outLdr, int width, int height) {
+	if (!inHdr || !outLdr) return;
+	const int count = width * height;
+	for (int i = 0; i < count; i++)
+		outLdr[i] = ConvertPixelToLdr(inHdr[i]);
+}
+
+typedef struct {
+	const float3 *inHdr;
+	uint32 *outLdr;
+	int startRow;
+	int rows;
+	int width;
+} ConvertToLdrTask;
+
+static void ConvertToLdrRows(void *arg) {
+	const ConvertToLdrTask *task = arg;
+	const int start = task->startRow * task->width;
+	const int count = task->rows * task->width;
+	for (int i = 0; i < count; i++)
+		task->outLdr[start + i] = ConvertPixelToLdr(task->inHdr[start + i]);
+}
+
+void ConvertToLdrMp(const float3 *inHdr, uint32 *outLdr, int width, int height, ThreadPool *threadPool) {
+	if (!inHdr || !outLdr || !threadPool || width <= 0 || height <= 0) return;
+	const int rowsPerTask = 45;
+	const int taskCount = (height + rowsPerTask - 1) / rowsPerTask;
+	ConvertToLdrTask tasks[taskCount];
+	for (int t = 0; t < taskCount; t++) {
+		const int row = t * rowsPerTask;
+		const int rows = height - row < rowsPerTask ? height - row : rowsPerTask;
+		tasks[t] = (ConvertToLdrTask){inHdr, outLdr, row, rows, width};
+		poolAdd(threadPool, ConvertToLdrRows, &tasks[t]);
+	}
+	poolWait(threadPool);
+}
+
 void VisualizeBuffer(const Camera *camera, int mode) {
 	if (mode == 0) return; // VIEW_COLOR
 	const int n = camera->screenWidth * camera->screenHeight;
@@ -26,7 +75,7 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 	if (mode == 1) { // VIEW_NORMALS
 		for (int i = 0; i < n; i++) {
 			float3 nm = camera->normalBuffer[i];
-			camera->framebuffer[i] = PackColorSafe(
+			camera->framebufferLdr[i] = PackColorSafe(
 				nm.x * 0.5f + 0.5f,
 				nm.y * 0.5f + 0.5f,
 				nm.z * 0.5f + 0.5f);
@@ -37,7 +86,7 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 	if (mode == 3) { // VIEW_REFLECT
 		for (int i = 0; i < n; i++) {
 			float3 r = camera->reflectBuffer[i];
-			camera->framebuffer[i] = PackColorSafe(
+			camera->framebufferLdr[i] = PackColorSafe(
 				r.x * 0.5f + 0.5f,
 				r.y * 0.5f + 0.5f,
 				r.z * 0.5f + 0.5f);
@@ -59,7 +108,7 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
 			float t = (d <= 0.0f || d >= DEPTH_FAR) ? 0.0f : 1.0f - (d - dMin) / range;
-			camera->framebuffer[i] = PackColorSafe(t, t, t);
+			camera->framebufferLdr[i] = PackColorSafe(t, t, t);
 		}
 		return;
 	}
@@ -85,11 +134,11 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
 			if (d <= 0.0f || d >= DEPTH_FAR) {
-				camera->framebuffer[i] = 0xFF000000u;
+				camera->framebufferLdr[i] = 0xFF000000u;
 				continue;
 			}
 			float3 p = camera->positionBuffer[i];
-			camera->framebuffer[i] = PackColorSafe(
+			camera->framebufferLdr[i] = PackColorSafe(
 				(p.x - pMin.x) * invRange.x,
 				(p.y - pMin.y) * invRange.y,
 				(p.z - pMin.z) * invRange.z);
@@ -101,12 +150,12 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
 			if (d <= 0.0f || d >= DEPTH_FAR) {
-				camera->framebuffer[i] = 0xFF000000u;
+				camera->framebufferLdr[i] = 0xFF000000u;
 				continue;
 			}
 			uint32 h = (uint32)camera->objectIdBuffer[i] * 2654435761u;
 			h ^= h >> 13;
-			camera->framebuffer[i] = 0xFF000000u | ((h & 0xFF) << 16) | (h & 0xFF00) | ((h >> 16) & 0xFF);
+			camera->framebufferLdr[i] = 0xFF000000u | ((h & 0xFF) << 16) | (h & 0xFF00) | ((h >> 16) & 0xFF);
 		}
 		return;
 	}
@@ -115,12 +164,12 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
 			if (d <= 0.0f || d >= DEPTH_FAR) {
-				camera->framebuffer[i] = 0xFF000000u;
+				camera->framebufferLdr[i] = 0xFF000000u;
 				continue;
 			}
 			uint32 h = (uint32)camera->triangleIdBuffer[i] * 2654435761u;
 			h ^= h >> 13;
-			camera->framebuffer[i] = 0xFF000000u | ((h & 0xFF) << 16) | (h & 0xFF00) | ((h >> 16) & 0xFF);
+			camera->framebufferLdr[i] = 0xFF000000u | ((h & 0xFF) << 16) | (h & 0xFF00) | ((h >> 16) & 0xFF);
 		}
 		return;
 	}
@@ -129,11 +178,11 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
 			if (d <= 0.0f || d >= DEPTH_FAR) {
-				camera->framebuffer[i] = 0xFF000000u;
+				camera->framebufferLdr[i] = 0xFF000000u;
 				continue;
 			}
 			uvMap uv = camera->uvBuffer[i];
-			camera->framebuffer[i] = 0xFF000000u | (((uint32)uv.x >> 8) << 16) | (((uint32)uv.y >> 8) << 8);
+			camera->framebufferLdr[i] = 0xFF000000u | (((uint32)uv.x >> 8) << 16) | (((uint32)uv.y >> 8) << 8);
 		}
 		return;
 	}
@@ -142,11 +191,11 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
 			if (d <= 0.0f || d >= DEPTH_FAR) {
-				camera->framebuffer[i] = 0xFF000000u;
+				camera->framebufferLdr[i] = 0xFF000000u;
 				continue;
 			}
 			float3 e = camera->bloomBuffer[i];
-			camera->framebuffer[i] = PackColorSafe(e.x * 100.0f, e.y * 100.0f, e.z * 100.0f);
+			camera->framebufferLdr[i] = PackColorSafe(e.x * 100.0f, e.y * 100.0f, e.z * 100.0f);
 		}
 		return;
 	}
@@ -164,11 +213,11 @@ void VisualizeBuffer(const Camera *camera, int mode) {
 		for (int i = 0; i < n; i++) {
 			float d = camera->depthBuffer[i];
 			if (d <= 0.0f || d >= DEPTH_FAR) {
-				camera->framebuffer[i] = 0xFF000000u;
+				camera->framebufferLdr[i] = 0xFF000000u;
 				continue;
 			}
 			float2 m = camera->motionVectorBuffer[i];
-			camera->framebuffer[i] = PackColorSafe(m.x * scale + 0.5f, m.y * scale + 0.5f, 0.0f);
+			camera->framebufferLdr[i] = PackColorSafe(m.x * scale + 0.5f, m.y * scale + 0.5f, 0.0f);
 		}
 		return;
 	}

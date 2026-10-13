@@ -11,13 +11,6 @@
 #include "../../util/threadPool.h"
 #include "../../image/imgMethods.h"
 
-static inline Color PackColorFast01(float3 color) {
-	uint8 r = (uint8)(color.x * 255.0f);
-	uint8 g = (uint8)(color.y * 255.0f);
-	uint8 b = (uint8)(color.z * 255.0f);
-	return (Color)((r << 16) | (g << 8) | b);
-}
-
 // ---- Per-frame AVX2 AABB pre-filter batch -----------------------------------
 // RayTraceRowFunc's per-pixel object pre-filter does one rayAABB_inv per
 // frustum-pass object. This buffer holds the frustum-pass objects' world AABBs
@@ -37,60 +30,46 @@ static inline Color PackColorFast01(float3 color) {
 static float s_aabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
 static int s_aabbSoaValid = 0;   // 0 -> the row kernel keeps the scalar pre-filter
 
-static inline Color BlendColors50(Color a, Color b) {
-	return ((a & 0x00FEFEFEu) + (b & 0x00FEFEFEu)) >> 1;
-}
-
-// Spread overflow from the max channel into the others before clamping.
-// A pure red at very high intensity becomes white instead of staying red.
-static inline float3 hdrToLDR(float fr, float fg, float fb) {
-	float e = fmaxf(fr, fmaxf(fg, fb)) - 1.0f;
-	if (e > 0.0f) {
-		fr = fminf(fr + e, 1.0f);
-		fg = fminf(fg + e, 1.0f);
-		fb = fminf(fb + e, 1.0f);
-	}
-	return (float3){fr, fg, fb};
-}
-
-static void BlurColorBuffer(Color *src, Color *temp, int width, int height, int radius) {
+static void BlurFloat3Buffer(float3 *src, float3 *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
 
 	for (int y = 0; y < height; y++) {
-		const Color *row = src + y * width;
-		Color *out = temp + y * width;
+		const float3 *row = src + y * width;
+		float3 *out = temp + y * width;
 		for (int x = 0; x < width; x++) {
-			uint32 r = 0, g = 0, b = 0, n = 0;
+			float r = 0.0f, g = 0.0f, b = 0.0f;
+			int n = 0;
 			int x0 = x - radius, x1 = x + radius;
 			if (x0 < 0) x0 = 0;
 			if (x1 >= width) x1 = width - 1;
 			for (int k = x0; k <= x1; k++) {
-				Color c = row[k];
-				if (!c) continue;
-				r += (c >> 16) & 0xFF;
-				g += (c >> 8) & 0xFF;
-				b += c & 0xFF;
+				float3 c = row[k];
+				if (c.x == 0.0f && c.y == 0.0f && c.z == 0.0f) continue;
+				r += c.x;
+				g += c.y;
+				b += c.z;
 				n++;
 			}
-			out[x] = n ? (0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n)) : 0;
+			out[x] = n ? (float3){r / n, g / n, b / n} : (float3){0.0f, 0.0f, 0.0f};
 		}
 	}
 
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
-			uint32 r = 0, g = 0, b = 0, n = 0;
+			float r = 0.0f, g = 0.0f, b = 0.0f;
+			int n = 0;
 			int y0 = y - radius, y1 = y + radius;
 			if (y0 < 0) y0 = 0;
 			if (y1 >= height) y1 = height - 1;
 			for (int k = y0; k <= y1; k++) {
-				Color c = temp[k * width + x];
-				if (!c) continue;
-				r += (c >> 16) & 0xFF;
-				g += (c >> 8) & 0xFF;
-				b += c & 0xFF;
+				float3 c = temp[k * width + x];
+				if (c.x == 0.0f && c.y == 0.0f && c.z == 0.0f) continue;
+				r += c.x;
+				g += c.y;
+				b += c.z;
 				n++;
 			}
-			src[y * width + x] = n ? (0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n)) : 0;
+			src[y * width + x] = n ? (float3){r / n, g / n, b / n} : (float3){0.0f, 0.0f, 0.0f};
 		}
 	}
 }
@@ -205,7 +184,7 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, c
 
 		for (int i = 0; i < size; i++)
 			camera->tempBuffer_1[i] = 1.0f;
-		memset(camera->reflectCache, 0, size * sizeof(Color));
+		memset(camera->reflectCache, 0, size * sizeof(float3));
 
 		for (int y = 0; y < height; y += step) {
 			for (int x = 0; x < width; x += step) {
@@ -235,31 +214,36 @@ void ShadowPostProcess(const Object *objects, int objectCount, Camera *camera, c
 				float3 reflDir = camera->reflectBuffer[idx];
 				Color reflectionColor = IntersectBBoxColor(objects, objectCount, biasedPos, reflDir);
 				Color blendColor = reflectionColor != 0 ? reflectionColor : skyColor;
+				float3 blendColorF = UnpackColor(blendColor);
 
 				for (int dy = 0; dy < step && y + dy < height; dy++) {
 					for (int dx = 0; dx < step && x + dx < width; dx++) {
 						int fillIdx = (y + dy) * width + (x + dx);
-						camera->reflectCache[fillIdx] = blendColor;
+						camera->reflectCache[fillIdx] = blendColorF;
 					}
 				}
 			}
 		}
 
-		BlurColorBuffer(camera->reflectCache, camera->tempFramebuffer, width, height, 3);
+		BlurFloat3Buffer(camera->reflectCache, camera->bloomTemp, width, height, 3); // bloomTemp is otherwise unused; borrowed as blur scratch
 		BlurBuffer(camera->tempBuffer_1, camera->tempBuffer_2, width, height, 5);
 		memcpy(camera->shadowCache, camera->tempBuffer_1, size * sizeof(float));
 	}
 
 	for (int i = 0; i < size; i++) {
-		if (camera->reflectCache[i] != 0)
-			camera->framebuffer[i] = BlendColors50(camera->framebuffer[i], camera->reflectCache[i]);
-		// Integer fixed-point darken: factor = 0.5 + 0.5*shadowCache in [128..256]/256
-		uint32 scale = 128 + (uint32)(camera->shadowCache[i] * 128.0f);
-		Color c = camera->framebuffer[i];
-		uint32 r = (((c >> 16) & 0xFF) * scale) >> 8;
-		uint32 g = (((c >> 8) & 0xFF) * scale) >> 8;
-		uint32 b = ((c & 0xFF) * scale) >> 8;
-		camera->framebuffer[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+		float3 px = camera->framebufferHdr[i];
+		float3 refl = camera->reflectCache[i];
+		if (refl.x != 0.0f || refl.y != 0.0f || refl.z != 0.0f) {
+			px.x = px.x * 0.5f + refl.x * 0.5f;
+			px.y = px.y * 0.5f + refl.y * 0.5f;
+			px.z = px.z * 0.5f + refl.z * 0.5f;
+		}
+		// darken: factor = 0.5 + 0.5*shadowCache (was integer scale 128..256 >> 8)
+		float scale = 0.5f + 0.5f * camera->shadowCache[i];
+		px.x *= scale;
+		px.y *= scale;
+		px.z *= scale;
+		camera->framebufferHdr[i] = px;
 	}
 }
 
@@ -326,21 +310,19 @@ static void SkyBoxTaskFunc(void *arg) {
 			// No geometry — fill with sky using primary ray direction
 			float3 rayDir = ComputeRayDirection(camera, x, row);
 			// NOTE : not used in main render loop
-			camera->framebuffer[idx] = SampleSkybox(skybox, rayDir);
+			camera->framebufferHdr[idx] = UnpackColor(SampleSkybox(skybox, rayDir));
 			continue;
 		}
 
 		// Geometry hit — blend sky reflection weighted by Fresnel angle of incidence
 		float3 reflDir = camera->reflectBuffer[idx];
-		Color skyColor = SampleSkybox(skybox, reflDir);
-		float reflStr = camera->tempBuffer_2[idx];
-		uint32 t = (uint32)(reflStr * 255.0f);
-		uint32 it = 255u - t;
-		Color base = camera->framebuffer[idx];
-		uint32 nr = (((base >> 16) & 0xFF) * it + ((skyColor >> 16) & 0xFF) * t) >> 8;
-		uint32 ng = (((base >> 8) & 0xFF) * it + ((skyColor >> 8) & 0xFF) * t) >> 8;
-		uint32 nb = ((base & 0xFF) * it + (skyColor & 0xFF) * t) >> 8;
-		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
+		float3 skyColor = UnpackColor(SampleSkybox(skybox, reflDir));
+		float t = fminf(fmaxf(camera->tempBuffer_2[idx], 0.0f), 1.0f);
+		float3 base = camera->framebufferHdr[idx];
+		camera->framebufferHdr[idx] = (float3){
+			base.x * (1.0f - t) + skyColor.x * t,
+			base.y * (1.0f - t) + skyColor.y * t,
+			base.z * (1.0f - t) + skyColor.z * t};
 	}
 }
 
@@ -784,7 +766,7 @@ static void RayTraceRowFunc(void *arg) {
 		if (bestObj < 0) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
 			camera->objectIdBuffer[idx] = -1;
-			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
+			camera->framebufferHdr[idx] = UnpackColor(SampleSkybox(task->skybox, (float3){dx, dy, dz}));
 			continue;
 		}
 
@@ -976,12 +958,10 @@ static void RayTraceRowFunc(void *arg) {
 		float diffuseWeight = 1.0f - metallic;
 		float lit = (0.02f + 0.98f * diffuse) * diffuseWeight;
 
-		float3 ldr = hdrToLDR(color.x * lit + specR + color.x * emission,
-							  color.y * lit + specG + color.y * emission,
-							  color.z * lit + specB + color.z * emission);
-		uint8 r = (uint8)(ldr.x * 255.0f);
-		uint8 g = (uint8)(ldr.y * 255.0f);
-		uint8 b = (uint8)(ldr.z * 255.0f);
+		float3 shaded = {
+			color.x * lit + specR + color.x * emission,
+			color.y * lit + specG + color.y * emission,
+			color.z * lit + specB + color.z * emission};
 
 		// rough surfaces suppress reflections — fresnel already computed above
 		// also modulate by light facing: back-facing surfaces can't receive strong sky reflection
@@ -993,26 +973,21 @@ static void RayTraceRowFunc(void *arg) {
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		uint32 st = (uint32)(reflectStrength * 255.0f);
-		if (st > 255u) st = 255u;
-		uint32 sit = 255u - st;
+		float st = fminf(reflectStrength, 1.0f);
 		// the lookup only reaches the pixel through `st`, so a zero weight skips it
-		uint32 skyR = 0, skyG = 0, skyB = 0;
-		if (st) {
+		if (st > 0.0f) {
 			Color skyRefl = SampleSkybox(task->skybox, reflDir);
-			skyR = (skyRefl >> 16) & 0xFF;
-			skyG = (skyRefl >> 8) & 0xFF;
-			skyB = (skyRefl) & 0xFF;
 			// tint sky colour by albedo for metals
-			skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
-			skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
-			skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+			float3 sky = {
+				((skyRefl >> 16) & 0xFF) * (1.0f / 255.0f) * ((1.0f - metallic) + metallic * color.x),
+				((skyRefl >> 8) & 0xFF) * (1.0f / 255.0f) * ((1.0f - metallic) + metallic * color.y),
+				(skyRefl & 0xFF) * (1.0f / 255.0f) * ((1.0f - metallic) + metallic * color.z)};
+			shaded.x = shaded.x * (1.0f - st) + sky.x * st;
+			shaded.y = shaded.y * (1.0f - st) + sky.y * st;
+			shaded.z = shaded.z * (1.0f - st) + sky.z * st;
 		}
-		uint32 nr = ((uint32)r * sit + skyR * st) >> 8;
-		uint32 ng = ((uint32)g * sit + skyG * st) >> 8;
-		uint32 nb = ((uint32)b * sit + skyB * st) >> 8;
 
-		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
+		camera->framebufferHdr[idx] = shaded;
 		// View-Z depth (dot with forward) keeps SSR depth comparisons consistent
 		camera->depthBuffer[idx] = (bestHitPos.x - orig.x) * fwd.x + (bestHitPos.y - orig.y) * fwd.y + (bestHitPos.z - orig.z) * fwd.z;
 		camera->objectIdBuffer[idx] = bestObj;
@@ -1132,12 +1107,12 @@ static void RayTraceRowFunc(void *arg) {
 			accumulatedShadow.y *= invW;
 			accumulatedShadow.z *= invW;
 		}
-		Color baseColor = camera->framebuffer[row * width + x];
-		float3 base = UnpackColor(baseColor);
+		float3 base = camera->framebufferHdr[row * width + x];
 		float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
-		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
-								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
-								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w);
+		float3 combined = {
+			base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
+			base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
+			base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w};
 
 		float3 ownEmission = camera->bloomBuffer[row * width + x];
 		camera->bloomBuffer[row * width + x] = (float3){
@@ -1146,18 +1121,18 @@ static void RayTraceRowFunc(void *arg) {
 			ownEmission.z + accumulatedEmission.z,
 		};
 
-		camera->framebuffer[row * width + x] = PackColor(combined.x, combined.y, combined.z);
+		camera->framebufferHdr[row * width + x] = combined;
 
 		// Visualize postion buffer for debugging
 		// float3 posVal = camera->positionBuffer[row * width + x];
-		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f));
+		// camera->framebufferLdr[row * width + x] = PackColorSafe(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f);
 		
-		// camera->framebuffer[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
-		// camera->framebuffer[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
-		// camera->framebuffer[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
-		// camera->framebuffer[row * width + x] = PackColorF(hdrToLDR(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z));
+		// camera->framebufferLdr[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
+		// camera->framebufferLdr[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
+		// camera->framebufferLdr[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
+		// camera->framebufferLdr[row * width + x] = PackColorSafe(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z);
 		// float2 motionColor = camera->motionVectorBuffer[row * width + x];
-		// camera->framebuffer[row * width + x] = PackColor(motionColor.x / 4.0f, 0.0f, motionColor.y / 4.0f);
+		// camera->framebufferLdr[row * width + x] = PackColor(motionColor.x / 4.0f, 0.0f, motionColor.y / 4.0f);
 	}
 }
 
@@ -1313,7 +1288,7 @@ static void RayTraceColumnFunc(void *arg) {
 		if (bestObj < 0) {
 			camera->depthBuffer[idx] = DEPTH_FAR;
 			camera->objectIdBuffer[idx] = -1;
-			camera->framebuffer[idx] = SampleSkybox(task->skybox, (float3){dx, dy, dz});
+			camera->framebufferHdr[idx] = UnpackColor(SampleSkybox(task->skybox, (float3){dx, dy, dz}));
 			continue;
 		}
 
@@ -1498,12 +1473,10 @@ static void RayTraceColumnFunc(void *arg) {
 		float diffuseWeight = 1.0f - metallic;
 		float lit = (0.02f + 0.98f * diffuse) * diffuseWeight;
 
-		float3 ldr = hdrToLDR(color.x * lit + specR + color.x * emission,
-							  color.y * lit + specG + color.y * emission,
-							  color.z * lit + specB + color.z * emission);
-		uint8 r = (uint8)(ldr.x * 255.0f);
-		uint8 g = (uint8)(ldr.y * 255.0f);
-		uint8 b = (uint8)(ldr.z * 255.0f);
+		float3 shaded = {
+			color.x * lit + specR + color.x * emission,
+			color.y * lit + specG + color.y * emission,
+			color.z * lit + specB + color.z * emission};
 
 		// rough surfaces suppress reflections — fresnel already computed above
 		// also modulate by light facing: back-facing surfaces can't receive strong sky reflection
@@ -1515,26 +1488,21 @@ static void RayTraceColumnFunc(void *arg) {
 		float dot2 = 2.0f * (n.x * dx + n.y * dy + n.z * dz);
 		float3 reflDir = {dx - n.x * dot2, dy - n.y * dot2, dz - n.z * dot2};
 
-		uint32 st = (uint32)(reflectStrength * 255.0f);
-		if (st > 255u) st = 255u;
-		uint32 sit = 255u - st;
+		float st = fminf(reflectStrength, 1.0f);
 		// the lookup only reaches the pixel through `st`, so a zero weight skips it
-		uint32 skyR = 0, skyG = 0, skyB = 0;
-		if (st) {
+		if (st > 0.0f) {
 			Color skyRefl = SampleSkybox(task->skybox, reflDir);
-			skyR = (skyRefl >> 16) & 0xFF;
-			skyG = (skyRefl >> 8) & 0xFF;
-			skyB = (skyRefl) & 0xFF;
 			// tint sky colour by albedo for metals
-			skyR = (uint32)(skyR * (1.0f - metallic) + skyR * metallic * color.x);
-			skyG = (uint32)(skyG * (1.0f - metallic) + skyG * metallic * color.y);
-			skyB = (uint32)(skyB * (1.0f - metallic) + skyB * metallic * color.z);
+			float3 sky = {
+				((skyRefl >> 16) & 0xFF) * (1.0f / 255.0f) * ((1.0f - metallic) + metallic * color.x),
+				((skyRefl >> 8) & 0xFF) * (1.0f / 255.0f) * ((1.0f - metallic) + metallic * color.y),
+				(skyRefl & 0xFF) * (1.0f / 255.0f) * ((1.0f - metallic) + metallic * color.z)};
+			shaded.x = shaded.x * (1.0f - st) + sky.x * st;
+			shaded.y = shaded.y * (1.0f - st) + sky.y * st;
+			shaded.z = shaded.z * (1.0f - st) + sky.z * st;
 		}
-		uint32 nr = ((uint32)r * sit + skyR * st) >> 8;
-		uint32 ng = ((uint32)g * sit + skyG * st) >> 8;
-		uint32 nb = ((uint32)b * sit + skyB * st) >> 8;
 
-		camera->framebuffer[idx] = 0xFF000000u | (nr << 16) | (ng << 8) | nb;
+		camera->framebufferHdr[idx] = shaded;
 		// View-Z depth (dot with forward) keeps SSR depth comparisons consistent
 		camera->depthBuffer[idx] = (bestHitPos.x - orig.x) * fwd.x + (bestHitPos.y - orig.y) * fwd.y + (bestHitPos.z - orig.z) * fwd.z;
 		camera->objectIdBuffer[idx] = bestObj;
@@ -1673,12 +1641,12 @@ static void RayTraceColumnFunc(void *arg) {
 			accumulatedShadow.y *= invW;
 			accumulatedShadow.z *= invW;
 		}
-		Color baseColor = camera->framebuffer[y * width + col];
-		float3 base = UnpackColor(baseColor);
+		float3 base = camera->framebufferHdr[y * width + col];
 		float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
-		float3 combined = hdrToLDR(base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[y * width + col].w,
-								   base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[y * width + col].w,
-								   base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[y * width + col].w);
+		float3 combined = {
+			base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[y * width + col].w,
+			base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[y * width + col].w,
+			base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[y * width + col].w};
 
 		float3 ownEmission = camera->bloomBuffer[y * width + col];
 		camera->bloomBuffer[y * width + col] = (float3){
@@ -1687,7 +1655,7 @@ static void RayTraceColumnFunc(void *arg) {
 			ownEmission.z + accumulatedEmission.z,
 		};
 
-		camera->framebuffer[y * width + col] = PackColor(combined.x, combined.y, combined.z);
+		camera->framebufferHdr[y * width + col] = combined;
 	}
 }
 
@@ -1718,7 +1686,7 @@ void DitherPostProcess(Camera *camera, int frame) {
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
 			int idx = y * width + x;
-			Color c = camera->framebuffer[idx];
+			Color c = camera->framebufferLdr[idx];
 			int r = (c >> 16) & 0xFF;
 			int g = (c >> 8) & 0xFF;
 			int b = c & 0xFF;
@@ -1747,7 +1715,7 @@ void DitherPostProcess(Camera *camera, int frame) {
 			else if (b > 255)
 				b = 255;
 
-			camera->framebuffer[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | (uint32)b;
+			camera->framebufferLdr[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | (uint32)b;
 		}
 	}
 }
@@ -1769,7 +1737,7 @@ void DitherOrderedPostProcess(Camera *camera, int frame) {
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
 			int idx = y * width + x;
-			Color c = camera->framebuffer[idx];
+			Color c = camera->framebufferLdr[idx];
 			int r = (c >> 16) & 0xFF;
 			int g = (c >> 8) & 0xFF;
 			int b = c & 0xFF;
@@ -1793,7 +1761,7 @@ void DitherOrderedPostProcess(Camera *camera, int frame) {
 			else if (b > 255)
 				b = 255;
 
-			camera->framebuffer[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | (uint32)b;
+			camera->framebufferLdr[idx] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | (uint32)b;
 		}
 	}
 }

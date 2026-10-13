@@ -1,7 +1,7 @@
 #include "saveImage.h"
 
 void SaveImage(const char *filename, const Camera *camera) {
-	if (!filename || !camera || !camera->framebuffer) return;
+	if (!filename || !camera || !camera->framebufferLdr) return;
 
 	FILE *f = fopen(filename, "wb");
 	if (!f) return;
@@ -48,7 +48,7 @@ void SaveImage(const char *filename, const Camera *camera) {
 	unsigned char row[rowSize];
 	for (int y = height - 1; y >= 0; y--) {
 		for (int x = 0; x < width; x++) {
-			unsigned int c = camera->framebuffer[y * width + x];
+			unsigned int c = camera->framebufferLdr[y * width + x];
 			row[x * 3 + 0] = (c) & 0xFF;	   // B
 			row[x * 3 + 1] = (c >> 8) & 0xFF;  // G
 			row[x * 3 + 2] = (c >> 16) & 0xFF; // R

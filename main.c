@@ -173,6 +173,7 @@ int main() {
 	double accumShadowTime = 0.0;
 	double accumSSRTime = 0.0;
 	double accumCompositeTime = 0.0;
+	double accumConvertTime = 0.0;
 	double accumSyncTime = 0.0;
 	double accumPresentTime = 0.0;
 	int accumFrames = 0;
@@ -277,31 +278,35 @@ int main() {
 		WNOW(wB);
 		accumSSRTime += WDIFF(wA, wB);
 
-		benchCaptureFrame(&bench, camera.framebuffer, WIDTH, HEIGHT);
-
 		WNOW(wA);
 		CloudRenderer_Composite(&cloudRenderer, &camera);
 		WNOW(wB);
 		accumCompositeTime += WDIFF(wA, wB);
 
 #ifndef BENCH_MODE
-		Color c = PackColorF((float3){1.0f, 0.5f, 0.2f});
 		char text[64];
 		double avgFrameTime = (frameTimes[0] + frameTimes[1] + frameTimes[2] + frameTimes[3]) * 0.25;
 		snprintf(text, sizeof(text), "FPS: %.1f", avgFrameTime > 0.0 ? 1.0 / avgFrameTime : 0.0);
-		RenderText(camera.framebuffer, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.75f, c);
+		RenderTextHdr(camera.framebufferHdr, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.75f, (float3){1.0f, 0.5f, 0.2f, 0.0f});
 #endif
+
+		WNOW(wA);
+		ConvertToLdrMp(camera.framebufferHdr, camera.framebufferLdr, WIDTH, HEIGHT, threadPool);
+		WNOW(wB);
+		accumConvertTime += WDIFF(wA, wB);
+
+		benchCaptureFrame(&bench, camera.framebufferLdr, WIDTH, HEIGHT);
 
 		WNOW(wA);
 		// Ambient occlusion debug output: convert 0..1 float AO to grayscale ARGB
 		// for (int i = 0; i < WIDTH * HEIGHT; i++) {
 		// 	float ao = camera.ambientOcclusionBuffer[i];
 		// 	uint32_t v = (uint32_t)(ao * 255.0f);
-		// 	camera.framebuffer[i] = 0xFF000000u | (v << 16) | (v << 8) | v;
+		// 	camera.framebufferLdr[i] = 0xFF000000u | (v << 16) | (v << 8) | v;
 		// }
-		// if (mfb_update(window, camera.framebuffer) != STATE_OK) break;
+		// if (mfb_update(window, camera.framebufferLdr) != STATE_OK) break;
 
-		if (mfb_update(window, camera.framebuffer) != STATE_OK) break;
+		if (mfb_update(window, camera.framebufferLdr) != STATE_OK) break;
 		WNOW(wB);
 		accumPresentTime += WDIFF(wA, wB);
 
@@ -314,15 +319,16 @@ int main() {
 			double avgShadow = accumShadowTime / accumFrames * 1000.0;
 			double avgSSR = accumSSRTime / accumFrames * 1000.0;
 			double avgComposite = accumCompositeTime / accumFrames * 1000.0;
+			double avgConvert = accumConvertTime / accumFrames * 1000.0;
 			double avgSync = accumSyncTime / accumFrames * 1000.0;
 			double avgPresent = accumPresentTime / accumFrames * 1000.0;
-			double avgTotal = avgRender + avgShadow + avgSSR + avgComposite + avgSync + avgPresent;
+			double avgTotal = avgRender + avgShadow + avgSSR + avgComposite + avgConvert + avgSync + avgPresent;
 			double avgFps = 1000.0 / avgTotal;
 			double targetFrameTime = 1.0 / 60.0;
 			int maxTriangles60 = (int)(ObjectList_CountTriangles(&scene) * ((targetFrameTime * 1000.0) / avgRasterize));
-			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  ssr: %.2f ms  composite: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
-				   frame, avgSetup, avgRasterize, avgShadow, avgSSR, avgComposite, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
-			accumRenderTime = accumSetupTime = accumShadowTime = accumSSRTime = accumCompositeTime = accumSyncTime = accumPresentTime = 0.0;
+			printf("Frame %d  setup: %.2f ms  raster: %.2f ms  shadow: %.2f ms  ssr: %.2f ms  composite: %.2f ms  convert: %.2f ms  sync: %.2f ms  present: %.2f ms  total: %.2f ms  FPS: %.1f  Est Tris@60: %d  ShadowRes: %d\n",
+				   frame, avgSetup, avgRasterize, avgShadow, avgSSR, avgComposite, avgConvert, avgSync, avgPresent, avgTotal, avgFps, maxTriangles60, shadowResolution);
+			accumRenderTime = accumSetupTime = accumShadowTime = accumSSRTime = accumCompositeTime = accumConvertTime = accumSyncTime = accumPresentTime = 0.0;
 			accumFrames = 0;
 		}
 

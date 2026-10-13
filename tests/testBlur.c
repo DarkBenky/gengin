@@ -9,7 +9,7 @@ static void FillTestImage(Camera *camera) {
 	int width = camera->screenWidth;
 	int height = camera->screenHeight;
 	for (int i = 0; i < width * height; i++)
-		camera->framebuffer[i] = 0xFF101010;
+		camera->framebufferLdr[i] = 0xFF101010;
 
 	unsigned int seed = 0xDEADBEEF;
 	for (int i = 0; i < 1024; i++) {
@@ -23,7 +23,7 @@ static void FillTestImage(Camera *camera) {
 		unsigned int color = 0xFF000000 | (seed & 0x00FFFFFF);
 		for (int py = y; py < y + size && py < height; py++)
 			for (int px = x; px < x + size && px < width; px++)
-				camera->framebuffer[py * width + px] = color;
+				camera->framebufferLdr[py * width + px] = color;
 	}
 }
 
@@ -47,7 +47,7 @@ void BlurRow(Camera *camera, int row) {
 				int x = col + dx;
 				int y = row + dy;
 				if (x >= 0 && x < camera->screenWidth && y >= 0 && y < camera->screenHeight) {
-					Color c = camera->framebuffer[y * camera->screenWidth + x];
+					Color c = camera->framebufferLdr[y * camera->screenWidth + x];
 					int4 rgb = UnpackColorInt(c);
 					red += rgb.x;
 					green += rgb.y;
@@ -56,7 +56,7 @@ void BlurRow(Camera *camera, int row) {
 				}
 			}
 		}
-		camera->framebuffer[row * camera->screenWidth + col] = PackColorSafe((float)red / count / 255.0f, (float)green / count / 255.0f, (float)blue / count / 255.0f);
+		camera->framebufferLdr[row * camera->screenWidth + col] = PackColorSafe((float)red / count / 255.0f, (float)green / count / 255.0f, (float)blue / count / 255.0f);
 	}
 }
 
@@ -70,7 +70,7 @@ void BlurRowUoutput(Camera *camera, int row, uint32 *output) {
 				int x = col + dx;
 				int y = row + dy;
 				if (x >= 0 && x < camera->screenWidth && y >= 0 && y < camera->screenHeight) {
-					Color c = camera->framebuffer[y * camera->screenWidth + x];
+					Color c = camera->framebufferLdr[y * camera->screenWidth + x];
 					int4 rgb = UnpackColorInt(c);
 					red += rgb.x;
 					green += rgb.y;
@@ -94,7 +94,7 @@ void BlurScene(Camera *camera) {
 					int x = col + dx;
 					int y = row + dy;
 					if (x >= 0 && x < camera->screenWidth && y >= 0 && y < camera->screenHeight) {
-						Color c = camera->framebuffer[y * camera->screenWidth + x];
+						Color c = camera->framebufferLdr[y * camera->screenWidth + x];
 						int4 rgb = UnpackColorInt(c);
 						red += rgb.x;
 						green += rgb.y;
@@ -103,7 +103,7 @@ void BlurScene(Camera *camera) {
 					}
 				}
 			}
-			camera->framebuffer[row * camera->screenWidth + col] = PackColorSafe((float)red / count / 255.0f, (float)green / count / 255.0f, (float)blue / count / 255.0f);
+			camera->framebufferLdr[row * camera->screenWidth + col] = PackColorSafe((float)red / count / 255.0f, (float)green / count / 255.0f, (float)blue / count / 255.0f);
 		}
 	}
 }
@@ -118,12 +118,12 @@ int main() {
 	Color *backup = malloc(pixels * sizeof(Color));
 
 	FillTestImage(&camera);
-	memcpy(backup, camera.framebuffer, pixels * sizeof(Color));
+	memcpy(backup, camera.framebufferLdr, pixels * sizeof(Color));
 	SaveImage("tests/img/original.bmp", &camera);
 
 	// Single-threaded blur test
 	float timeTook[SAMPLES] = {0};
-	memcpy(camera.framebuffer, backup, pixels * sizeof(Color));
+	memcpy(camera.framebufferLdr, backup, pixels * sizeof(Color));
 	for (int i = 0; i < SAMPLES; i++) {
 		struct timespec t0, t1;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -149,7 +149,7 @@ int main() {
 	ThreadPool *pool = poolCreate(32, camera.screenHeight);
 	BlurTask tasks[camera.screenHeight];
 
-	memcpy(camera.framebuffer, backup, pixels * sizeof(Color));
+	memcpy(camera.framebufferLdr, backup, pixels * sizeof(Color));
 	for (int i = 0; i < SAMPLES; i++) {
 		struct timespec t0, t1;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -176,7 +176,7 @@ int main() {
 	printf("P99 Time: %.6f seconds\n", metrics.p99Time);
 
 	// Multi-threaded blur test with pattern
-	memcpy(camera.framebuffer, backup, pixels * sizeof(Color));
+	memcpy(camera.framebufferLdr, backup, pixels * sizeof(Color));
 	for (int i = 0; i < SAMPLES; i++) {
 		struct timespec t0, t1;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -206,7 +206,7 @@ int main() {
 
 	// Multi-threaded blur test with output buffer
 	uint32 *outputBuffer = malloc(pixels * sizeof(uint32));
-	memcpy(camera.framebuffer, backup, pixels * sizeof(Color));
+	memcpy(camera.framebufferLdr, backup, pixels * sizeof(Color));
 	for (int i = 0; i < SAMPLES; i++) {
 		struct timespec t0, t1;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -217,7 +217,7 @@ int main() {
 			poolAdd(pool, BlurRowUoutputTaskFunction, &tasks[row]);
 		}
 		poolWait(pool);
-		memcpy(camera.framebuffer, outputBuffer, pixels * sizeof(uint32));
+		memcpy(camera.framebufferLdr, outputBuffer, pixels * sizeof(uint32));
 		clock_gettime(CLOCK_MONOTONIC, &t1);
 		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
@@ -265,7 +265,7 @@ int main() {
 		boxDst = swap;
 	}
 	for (int i = 0; i < pixels; i++)
-		camera.framebuffer[i] = PackColorSafe(boxSrc[i].x, boxSrc[i].y, boxSrc[i].z);
+		camera.framebufferLdr[i] = PackColorSafe(boxSrc[i].x, boxSrc[i].y, boxSrc[i].z);
 	SaveImage("tests/img/blur_box3x3.bmp", &camera);
 
 	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);
@@ -295,7 +295,7 @@ int main() {
 	Camera decCamera;
 	initCamera(&decCamera, decW, decH, 90.0f, (float3){0.0f, 0.0f, 0.0f}, (float3){0.0f, 0.0f, 1.0f}, (float3){1.0f, 1.0f, 1.0f});
 	for (int i = 0; i < decW * decH; i++)
-		decCamera.framebuffer[i] = PackColorSafe(f3dec[i].x, f3dec[i].y, f3dec[i].z);
+		decCamera.framebufferLdr[i] = PackColorSafe(f3dec[i].x, f3dec[i].y, f3dec[i].z);
 	SaveImage("tests/img/decimate.bmp", &decCamera);
 	destroyCamera(&decCamera);
 
@@ -321,7 +321,7 @@ int main() {
 		timeTook[i] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 	for (int i = 0; i < pixels; i++)
-		camera.framebuffer[i] = PackColorSafe(f3up_dst[i].x, f3up_dst[i].y, f3up_dst[i].z);
+		camera.framebufferLdr[i] = PackColorSafe(f3up_dst[i].x, f3up_dst[i].y, f3up_dst[i].z);
 	SaveImage("tests/img/upsample.bmp", &camera);
 
 	metrics = ComputePerformanceMetrics(timeTook, SAMPLES);

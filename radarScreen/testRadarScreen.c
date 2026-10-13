@@ -52,7 +52,7 @@ int main(void) {
 	}
 
 	Camera cam = {0};
-	cam.framebuffer = fb;
+	cam.framebufferLdr = fb;
 	cam.screenWidth = width;
 	cam.screenHeight = height;
 	SaveImage("radarScreen/radar_test.bmp", &cam);

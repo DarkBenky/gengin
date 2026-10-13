@@ -4,6 +4,7 @@
 // Compile with: make test testRayColumnBench
 #include "testRayColumnBench.h"
 #include "timings.h"
+#include "../render/color/color.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -119,8 +120,10 @@ int main(void) {
 
 	// render one frame with each traversal and save both for visual comparison
 	RenderRow(objects, OBJECT_COUNT, &camRow, pool, &rayTaskQueue, &matLib, &skybox);
+	ConvertToLdr(camRow.framebufferHdr, camRow.framebufferLdr, WIDTH, HEIGHT);
 	SaveImage("tests/img/rayBench_row.bmp", &camRow);
 	RenderColumn(objects, OBJECT_COUNT, &camCol, pool, &rayTaskQueue, &matLib, &skybox);
+	ConvertToLdr(camCol.framebufferHdr, camCol.framebufferLdr, WIDTH, HEIGHT);
 	SaveImage("tests/img/rayBench_column.bmp", &camCol);
 	printf("Saved tests/img/rayBench_row.bmp and tests/img/rayBench_column.bmp\n");
 

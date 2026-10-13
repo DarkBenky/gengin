@@ -53,7 +53,7 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->depthBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_ONLY);
 	cr->godRayBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 	cr->godRaySrcBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_WRITE);
-	cr->framebufferBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(uint32), CL_MEM_READ_WRITE);
+	cr->framebufferBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 	cr->outputBlurBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 
 	if (cr->ctx.context == NULL || cr->ctx.queue == NULL ||
@@ -173,7 +173,7 @@ void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
 	if (!cr->enabled)
 		return;
 
-	size_t fbBytes = (size_t)cr->width * cr->height * sizeof(uint32);
+	size_t fbBytes = (size_t)cr->width * cr->height * sizeof(float4);
 
 	// Upload CPU framebuffer (written by ray tracer) to pinned GPU buffer
 	void *fbPtr = CL_Buffer_Map(&cr->ctx, &cr->framebufferBuf, CL_MAP_WRITE_INVALIDATE_REGION);
@@ -181,7 +181,7 @@ void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
 		cloudRendererDisable(cr, "framebuffer upload map failed");
 		return;
 	}
-	memcpy(fbPtr, cam->framebuffer, fbBytes);
+	memcpy(fbPtr, cam->framebufferHdr, fbBytes);
 	CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
 
 	// Dispatch GPU composite: blends cloud + god ray onto the framebuffer in parallel
@@ -198,7 +198,7 @@ void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
 		cloudRendererDisable(cr, "framebuffer read-back map failed");
 		return;
 	}
-	memcpy(cam->framebuffer, fbPtr, fbBytes);
+	memcpy(cam->framebufferHdr, fbPtr, fbBytes);
 	CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
 }
 
