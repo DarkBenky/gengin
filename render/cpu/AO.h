@@ -1590,11 +1590,34 @@ static void ApplyAoRows(void *arg) {
 	const float strength = task->strength;
 	float *restrict aoBuffer = task->AOBuffer;
 	float3 *restrict framebuffer = task->FramebufferHdr;
+	const __m256 strengthV = _mm256_set1_ps(strength);
+	const __m256 one = _mm256_set1_ps(1.0f);
+	const __m256 zero = _mm256_setzero_ps();
+	const __m256i pair0 = _mm256_setr_epi32(0, 0, 0, 0, 1, 1, 1, 1);
+	const __m256i pair1 = _mm256_setr_epi32(2, 2, 2, 2, 3, 3, 3, 3);
+	const __m256i pair2 = _mm256_setr_epi32(4, 4, 4, 4, 5, 5, 5, 5);
+	const __m256i pair3 = _mm256_setr_epi32(6, 6, 6, 6, 7, 7, 7, 7);
 
 	// Skip the outer columns: the AO passes never write them (stale data)
 	for (int y = task->row; y < endRow; y++) {
 		const int rowBase = y * width;
-		for (int x = firstColumn; x < endColumn; x++) {
+		int x = firstColumn;
+		const int vecEnd = endColumn - 7;
+		for (; x < vecEnd; x += 8) {
+			const int idx = rowBase + x;
+			const __m256 stored = _mm256_loadu_ps(aoBuffer + idx);
+			const __m256 ao = _mm256_max_ps(_mm256_min_ps(_mm256_sub_ps(one, _mm256_mul_ps(_mm256_sub_ps(one, stored), strengthV)), one), zero);
+			float3 *restrict px = framebuffer + idx;
+			const __m256 c0 = _mm256_mul_ps(_mm256_loadu_ps((const float *)(px + 0)), _mm256_permutevar8x32_ps(ao, pair0));
+			const __m256 c1 = _mm256_mul_ps(_mm256_loadu_ps((const float *)(px + 2)), _mm256_permutevar8x32_ps(ao, pair1));
+			const __m256 c2 = _mm256_mul_ps(_mm256_loadu_ps((const float *)(px + 4)), _mm256_permutevar8x32_ps(ao, pair2));
+			const __m256 c3 = _mm256_mul_ps(_mm256_loadu_ps((const float *)(px + 6)), _mm256_permutevar8x32_ps(ao, pair3));
+			_mm256_storeu_ps((float *)(px + 0), _mm256_blend_ps(c0, zero, 0x88));
+			_mm256_storeu_ps((float *)(px + 2), _mm256_blend_ps(c1, zero, 0x88));
+			_mm256_storeu_ps((float *)(px + 4), _mm256_blend_ps(c2, zero, 0x88));
+			_mm256_storeu_ps((float *)(px + 6), _mm256_blend_ps(c3, zero, 0x88));
+		}
+		for (; x < endColumn; x++) {
 			const int idx = rowBase + x;
 			const float ao = Clamp(1.0f - (1.0f - aoBuffer[idx]) * strength, 0.0f, 1.0f);
 			const float3 px = framebuffer[idx];
