@@ -176,8 +176,9 @@ Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate) ->
 `create_pr(imageOutputChange=true)` opens a `[visual]` PR (min SSIM 0.95).
 Every PR carries exactly one category label (`create_pr(label=...)`,
 `label_pull_request`); categories and their gates are defined in
-`prompts/optimize.md` (PR CATEGORIES AND LABELS). With 4+ open PRs sharing one
-label a session verifies them and folds survivors into one consolidation PR —
+`prompts/optimize.md` (PR CATEGORIES AND LABELS). With 4+ open PRs of one
+category (all `Render Improvements*` label variants count together) a session
+verifies them and folds survivors into one consolidation PR —
 never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
 
 ## Files
@@ -241,6 +242,11 @@ Exit codes: 0 ok, 1 runtime failure, 2 bad config, 3 corrupt state. State in
 artifacts in `llmOpt/run/<sessionId>/`. Interrupted sessions are validated and
 cleaned up at startup; a corrupt state file is quarantined and stops the run;
 `gengin-llmopt-*` keys are reconciled automatically.
+
+Sessions that report `no_change` with fewer than `GENGIN_NO_CHANGE_MIN_RUNS`
+(default 3) measured runs (make_bench + flight_bench + run_func_bench) are
+refused by the MCP server up to `GENGIN_NO_CHANGE_GUARD_MAX` (default 2)
+times — see the CATEGORY LADDER in `prompts/optimize.md`.
 
 Security: two Unix users (`llmopt-supervisor` holds the management key,
 `llmopt-agent` holds the checkout), the supervisor runs from system python, and

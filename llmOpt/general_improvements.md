@@ -2,8 +2,8 @@
 
 Curated minimal chores for the llmOpt sessions — bug fixes and
 testing/review-overhead reductions that do not belong to a hot-path
-optimization PR.  Read the GENERAL IMPROVEMENTS fallback in
-`prompts/optimize.md` before touching this file; the soft-lock rules there
+optimization PR.  Read the GENERAL IMPROVEMENTS section (CATEGORY LADDER
+rung 4) in `prompts/optimize.md` before touching this file; the caps there
 apply.
 
 This file is tracked in git and shared by every checkout — keep it small and

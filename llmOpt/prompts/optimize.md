@@ -88,20 +88,28 @@ If the CPU node map is genuinely exhausted — every row `tried-failed` or
 `no_change` yet.  First re-seed the map from THIS session's own `make_flame` /
 `hot_annotate` numbers: the map prunes `shipped` rows and goes stale, so
 "exhausted" means YOUR fresh profile shows no untried node worth ~2%+ of
-frame time.  Only then — and only after at least two fresh render candidates
-were attempt-and-measured-and-refuted in THIS session — switch to the SECOND
-OBJECTIVE (the flight controller), and treat it as a LAST RESORT, not an equal
-half of the session: ending in `no_change` with the render refutations
-recorded is also a valid, honest outcome.  Flight is never mandatory — but a
-flight phase that does run is a real exploration phase, not a quick constant
-sweep: at least one structural candidate must be attempt-and-measured there
-(see the structural families under SECOND OBJECTIVE).
-Alternatively, when 4 or more pull requests share the same category label,
-the MAINTENANCE TASK below (PR consolidation) is a valid session goal; a
-complete pass through it — or through its housekeeping duties (backfill,
-untangle, repair) — also satisfies this bar.  So does ONE completed item from
-the GENERAL IMPROVEMENTS queue (soft-locked final fallback below) — but only
-after the render/flight attempts above are recorded.
+frame time.  From that point on, walk the CATEGORY LADDER below rung by
+rung.  A rung is skipped only when it has no work THIS session (no baseline,
+no eligible PR, empty queue); `no_change` is reserved for a session that
+walked the whole ladder with every rung tried or refuted with numbers — it
+is never a shortcut out of a rung that still has work.
+
+CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
+1. SECOND OBJECTIVE (the flight controller, below) — a real exploration
+   phase, not a quick constant sweep: at least one structural candidate must
+   be attempt-and-measured there (see the structural families under SECOND
+   OBJECTIVE).  The missile controller is a second, independent attempt
+   inside this rung when the plane axis is stale in `codebase_context.md`.
+2. PR housekeeping (backfill / untangle / repair, below) — whenever the
+   open-PR block shows work.
+3. MAINTENANCE TASK (PR consolidation, below) — when 4 or more open PRs
+   carry labels of one category; all `Render Improvements*` label variants
+   are ONE category and count together.
+4. GENERAL IMPROVEMENTS queue (below) — ONE curated item, when the queue
+   has an unchecked item.
+Completing ANY rung with real measured work satisfies this bar; a rung that
+refutes with numbers is recorded in `codebase_context.md` and the ladder
+CONTINUES — a refuted rung never ends the session early.
 Candidates come from the `## Node map`, ranked by its flame percentages — a
 structural candidate may target the subsystem around a node rather than the
 function itself.  If that section is empty (first session on a fresh
@@ -139,7 +147,8 @@ PR is NOT a candidate:
   covered, one `quick_ask(choices=["covered", "not covered"], context=<titles>)`
   call is cheaper than reading every PR; it is advisory — you still make the
   final call.
-- Exception: with 4 or more open PRs sharing one category label you may take
+- Exception: with 4 or more open PRs of one category (all
+  `Render Improvements*` label variants count together) you may take
   the MAINTENANCE TASK below instead — folding verified open PRs of that one
   category into one consolidation PR is not re-implementing them.
 
@@ -328,14 +337,12 @@ END of the session.
     is opened, or when the SESSION EFFORT BUDGET conditions are met and no
     safe candidate survives — then report `no_change`.
 
-## SECOND OBJECTIVE — FLIGHT CONTROLLER (LAST RESORT, NOT AN EQUAL OBJECTIVE)
-Use this only when the render axis is provably exhausted FOR THIS SESSION (see
-SESSION EFFORT BUDGET): a fresh profile seeded the node map, it still shows no
-untried node worth ~2%+, and at least two fresh render candidates were measured
-and refuted in this session.  Do not drift here on inherited evidence — old
-`tried-failed` rows go stale, and a session may legitimately end in `no_change`
-with the render refutations recorded.  When you do switch: at most one switch
-per session, and only after the frame axis has real numbers.
+## SECOND OBJECTIVE — FLIGHT CONTROLLER (CATEGORY LADDER RUNG 1)
+Use this when the render axis is exhausted FOR THIS SESSION (see SESSION
+EFFORT BUDGET): a fresh profile seeded the node map and it still shows no
+untried node worth ~2%+.  Do not drift here on inherited evidence — old
+`tried-failed` rows go stale; re-profile first.  When you do switch: at most
+one switch per session, and only after the frame axis has real numbers.
 The target is the interceptor guidance law in `simulation/cSim/flightControl.c`
 (+ `flightControl.h`): the plane controller `getControllerOutputV5` — a
 per-frame iterative search over rudder/elevator/aileron that minimises a
@@ -462,7 +469,7 @@ without its label (`create_pr(label=...)`).
 | `Render Improvements Visual [No/Minimal Cost]` | render changes that IMPROVE visual quality at no or extremely limited performance cost — a side goal, not the hot-path work | visual improvement shown by side-by-side before/after composites (`compare_bench_frames` / `compare_images` attached) AND `make_bench` not REGRESSED (cost <= noise) |
 | `Flight Controller` | plane-controller changes (`getControllerOutputV5` + the loss) that improve performance | `flight_bench()` `OVERALL: IMPROVED` on the plane suite |
 | `Missile Controller` | missile-controller changes (`getControllerOutputMissile`) that improve performance | `flight_bench(missile="...")` `OVERALL: IMPROVED` on that missile's suite |
-| `General Improvements` | README-driven work, bug fixes, small utilities/functions that reduce testing/review overhead — EXTREMELY low priority; taken ONLY via the soft-locked fallback below (one curated queue item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+| `General Improvements` | README-driven work, bug fixes, small utilities/functions that reduce testing/review overhead — CATEGORY LADDER rung 4 (one curated queue item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
 
 Category rules:
 - The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
@@ -481,9 +488,11 @@ Category rules:
 
 ## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 PRs share a category)
 
-Compaction is per CATEGORY: take this task when 4 or more open PRs carry the
-same label (or the session context explicitly asks for it). A consolidation PR
-folds PRs of ONE label only — never render + flight, never exact + visual.
+Compaction is per CATEGORY: take this task when 4 or more open PRs carry
+labels of one category — all `Render Improvements*` label variants are ONE
+category and count together (or the session context explicitly asks for it).
+A consolidation PR folds PRs of ONE category only — never render + flight,
+never exact + visual.
 State the choice in your first message. The reviewer gets one PR per category
 instead of a dozen, and every included change still carries its own
 before/after numbers. This is the one sanctioned multi-change PR; keep it to
@@ -549,21 +558,21 @@ session effort bar when completed, like a consolidation pass):
   onto its existing branch (normal push, NEVER force-push), re-run its gate,
   and comment what was ported. Skip ports that are not obvious in a few hunks.
 
-## GENERAL IMPROVEMENTS — soft-locked final fallback (at most ONE queue item per session)
+## GENERAL IMPROVEMENTS — CATEGORY LADDER RUNG 4 (at most ONE queue item per session)
 
-Soft lock: this path opens for at most one small chore, and ONLY when ALL of
-these hold:
-- this session's fresh profile shows no untried node >= 2% outside open-PR
-  coverage, and the render/flight attempts above are already recorded;
-- consolidation is not eligible (< 4 open PRs share a label) and the
-  housekeeping duties are clean.
+Take ONE small chore from this queue when the render axis is exhausted for
+this session (fresh profile shows no untried node >= 2% outside open-PR
+coverage) and the earlier ladder rungs are recorded.  The rung is NOT gated
+on consolidation or housekeeping: if the queue has an unchecked item that
+passes the caps below, take it.  An empty queue skips the rung — it never
+ends the session early.
 
 Work comes ONLY from the queue in `general_improvements.md`.  Do NOT sweep
 the README or the codebase for chores, and do NOT implement anything you
 added under "Proposed" yourself — that list is for maintainer review, not a
 work list.  If the file or its queue list is missing, or has no unchecked
-items, the fallback is unavailable — never create entries, never promote
-"Proposed" items, never add your own.
+items, the rung is skipped — never create entries, never promote "Proposed"
+items, never add your own; continue with the rest of the ladder.
 
 Inspect at most the first TWO unchecked items; take the first that passes:
 - caps: <= 2 files, <= 120 changed lines, ONE logical change, same style AND
@@ -586,8 +595,9 @@ imageOutputChange=false)` and the standard body tables (Performance row:
 `- [x] <id> (PR <number>)` in `general_improvements.md`.
 
 If the change grows past the caps or fails a gate: revert everything, record
-why in `codebase_context.md`, report `no_change` naming the item.  ONE item
-per session — never retry, never take a second.
+why in `codebase_context.md`, and continue with the rest of the ladder — the
+session is not finished because one queue item failed.  ONE item per session
+— never retry, never take a second.
 
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
@@ -660,8 +670,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
 7. Keep changes focused — one logical improvement per PR.
 8. NEVER report `no_change` before meeting the SESSION EFFORT BUDGET bar —
    early exits count as failed sessions.  The bar includes the opportunity
-   list: an untouched hotspot, or one refuted without numbers, means keep
-   profiling instead of reporting `no_change`.
+   list AND the CATEGORY LADDER: an untouched hotspot, a skipped ladder rung
+   that had work, or one refuted without numbers, means keep working instead
+   of reporting `no_change`.  `no_change` is the verdict of a session that
+   walked the whole ladder, not an escape hatch from it.
 9. NEVER spend more than ~5 minutes reading without measuring — start a real
    profile or micro-benchmark run.
 10. NEVER end a turn by announcing an action ("I will now call `make_flame`") —
@@ -692,9 +704,10 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
 18. NEVER sell a consolidation on a contributor's claimed numbers — only runs
     you made on the prepared SHA go into the evidence.
 19. NEVER default to the flight controller — the frame axis is the product;
-    flight is a last resort under the SESSION EFFORT BUDGET conditions, not a
-    routine next step, and inherited `tried-failed` rows are not proof that
-    render is exhausted (re-profile first).
+    flight is CATEGORY LADDER rung 1, taken only after a fresh profile shows
+    the render axis exhausted, not a routine next step, and inherited
+    `tried-failed` rows are not proof that render is exhausted (re-profile
+    first).
 20. NEVER open a pull request without its category label — every `create_pr`
     call passes `label=` with exactly one category from PR CATEGORIES AND
     LABELS; an unlabeled PR is an incomplete session.
@@ -706,8 +719,9 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     pinned baseline, never against another PR's numbers).
 23. NEVER invent General Improvements work: no README/codebase sweeping for
     chores, no implementing your own "Proposed" queue entries, no second item
-    after a failure — the fallback is soft-locked to ONE curated queue item
-    per session and the caps are hard.
+    after a failure — the rung is capped to ONE curated queue item per session
+    and the caps are hard.  An empty queue means continue down the ladder,
+    not exit the session.
 24. NEVER let a flight phase be constant tweaks alone — the cheap leads are a
     warm-up; at least one structural candidate must be attempt-and-measured
     (see the structural families under SECOND OBJECTIVE), and one refuted

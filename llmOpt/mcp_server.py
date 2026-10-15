@@ -368,6 +368,7 @@ def flight_bench(steps: int = 0, capture_baseline: bool = False,
     F-16C; `missile` runs the point-mass missile model instead (its guidance
     lives in flightControl.c).  Every vehicle is its own suite hash with its
     own pinned baseline."""
+    _SESSION_STATE["flight_calls"] += 1
     return json.dumps(_main.flightBench(steps=steps, capture_baseline=capture_baseline,
                                         model=model, missile=missile),
                       indent=2)
@@ -445,12 +446,19 @@ def ml_parity(suite: str = "edges") -> str:
 
 _SESSION_STATUSES = ("pr_created", "no_change", "blocked", "failed")
 
-# A no_change that never ran a frame bench is the failure mode the proxy coach
+# A no_change with too few measured runs is the failure mode the proxy coach
 # cannot reach (the give-up wording only appears after the report).  Refuse it
-# twice, then accept, so a stubborn model cannot loop forever.
+# up to the cap, then accept, so a stubborn model cannot loop forever.
 _NO_CHANGE_GUARD = os.environ.get("GENGIN_NO_CHANGE_GUARD", "1") != "0"
 _NO_CHANGE_REFUSAL_CAP = int(os.environ.get("GENGIN_NO_CHANGE_GUARD_MAX", "2") or 2)
-_SESSION_STATE = {"bench_calls": 0, "no_change_refusals": 0}
+_NO_CHANGE_MIN_RUNS = int(os.environ.get("GENGIN_NO_CHANGE_MIN_RUNS", "3") or 3)
+_SESSION_STATE = {"bench_calls": 0, "flight_calls": 0, "func_bench_calls": 0,
+                  "no_change_refusals": 0}
+
+
+def _measuredRuns():
+    return (_SESSION_STATE["bench_calls"] + _SESSION_STATE["flight_calls"]
+            + _SESSION_STATE["func_bench_calls"])
 
 
 @mcp.tool()
@@ -466,17 +474,20 @@ def report_session_result(status: str, summary: str, pr_url: str = "") -> str:
         return "error: pr_url is only valid with status=pr_created"
 
     if (status == "no_change" and _NO_CHANGE_GUARD
-            and _SESSION_STATE["bench_calls"] == 0
+            and _measuredRuns() < _NO_CHANGE_MIN_RUNS
             and _SESSION_STATE["no_change_refusals"] < _NO_CHANGE_REFUSAL_CAP):
         _SESSION_STATE["no_change_refusals"] += 1
         return (
-            "error: no_change refused - this session never ran make_bench. Pick the "
-            "best candidate you measured (>= 1% in run_func_bench), apply it with "
-            "patch, and validate with make_bench: the frame bench (real scene, "
-            "image_mse, frame hashes) is the validation a micro-bench cannot give, "
-            "and applying then reverting is the normal loop. Or work the next "
-            "untried row of the ## Node map in codebase_context.md. Refusal %d/%d."
-            % (_SESSION_STATE["no_change_refusals"], _NO_CHANGE_REFUSAL_CAP)
+            "error: no_change refused - only %d measured run(s) this session "
+            "(make_bench %d, flight_bench %d, run_func_bench %d; minimum %d). "
+            "Keep working the CATEGORY LADDER from the prompt: re-seed the "
+            "## Node map from a fresh make_flame, attempt the next untried row, "
+            "or walk the flight / housekeeping / consolidation / "
+            "general-improvements rungs. Refusal %d/%d."
+            % (_measuredRuns(), _SESSION_STATE["bench_calls"],
+               _SESSION_STATE["flight_calls"],
+               _SESSION_STATE["func_bench_calls"], _NO_CHANGE_MIN_RUNS,
+               _SESSION_STATE["no_change_refusals"], _NO_CHANGE_REFUSAL_CAP)
         )
 
     result_path = os.environ.get("GENGIN_SESSION_RESULT_PATH", "")
@@ -527,6 +538,7 @@ def create_func_bench(func_name: str, header_code: str, impl_code: str) -> str:
 def run_func_bench(func_name: str) -> str:
     """Build bench/<func_name>.c and run the binary.  Returns stdout with
     timing and validation output."""
+    _SESSION_STATE["func_bench_calls"] += 1
     return _main.runFuncBench(func_name)
 
 
