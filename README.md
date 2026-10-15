@@ -1,9 +1,5 @@
 # Tasks
 
-- [ ] **high** Particle simulation for aerodynamics
-  - [ ] struct will need to hold object, bounding box of simulated volume, and spawner probability some surface
-  - [ ] this will be expensive we should probably bake it maybe also bake some texture
-
 - [ ] Map loading files
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
@@ -11,7 +7,7 @@
 
 - [ ] Add back images to repo
 
-- [ ] add MipMaps for textures and add bilinear samplings
+- [ ] **Important** add MipMaps for textures and add bilinear samplings
   - [ ] min map resolution (original, medium, low) probably use box blur 3x3 kernel for this
   - [ ] mipMaps are generated on object leading
   - [ ] test different implementations for max performance
