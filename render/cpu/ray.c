@@ -30,6 +30,43 @@
 static float s_aabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
 static int s_aabbSoaValid = 0;   // 0 -> the row kernel keeps the scalar pre-filter
 
+// The row kernel evaluates the shadow / emissive / reflection block once per
+// REFLECTION_RESOLUTION rows; the light pass rebuilds every row from two slices.
+static float3 *s_lightReflection = NULL;
+static float3 *s_lightEmission = NULL;
+static float3 *s_lightShadow = NULL;
+static int s_lightSliceStride = 0;
+static int s_lightSliceCount = 0;
+
+static int lightSlicesReserve(int width, int height) {
+	int count = (height + REFLECTION_RESOLUTION - 1) / REFLECTION_RESOLUTION;
+	if (count < 1) count = 1;
+	if (width == s_lightSliceStride && count == s_lightSliceCount) return 1;
+
+	free(s_lightReflection);
+	free(s_lightEmission);
+	free(s_lightShadow);
+	s_lightReflection = s_lightEmission = s_lightShadow = NULL;
+	s_lightSliceStride = 0;
+	s_lightSliceCount = 0;
+
+	size_t bytes = (size_t)width * (size_t)count * sizeof(float3);
+	s_lightReflection = malloc(bytes);
+	s_lightEmission = malloc(bytes);
+	s_lightShadow = malloc(bytes);
+	if (!s_lightReflection || !s_lightEmission || !s_lightShadow) {
+		free(s_lightReflection);
+		free(s_lightEmission);
+		free(s_lightShadow);
+		s_lightReflection = s_lightEmission = s_lightShadow = NULL;
+		fprintf(stderr, "Error: Could not allocate the light slices.\n");
+		return 0;
+	}
+	s_lightSliceStride = width;
+	s_lightSliceCount = count;
+	return 1;
+}
+
 static void BlurFloat3Buffer(float3 *src, float3 *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
 
@@ -666,19 +703,13 @@ static void RayTraceRowFunc(void *arg) {
 	float sy = rgt.y * aspect * fovScale;
 	float sz = rgt.z * aspect * fovScale;
 
-	float3 catchReflections[width]; // accumulate reflection contributions for the entire row, then write to framebuffer in one pass
-	// NOTE: can not be removed frame hashes changed
-	memset(catchReflections, 0, sizeof(float3) * width);
+	const int sampleRow = (row % REFLECTION_RESOLUTION) == 0;
+	const size_t sliceOffset = (size_t)(row / REFLECTION_RESOLUTION) * (size_t)width;
+	float3 *restrict catchReflections = s_lightReflection + sliceOffset;
+	float3 *restrict catchEmissions = s_lightEmission + sliceOffset;
+	float3 *restrict catchShadow = s_lightShadow + sliceOffset;
 	float3 catchReflection = {0.0f, 0.0f, 0.0f};
-
-	float3 catchEmissions[width]; // accumulate emission contributions for the entire row, then write to framebuffer in one pass
-	// NOTE: can not be removed frame hashes changed
-	memset(catchEmissions, 0, sizeof(float3) * width);
 	float3 catchEmission = {0.0f, 0.0f, 0.0f};
-
-	float3 catchShadow[width]; // accumulate shadow contributions for the entire row, then write to framebuffer in one pass
-	// NOTE: can not be removed frame hashes changed
-	memset(catchShadow, 0, sizeof(float3) * width);
 	float3 catchShadowValue = {0.0f, 0.0f, 0.0f};
 
 	const int numberOfLightSamples = 8;
@@ -1001,7 +1032,7 @@ static void RayTraceRowFunc(void *arg) {
 		// were removed 2026-09-22.
 
 		// ray traced reflection only cast every REFLECTION_RESOLUTION columns
-		if (x % REFLECTION_RESOLUTION == 0) {
+		if (sampleRow && x % REFLECTION_RESOLUTION == 0) {
 			int shadowHit = -1;
 			if (emission <= 0.0f) {
 				rayCollision((Object *)objects, objectCount, sOrig, lightDir, bestObj, &shadowHit, NULL, NULL);
@@ -1069,10 +1100,49 @@ static void RayTraceRowFunc(void *arg) {
 				catchReflection.w = reflectStrength;
 			}
 		}
-		catchReflections[x] = catchReflection;
-		catchEmissions[x] = catchEmission;
-		catchShadow[x] = catchShadowValue;
+		if (sampleRow) {
+			catchReflections[x] = catchReflection;
+			catchEmissions[x] = catchEmission;
+			catchShadow[x] = catchShadowValue;
+		}
 	}
+}
+
+static void RayTraceLightRowFunc(void *arg) {
+	RayTraceTask *restrict task = arg;
+	Camera *restrict camera = task->camera;
+	int width = camera->screenWidth;
+	int row = task->row;
+
+	const int s0 = row / REFLECTION_RESOLUTION;
+	const int s1 = s0 + 1 < s_lightSliceCount ? s0 + 1 : s0;
+	const float t1 = (float)(row - s0 * REFLECTION_RESOLUTION) * (1.0f / REFLECTION_RESOLUTION);
+	const float t0 = 1.0f - t1;
+	const float3 *restrict reflA = s_lightReflection + (size_t)s0 * width;
+	const float3 *restrict reflB = s_lightReflection + (size_t)s1 * width;
+	const float3 *restrict emitA = s_lightEmission + (size_t)s0 * width;
+	const float3 *restrict emitB = s_lightEmission + (size_t)s1 * width;
+	const float3 *restrict shadowA = s_lightShadow + (size_t)s0 * width;
+	const float3 *restrict shadowB = s_lightShadow + (size_t)s1 * width;
+
+	float3 catchReflections[width];
+	float3 catchEmissions[width];
+	float3 catchShadow[width];
+	for (int x = 0; x < width; x++) {
+		catchReflections[x] = (float3){
+			reflA[x].x * t0 + reflB[x].x * t1,
+			reflA[x].y * t0 + reflB[x].y * t1,
+			reflA[x].z * t0 + reflB[x].z * t1};
+		catchEmissions[x] = (float3){
+			emitA[x].x * t0 + emitB[x].x * t1,
+			emitA[x].y * t0 + emitB[x].y * t1,
+			emitA[x].z * t0 + emitB[x].z * t1};
+		catchShadow[x] = (float3){
+			shadowA[x].x * t0 + shadowB[x].x * t1,
+			shadowA[x].y * t0 + shadowB[x].y * t1,
+			shadowA[x].z * t0 + shadowB[x].z * t1};
+	}
+
 	// blur reflection emission and shadows contributions across the row
 	for (int x = 0; x < width; x++) {
 		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
@@ -1169,11 +1239,19 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		s_aabbSoaValid = 1;
 	}
 
+	if (!lightSlicesReserve(camera->screenWidth, camera->screenHeight)) return;
+
 	for (int row = 0; row < camera->screenHeight; row++) {
 		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
+
+	for (int row = 0; row < camera->screenHeight; row++) {
+		poolAdd(threadPool, RayTraceLightRowFunc, &taskQueue->tasks[row]);
+	}
+	poolWait(threadPool);
+
 	applyAmbientOcclusion(camera, threadPool, 0.55f);
 }
 
