@@ -1,5 +1,7 @@
 # Tasks
 
+- [ ] Fix: agents in llmOpt are giving up to early not implementing general staff of other categories they just give up
+
 - [ ] Map loading files
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
