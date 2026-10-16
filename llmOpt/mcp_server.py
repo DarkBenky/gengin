@@ -265,6 +265,18 @@ def make_flame() -> dict:
 
 
 @mcp.tool()
+def machine_info() -> str:
+    """Describe the machine running the benchmarks: hostname (the identity
+    record in PR Environment sections), CPU, GPU(s), OpenCL device, compiler
+    and kernel.
+
+    Compare it against a PR's `machine` field (from list_pull_requests /
+    fetch_pull_request): a different value means the PR was measured on
+    another host and can be re-verified locally (see VERIFY in the prompt)."""
+    return json.dumps(_main.machineInfo(), indent=2)
+
+
+@mcp.tool()
 def list_pull_requests(state: str = "all", limit: int = 10, page: int = 1) -> str:
     """List repository pull requests, their category labels and changed paths
     without modifying GitHub.
@@ -274,7 +286,9 @@ def list_pull_requests(state: str = "all", limit: int = 10, page: int = 1) -> st
     sourcePageHasMore indicates whether another source page may have results.
     Every PR carries `labels` — the category label rules (see the prompt's
     PR CATEGORIES AND LABELS section); an empty list means the PR is
-    unlabeled and needs backfilling.
+    unlabeled and needs backfilling. `machine` is the Environment marker
+    (hostname) the PR's numbers were measured on; empty = created before the
+    marker existed.
     """
     return json.dumps(_main.listPullRequests(state=state, limit=limit, page=page),
                       indent=2)
@@ -325,7 +339,10 @@ def fetch_pull_request(number: int) -> str:
     edits for individual make_bench / flight_bench runs while HEAD stays at the
     prepared SHA. `labels` shows the category (empty = unlabeled, backfill it
     with label_pull_request); `mergeable: false` flags a PR that needs the
-    repair task."""
+    repair task. `body` carries the claimed numbers and the auto-appended
+    `## Environment` section; `machine` is its marker — when it differs from
+    `machine_info`, the PR was measured on another host and is a VERIFY
+    candidate."""
     return json.dumps(_main.fetchPullRequest(number), indent=2)
 
 
@@ -350,6 +367,19 @@ def close_pull_request(number: int, comment: str) -> str:
     consolidation PR, with this session's measured numbers in the comment —
     never for review feedback."""
     return json.dumps(_main.closePullRequest(number, comment), indent=2)
+
+
+@mcp.tool()
+def comment_pull_request(number: int, comment: str) -> str:
+    """Post ONE evidence comment on an open pull request without closing it.
+
+    Use it for verification results on a foreign PR (VERIFY in the prompt):
+    the verifying machine, the SHA, the local numbers, and the verdict
+    (reproduced / not reproduced: host-specific / not reproduced: broken).
+    Refuses merged or closed PRs. A BROKEN claim additionally gets
+    close_pull_request with the same evidence; every other verdict only
+    comments."""
+    return json.dumps(_main.commentPullRequest(number, comment), indent=2)
 
 
 @mcp.tool()

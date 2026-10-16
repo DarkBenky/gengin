@@ -215,7 +215,9 @@ Do not re-derive what a previous session already recorded in
     conv change ships), the suite you measured, and the device.
     The body STARTS with a `## Changes` table (file, kernel/function, what,
     why) and a `## Performance vs baseline` table (family, baseline, now,
-    delta) before the evidence.
+    delta) before the evidence.  `create_pr` appends a final `## Environment`
+    section (machine marker + hardware table) automatically — never edit or
+    remove it.
     Branch names must match the tool's convention
     (`llmopt/<7-40 hex sha>/<topic>`, e.g. `llmopt/<target-sha>/conv-interior`);
     the PR is opened from the sandbox, so only files you changed under `gengin/`
@@ -285,7 +287,7 @@ record what was refuted and why, and continue with the normal workflow — never
 open a one-PR "consolidation", and never repeat a contributor's claimed
 numbers without re-measuring them on the prepared SHA.
 
-### PR housekeeping (backfill / untangle / repair — not gated by the 4-PR rule)
+### PR housekeeping (backfill / untangle / repair / verify — not gated by the 4-PR rule)
 
 Whenever the open-PR block or `list_pull_requests(state="open")` shows an
 unlabeled or mixed-category PR, you may fix it (a complete pass also satisfies
@@ -304,7 +306,17 @@ the session effort bar, like a consolidation pass):
 - REPAIR (low priority): an open PR whose `fetch_pull_request` reports
   `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
   onto its existing branch (normal push, NEVER force-push), re-run its gate,
-  and comment what was ported. Skip ports that are not obvious in a few hunks.
+  and comment what was ported with `comment_pull_request(N, ...)`. Skip ports
+  that are not obvious in a few hunks.
+- VERIFY (the desktop's duty, at most TWO per session): an open ML PR whose
+  `machine` differs from `machine_info()` (or is empty) was measured on
+  another host. Re-run its suite on THIS machine (`ml_bench` plus `ml_parity`
+  for the shapes it touches) and
+  `comment_pull_request(N, "<machine>: <suite result> at <sha>. Verdict: ...")`.
+  ML SPEED numbers are device-bound — never compare them across machines;
+  verify the correctness gate and the DIRECTION of the claim. A correctness
+  failure is broken -> `close_pull_request(N, ...)` with the same evidence; a
+  device-specific non-transfer -> the comment only.
 
 ## SESSION EFFORT BUDGET
 This is a long session and the supervisor measures whether you used it.  A

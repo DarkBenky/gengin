@@ -157,7 +157,7 @@ answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
 `llmOpt/.env` on the VM — the agent could mint unlimited keys.
 
-## Tools (31)
+## Tools (33)
 
 | Group              | Tools |
 |--------------------|-------|
@@ -166,9 +166,10 @@ Secrets never live in the checkout. Never put the OpenRouter *management* key in
 | ML layer kernels   | `ml_bench`, `ml_scenarios`, `ml_trace`, `ml_parity` |
 | Micro-bench        | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench` |
 | Visual evidence    | `compare_bench_frames`, `compare_images` |
-| Pull requests      | `list_pull_requests`, `fetch_pull_request`, `close_pull_request`, `label_pull_request` |
+| Pull requests      | `list_pull_requests`, `fetch_pull_request`, `close_pull_request`, `comment_pull_request`, `label_pull_request` |
 | Hotspots           | `hot_annotate_func`, `hot_annotate_file` |
 | clangd             | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
+| Environment        | `machine_info` |
 | Session control    | `report_session_result` (supervised only) |
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate) ->
@@ -180,6 +181,16 @@ Every PR carries exactly one category label (`create_pr(label=...)`,
 category (all `Render Improvements*` label variants count together) a session
 verifies them and folds survivors into one consolidation PR —
 never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
+
+`create_pr` appends an `## Environment` section to every body: a
+`gengin-machine` marker (the host its numbers were measured on) plus the
+hardware table. A session on a DIFFERENT machine (`machine` !=
+`machine_info()` — in practice the desktop verifying VM-made PRs) can
+re-verify a foreign PR's claims: apply the diff as uncommitted edits at the
+pinned SHA, re-run the category gate, and record the result with
+`comment_pull_request`; a factually broken claim (gate fails locally) is
+closed with the same evidence, a host-specific non-transfer just gets the
+comment. See VERIFY in `prompts/optimize.md`.
 
 ## Files
 

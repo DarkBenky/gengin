@@ -1219,6 +1219,108 @@ def environmentFingerprint():
     return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
 
 
+_MACHINE_MARKER_RE = re.compile(r"<!--\s*gengin-machine:\s*(.+?)\s*-->")
+
+
+def _openclDevices():
+    """OpenCL device names (clinfo -l), falling back to the ICD vendor files
+    so a machine without clinfo still records which driver the bench used."""
+    try:
+        out = subprocess.run(["clinfo", "-l"], capture_output=True, text=True,
+                             timeout=10).stdout
+        names = []
+        for line in out.splitlines():
+            line = line.strip().lstrip("`- ").strip()
+            if line.startswith("Device #"):
+                names.append(line)
+        if names:
+            return "; ".join(names)
+    except Exception:
+        pass
+    try:
+        icds = sorted(name for name in os.listdir("/etc/OpenCL/vendors")
+                      if name.endswith(".icd"))
+        if icds:
+            return "ICDs: " + ", ".join(icds)
+    except Exception:
+        pass
+    return "unknown"
+
+
+def machineInfo():
+    """Hardware description of the host running the benchmarks.
+
+    Drives the PR `## Environment` section (every PR records the hardware its
+    numbers were measured on) and the verify flow's machine identity.
+    Best-effort like environmentFingerprint: a failed probe records a
+    sentinel instead of raising.
+    """
+    info = {"machine": os.uname().nodename or "unknown",
+            "cpu": "unknown", "threads": os.cpu_count() or 0,
+            "gpus": [], "opencl": "unknown",
+            "compiler": "unknown", "kernel": "unknown"}
+    try:
+        with open("/proc/cpuinfo") as f:
+            info["cpu"] = next((l.split(":", 1)[1].strip()
+                                for l in f if l.startswith("model name")), "unknown")
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10).stdout
+        for line in out.splitlines():
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) == 2 and parts[1].isdigit():
+                info["gpus"].append(f"{parts[0]} ({parts[1]} MiB)")
+    except Exception:
+        pass
+    info["opencl"] = _openclDevices()
+    try:
+        info["compiler"] = subprocess.run(
+            ["clang", "--version"], capture_output=True, text=True,
+            timeout=10).stdout.splitlines()[0]
+    except Exception:
+        pass
+    try:
+        info["kernel"] = os.uname().release
+    except Exception:
+        pass
+    return info
+
+
+def _environmentSectionMarkdown(info=None):
+    """The `## Environment` section createPR appends to every PR body.
+
+    The HTML marker carries the machine identity (hostname) that the verify
+    flow compares against; the table is the human-readable hardware record
+    of where the numbers were measured.
+    """
+    info = info or machineInfo()
+    gpus = ", ".join(info.get("gpus") or []) or "none (CPU-only host)"
+    return "\n".join([
+        "## Environment",
+        "",
+        f"<!-- gengin-machine: {info['machine']} -->",
+        "",
+        "| Field | Value |",
+        "|---|---|",
+        f"| Machine | `{info['machine']}` |",
+        f"| CPU | {info['cpu']} ({info['threads']} threads) |",
+        f"| GPU | {gpus} |",
+        f"| OpenCL | {info['opencl']} |",
+        f"| Compiler | {info['compiler']} |",
+        f"| Kernel | {info['kernel']} |",
+    ]) + "\n"
+
+
+def _extractMachineFromBody(body):
+    """The gengin-machine marker value from a PR body, or '' when absent."""
+    match = _MACHINE_MARKER_RE.search(body or "")
+    return match.group(1).strip() if match else ""
+
+
 def _projectGitHead():
     """Return (head_hash, is_dirty) for PROJECT_DIR, or (None, True) on failure.
 
@@ -1743,6 +1845,7 @@ def listPullRequests(state="all", limit=10, page=1):
             "closedAt": pr.get("closed_at", ""),
             "mergedAt": merged_at or "",
             "labels": _label_names(pr),
+            "machine": _extractMachineFromBody(pr.get("body")),
             "files": files,
             "filesTruncated": len(file_data) > 20 if not files_unavailable else False,
             "filesUnavailable": files_unavailable,
@@ -1766,7 +1869,7 @@ def openPullRequests(limit=10):
         return []
     return [{"number": pr["number"], "title": pr["title"],
              "branch": pr["headBranch"], "files": pr["files"],
-             "labels": pr["labels"]}
+             "labels": pr["labels"], "machine": pr.get("machine", "")}
             for pr in history["pullRequests"]]
 
 
@@ -1882,6 +1985,10 @@ def createPR(title, body, branch="", commit_msg=None,
     "[visual] " and a Visual evidence section (metrics table + inline images)
     is appended to the body. screenshots/ is staged only for visual PRs.
 
+    Every body gets an `## Environment` section (machine marker + hardware
+    table) appended last — it records where the numbers were measured; the
+    verify flow and reviewers key off its marker.
+
     Returns the PR URL.
     """
     explicit_commit = commit_msg
@@ -1990,6 +2097,8 @@ def createPR(title, body, branch="", commit_msg=None,
         body = (body.rstrip() + "\n" + _visualEvidenceMarkdown(
             evidence_dirs, branch, evidence_ssim)).strip() + "\n"
 
+    body = (body.rstrip() + "\n\n" + _environmentSectionMarkdown()).strip() + "\n"
+
     url, number = _github_create_pr(title, body, head=branch)
     if label:
         try:
@@ -2010,7 +2119,9 @@ def fetchPullRequest(number):
     so a PR generated from an older main reports its diff against its own
     merge-base.  Used by the PR-consolidation task: the session applies the
     diff as uncommitted edits while HEAD stays at the prepared SHA, so the
-    pinned baselines keep loading.
+    pinned baselines keep loading.  Returns the PR ``body`` (the claimed
+    numbers and its Environment section) plus the ``machine`` marker the
+    verify flow compares against.
     """
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
         raise ValueError("number must be a positive integer")
@@ -2049,13 +2160,14 @@ def fetchPullRequest(number):
 
     # GitHub-side metadata (labels for the category rules, mergeable for the
     # repair task). Best-effort: a metadata failure must not lose the git data.
-    title, labels, mergeable = "", [], None
+    title, labels, mergeable, body = "", [], None, ""
     try:
         owner, repo = _githubRepo()
         pr = _githubGetJson(f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}")
         title = pr.get("title", "")
         labels = _label_names(pr)
         mergeable = pr.get("mergeable")
+        body = pr.get("body") or ""
     except Exception:
         pass
 
@@ -2064,6 +2176,8 @@ def fetchPullRequest(number):
         "title": title,
         "labels": labels,
         "mergeable": mergeable,
+        "body": body,
+        "machine": _extractMachineFromBody(body),
         "head": head,
         "mergeBase": merge_base,
         "files": files,
@@ -2132,3 +2246,34 @@ def closePullRequest(number, comment):
     _githubSendJson(f"{base}/pulls/{number}", {"state": "closed"}, method="PATCH")
     return {"number": number, "state": "closed", "url": pr.get("html_url", ""),
             "commentPosted": True}
+
+
+def commentPullRequest(number, comment):
+    """Post one evidence comment on an open pull request, without closing it.
+
+    The verify flow records a foreign PR's local re-measurement here: the
+    verifying machine, the SHA, the local numbers, and the verdict (reproduced
+    / not reproduced: host-specific / not reproduced: broken).  Refuses merged
+    or already-closed PRs so verification evidence only lands on live
+    proposals.
+    """
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        raise ValueError("number must be a positive integer")
+    comment = (comment or "").strip()
+    if not comment:
+        raise ValueError(
+            "comment is required: state the machine, the numbers and the verdict")
+    if len(comment) > 60000:
+        raise ValueError("comment is too long for the GitHub comment limit")
+
+    owner, repo = _githubRepo()
+    base = f"https://api.github.com/repos/{owner}/{repo}"
+    pr = _githubGetJson(f"{base}/pulls/{number}")
+    if pr.get("merged_at"):
+        raise RuntimeError(f"refusing to comment on #{number}: the PR is merged")
+    if pr.get("state") != "open":
+        raise RuntimeError(
+            f"refusing to comment on #{number}: state is {pr.get('state')!r}, not open")
+
+    _githubSendJson(f"{base}/issues/{number}/comments", {"body": comment})
+    return {"number": number, "url": pr.get("html_url", ""), "commentPosted": True}

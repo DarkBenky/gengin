@@ -100,8 +100,8 @@ CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
    be attempt-and-measured there (see the structural families under SECOND
    OBJECTIVE).  The missile controller is a second, independent attempt
    inside this rung when the plane axis is stale in `codebase_context.md`.
-2. PR housekeeping (backfill / untangle / repair, below) — whenever the
-   open-PR block shows work.
+2. PR housekeeping (backfill / untangle / repair / verify foreign PRs,
+   below) — whenever the open-PR block shows work.
 3. MAINTENANCE TASK (PR consolidation, below) — when 4 or more open PRs
    carry labels of one category; all `Render Improvements*` label variants
    are ONE category and count together.
@@ -485,7 +485,9 @@ Category rules:
      value, new value, delta (frame avg/median/p99 + mse for render; miss /
      hitRate / effort / cost for flight; "n/a (no perf impact)" + measured
      cost for General/Visual-quality PRs).
-  Evidence sections follow the tables.
+  Evidence sections follow the tables.  `create_pr` appends a final
+  `## Environment` section (machine marker + hardware table) automatically —
+  it records where the numbers were measured; never edit or remove it.
 
 ## MAINTENANCE TASK — PR CONSOLIDATION (take it when >= 4 PRs share a category)
 
@@ -538,11 +540,12 @@ record what was refuted and why, and continue with the normal workflow — never
 open a one-PR "consolidation", and never repeat a contributor's claimed
 numbers without re-measuring them on the prepared SHA.
 
-### PR housekeeping (backfill / untangle / repair — not gated by the 4-PR rule)
+### PR housekeeping (backfill / untangle / repair / verify — not gated by the 4-PR rule)
 
 Whenever the open-PR block or `list_pull_requests(state="open")` shows an
-unlabeled or mixed-category PR, you may fix it (this also satisfies the
-session effort bar when completed, like a consolidation pass):
+unlabeled or mixed-category PR — or a PR measured on another machine — you
+may fix it (this also satisfies the session effort bar when completed, like a
+consolidation pass):
 
 - BACKFILL: every open PR without a label gets one. Decide the category from
   its changed paths and body evidence (which gate it claims/passes), then
@@ -557,7 +560,29 @@ session effort bar when completed, like a consolidation pass):
 - REPAIR (low priority): an open PR whose `fetch_pull_request` reports
   `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
   onto its existing branch (normal push, NEVER force-push), re-run its gate,
-  and comment what was ported. Skip ports that are not obvious in a few hunks.
+  and comment what was ported with `comment_pull_request(N, ...)`. Skip ports
+  that are not obvious in a few hunks.
+- VERIFY (the desktop's duty, at most TWO per session): a PR whose `machine`
+  differs from `machine_info()` (or is empty = created before the marker) was
+  measured on another host; its claims have never been checked on THIS one.
+  Prefer PRs a merge decision depends on. The flow:
+  1. `fetch_pull_request(N)` — read the `body`: the claimed numbers and the
+     `## Environment` section.
+  2. Apply the diff as UNCOMMITTED edits at the prepared SHA (HEAD stays
+     pinned so this machine's baselines keep loading), then `build_project`.
+  3. Run the PR's category gate — render -> `make_bench`; flight/missile ->
+     `flight_bench`; ML -> the suite's correctness gate only (NEVER compare
+     ML speed numbers across machines). Cross-machine timings differ by
+     design: verify the DIRECTION and the correctness claims (mse, frame
+     hashes, verdict), not absolute milliseconds.
+  4. `comment_pull_request(N, "<machine>, <gate result and numbers> at
+     <sha>. Verdict: reproduced / not reproduced (host-specific: <why>) /
+     not reproduced (broken: <gate failure>)")`.
+  5. Broken (the gate fails locally: REGRESSED, mse != 0, or a build break)
+     -> close it with the same evidence via `close_pull_request(N, ...)`.
+     Host-specific non-transfer (a no-op here, e.g. a core-count change on
+     another host size) -> the comment only; the PR stays open for its host.
+  6. `git checkout -- .` and record the verification in `codebase_context.md`.
 
 ## GENERAL IMPROVEMENTS — CATEGORY LADDER RUNG 4 (at most ONE item per session)
 
@@ -706,8 +731,9 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     necessary, and then only WHY.  No commented-out code, no reformatting of
     untouched lines: the change must read like the surrounding codebase.
 17. NEVER close a pull request you did not include in your consolidation PR —
-    `close_pull_request` is for folded-in sources and untangled mixed PRs
-    only, always with the evidence comment.
+    `close_pull_request` is for folded-in sources, untangled mixed PRs, and
+    VERIFY results that came back broken (the gate fails locally), always
+    with the evidence comment.
 18. NEVER sell a consolidation on a contributor's claimed numbers — only runs
     you made on the prepared SHA go into the evidence.
 19. NEVER default to the flight controller — the frame axis is the product;
