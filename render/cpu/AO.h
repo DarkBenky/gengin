@@ -720,40 +720,36 @@ static void CalculateAmbientOcclusionV2RowPlusSkip(void *arg) {
  * BetterBlur() (horizontal, stride 1) and the vertical pass in
  * ColumnBlurColumnsBetter().  The scalar bodies below are kept verbatim as the
  * fallback/tail path; the vector path evaluates the same per-lane expression
- * sequence (same tap order, same Clamp, same `weightSum > 1e-5f` fallback), so
+ * sequence with the tap weights scaled by T = centerDepth *
+ * AO_DEPTH_REJECT_SCALE (the scaling cancels out of sum / weightSum), so
  * the only difference is FMA contraction / reassociation that -ffast-math
  * already allows (measured max |diff| 3.6e-07 on the AO buffer, 0 pixels off by
  * more than 1e-5, image_mse 0.00).
  * ------------------------------------------------------------------------- */
 #define AO_DEPTH_REJECT_SCALE 0.02f // tune: smaller = stricter edge preservation
 
-/* centreDepth * scale <= 1/FLT_MAX AND >= 0: 1/(d*scale) overflows to inf, the
- * centre tap evaluates 0*inf and the scalar body's own result there depends on
- * how clang lowers Clamp()/the final select under -ffast-math.  The vector path
- * makes it deterministic: such lanes fall back to the un-blurred value, which is
- * what the source-level `weightSum > 1e-5f` fallback expresses.  The renderer
- * cannot produce such a depth (depthBuffer holds a positive hit distance or
- * DEPTH_FAR = 1e30f), and the non-negative half of the test keeps the mask off
- * the finite-negative case, where the scalar does blur. */
+/* centreDepth * scale <= 1/FLT_MAX: the tap weights vanish and the sum /
+ * weightSum ratio is undefined there, so those lanes fall back to the
+ * un-blurred value, which is what the source-level `weightSum > 1e-5f`
+ * fallback expresses.  The renderer cannot produce such a depth (depthBuffer
+ * holds a positive hit distance or DEPTH_FAR = 1e30f). */
 #define AO_INV_OVERFLOW_THRESHOLD 2.9387359e-39f
 
 #define AO_TAP8(v, d, k)                                                             \
 	do {                                                                             \
 		const __m256 diff_ = _mm256_and_ps(_mm256_sub_ps((d), centerDepth), absMask); \
-		__m256 w_ = _mm256_sub_ps(one, _mm256_mul_ps(diff_, invT));                   \
-		w_ = _mm256_max_ps(zero, _mm256_min_ps(w_, one));                             \
+		__m256 w_ = _mm256_max_ps(zero, _mm256_sub_ps(T, diff_));                     \
 		w_ = _mm256_mul_ps(w_, _mm256_set1_ps(lineKernelvaluse[k]));                  \
 		sum = _mm256_fmadd_ps((v), w_, sum);                                          \
 		wsum = _mm256_add_ps(wsum, w_);                                               \
 	} while (0)
 
 /* v0..v4 / d0..d4 are the five taps centred on the lane group, centerDepth the
- * centre-lane depth and invT = 1/(centerDepth * AO_DEPTH_REJECT_SCALE). */
+ * centre-lane depth and T = centerDepth * AO_DEPTH_REJECT_SCALE. */
 static inline void aoBlurTaps8(__m256 v0, __m256 v1, __m256 v2, __m256 v3, __m256 v4,
 							   __m256 d0, __m256 d1, __m256 d2, __m256 d3, __m256 d4,
-							   __m256 centerDepth, __m256 invT, __m256 *oS, __m256 *oW) {
+							   __m256 centerDepth, __m256 T, __m256 *oS, __m256 *oW) {
 	const __m256 zero = _mm256_setzero_ps();
-	const __m256 one = _mm256_set1_ps(1.0f);
 	const __m256 absMask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
 	__m256 sum = zero;
 	__m256 wsum = zero;
@@ -768,19 +764,10 @@ static inline void aoBlurTaps8(__m256 v0, __m256 v1, __m256 v2, __m256 v3, __m25
 	*oW = wsum;
 }
 
-static inline __m256 aoBlurInvT8(__m256 centerDepth, __m256 depthScale, __m256 *degenerate) {
-	const __m256 prod = _mm256_mul_ps(centerDepth, depthScale);
-	const __m256 underflow =
-		_mm256_cmp_ps(prod, _mm256_set1_ps(AO_INV_OVERFLOW_THRESHOLD), _CMP_LE_OQ);
-	const __m256 nonNegative = _mm256_cmp_ps(prod, _mm256_setzero_ps(), _CMP_GE_OQ);
-	*degenerate = _mm256_and_ps(underflow, nonNegative);
-	return _mm256_div_ps(_mm256_set1_ps(1.0f), prod);
-}
-
 static inline __m256 aoBlurFinish8(__m256 sum, __m256 wsum, __m256 centerValue,
-								   __m256 degenerate) {
+								   __m256 T, __m256 degenerate) {
 	const __m256 inv = _mm256_div_ps(sum, wsum);
-	const __m256 ok = _mm256_cmp_ps(wsum, _mm256_set1_ps(1e-5f), _CMP_GT_OQ);
+	const __m256 ok = _mm256_cmp_ps(wsum, _mm256_mul_ps(_mm256_set1_ps(1e-5f), T), _CMP_GT_OQ);
 	const __m256 r = _mm256_blendv_ps(centerValue, inv, ok);
 	return _mm256_blendv_ps(r, centerValue, degenerate);
 }
@@ -848,11 +835,12 @@ static void aoColBlurVec8(float *restrict image, const float *restrict depth,
 
 	for (int y = yStart; y < yEnd; y++) {
 		const __m256 centerDepth = d2;
-		__m256 degenerate;
-		const __m256 invT = aoBlurInvT8(centerDepth, depthScale, &degenerate);
+		const __m256 T = _mm256_mul_ps(centerDepth, depthScale);
+		const __m256 degenerate =
+			_mm256_cmp_ps(T, _mm256_set1_ps(AO_INV_OVERFLOW_THRESHOLD), _CMP_LE_OQ);
 		__m256 sum, wsum;
-		aoBlurTaps8(v0, v1, v2, v3, v4, d0, d1, d2, d3, d4, centerDepth, invT, &sum, &wsum);
-		const __m256 res = aoBlurFinish8(sum, wsum, v2, degenerate);
+		aoBlurTaps8(v0, v1, v2, v3, v4, d0, d1, d2, d3, d4, centerDepth, T, &sum, &wsum);
+		const __m256 res = aoBlurFinish8(sum, wsum, v2, T, degenerate);
 
 		// result of row y - 2: its taps are behind us, so the store is safe now
 		if (y - 2 >= yStart) _mm256_storeu_ps(pout + (y - 2) * width, pend1);
@@ -897,8 +885,9 @@ static inline float aoRowBlurScalarPixel(const float *rowValues, const float *ro
  * Caller must guarantee x + 8 <= width - KERNEL_SIZE_HALF. */
 static inline void aoRowBlurVec8(const float *rowValues, const float *rowDepths, float *out, int x) {
 	const __m256 centerDepth = _mm256_loadu_ps(rowDepths + x);
-	__m256 degenerate;
-	const __m256 invT = aoBlurInvT8(centerDepth, _mm256_set1_ps(AO_DEPTH_REJECT_SCALE), &degenerate);
+	const __m256 T = _mm256_mul_ps(centerDepth, _mm256_set1_ps(AO_DEPTH_REJECT_SCALE));
+	const __m256 degenerate =
+		_mm256_cmp_ps(T, _mm256_set1_ps(AO_INV_OVERFLOW_THRESHOLD), _CMP_LE_OQ);
 	__m256 sum, wsum;
 	aoBlurTaps8(
 		_mm256_loadu_ps(rowValues + x - 2), _mm256_loadu_ps(rowValues + x - 1),
@@ -906,8 +895,8 @@ static inline void aoRowBlurVec8(const float *rowValues, const float *rowDepths,
 		_mm256_loadu_ps(rowValues + x + 2),
 		_mm256_loadu_ps(rowDepths + x - 2), _mm256_loadu_ps(rowDepths + x - 1),
 		centerDepth, _mm256_loadu_ps(rowDepths + x + 1), _mm256_loadu_ps(rowDepths + x + 2),
-		centerDepth, invT, &sum, &wsum);
-	_mm256_storeu_ps(out + x, aoBlurFinish8(sum, wsum, _mm256_loadu_ps(rowValues + x), degenerate));
+		centerDepth, T, &sum, &wsum);
+	_mm256_storeu_ps(out + x, aoBlurFinish8(sum, wsum, _mm256_loadu_ps(rowValues + x), T, degenerate));
 }
 
 static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
@@ -1394,6 +1383,43 @@ static void UpsampleAoRows(void *arg) {
 		const float *restrict s1 = src + y1 * srcWidth;
 		float *restrict d = dst + y * dstWidth;
 
+#if AO_SMOOTH_DOWNSCALE == 4
+		// scale 4 makes the x mapping periodic: x=8j+p taps (2j-1)+[0,0,1,1,1,1,2,2]
+		// and +1 with tx cycling .625,.875,.125,.375; head/tail keep the table clamps.
+		int x = 0;
+		while (x < 8 && x < dstWidth) {
+			const int x0 = x0Tab[x];
+			const int x1 = x1Tab[x];
+			const float tx = txTab[x];
+			const float top = s0[x0] + (s0[x1] - s0[x0]) * tx;
+			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
+			d[x++] = top + (bot - top) * ty;
+		}
+		const __m256 txv = _mm256_setr_ps(0.625f, 0.875f, 0.125f, 0.375f, 0.625f, 0.875f, 0.125f, 0.375f);
+		const __m256 tyv = _mm256_set1_ps(ty);
+		const __m256i idxA = _mm256_setr_epi32(0, 0, 1, 1, 1, 1, 2, 2);
+		const __m256i idxB = _mm256_setr_epi32(1, 1, 2, 2, 2, 2, 3, 3);
+		for (; x + 8 <= dstWidth && (x / 8) * 2 + 6 < srcWidth; x += 8) {
+			__m256 w0 = _mm256_loadu_ps(s0 + (x / 8) * 2 - 1);
+			__m256 a = _mm256_permutevar8x32_ps(w0, idxA);
+			__m256 b = _mm256_permutevar8x32_ps(w0, idxB);
+			__m256 top = _mm256_add_ps(a, _mm256_mul_ps(_mm256_sub_ps(b, a), txv));
+			__m256 w1 = _mm256_loadu_ps(s1 + (x / 8) * 2 - 1);
+			__m256 a1 = _mm256_permutevar8x32_ps(w1, idxA);
+			__m256 b1 = _mm256_permutevar8x32_ps(w1, idxB);
+			__m256 bot = _mm256_add_ps(a1, _mm256_mul_ps(_mm256_sub_ps(b1, a1), txv));
+			_mm256_storeu_ps(d + x, _mm256_add_ps(top, _mm256_mul_ps(_mm256_sub_ps(bot, top), tyv)));
+		}
+		for (; x < dstWidth; x++) {
+			const int x0 = x0Tab[x];
+			const int x1 = x1Tab[x];
+			const float tx = txTab[x];
+
+			const float top = s0[x0] + (s0[x1] - s0[x0]) * tx;
+			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
+			d[x] = top + (bot - top) * ty;
+		}
+#else
 		for (int x = 0; x < dstWidth; x++) {
 			const int x0 = x0Tab[x];
 			const int x1 = x1Tab[x];
@@ -1403,6 +1429,7 @@ static void UpsampleAoRows(void *arg) {
 			const float bot = s1[x0] + (s1[x1] - s1[x0]) * tx;
 			d[x] = top + (bot - top) * ty;
 		}
+#endif
 	}
 }
 
