@@ -146,9 +146,14 @@ int main() {
 	Skybox skybox;
 	LoadSkybox(&skybox, "skybox");
 
+	// two workers per core hide the row kernel's memory latency, capped at the old 32
+	int workerCount = 2 * (int)sysconf(_SC_NPROCESSORS_ONLN);
+	if (workerCount > 32) workerCount = 32;
+	if (workerCount < 1) workerCount = 1;
+
 	// queue must hold one task per row OR per column — column dispatch uses screenWidth
 	// tasks (WIDTH >= HEIGHT), so size the pool to WIDTH to avoid ring-buffer overflow
-	ThreadPool *threadPool = poolCreate(32, WIDTH);
+	ThreadPool *threadPool = poolCreate(workerCount, WIDTH);
 	RayTraceTaskQueue rayTaskQueue;
 	SSRTask *ssrTasks = malloc(sizeof(SSRTask) * ((HEIGHT + 3) / 4));
 
