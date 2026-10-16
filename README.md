@@ -2,7 +2,7 @@
 
 - [ ] pr: should continue hardware info that was used for this pr if the pr is not from my Desktop agenct can set us self as goal to verify the claim on my Desktop if if pr claims can't be reproduce on local desktop pr should be ( not sure what approach is best to close it or add comenetar or some note that this was not able to reproduce locally)
 
-- [ ] Fix: agents in llmOpt are giving up to early not implementing general staff of other categories they just give up
+- [X] Fix: agents in llmOpt are giving up to early not implementing general staff of other categories they just give up
 
 - [ ] Map loading files
   - [X] More primitives like toroid, cone, pyramid ...

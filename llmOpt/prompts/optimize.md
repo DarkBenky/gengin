@@ -105,8 +105,9 @@ CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
 3. MAINTENANCE TASK (PR consolidation, below) — when 4 or more open PRs
    carry labels of one category; all `Render Improvements*` label variants
    are ONE category and count together.
-4. GENERAL IMPROVEMENTS queue (below) — ONE curated item, when the queue
-   has an unchecked item.
+4. GENERAL IMPROVEMENTS (below) — ONE self-serve chore: a self-discovered
+   bug fix / small utility from this session's exploration, or an unchecked
+   `- [ ]` task from the root `README.md` that fits the caps.
 Completing ANY rung with real measured work satisfies this bar; a rung that
 refutes with numbers is recorded in `codebase_context.md` and the ladder
 CONTINUES — a refuted rung never ends the session early.
@@ -469,7 +470,7 @@ without its label (`create_pr(label=...)`).
 | `Render Improvements Visual [No/Minimal Cost]` | render changes that IMPROVE visual quality at no or extremely limited performance cost — a side goal, not the hot-path work | visual improvement shown by side-by-side before/after composites (`compare_bench_frames` / `compare_images` attached) AND `make_bench` not REGRESSED (cost <= noise) |
 | `Flight Controller` | plane-controller changes (`getControllerOutputV5` + the loss) that improve performance | `flight_bench()` `OVERALL: IMPROVED` on the plane suite |
 | `Missile Controller` | missile-controller changes (`getControllerOutputMissile`) that improve performance | `flight_bench(missile="...")` `OVERALL: IMPROVED` on that missile's suite |
-| `General Improvements` | README-driven work, bug fixes, small utilities/functions that reduce testing/review overhead — CATEGORY LADDER rung 4 (one curated queue item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+| `General Improvements` | self-discovered bug fixes, small utilities/functions that reduce testing/review overhead, and caps-fitting unchecked `- [ ]` tasks from the root `README.md` — CATEGORY LADDER rung 4 (one item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
 
 Category rules:
 - The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
@@ -558,32 +559,36 @@ session effort bar when completed, like a consolidation pass):
   onto its existing branch (normal push, NEVER force-push), re-run its gate,
   and comment what was ported. Skip ports that are not obvious in a few hunks.
 
-## GENERAL IMPROVEMENTS — CATEGORY LADDER RUNG 4 (at most ONE queue item per session)
+## GENERAL IMPROVEMENTS — CATEGORY LADDER RUNG 4 (at most ONE item per session)
 
-Take ONE small chore from this queue when the render axis is exhausted for
-this session (fresh profile shows no untried node >= 2% outside open-PR
-coverage) and the earlier ladder rungs are recorded.  The rung is NOT gated
-on consolidation or housekeeping: if the queue has an unchecked item that
-passes the caps below, take it.  An empty queue skips the rung — it never
-ends the session early.
+Take ONE small chore when the earlier ladder rungs are recorded (fresh profile
+shows no untried node >= 2% outside open-PR coverage).  The rung is NOT gated
+on consolidation or housekeeping, and never dead-ends: candidates come from
+TWO self-serve sources, in this order:
 
-Work comes ONLY from the queue in `general_improvements.md`.  Do NOT sweep
-the README or the codebase for chores, and do NOT implement anything you
-added under "Proposed" yourself — that list is for maintainer review, not a
-work list.  If the file or its queue list is missing, or has no unchecked
-items, the rung is skipped — never create entries, never promote "Proposed"
-items, never add your own; continue with the rest of the ladder.
+1. SELF-DISCOVERED — something you noticed while profiling and exploring THIS
+   session: a reproducible bug, a manual step a small function or helper
+   would remove, a missing small utility, an obviously awkward API.  A bug
+   fix must first REPRODUCE on the current tree using existing tools; if it
+   does not reproduce, record the refutation and move on.
+2. README TASKS — an unchecked `- [ ]` item (or sub-item) in the root
+   `README.md`.  The README is the maintainer's task list: an unchecked item
+   is pre-approved intent, a checked `- [x]` item is done and never re-taken.
+   Read the unchecked items and take the first that fits the caps below.
 
-Inspect at most the first TWO unchecked items; take the first that passes:
-- caps: <= 2 files, <= 120 changed lines, ONE logical change, same style AND
+Pick the first candidate that passes ALL caps:
+- <= 2 files, <= 120 changed lines, ONE logical change, same style AND
   comment density as the surrounding code (CODE STYLE applies);
 - no struct/data-layout/public-signature changes, no new dependencies, no
   build-system changes, no visual change; no file covered by an open PR;
   nothing under `llmOpt/`, `deps/` or `machineLearning/`;
-- a bug fix must first REPRODUCE on the current tree using existing tools; if
-  it does not reproduce, record the refutation and stop;
-- a testing/review-overhead utility must remove existing manual work, not add
-  a feature.
+- a testing/review-overhead utility must remove existing manual work, not
+  add a feature;
+- a README task too big for the caps is SKIPPED, never shrunk: do not
+  implement a fraction of a feature and tick it done.
+
+If nothing passes, record the candidates you rejected and why in
+`codebase_context.md` and continue down the ladder.
 
 Gate before the PR: `build_project` clean; `make_bench` before/after with both
 numbers recorded in the PR body, NOT worse (`image_mse` 0.00, identical frame
@@ -591,12 +596,14 @@ hashes); `flight_bench` not worse if simulation code is touched.
 
 Open it with `create_pr(..., label="General Improvements",
 imageOutputChange=false)` and the standard body tables (Performance row:
-"n/a (no perf impact)" + the measured before/after).  Then mark the queue item
-`- [x] <id> (PR <number>)` in `general_improvements.md`.
+"n/a (no perf impact)" + the measured before/after).  When the item came from
+`README.md`, tick its checkbox (`- [X]`, plus the PR number) in the SAME PR
+and quote the task line in the body — the README is the durable queue, so
+checking the box is how the chore is marked done.
 
 If the change grows past the caps or fails a gate: revert everything, record
 why in `codebase_context.md`, and continue with the rest of the ladder — the
-session is not finished because one queue item failed.  ONE item per session
+session is not finished because one chore failed.  ONE item per session
 — never retry, never take a second.
 
 ## WHEN YOU MAY SKIP THE SANDBOX
@@ -717,11 +724,11 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
 22. NEVER open a PR whose body does not START with the `## Changes` table and
     the `## Performance vs baseline` table (compared against the session's
     pinned baseline, never against another PR's numbers).
-23. NEVER invent General Improvements work: no README/codebase sweeping for
-    chores, no implementing your own "Proposed" queue entries, no second item
-    after a failure — the rung is capped to ONE curated queue item per session
-    and the caps are hard.  An empty queue means continue down the ladder,
-    not exit the session.
+23. NEVER dress big work up as a "chore": a general improvement is ONE
+    caps-fitting item — a reproduced bug fix, a small utility that removes
+    manual work, or a whole small README task.  A README item too big for the
+    caps is skipped whole, never partially implemented; never a second item
+    after a failure.
 24. NEVER let a flight phase be constant tweaks alone — the cheap leads are a
     warm-up; at least one structural candidate must be attempt-and-measured
     (see the structural families under SECOND OBJECTIVE), and one refuted
