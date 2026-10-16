@@ -200,9 +200,9 @@ def make_bench(allow_visual_change: bool = False) -> str:
     algorithm variation: the gate becomes SSIM (auto-restore below 0.85), the
     change is kept when frames stay similar, and the metrics feed the visual
     PR evidence.  Records an edit snapshot for bisect_regression()."""
-    _SESSION_STATE["bench_calls"] += 1
     _main._captureEditSnapshot("edits before make_bench")
     result = _main.makeBench(allow_visual_change=allow_visual_change)
+    _SESSION_STATE["bench_calls"] += 1
     results = {k: v for k, v in result["results"].items()
                if k not in ("frame_images", "frame_hashes")}
     payload = {
@@ -368,10 +368,10 @@ def flight_bench(steps: int = 0, capture_baseline: bool = False,
     F-16C; `missile` runs the point-mass missile model instead (its guidance
     lives in flightControl.c).  Every vehicle is its own suite hash with its
     own pinned baseline."""
+    result = _main.flightBench(steps=steps, capture_baseline=capture_baseline,
+                               model=model, missile=missile)
     _SESSION_STATE["flight_calls"] += 1
-    return json.dumps(_main.flightBench(steps=steps, capture_baseline=capture_baseline,
-                                        model=model, missile=missile),
-                      indent=2)
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
@@ -413,9 +413,11 @@ def ml_bench(generator: str = "", suite: str = "core", configs: str = "",
     layer family, `reps` overrides the 20 reps, `quick=True` style fast
     coverage is `--suite smoke --reps 8`."""
     ids = [c.strip() for c in configs.split(",") if c.strip()] or None
-    return json.dumps(_main.mlBench(generator=generator, suite=suite, configs=ids,
-                                    kind=kind, reps=reps,
-                                    capture_baseline=capture_baseline), indent=2)
+    result = _main.mlBench(generator=generator, suite=suite, configs=ids,
+                           kind=kind, reps=reps,
+                           capture_baseline=capture_baseline)
+    _SESSION_STATE["ml_bench_calls"] += 1
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
@@ -453,19 +455,23 @@ _NO_CHANGE_GUARD = os.environ.get("GENGIN_NO_CHANGE_GUARD", "1") != "0"
 _NO_CHANGE_REFUSAL_CAP = int(os.environ.get("GENGIN_NO_CHANGE_GUARD_MAX", "2") or 2)
 _NO_CHANGE_MIN_RUNS = int(os.environ.get("GENGIN_NO_CHANGE_MIN_RUNS", "3") or 3)
 _SESSION_STATE = {"bench_calls": 0, "flight_calls": 0, "func_bench_calls": 0,
-                  "no_change_refusals": 0}
+                  "ml_bench_calls": 0, "no_change_refusals": 0}
 
 
 def _measuredRuns():
     return (_SESSION_STATE["bench_calls"] + _SESSION_STATE["flight_calls"]
-            + _SESSION_STATE["func_bench_calls"])
+            + _SESSION_STATE["func_bench_calls"]
+            + _SESSION_STATE["ml_bench_calls"])
 
 
 @mcp.tool()
 def report_session_result(status: str, summary: str, pr_url: str = "") -> str:
     """Report the final session outcome to the supervisor. Call exactly once
     before exit. status must be one of: pr_created, no_change, blocked, failed.
-    pr_url is required for pr_created and must be a GitHub pull URL."""
+    pr_url is required for pr_created and must be a GitHub pull URL. A
+    no_change report is refused while the session has fewer than
+    GENGIN_NO_CHANGE_MIN_RUNS (default 3) measured runs - follow the refusal
+    and report again after more measured work."""
     if status not in _SESSION_STATUSES:
         return f"error: status must be one of {list(_SESSION_STATUSES)}, got {status!r}"
     if status == "pr_created" and not pr_url.startswith("https://github.com/"):
@@ -479,14 +485,16 @@ def report_session_result(status: str, summary: str, pr_url: str = "") -> str:
         _SESSION_STATE["no_change_refusals"] += 1
         return (
             "error: no_change refused - only %d measured run(s) this session "
-            "(make_bench %d, flight_bench %d, run_func_bench %d; minimum %d). "
+            "(make_bench %d, flight_bench %d, run_func_bench %d, ml_bench %d; "
+            "minimum %d). "
             "Keep working the CATEGORY LADDER from the prompt: re-seed the "
             "## Node map from a fresh make_flame, attempt the next untried row, "
             "or walk the flight / housekeeping / consolidation / "
             "general-improvements rungs. Refusal %d/%d."
             % (_measuredRuns(), _SESSION_STATE["bench_calls"],
                _SESSION_STATE["flight_calls"],
-               _SESSION_STATE["func_bench_calls"], _NO_CHANGE_MIN_RUNS,
+               _SESSION_STATE["func_bench_calls"],
+               _SESSION_STATE["ml_bench_calls"], _NO_CHANGE_MIN_RUNS,
                _SESSION_STATE["no_change_refusals"], _NO_CHANGE_REFUSAL_CAP)
         )
 
@@ -538,8 +546,9 @@ def create_func_bench(func_name: str, header_code: str, impl_code: str) -> str:
 def run_func_bench(func_name: str) -> str:
     """Build bench/<func_name>.c and run the binary.  Returns stdout with
     timing and validation output."""
+    result = _main.runFuncBench(func_name)
     _SESSION_STATE["func_bench_calls"] += 1
-    return _main.runFuncBench(func_name)
+    return result
 
 
 @mcp.tool()

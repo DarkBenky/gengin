@@ -243,9 +243,9 @@ cleaned up at startup; a corrupt state file is quarantined and stops the run;
 `gengin-llmopt-*` keys are reconciled automatically.
 
 Sessions that report `no_change` with fewer than `GENGIN_NO_CHANGE_MIN_RUNS`
-(default 3) measured runs (make_bench + flight_bench + run_func_bench) are
-refused by the MCP server up to `GENGIN_NO_CHANGE_GUARD_MAX` (default 2)
-times — see the CATEGORY LADDER in `prompts/optimize.md`.
+(default 3) measured runs (make_bench + flight_bench + run_func_bench +
+ml_bench) are refused by the MCP server up to `GENGIN_NO_CHANGE_GUARD_MAX`
+(default 2) times — see the CATEGORY LADDER in `prompts/optimize.md`.
 
 Security: two Unix users (`llmopt-supervisor` holds the management key,
 `llmopt-agent` holds the checkout), the supervisor runs from system python, and

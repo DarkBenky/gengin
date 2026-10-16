@@ -108,9 +108,9 @@ CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
 4. GENERAL IMPROVEMENTS (below) — ONE self-serve chore: a self-discovered
    bug fix / small utility from this session's exploration, or an unchecked
    `- [ ]` task from the root `README.md` that fits the caps.
-Completing ANY rung with real measured work satisfies this bar; a rung that
-refutes with numbers is recorded in `codebase_context.md` and the ladder
-CONTINUES — a refuted rung never ends the session early.
+Completing ANY rung with real measured work counts that rung as walked; a
+rung that refutes with numbers is recorded in `codebase_context.md` and the
+ladder CONTINUES — a refuted rung never ends the session early.
 Candidates come from the `## Node map`, ranked by its flame percentages — a
 structural candidate may target the subsystem around a node rather than the
 function itself.  If that section is empty (first session on a fresh
