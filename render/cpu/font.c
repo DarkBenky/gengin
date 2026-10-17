@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define LETTER_SIZE 8
+
 static int parseLetterIndex(const char *filename) {
 	if (!filename || !filename[0]) return -1;
 
@@ -165,7 +167,7 @@ void RenderText(uint32 *dst, int dstWidth, int dstHeight, struct Alphabet *alpha
 			drawTileColorScaled(dst, dstWidth, dstHeight, tile, cursorX, y, scale, scale, color);
 			cursorX += (int)((float)tile.width * scale);
 		} else {
-			cursorX += (int)(8.0f * scale);
+			cursorX += (int)(LETTER_SIZE * scale);
 		}
 	}
 }
@@ -184,7 +186,7 @@ void RenderTextHdr(float3 *dst, int dstWidth, int dstHeight, struct Alphabet *al
 			drawTileColorScaledHdr(dst, dstWidth, dstHeight, tile, cursorX, y, scale, scale, color);
 			cursorX += (int)((float)tile.width * scale);
 		} else {
-			cursorX += (int)(8.0f * scale);
+			cursorX += (int)(LETTER_SIZE * scale);
 		}
 	}
 }
