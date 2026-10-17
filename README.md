@@ -1,9 +1,5 @@
 # Tasks
 
-- [X] pr: should continue hardware info that was used for this pr if the pr is not from my Desktop agenct can set us self as goal to verify the claim on my Desktop if if pr claims can't be reproduce on local desktop pr should be ( not sure what approach is best to close it or add comenetar or some note that this was not able to reproduce locally)
-
-- [X] Fix: agents in llmOpt are giving up to early not implementing general staff of other categories they just give up
-
 - [ ] Map loading files
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
@@ -342,6 +338,11 @@
   - [X] **Low priority** when there is some PR that is still open but the changes made it not able to merge session can look into it and update it to be able to merge it again
   - [X] If there is some PR open with out Label / Tag add them
   - [X] compaction should be available only when there is 4 or more per category / label
+
+- [X] pr: should continue hardware info that was used for this pr if the pr is not from my Desktop agenct can set us self as goal to verify the claim on my Desktop if if pr claims can't be reproduce on local desktop pr should be ( not sure what approach is best to close it or add comenetar or some note that this was not able to reproduce locally)
+
+- [X] Fix: agents in llmOpt are giving up to early not implementing general staff of other categories they just give up
+
 
 ## Current Render
 
