@@ -1108,44 +1108,27 @@ static void RayTraceRowFunc(void *arg) {
 	}
 }
 
-static void RayTraceLightRowFunc(void *arg) {
-	RayTraceTask *restrict task = arg;
-	Camera *restrict camera = task->camera;
-	int width = camera->screenWidth;
-	int row = task->row;
+#define LIGHT_ROW_TILE 256
 
-	const int s0 = row / REFLECTION_RESOLUTION;
-	const int s1 = s0 + 1 < s_lightSliceCount ? s0 + 1 : s0;
-	const float t1 = (float)(row - s0 * REFLECTION_RESOLUTION) * (1.0f / REFLECTION_RESOLUTION);
-	const float t0 = 1.0f - t1;
-	const float3 *restrict reflA = s_lightReflection + (size_t)s0 * width;
-	const float3 *restrict reflB = s_lightReflection + (size_t)s1 * width;
-	const float3 *restrict emitA = s_lightEmission + (size_t)s0 * width;
-	const float3 *restrict emitB = s_lightEmission + (size_t)s1 * width;
-	const float3 *restrict shadowA = s_lightShadow + (size_t)s0 * width;
-	const float3 *restrict shadowB = s_lightShadow + (size_t)s1 * width;
-
-	float3 catchReflections[width];
-	float3 catchEmissions[width];
-	float3 catchShadow[width];
-	for (int x = 0; x < width; x++) {
-		catchReflections[x] = (float3){
-			reflA[x].x * t0 + reflB[x].x * t1,
-			reflA[x].y * t0 + reflB[x].y * t1,
-			reflA[x].z * t0 + reflB[x].z * t1};
-		catchEmissions[x] = (float3){
-			emitA[x].x * t0 + emitB[x].x * t1,
-			emitA[x].y * t0 + emitB[x].y * t1,
-			emitA[x].z * t0 + emitB[x].z * t1};
-		catchShadow[x] = (float3){
-			shadowA[x].x * t0 + shadowB[x].x * t1,
-			shadowA[x].y * t0 + shadowB[x].y * t1,
-			shadowA[x].z * t0 + shadowB[x].z * t1};
+static void LightRowBlendSlice(float3 *win, const float3 *a, const float3 *b, int n, float t0, float t1) {
+	const __m256 vt0 = _mm256_set1_ps(t0);
+	const __m256 vt1 = _mm256_set1_ps(t1);
+	int i = 0;
+	for (; i + 2 <= n; i += 2) {
+		__m256 va = _mm256_loadu_ps((const float *)(a + i));
+		__m256 vb = _mm256_loadu_ps((const float *)(b + i));
+		_mm256_storeu_ps((float *)(win + i), _mm256_fmadd_ps(vb, vt1, _mm256_mul_ps(va, vt0)));
 	}
+	for (; i < n; i++)
+		win[i] = (float3){a[i].x * t0 + b[i].x * t1,
+		                  a[i].y * t0 + b[i].y * t1,
+		                  a[i].z * t0 + b[i].z * t1};
+}
 
-	// blur reflection emission and shadows contributions across the row
-	for (int x = 0; x < width; x++) {
-		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
+static void LightRowBlurClamped(const float3 *srcC, const float3 *srcE, const float3 *srcS, int srcOff,
+                                int xFrom, int xTo, int width,
+                                float3 *accC, float3 *accE, float3 *accS, int accOff) {
+	for (int x = xFrom; x < xTo; x++) {
 		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedShadow = {0.0f, 0.0f, 0.0f};
@@ -1153,15 +1136,16 @@ static void RayTraceLightRowFunc(void *arg) {
 		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
 			int kIdx = x + kernelSize - BLUR_RADIUS - 1;
 			if (kIdx >= 0 && kIdx < width) {
-				accumulatedColor.x += catchReflections[kIdx].x;
-				accumulatedColor.y += catchReflections[kIdx].y;
-				accumulatedColor.z += catchReflections[kIdx].z;
-				accumulatedEmission.x += catchEmissions[kIdx].x;
-				accumulatedEmission.y += catchEmissions[kIdx].y;
-				accumulatedEmission.z += catchEmissions[kIdx].z;
-				accumulatedShadow.x += catchShadow[kIdx].x;
-				accumulatedShadow.y += catchShadow[kIdx].y;
-				accumulatedShadow.z += catchShadow[kIdx].z;
+				const int i = kIdx - srcOff;
+				accumulatedColor.x += srcC[i].x;
+				accumulatedColor.y += srcC[i].y;
+				accumulatedColor.z += srcC[i].z;
+				accumulatedEmission.x += srcE[i].x;
+				accumulatedEmission.y += srcE[i].y;
+				accumulatedEmission.z += srcE[i].z;
+				accumulatedShadow.x += srcS[i].x;
+				accumulatedShadow.y += srcS[i].y;
+				accumulatedShadow.z += srcS[i].z;
 				samples++;
 			}
 		}
@@ -1177,32 +1161,136 @@ static void RayTraceLightRowFunc(void *arg) {
 			accumulatedShadow.y *= invW;
 			accumulatedShadow.z *= invW;
 		}
-		float3 base = camera->framebufferHdr[row * width + x];
-		float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
-		float3 combined = {
-			base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
-			base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
-			base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w};
+		accC[x - accOff] = accumulatedColor;
+		accE[x - accOff] = accumulatedEmission;
+		accS[x - accOff] = accumulatedShadow;
+	}
+}
 
-		float3 ownEmission = camera->bloomBuffer[row * width + x];
-		camera->bloomBuffer[row * width + x] = (float3){
-			ownEmission.x + accumulatedEmission.x,
-			ownEmission.y + accumulatedEmission.y,
-			ownEmission.z + accumulatedEmission.z,
-		};
+static void LightRowBlurRun(const float3 *srcC, const float3 *srcE, const float3 *srcS, int srcOff,
+                            int xFrom, int xTo, int width,
+                            float3 *accC, float3 *accE, float3 *accS, int accOff) {
+	int xa = xFrom > BLUR_RADIUS ? xFrom : BLUR_RADIUS;
+	int xb = xTo < width - BLUR_RADIUS ? xTo : width - BLUR_RADIUS;
+	if (xa > xTo) xa = xTo;
+	if (xb < xa) xb = xa;
+	if (xFrom < xa)
+		LightRowBlurClamped(srcC, srcE, srcS, srcOff, xFrom, xa, width, accC, accE, accS, accOff);
+	if (xb < xTo)
+		LightRowBlurClamped(srcC, srcE, srcS, srcOff, xb, xTo, width, accC, accE, accS, accOff);
 
-		camera->framebufferHdr[row * width + x] = combined;
+	const __m256 invW = _mm256_set1_ps(1.0f / (float)(BLUR_RADIUS * 2 + 1));
+	int x = xa;
+	for (; x + 2 <= xb; x += 2) {
+		const float3 *pC = srcC + (x - srcOff);
+		const float3 *pE = srcE + (x - srcOff);
+		const float3 *pS = srcS + (x - srcOff);
+		__m256 aC = _mm256_setzero_ps();
+		__m256 aE = _mm256_setzero_ps();
+		__m256 aS = _mm256_setzero_ps();
+		for (int d = BLUR_RADIUS; d >= -BLUR_RADIUS; d--) {
+			aC = _mm256_add_ps(aC, _mm256_loadu_ps((const float *)(pC + d)));
+			aE = _mm256_add_ps(aE, _mm256_loadu_ps((const float *)(pE + d)));
+			aS = _mm256_add_ps(aS, _mm256_loadu_ps((const float *)(pS + d)));
+		}
+		_mm256_storeu_ps((float *)(accC + (x - accOff)), _mm256_mul_ps(aC, invW));
+		_mm256_storeu_ps((float *)(accE + (x - accOff)), _mm256_mul_ps(aE, invW));
+		_mm256_storeu_ps((float *)(accS + (x - accOff)), _mm256_mul_ps(aS, invW));
+	}
+	if (x < xb)
+		LightRowBlurClamped(srcC, srcE, srcS, srcOff, x, xb, width, accC, accE, accS, accOff);
+}
 
-		// Visualize postion buffer for debugging
-		// float3 posVal = camera->positionBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = PackColorSafe(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f);
-		
-		// camera->framebufferLdr[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
-		// camera->framebufferLdr[row * width + x] = PackColorSafe(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z);
-		// float2 motionColor = camera->motionVectorBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = PackColor(motionColor.x / 4.0f, 0.0f, motionColor.y / 4.0f);
+static void RayTraceLightRowFunc(void *arg) {
+	RayTraceTask *restrict task = arg;
+	Camera *restrict camera = task->camera;
+	int width = camera->screenWidth;
+	int height = camera->screenHeight;
+	int row = task->row;
+
+	// One task owns the REFLECTION_RESOLUTION rows that share the same two
+	// slices; the first of them is the first slice unchanged.
+	const int s0 = row / REFLECTION_RESOLUTION;
+	const int s1 = s0 + 1 < s_lightSliceCount ? s0 + 1 : s0;
+	const int rowEnd = row + REFLECTION_RESOLUTION < height ? row + REFLECTION_RESOLUTION : height;
+	const float3 *restrict reflA = s_lightReflection + (size_t)s0 * width;
+	const float3 *restrict emitA = s_lightEmission + (size_t)s0 * width;
+	const float3 *restrict shadowA = s_lightShadow + (size_t)s0 * width;
+	const float3 *reflB = s_lightReflection + (size_t)s1 * width;
+	const float3 *emitB = s_lightEmission + (size_t)s1 * width;
+	const float3 *shadowB = s_lightShadow + (size_t)s1 * width;
+
+	float3 windowReflections[LIGHT_ROW_TILE + 2 * BLUR_RADIUS];
+	float3 windowEmissions[LIGHT_ROW_TILE + 2 * BLUR_RADIUS];
+	float3 windowShadow[LIGHT_ROW_TILE + 2 * BLUR_RADIUS];
+	float3 accC[LIGHT_ROW_TILE];
+	float3 accE[LIGHT_ROW_TILE];
+	float3 accS[LIGHT_ROW_TILE];
+
+	for (int x0 = 0; x0 < width; x0 += LIGHT_ROW_TILE) {
+		int x1 = x0 + LIGHT_ROW_TILE;
+		if (x1 > width) x1 = width;
+		int w0 = x0 - BLUR_RADIUS;
+		if (w0 < 0) w0 = 0;
+		int w1 = x1 + BLUR_RADIUS;
+		if (w1 > width) w1 = width;
+
+		for (int r = row; r < rowEnd; r++) {
+			const float3 *srcC = reflA;
+			const float3 *srcE = emitA;
+			const float3 *srcS = shadowA;
+			int srcOff = 0;
+			if (r != row) {
+				const float t1 = (float)(r - s0 * REFLECTION_RESOLUTION) * (1.0f / REFLECTION_RESOLUTION);
+				const float t0 = 1.0f - t1;
+				LightRowBlendSlice(windowReflections, reflA + w0, reflB + w0, w1 - w0, t0, t1);
+				LightRowBlendSlice(windowEmissions, emitA + w0, emitB + w0, w1 - w0, t0, t1);
+				LightRowBlendSlice(windowShadow, shadowA + w0, shadowB + w0, w1 - w0, t0, t1);
+				srcC = windowReflections;
+				srcE = windowEmissions;
+				srcS = windowShadow;
+				srcOff = w0;
+			}
+			LightRowBlurRun(srcC, srcE, srcS, srcOff, x0, x1, width, accC, accE, accS, x0);
+
+			const size_t rowBase = (size_t)r * width;
+			const float *restrict depthRow = camera->depthBuffer + rowBase;
+			const float3 *restrict reflWRow = camera->reflectBuffer + rowBase;
+			float3 *restrict fbRow = camera->framebufferHdr + rowBase;
+			float3 *restrict bloomRow = camera->bloomBuffer + rowBase;
+			for (int x = x0; x < x1; x++) {
+				if (depthRow[x] >= DEPTH_FAR) continue; // skip sky pixels
+				float3 accumulatedColor = accC[x - x0];
+				float3 accumulatedEmission = accE[x - x0];
+				float3 accumulatedShadow = accS[x - x0];
+				float3 base = fbRow[x];
+				float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
+				float3 combined = {
+					base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * reflWRow[x].w,
+					base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * reflWRow[x].w,
+					base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * reflWRow[x].w};
+
+				float3 ownEmission = bloomRow[x];
+				bloomRow[x] = (float3){
+					ownEmission.x + accumulatedEmission.x,
+					ownEmission.y + accumulatedEmission.y,
+					ownEmission.z + accumulatedEmission.z,
+				};
+
+				fbRow[x] = combined;
+
+				// Visualize postion buffer for debugging
+				// float3 posVal = camera->positionBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = PackColorSafe(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f);
+				
+				// camera->framebufferLdr[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
+				// camera->framebufferLdr[row * width + x] = PackColorSafe(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z);
+				// float2 motionColor = camera->motionVectorBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = PackColor(motionColor.x / 4.0f, 0.0f, motionColor.y / 4.0f);
+			}
+		}
 	}
 }
 
@@ -1247,7 +1335,7 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 	}
 	poolWait(threadPool);
 
-	for (int row = 0; row < camera->screenHeight; row++) {
+	for (int row = 0; row < camera->screenHeight; row += REFLECTION_RESOLUTION) {
 		poolAdd(threadPool, RayTraceLightRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
