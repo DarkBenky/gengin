@@ -219,7 +219,7 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
 	float finalDist = distanceToTarget(&simPlane, target);
 
-	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 0.55f;
+	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 1.10f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
 
 	float alignWeight = 1.0f + 1.5f / (1.0f + currentDist * 0.0065f);
@@ -227,7 +227,7 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort;
 
 	return loss;
 }
