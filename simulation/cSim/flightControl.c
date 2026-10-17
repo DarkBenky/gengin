@@ -339,6 +339,29 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
 	}
 
+	// The walk's probes are anchored to the iterate, which drifts away from the
+	// best point it passed, so descend from that point on the same probe grid.
+	for (int polish = 0; polish < 8; polish++) {
+		int improved = 0;
+		for (int axis = 0; axis < 3; axis++) {
+			float probe[3] = {bestProbe[0], bestProbe[1], bestProbe[2]};
+			probe[axis] = fminf(1.0f, bestProbe[axis] + epsilon);
+			float loss = evaluateLossV2PlusTuned2(ctrl, probe, target, deltaTime);
+			if (loss >= bestProbeLoss) {
+				probe[axis] = fmaxf(0.0f, bestProbe[axis] - epsilon);
+				loss = evaluateLossV2PlusTuned2(ctrl, probe, target, deltaTime);
+			}
+			if (loss < bestProbeLoss) {
+				bestProbeLoss = loss;
+				bestProbe[0] = probe[0];
+				bestProbe[1] = probe[1];
+				bestProbe[2] = probe[2];
+				improved = 1;
+			}
+		}
+		if (!improved) break;
+	}
+
 	// Command the best control the search actually scored, not the iterate the
 	// momentum walk happened to stop on.
 	output.Rudder = bestProbe[0];
