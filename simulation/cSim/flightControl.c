@@ -51,6 +51,10 @@
 #define SEARCH_STEP_DECAY 0.91f
 #define SEARCH_MIN_TAIL_WALK 0.14f
 
+// Partial lead: trusting the full target velocity over-commits the pass when a
+// jinking or reversing target turns out of the predicted point.
+#define TARGET_LEAD_GAIN 0.3f
+
 static const float3 PLANE_TARGET_OFFSET = {1000.0f, 1000.0f, 1000.0f, 0.0f};
 
 // Missile sweep geometries.  Main is the long lead shot (at 1.7 km a Mach 2+
@@ -193,7 +197,7 @@ float yawLoss(const Plane *plane, float3 target) {
 // than fine steps at equal cost) plus a control-effort term; the alignment
 // gain and the effort term only work as a pair. The rudder is charged 2:1 -
 // it is the yaw axis, so deflection buys no turn, only sideslip and drag.
-static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], float3 target, float3 targetVel, float deltaTime) {
 	Plane simPlane = ctrl->plane;
 
 	planeSetRudder01(&simPlane, values[0]);
@@ -206,18 +210,20 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float minDist = currentDist;
 	float runningAlignment = 0.0f;
 	float runningAlignVel = 0.0f;
+	float3 predictedTarget = target;
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		runningAlignment += alignmentLoss(&simPlane, target);
-		runningAlignVel += alignmentLossVelocity(&simPlane, target);
-		float d = distanceToTarget(&simPlane, target);
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetVel, simDeltaTime));
+		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
+		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
+		float d = distanceToTarget(&simPlane, predictedTarget);
 		if (d < minDist) minDist = d;
 	}
 
-	float finalAlignment = alignmentLoss(&simPlane, target);
-	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
-	float finalDist = distanceToTarget(&simPlane, target);
+	float finalAlignment = alignmentLoss(&simPlane, predictedTarget);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, predictedTarget);
+	float finalDist = distanceToTarget(&simPlane, predictedTarget);
 
 	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 0.55f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
@@ -235,8 +241,15 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
 
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
+static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
 	ControllerOutput output = {0};
+
+	float3 targetVel = {0.0f, 0.0f, 0.0f, 0.0f};
+	if (ctrl->hasPrevTarget && deltaTime > 1e-6f) {
+		targetVel = Float3_Scale(Float3_Sub(target, ctrl->prevTarget), TARGET_LEAD_GAIN / deltaTime);
+	}
+	ctrl->prevTarget = target;
+	ctrl->hasPrevTarget = 1;
 
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
@@ -268,7 +281,7 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// returns the un-deflected command rather than a probe picked by loop
 	// order (one shared loss evaluation per controller call, ~0.1% of cost).
 	float bestProbe[3] = {0.5f, 0.5f, 0.5f};
-	float bestProbeLoss = evaluateLossV2PlusTuned2(ctrl, bestProbe, target, deltaTime);
+	float bestProbeLoss = evaluateLossV2PlusTuned2(ctrl, bestProbe, target, targetVel, deltaTime);
 
 	for (int iter = 0; iter < maxIterations; iter++) {
 		// Compute gradient for ALL axes simultaneously
@@ -283,8 +296,8 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			float perturbedNegative[3] = {values[0], values[1], values[2]};
 			perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
 
-			float lossPos = evaluateLossV2PlusTuned2(ctrl, perturbedPositive, target, deltaTime);
-			float lossNeg = evaluateLossV2PlusTuned2(ctrl, perturbedNegative, target, deltaTime);
+			float lossPos = evaluateLossV2PlusTuned2(ctrl, perturbedPositive, target, targetVel, deltaTime);
+			float lossNeg = evaluateLossV2PlusTuned2(ctrl, perturbedNegative, target, targetVel, deltaTime);
 
 			if (lossPos < bestAxisLoss[axis]) {
 				bestAxisLoss[axis] = lossPos;
