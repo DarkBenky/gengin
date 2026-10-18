@@ -73,7 +73,8 @@ static int lightSlicesReserve(int width, int height) {
 // per-batch test, instead of one RayBoxIntersectV4 call per 4 boxes (which
 // re-derives 1/dir and re-transposes the AoS pair on every call).  Built once
 // per frame on the main thread, read-only in the row kernels; keyed to the
-// object list it was built from so a stale cache can never be read.
+// object array pointer and count, so it is only valid inside the scene entry
+// point that just built it.
 static float s_allAabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
 static const Object *s_allAabbSoaObjects = NULL;
 static int s_allAabbSoaCount = 0;
