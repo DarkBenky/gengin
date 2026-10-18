@@ -1,5 +1,8 @@
+#include <math.h>
 #include <string.h>
 
+#include "../../math/transform.h"
+#include "../../math/vector3.h"
 #include "../../object/format.h"
 #include "../../object/object.h"
 #include "../../object/scene.h"
@@ -10,6 +13,8 @@
 #include <MiniFB.h>
 
 #define ROWS_PER_TASK 8
+#define DEG2RAD 0.017453292519943295f // engine stores rotations in radians
+#define RAD2DEG 57.29577951308232f
 const float3 highlightColor = {1.75f, 0.75f, 1.81f}; // Multipliers for each color channel
 
 enum EditorMode {
@@ -25,7 +30,12 @@ const int LeftKey = KB_KEY_LEFT;
 const int RightKey = KB_KEY_RIGHT;
 const int UpKey = KB_KEY_RIGHT_SHIFT;
 const int DownKey = KB_KEY_RIGHT_CONTROL;
+
 const int SnapKey = KB_KEY_KP_0;
+const int uniformScaleKey = KB_KEY_KP_1;
+
+const float snapToGridSize = 1.0f;
+const float snapToAngleSize = 15.0f; // degrees
 
 typedef struct editorUi {
 	ObjectList *scene;
@@ -36,6 +46,7 @@ typedef struct editorUi {
 	enum EditorMode mode;
 	bool editorActive;
 	bool snapToGrid;
+	bool uniformScale;
 	float moveSpeed;
 	float rotationSpeed;
 	float scaleSpeed;
@@ -55,10 +66,11 @@ Error createEditorUi(ObjectList *objectList, editorUi *ui, Camera *cam, Input *i
 	ui->selectedObject = NULL;
 	ui->mode = MOVE_MODE;
 	ui->editorActive = false;
-	ui->moveSpeed = 1.0f;
-	ui->rotationSpeed = 1.0f;
-	ui->scaleSpeed = 1.0f;
+	ui->moveSpeed = 5.0f;
+	ui->rotationSpeed = 90.0f; // degrees per second
+	ui->scaleSpeed = 0.1f;
 	ui->snapToGrid = false;
+	ui->uniformScale = false;
 	err.err = nil;
 	strcpy(err.msg, "OK");
 	return err;
@@ -330,55 +342,125 @@ static int fmtTriangles(char *buf, int size, int count) {
 	return snprintf(buf, size, "    c: %d", count);
 }
 
+static const char *modeName(enum EditorMode mode) {
+	switch (mode) {
+	case ROTATE_MODE:
+		return "rotate";
+	case SCALE_MODE:
+		return "scale";
+	default:
+		return "move";
+	}
+}
+
 void drawStats(editorUi *ui, int x, int y, int width, int height) {
 	const int characterSize = 8;
-	const Object *selected = ui->selectedObject;
-	if (selected == NULL) return;
-	float3 pos = selected->position;
-	float3 rot = selected->rotation;
-	float3 scl = selected->scale;
-	int triCount = selected->triangleCount;
+	float3 white = {1.0f, 1.0f, 1.0f};
+	float3 yellow = {1.0f, 1.0f, 0.0f};
 
-	char lines[14][32];
+	// editor inactive: only advertise how to open it
+	if (!ui->editorActive) {
+		const float hintScale = 1.5f;
+		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, "Tab", x, y, hintScale, yellow);
+		int descX = x + MeasureTextWidth(ui->alphabet, "Tab", hintScale) + MeasureTextWidth(ui->alphabet, " ", hintScale);
+		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, "open editor", descX, y, hintScale, white);
+		return;
+	}
+
+	const Object *selected = ui->selectedObject;
+
+	char lines[22][32];
 	int n = 0;
-	snprintf(lines[n++], 32, "position");
-	snprintf(lines[n++], 32, "    x: %.2f", pos.x);
-	snprintf(lines[n++], 32, "    y: %.2f", pos.y);
-	snprintf(lines[n++], 32, "    z: %.2f", pos.z);
-	snprintf(lines[n++], 32, "rotation");
-	snprintf(lines[n++], 32, "    x: %.2f", rot.x);
-	snprintf(lines[n++], 32, "    y: %.2f", rot.y);
-	snprintf(lines[n++], 32, "    z: %.2f", rot.z);
-	snprintf(lines[n++], 32, "scale");
-	snprintf(lines[n++], 32, "    x: %.2f", scl.x);
-	snprintf(lines[n++], 32, "    y: %.2f", scl.y);
-	snprintf(lines[n++], 32, "    z: %.2f", scl.z);
-	snprintf(lines[n++], 32, "triangles");
-	fmtTriangles(lines[n++], 32, triCount);
+
+	snprintf(lines[n++], 32, "mode: %s  snap: %s", modeName(ui->mode), ui->snapToGrid ? "on" : "off");
+
+	if (selected != NULL) {
+		float3 pos = selected->position;
+		float3 rot = selected->rotation;
+		float3 scl = selected->scale;
+		int triCount = selected->triangleCount;
+
+		snprintf(lines[n++], 32, "position");
+		snprintf(lines[n++], 32, "    x: %.2f", pos.x);
+		snprintf(lines[n++], 32, "    y: %.2f", pos.y);
+		snprintf(lines[n++], 32, "    z: %.2f", pos.z);
+		snprintf(lines[n++], 32, "rotation deg");
+		snprintf(lines[n++], 32, "    x: %.2f", rot.x * RAD2DEG);
+		snprintf(lines[n++], 32, "    y: %.2f", rot.y * RAD2DEG);
+		snprintf(lines[n++], 32, "    z: %.2f", rot.z * RAD2DEG);
+		snprintf(lines[n++], 32, "scale");
+		snprintf(lines[n++], 32, "    x: %.2f", scl.x);
+		snprintf(lines[n++], 32, "    y: %.2f", scl.y);
+		snprintf(lines[n++], 32, "    z: %.2f", scl.z);
+		snprintf(lines[n++], 32, "triangles");
+		fmtTriangles(lines[n++], 32, triCount);
+	}
+
+	lines[n][0] = '\0'; // blank line between stats and hints
+	n++;
+
+	char snapHint[32], uniformHint[32];
+	snprintf(snapHint, 32, "snap %s", ui->snapToGrid ? "off" : "on");
+	snprintf(uniformHint, 32, "uniform %s", ui->uniformScale ? "off" : "on");
+
+	// key token renders yellow, its description white
+	const char *hintKeys[] = {"keys", "    click", "    1/2/3", "    arrows", "    RShift/RCtrl", "    KP0", "    KP1", "    Tab"};
+	const char *hintDescs[] = {"", "select", "move rotate scale", "X/Z", "Y", snapHint, uniformHint, "exit editor"};
+	const int hintCount = (int)(sizeof(hintKeys) / sizeof(hintKeys[0]));
 
 	int maxChars = 0;
 	for (int i = 0; i < n; i++) {
 		int len = (int)strlen(lines[i]);
 		if (len > maxChars) maxChars = len;
 	}
+	for (int i = 0; i < hintCount; i++) {
+		int len = (int)strlen(hintKeys[i]) + 1 + (int)strlen(hintDescs[i]);
+		if (len > maxChars) maxChars = len;
+	}
 
+	int totalRows = n + hintCount;
 	float scaleX = (float)width / (maxChars * characterSize);
-	float scaleY = (float)height / (n * characterSize);
+	float scaleY = (float)height / (totalRows * characterSize);
 	float scale = scaleX < scaleY ? scaleX : scaleY;
 	if (scale >= 1.0f) scale = (float)(int)scale;
 
 	int lineHeight = (int)(characterSize * scale);
-	float3 white = {1.0f, 1.0f, 1.0f};
+	float3 cyan = {0.45f, 0.85f, 1.0f};
+	float3 green = {0.35f, 1.0f, 0.35f};
+	float3 red = {1.0f, 0.3f, 0.3f};
 
-	for (int i = 0; i < n; i++) {
+	// top line: labels white, mode value cyan, snap state green/red
+	int topX = x;
+	const char *modeLabel = "mode: ";
+	RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, modeLabel, topX, y, scale, white);
+	topX += MeasureTextWidth(ui->alphabet, modeLabel, scale);
+	RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, modeName(ui->mode), topX, y, scale, cyan);
+	topX += MeasureTextWidth(ui->alphabet, modeName(ui->mode), scale);
+	const char *snapLabel = "  snap: ";
+	RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, snapLabel, topX, y, scale, white);
+	topX += MeasureTextWidth(ui->alphabet, snapLabel, scale);
+	RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, ui->snapToGrid ? "on" : "off", topX, y, scale, ui->snapToGrid ? green : red);
+
+	for (int i = 1; i < n; i++) {
 		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, lines[i], x, y + i * lineHeight, scale, white);
+	}
+
+	for (int i = 0; i < hintCount; i++) {
+		int rowY = y + (n + i) * lineHeight;
+		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, hintKeys[i], x, rowY, scale, yellow);
+		int descX = x + MeasureTextWidth(ui->alphabet, hintKeys[i], scale) + MeasureTextWidth(ui->alphabet, " ", scale);
+		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, hintDescs[i], descX, rowY, scale, white);
 	}
 }
 
-void editorStep(editorUi *ui, struct mfb_window *window) {
+void editorStep(editorUi *ui, struct mfb_window *window, float dt, int x, int y, int width, int height) {
+	(void)window; // input is polled once per frame by the caller
+	if (dt < 0.0f) dt = 0.0f; // speeds are per second: 1.0 = one unit per second
+
+	drawStats(ui, x, y, width, height);
+
 	Input *input = ui->input;
-	Input_Poll(input, window);
-	if (input->keys[ToggleEditor]) {
+	if (input->keysDown[ToggleEditor]) {
 		if (ui->editorActive) {
 			deactivateEditorUi(ui);
 			return;
@@ -388,32 +470,142 @@ void editorStep(editorUi *ui, struct mfb_window *window) {
 	}
 
 	if (ui->editorActive) {
-		if (input->keys[SnapKey]) {
+		if (input->keysDown[SnapKey]) {
 			ui->snapToGrid = !ui->snapToGrid;
 		}
+		if (input->keysDown[uniformScaleKey]) {
+			ui->uniformScale = !ui->uniformScale;
+		}
 
-		if (input->keys[MOVE_MODE]) {
+		if (input->keysDown[MOVE_MODE]) {
 			ui->mode = MOVE_MODE;
-		} else if (input->keys[ROTATE_MODE]) {
+		} else if (input->keysDown[ROTATE_MODE]) {
 			ui->mode = ROTATE_MODE;
-		} else if (input->keys[SCALE_MODE]) {
+		} else if (input->keysDown[SCALE_MODE]) {
 			ui->mode = SCALE_MODE;
 		}
 
+		if (ui->selectedObject == NULL) return;
+
 		switch (ui->mode) {
-		// NOTE: when this is applied we need to rebuild objects data
-		case MOVE_MODE: {
-			// TODO: Move selected object
-			break;
-		}
-		case ROTATE_MODE: {
-			// TODO: Rotate selected object
-			break;
-		}
-		case SCALE_MODE: {
-			// TODO: Scale selected object
-			break;
-		}
+			case MOVE_MODE: {
+				float step = ui->moveSpeed * dt;
+				bool moving = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+				// Y is up in this engine: arrows move on the X/Z ground plane, Shift/Ctrl move on Y
+				float yaw = ui->selectedObject->rotation.y;
+				float sy = sinf(yaw), cy = cosf(yaw);
+				if (input->keys[ForwardKey]) { // local +Z
+					ui->selectedObject->position.x += step * sy;
+					ui->selectedObject->position.z += step * cy;
+				} else if (input->keys[BackwardKey]) {
+					ui->selectedObject->position.x -= step * sy;
+					ui->selectedObject->position.z -= step * cy;
+				} else if (input->keys[LeftKey]) { // local -X
+					ui->selectedObject->position.x -= step * cy;
+					ui->selectedObject->position.z += step * sy;
+				} else if (input->keys[RightKey]) { // local +X
+					ui->selectedObject->position.x += step * cy;
+					ui->selectedObject->position.z -= step * sy;
+				} else if (input->keys[UpKey]) {
+					ui->selectedObject->position.y += step;
+				} else if (input->keys[DownKey]) {
+					ui->selectedObject->position.y -= step;
+				}
+
+				if (ui->snapToGrid && !moving) {
+					ui->selectedObject->position.x = roundf(ui->selectedObject->position.x / snapToGridSize) * snapToGridSize;
+					ui->selectedObject->position.y = roundf(ui->selectedObject->position.y / snapToGridSize) * snapToGridSize;
+					ui->selectedObject->position.z = roundf(ui->selectedObject->position.z / snapToGridSize) * snapToGridSize;
+				}
+
+				Object_UpdateWorldBounds(ui->selectedObject);
+
+				break;
+			}
+			case ROTATE_MODE: {
+				float step = ui->rotationSpeed * dt * DEG2RAD; // deg/s -> rad/s
+				bool rotating = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+
+				// spin around the local bbox center instead of the model origin
+				float3 localCenter = {
+					0.5f * (ui->selectedObject->BBmin.x + ui->selectedObject->BBmax.x),
+					0.5f * (ui->selectedObject->BBmin.y + ui->selectedObject->BBmax.y),
+					0.5f * (ui->selectedObject->BBmin.z + ui->selectedObject->BBmax.z)};
+				float3 centerOffset = Float3_Mul(localCenter, ui->selectedObject->scale);
+				float3 oldCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+
+				if (input->keys[ForwardKey]) {
+					ui->selectedObject->rotation.y += step;
+				} else if (input->keys[BackwardKey]) {
+					ui->selectedObject->rotation.y -= step;
+				} else if (input->keys[LeftKey]) {
+					ui->selectedObject->rotation.x += step;
+				} else if (input->keys[RightKey]) {
+					ui->selectedObject->rotation.x -= step;
+				} else if (input->keys[UpKey]) {
+					ui->selectedObject->rotation.z += step;
+				} else if (input->keys[DownKey]) {
+					ui->selectedObject->rotation.z -= step;
+				}
+
+				if (ui->snapToGrid && !rotating) {
+					const float snapRad = snapToAngleSize * DEG2RAD;
+					ui->selectedObject->rotation.x = roundf(ui->selectedObject->rotation.x / snapRad) * snapRad;
+					ui->selectedObject->rotation.y = roundf(ui->selectedObject->rotation.y / snapRad) * snapRad;
+					ui->selectedObject->rotation.z = roundf(ui->selectedObject->rotation.z / snapRad) * snapRad;
+				}
+
+				// keep the bbox center where it was so the object spins in place
+				float3 newCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+				ui->selectedObject->position = Float3_Add(ui->selectedObject->position, Float3_Sub(oldCenter, newCenter));
+
+				Object_UpdateWorldBounds(ui->selectedObject);
+
+				break;
+			}
+			case SCALE_MODE: {
+				float step = ui->scaleSpeed * dt;
+				bool scaling = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+				if (ui->uniformScale) {
+					if (input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey]) {
+						float scaleAmount = input->keys[ForwardKey] || input->keys[BackwardKey] ? step : input->keys[LeftKey] || input->keys[RightKey] ? -step
+																								  : input->keys[UpKey] || input->keys[DownKey] ? -step
+																																	: step;
+						ui->selectedObject->scale.x += scaleAmount;
+						ui->selectedObject->scale.y += scaleAmount;
+						ui->selectedObject->scale.z += scaleAmount;
+					}
+				} else {
+					if (input->keys[ForwardKey]) {
+						ui->selectedObject->scale.x += step;
+					} else if (input->keys[BackwardKey]) {
+						ui->selectedObject->scale.x -= step;
+					} else if (input->keys[LeftKey]) {
+						ui->selectedObject->scale.y -= step;
+					} else if (input->keys[RightKey]) {
+						ui->selectedObject->scale.y += step;
+					} else if (input->keys[UpKey]) {
+						ui->selectedObject->scale.z += step;
+					} else if (input->keys[DownKey]) {
+						ui->selectedObject->scale.z -= step;
+					}
+				}
+
+				if (ui->snapToGrid && !scaling) {
+					ui->selectedObject->scale.x = roundf(ui->selectedObject->scale.x / snapToGridSize) * snapToGridSize;
+					ui->selectedObject->scale.y = roundf(ui->selectedObject->scale.y / snapToGridSize) * snapToGridSize;
+					ui->selectedObject->scale.z = roundf(ui->selectedObject->scale.z / snapToGridSize) * snapToGridSize;
+				}
+
+				Object_UpdateWorldBounds(ui->selectedObject);
+
+				break;
+			}
+			default: {
+				printf("Unknown editor mode\n");
+				ui->mode = MOVE_MODE;
+				break;
+			}
 		}
 	}
 }

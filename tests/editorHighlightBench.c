@@ -260,8 +260,16 @@ int main(void) {
 	else
 		printf("Correctness: OK (applyHighlightEdge outline white, interior tinted, cursor drawn)\n");
 
+	RenderSetup(scene.objects, scene.count, &camera);
+	RayTraceScene(scene.objects, scene.count, &camera, &matLib, &rayTaskQueue, pool, &skybox);
+	drawStats(&ui, 20, 20, 300, 260);
+	ConvertToLdr(camera.framebufferHdr, camera.framebufferLdr, WIDTH, HEIGHT);
+	SaveImage("tests/img/editor_stats_inactive.bmp", &camera);
+	printf("Image dumped to tests/img/editor_stats_inactive.bmp\n");
+
 	// Stat panel showcase: the editor's stats overlay at two panel sizes. Full
 	// editor stack (highlight + cursor + panel), tonemapped once on save.
+	activateEditorUi(&ui);
 	struct {
 		const char *path;
 		int width;

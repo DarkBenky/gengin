@@ -172,6 +172,25 @@ void RenderText(uint32 *dst, int dstWidth, int dstHeight, struct Alphabet *alpha
 	}
 }
 
+int MeasureTextWidth(struct Alphabet *alphabet, const char *text, float scale) {
+	if (!alphabet || !text) return 0;
+
+	if (scale <= 0.0f) scale = 1.0f;
+
+	int width = 0;
+	for (size_t i = 0; text[i] != '\0'; i++) {
+		unsigned char code = (unsigned char)text[i];
+		Tile tile = alphabet->letters[code].tile;
+
+		if (tile.pixels && tile.width > 0 && tile.height > 0) {
+			width += (int)((float)tile.width * scale);
+		} else {
+			width += (int)(LETTER_SIZE * scale);
+		}
+	}
+	return width;
+}
+
 void RenderTextHdr(float3 *dst, int dstWidth, int dstHeight, struct Alphabet *alphabet, const char *text, int x, int y, float scale, float3 color) {
 	if (!dst || !alphabet || !text) return;
 

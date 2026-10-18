@@ -1,5 +1,9 @@
 # Tasks
 
+- [ ] Clouds look bad need to improved also reflections for clouds would be nice
+
+- [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
+
 - [ ] Map loading files
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
@@ -11,19 +15,6 @@
   - [ ] min map resolution (original, medium, low) probably use box blur 3x3 kernel for this
   - [ ] mipMaps are generated on object leading
   - [ ] test different implementations for max performance
-
-- [ ] Build some really basic minimalistic model editor
-  - [ ] "Tab" toggles "Editor Mode" on/off
-    - [ ] click object to select it, use existing model id buffer for highlight (OpenCL: per pixel, if id == selected id, tint color buffer at that pixel)
-      - [X] Crete post processing effect to highlight selected object
-    - [ ] "1" Move Mode (default), "2" Rotate Mode, "3" Scale Mode
-    - [ ] same keys in every mode, only the meaning changes
-      - [ ] "Arrow Left/Right" = X, "Arrow Up/Down" = Z, "Right Shift/Right Ctrl" = Y
-      - [ ] Move: translate, Rotate: rotate around axis, Scale: scale along axis
-    - [ ] WASD stays camera movement, no overlap with object controls
-    - [ ] Add debug text to show mode, position, rotation, and scale of the selected model
-    - [ ] add snap mode
-  - [ ] Crete test and different version to find best method for compute heavy methods
 
 - [ ] implement heat haze
   - [ ] integrate it with object so when objects moves the heat haze
@@ -343,6 +334,18 @@
 
 - [X] Fix: agents in llmOpt are giving up to early not implementing general staff of other categories they just give up
 
+- [x] Build some really basic minimalistic model editor
+  - [x] "Tab" toggles "Editor Mode" on/off
+    - [x] click object to select it, use existing model id buffer for highlight (OpenCL: per pixel, if id == selected id, tint color buffer at that pixel)
+      - [X] Crete post processing effect to highlight selected object
+    - [x] "1" Move Mode (default), "2" Rotate Mode, "3" Scale Mode
+    - [x] same keys in every mode, only the meaning changes
+      - [x] "Arrow Left/Right" = X, "Arrow Up/Down" = Z, "Right Shift/Right Ctrl" = Y
+      - [x] Move: translate, Rotate: rotate around axis, Scale: scale along axis
+    - [x] WASD stays camera movement, no overlap with object controls
+    - [x] Add debug text to show mode, position, rotation, and scale of the selected model
+    - [x] add snap mode
+  - [x] Crete test and different version to find best method for compute heavy methods
 
 ## Current Render
 

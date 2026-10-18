@@ -24,6 +24,7 @@
 #include "client/gameClient.h"
 #include "simulation/cSim/import.h"
 #include "simulation/cSim/simulate.h"
+#include "ui/editor/editor.h"
 
 #define WNOW(ts) clock_gettime(CLOCK_MONOTONIC, &(ts))
 #define WDIFF(a, b) ((double)((b).tv_sec - (a).tv_sec) + (double)((b).tv_nsec - (a).tv_nsec) * 1e-9)
@@ -143,6 +144,9 @@ int main() {
 	struct Alphabet alphabet;
 	LoadAlphabet(&alphabet, "assets/chars");
 
+	editorUi editor;
+	createEditorUi(&scene, &editor, &camera, &input, &alphabet);
+
 	Skybox skybox;
 	LoadSkybox(&skybox, "skybox");
 
@@ -181,6 +185,9 @@ int main() {
 	struct timespec wSyncStart, wA, wB;
 	WNOW(wSyncStart);
 
+	struct timespec lastEditorTime;
+	WNOW(lastEditorTime);
+
 	Bench bench;
 	benchInit(&bench);
 
@@ -208,6 +215,16 @@ int main() {
 
 		Input_Poll(&input, window);
 		if (input.keysDown[KB_KEY_ESCAPE]) break;
+
+		struct timespec editorNow;
+		WNOW(editorNow);
+		float dt = (float)WDIFF(lastEditorTime, editorNow);
+		lastEditorTime = editorNow;
+		if (dt > 0.25f) dt = 0.25f; // clamp hitches so nothing teleports
+
+		if (editor.editorActive && input.mouseDown[MOUSE_LEFT]) {
+			selectObject(&editor, input.mouseX, input.mouseY);
+		}
 		if (input.keys[KB_KEY_W]) CameraMoveForward(&camera, 0.2f);
 		if (input.keys[KB_KEY_S]) CameraMoveForward(&camera, -0.2f);
 		if (input.keys[KB_KEY_A]) CameraMoveRight(&camera, -0.2f);
@@ -284,6 +301,11 @@ int main() {
 		accumCompositeTime += WDIFF(wA, wB);
 
 #ifndef BENCH_MODE
+		if (editor.editorActive) {
+			applyHighlightEdge(&editor, threadPool, input.mouseX, input.mouseY);
+		}
+		editorStep(&editor, window, dt, 20, 40, 320, 220);
+
 		char text[64];
 		double avgFrameTime = (frameTimes[0] + frameTimes[1] + frameTimes[2] + frameTimes[3]) * 0.25;
 		snprintf(text, sizeof(text), "FPS: %.1f", avgFrameTime > 0.0 ? 1.0 / avgFrameTime : 0.0);
