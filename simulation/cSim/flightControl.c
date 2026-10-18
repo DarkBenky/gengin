@@ -249,7 +249,8 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 }
 
 // The deployed loss plus a bank-error term (banking is the only fast heading
-// change), as a separate function so the straight path keeps the deployed loss.
+// change).  Kept separate from the deployed loss because the term only belongs
+// on the manoeuvre rollout, which is where a moving target keeps the search.
 static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
 	Plane simPlane = ctrl->plane;
 
@@ -437,11 +438,11 @@ static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, f
 	}
 
 	// Command the best control the search actually scored, not the iterate the
-	// momentum walk happened to stop on -- and only half the gap from where
-	// the surfaces already are.  The probe is scored as if the commanded
-	// surface were reached immediately, but the plant slews (the elevator
-	// needs 0.6 s for full travel), so commanding the probe outright leaves
-	// the set point chasing an unachievable jump every frame.
+	// momentum walk happened to stop on -- and only half the gap from where the
+	// surfaces already are.  The rollout already slews the plant, so this is not
+	// a reachability question: taking the probe outright tracks marginally
+	// tighter but parks the surfaces against their stops far more often, and the
+	// half-gap keeps the command away from them.
 	output.Rudder = 0.5f * (bestProbe[0] + planeGetRudder01(&ctrl->plane));
 	output.Elevator = 0.5f * (bestProbe[1] + planeGetElevator01(&ctrl->plane));
 	output.Aileron = 0.5f * (bestProbe[2] + planeGetAileron01(&ctrl->plane));
