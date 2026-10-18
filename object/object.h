@@ -65,20 +65,20 @@ typedef struct BVHNode {
 	int _pad[2];  // pad to 64 bytes; _pad[0] = leaf ordinal for leaves (leafSoa index)
 } BVHNode;		  // 64 bytes — 1 per cache line
 
-// Triangles evaluated per SSE leaf payload (the lane count of bvh.leafSoa).
+// Triangles evaluated per AVX2 leaf payload (the lane count of bvh.leafSoa).
 // CreateObjectBVH splits until a leaf holds at most this many triangles; the
 // traversals fall back to the scalar leaf loop if a node exceeds it.
-#define BVH_LEAF_SIMD 4
+#define BVH_LEAF_SIMD 8
 
 typedef struct BVH {
 	BVHNode *nodes;
 	int *triIndices; // reordered triangle indices
 	int nodeCount;
-	// Per-leaf SoA payload for the 4-wide SSE leaf triangle test: 48 floats per
-	// leaf, one __m128 per component across the (up to 4) triangles of the leaf.
-	// layout: [0..3] v0.x [4..7] v0.y [8..11] v0.z [12..15] pad
-	//         [16..19] e1.x [20..23] e1.y [24..27] e1.z [28..31] pad
-	//         [32..35] e2.x [36..39] e2.y [40..43] e2.z [44..47] pad
+	// Per-leaf SoA payload for the 8-wide AVX2 leaf triangle test: 96 floats per
+	// leaf, one __m256 per component across the (up to 8) triangles of the leaf.
+	// layout: [0..7] v0.x [8..15] v0.y [16..23] v0.z [24..31] pad
+	//         [32..39] e1.x [40..47] e1.y [48..55] e1.z [56..63] pad
+	//         [64..71] e2.x [72..79] e2.y [80..87] e2.z [88..95] pad
 	// with e1 = v2 - v1, e2 = v3 - v1 and lanes >= triCount zeroed (a == 0,
 	// which the triangle test rejects). Built once in CreateObjectBVH.
 	float *leafSoa;
@@ -384,8 +384,9 @@ static inline float rayAABB_inv(float3 bias, float3 invRd, const float *mn, cons
 
 // Test 2 BVHNode children simultaneously using SSE.
 // soa layout (BVHNode.soa): per axis {child0.mn, child0.mx, child1.mn, child1.mx}
-// out[0] = tmin for child0, out[1] = tmin for child1; FLT_MAX on miss.
-static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *soa, float out[2]) {
+// Packed form of the same test: child0's entry distance in lane 0, child1's in
+// lane 2; FLT_MAX on miss.
+static inline __m128 rayAABB_inv_x2_soa_packed(float3 bias, float3 invRd, const float *soa) {
 	__m128 tx = _mm_fmsub_ps(_mm_loadu_ps(soa + 0), _mm_set1_ps(invRd.x), _mm_set1_ps(bias.x));
 	__m128 ty = _mm_fmsub_ps(_mm_loadu_ps(soa + 4), _mm_set1_ps(invRd.y), _mm_set1_ps(bias.y));
 	__m128 tz = _mm_fmsub_ps(_mm_loadu_ps(soa + 8), _mm_set1_ps(invRd.z), _mm_set1_ps(bias.z));
@@ -397,7 +398,12 @@ static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *so
 	// a box the ray only enters behind the origin cannot hold a hit at t >= 0, so
 	// clipping the entry distance makes it report as a miss and prunes the subtree
 	tmin = _mm_max_ps(tmin, _mm_setzero_ps());
-	__m128 result = _mm_blendv_ps(tmin, _mm_set1_ps(FLT_MAX), _mm_cmplt_ps(tmax, tmin));
+	return _mm_blendv_ps(tmin, _mm_set1_ps(FLT_MAX), _mm_cmplt_ps(tmax, tmin));
+}
+
+// out[0] = tmin for child0, out[1] = tmin for child1; FLT_MAX on miss.
+static inline void rayAABB_inv_x2_soa(float3 bias, float3 invRd, const float *soa, float out[2]) {
+	__m128 result = rayAABB_inv_x2_soa_packed(bias, invRd, soa);
 	out[0] = _mm_cvtss_f32(result);
 	out[1] = _mm_cvtss_f32(_mm_shuffle_ps(result, result, _MM_SHUFFLE(2, 2, 2, 2)));
 }

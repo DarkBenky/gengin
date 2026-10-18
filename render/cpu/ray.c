@@ -67,6 +67,122 @@ static int lightSlicesReserve(int width, int height) {
 	return 1;
 }
 
+// Same group layout as s_aabbSoa, but for ALL objects: shadow and reflection
+// rays can hit objects the camera frustum culls.  rayCollision walks it 8
+// boxes per slab group with the ray's reciprocal direction hoisted out of the
+// per-batch test, instead of one RayBoxIntersectV4 call per 4 boxes (which
+// re-derives 1/dir and re-transposes the AoS pair on every call).  Built once
+// per frame on the main thread, read-only in the row kernels; keyed to the
+// object list it was built from so a stale cache can never be read.
+static float s_allAabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
+static const Object *s_allAabbSoaObjects = NULL;
+static int s_allAabbSoaCount = 0;
+
+// The flat batch still slab-tests every frustum-pass object at every pixel,
+// although only a few of them can reach a given pixel. The screen is cut into
+// RAY_TILE_SIDE-pixel tiles, each holding its own SoA batch (same
+// [group][axis][8] layout) of the objects whose projected world AABB covers it.
+// A tile's rect is the bounding rectangle of the eight projected AABB corners,
+// a superset of the box's projection, so every object a pixel's ray can reach
+// is in that pixel's tile batch and the image is unchanged. Boxes crossing the
+// camera plane (unbounded projection) get the full screen.
+#define RAY_TILE_SHIFT 6
+#define RAY_TILE_SIDE (1 << RAY_TILE_SHIFT)
+#define RAY_TILE_COLS ((WIDTH + RAY_TILE_SIDE - 1) >> RAY_TILE_SHIFT)
+#define RAY_TILE_ROWS ((HEIGHT + RAY_TILE_SIDE - 1) >> RAY_TILE_SHIFT)
+#define RAY_TILE_MAX 32
+typedef struct {
+	int n;
+	int idx[RAY_TILE_MAX];
+	float soa[(RAY_TILE_MAX / 8) * 48];
+} RayTileBatch;
+static RayTileBatch s_rayTiles[RAY_TILE_COLS * RAY_TILE_ROWS];
+static int s_rayTilesValid = 0;
+static int s_rayTileCols = 0;
+static int s_rayTilePassCount = 0;
+
+typedef struct { int x0, x1, y0, y1; } RayRect;
+
+// Bounding rectangle, in pixels, of an object's world AABB projection; the full
+// screen when any corner sits at or behind the camera plane.
+static RayRect rayProjectAABBRect(const Object *o, float3 camPos, float3 fwd, float3 rgt, float3 up_,
+                                  float aspect, float fovScale, int width, int height) {
+	float xmin = 1e30f, xmax = -1e30f, ymin = 1e30f, ymax = -1e30f;
+	for (int c = 0; c < 8; c++) {
+		float3 p = { c & 1 ? o->worldBBmax.x : o->worldBBmin.x,
+		             c & 2 ? o->worldBBmax.y : o->worldBBmin.y,
+		             c & 4 ? o->worldBBmax.z : o->worldBBmin.z };
+		float3 q = Float3_Sub(p, camPos);
+		float A = Float3_Dot(fwd, q);
+		if (A <= 1e-3f) { RayRect full = {0, width - 1, 0, height - 1}; return full; }
+		float ndcX = Float3_Dot(rgt, q) / (aspect * fovScale * A);
+		float ndcY = Float3_Dot(up_, q) / (fovScale * A);
+		float px = (ndcX + 1.0f) * 0.5f * (float)width - 0.5f;
+		float py = (1.0f - ndcY) * 0.5f * (float)height - 0.5f;
+		if (px < xmin) xmin = px;
+		if (px > xmax) xmax = px;
+		if (py < ymin) ymin = py;
+		if (py > ymax) ymax = py;
+	}
+	// NaN basis (degenerate camera) poisons the min/max; a huge-coordinate scene
+	// can push the rect past the int range. The former goes full-screen, the
+	// latter is clamped, so the casts below always see an in-range value.
+	if (!(xmin <= xmax) || !(ymin <= ymax)) { RayRect full = {0, width - 1, 0, height - 1}; return full; }
+	if (xmin < -2.0f) xmin = -2.0f;
+	if (xmin > (float)width + 2.0f) xmin = (float)width + 2.0f;
+	if (xmax < -2.0f) xmax = -2.0f;
+	if (xmax > (float)width + 2.0f) xmax = (float)width + 2.0f;
+	if (ymin < -2.0f) ymin = -2.0f;
+	if (ymin > (float)height + 2.0f) ymin = (float)height + 2.0f;
+	if (ymax < -2.0f) ymax = -2.0f;
+	if (ymax > (float)height + 2.0f) ymax = (float)height + 2.0f;
+	RayRect r;
+	r.x0 = (int)floorf(xmin) - 1; if (r.x0 < 0) r.x0 = 0;
+	r.x1 = (int)ceilf(xmax) + 1;  if (r.x1 > width - 1) r.x1 = width - 1;
+	r.y0 = (int)floorf(ymin) - 1; if (r.y0 < 0) r.y0 = 0;
+	r.y1 = (int)ceilf(ymax) + 1;  if (r.y1 > height - 1) r.y1 = height - 1;
+	return r;
+}
+
+// Returns 0 when a tile overflows RAY_TILE_MAX, leaving the frame on the flat batch.
+static int rayBuildTiles(const Object *objects, const int *passIdx, int passCount,
+                         float3 camPos, float3 fwd, float3 rgt, float3 up_,
+                         float aspect, float fovScale, int width, int height) {
+	RayRect rects[RAY_AABB_SOA_BOXES];
+	for (int j = 0; j < passCount; j++)
+		rects[j] = rayProjectAABBRect(&objects[passIdx[j]], camPos, fwd, rgt, up_, aspect, fovScale, width, height);
+
+	const int cols = (width + RAY_TILE_SIDE - 1) >> RAY_TILE_SHIFT;
+	const int rows = (height + RAY_TILE_SIDE - 1) >> RAY_TILE_SHIFT;
+	for (int tr = 0; tr < rows; tr++) {
+		for (int tc = 0; tc < cols; tc++) {
+			RayTileBatch *tb = &s_rayTiles[tr * cols + tc];
+			tb->n = 0;
+			const int tx0 = tc << RAY_TILE_SHIFT, tx1 = tx0 + RAY_TILE_SIDE - 1;
+			const int ty0 = tr << RAY_TILE_SHIFT, ty1 = ty0 + RAY_TILE_SIDE - 1;
+			for (int j = 0; j < passCount; j++) {
+				const RayRect r = rects[j];
+				if (r.x1 < tx0 || r.x0 > tx1 || r.y1 < ty0 || r.y0 > ty1) continue;
+				if (tb->n >= RAY_TILE_MAX) return 0;
+				const Object *o = &objects[passIdx[j]];
+				const int jj = tb->n++;
+				float *gp = tb->soa + (jj >> 3) * 48;
+				const int k = jj & 7;
+				gp[0 * 8 + k] = o->worldBBmin.x;
+				gp[1 * 8 + k] = o->worldBBmax.x;
+				gp[2 * 8 + k] = o->worldBBmin.y;
+				gp[3 * 8 + k] = o->worldBBmax.y;
+				gp[4 * 8 + k] = o->worldBBmin.z;
+				gp[5 * 8 + k] = o->worldBBmax.z;
+				tb->idx[jj] = passIdx[j];
+			}
+		}
+	}
+	s_rayTileCols = cols;
+	s_rayTilePassCount = passCount;
+	return 1;
+}
+
 static void BlurFloat3Buffer(float3 *src, float3 *temp, int width, int height, int radius) {
 	if (radius <= 0) return;
 
@@ -378,10 +494,59 @@ void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, S
 	poolWait(threadPool);
 }
 
+// Rebuild the all-objects AABB SoA for rayCollision (see s_allAabbSoa at the
+// top of this file).  Called from every RayTraceScene entry point right before
+// its tasks are dispatched, so the cache can never outlive the frame whose
+// world bounds it snapshotted.
+static void buildAllAabbSoa(const Object *objects, int objectCount) {
+	s_allAabbSoaObjects = NULL;
+	s_allAabbSoaCount = 0;
+	if (objectCount > RAY_AABB_SOA_BOXES) return;
+	for (int j = 0; j < objectCount; j++) {
+		const Object *o = &objects[j];
+		float *gp = s_allAabbSoa + (size_t)(j >> 3) * 48;
+		const int k = j & 7;
+		gp[0 * 8 + k] = o->worldBBmin.x;
+		gp[1 * 8 + k] = o->worldBBmax.x;
+		gp[2 * 8 + k] = o->worldBBmin.y;
+		gp[3 * 8 + k] = o->worldBBmax.y;
+		gp[4 * 8 + k] = o->worldBBmin.z;
+		gp[5 * 8 + k] = o->worldBBmax.z;
+	}
+	s_allAabbSoaObjects = objects;
+	s_allAabbSoaCount = objectCount;
+}
+
+// One 8-box slab group over the s_allAabbSoa layout [mnX8, mxX8, mnY8, mxY8,
+// mnZ8, mxZ8].  Per-lane op sequence replicates RayBoxIntersectV4 exactly
+// (sub then mul, same min/max tree, same miss sentinels) so the box decisions
+// are bit-identical; only the staging differs (SoA loads, no transpose,
+// invDir hoisted by the caller).
+static inline void raySlabGroup8(const float *gp, float3 ro, __m256 ivx, __m256 ivy, __m256 ivz,
+                                 float tMinA[8], float tMaxA[8]) {
+	const __m256 ox = _mm256_set1_ps(ro.x), oy = _mm256_set1_ps(ro.y), oz = _mm256_set1_ps(ro.z);
+	__m256 taX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 0), ox), ivx);
+	__m256 tbX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 8), ox), ivx);
+	__m256 taY = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 16), oy), ivy);
+	__m256 tbY = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 24), oy), ivy);
+	__m256 taZ = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 32), oz), ivz);
+	__m256 tbZ = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 40), oz), ivz);
+	__m256 tMin = _mm256_max_ps(_mm256_max_ps(_mm256_max_ps(_mm256_min_ps(taX, tbX), _mm256_min_ps(taY, tbY)), _mm256_min_ps(taZ, tbZ)), _mm256_setzero_ps());
+	__m256 tMax = _mm256_min_ps(_mm256_min_ps(_mm256_max_ps(taX, tbX), _mm256_max_ps(taY, tbY)), _mm256_max_ps(taZ, tbZ));
+	__m256 miss = _mm256_cmp_ps(tMin, tMax, _CMP_GT_OQ);
+	tMin = _mm256_blendv_ps(tMin, _mm256_set1_ps(FLT_MAX), miss);
+	tMax = _mm256_blendv_ps(tMax, _mm256_set1_ps(FLT_MIN), miss);
+	_mm256_storeu_ps(tMinA, tMin);
+	_mm256_storeu_ps(tMaxA, tMax);
+}
+
 static void rayCollision(Object *restrict objects, int objectCount, float3 rayOrigin, float3 rayDir, int excludeObj, int *restrict hitObjIdx, int *restrict hitTriIdx, float3 *restrict hitPos) {
 	*hitObjIdx = -1;
 	if (hitTriIdx) *hitTriIdx = -1;
 	if (hitPos) *hitPos = (float3){0.0f, 0.0f, 0.0f};
+
+	const float *restrict soa = (objects == s_allAabbSoaObjects && objectCount == s_allAabbSoaCount)
+		? s_allAabbSoa : NULL;
 
 	// Fast shadow path (scalar, kept for reference)
 	// if (!hitTriIdx && !hitPos) {
@@ -400,6 +565,27 @@ static void rayCollision(Object *restrict objects, int objectCount, float3 rayOr
 
 	// Vectorized shadow path: 4 bbox checks per call, return on first hit
 	if (!hitTriIdx && !hitPos) {
+		if (soa) {
+			const __m256 ivx = _mm256_set1_ps(1.0f / rayDir.x);
+			const __m256 ivy = _mm256_set1_ps(1.0f / rayDir.y);
+			const __m256 ivz = _mm256_set1_ps(1.0f / rayDir.z);
+			for (int g = 0; g < objectCount; g += 8) {
+				float tMinA[8], tMaxA[8];
+				raySlabGroup8(soa + (g >> 3) * 48, rayOrigin, ivx, ivy, ivz, tMinA, tMaxA);
+				int end = objectCount - g;
+				if (end > 8) end = 8;
+				for (int j = 0; j < end; j++) {
+					int idx = g + j;
+					if (idx == excludeObj) continue;
+					if (tMinA[j] >= tMaxA[j]) continue;
+					if (IntersectBVH_Shadow(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir)) {
+						*hitObjIdx = idx;
+						return;
+					}
+				}
+			}
+			return;
+		}
 		for (int i = 0; i < objectCount; i += 4) {
 			int n = objectCount - i;
 			if (n > 4) n = 4;
@@ -449,6 +635,37 @@ static void rayCollision(Object *restrict objects, int objectCount, float3 rayOr
 	// 	}
 	// }
 
+	if (soa) {
+		const __m256 ivx = _mm256_set1_ps(1.0f / rayDir.x);
+		const __m256 ivy = _mm256_set1_ps(1.0f / rayDir.y);
+		const __m256 ivz = _mm256_set1_ps(1.0f / rayDir.z);
+		for (int g = 0; g < objectCount; g += 8) {
+			float tMinA[8], tMaxA[8];
+			raySlabGroup8(soa + (g >> 3) * 48, rayOrigin, ivx, ivy, ivz, tMinA, tMaxA);
+			int end = objectCount - g;
+			if (end > 8) end = 8;
+			for (int j = 0; j < end; j++) {
+				int idx = g + j;
+				if (idx == excludeObj) continue;
+				if (tMinA[j] >= tMaxA[j] || tMinA[j] >= bestT) continue;
+
+				int triIdx = -1;
+				float3 hitPosLocal;
+				IntersectBVH(&objects[idx], &objects[idx].bvh, rayOrigin, rayDir, bestT, &triIdx, &hitPosLocal);
+				if (triIdx < 0) continue;
+
+				float3 dv = {hitPosLocal.x - rayOrigin.x, hitPosLocal.y - rayOrigin.y, hitPosLocal.z - rayOrigin.z};
+				float t = dv.x * rayDir.x + dv.y * rayDir.y + dv.z * rayDir.z;
+				if (t > 0.0f && t < bestT) {
+					bestT = t;
+					*hitObjIdx = idx;
+					if (hitTriIdx) *hitTriIdx = triIdx;
+					if (hitPos) *hitPos = hitPosLocal;
+				}
+			}
+		}
+		return;
+	}
 	for (int i = 0; i < objectCount; i += 4) {
 		int n = objectCount - i;
 		if (n > 4) n = 4;
@@ -692,6 +909,13 @@ static void RayTraceRowFunc(void *arg) {
 	// pass list fits its capacity; otherwise the row kernel stays on rayAABB_inv.
 	// Read once per row task, not per pixel.
 	const int useSoaBatch = s_aabbSoaValid && task->frustumPassCount <= RAY_AABB_SOA_BOXES;
+	const int useTiles = s_rayTilesValid && task->frustumPassCount == s_rayTilePassCount;
+	const int tileRow = row >> RAY_TILE_SHIFT;
+	const RayTileBatch *tileCur = NULL;
+	int tileColCur = -1;
+	const int *passIdx = task->frustumPassIndices;
+	int passCount = task->frustumPassCount;
+	const float *soaBase = s_aabbSoa;
 
 	// precompute per-row ray base and per-pixel right step
 	float ndcY = 1.0f - (row + 0.5f) / (float)height * 2.0f;
@@ -753,24 +977,33 @@ static void RayTraceRowFunc(void *arg) {
 		const float3 pixInvDir = {invDx, invDy, invDz};
 		const float3 pixBias = {orig.x * invDx, orig.y * invDy, orig.z * invDz};
 
-		const int *restrict passIdx = task->frustumPassIndices;
-		const int passCount = task->frustumPassCount;
+		if (useTiles) {
+			const int tc = x >> RAY_TILE_SHIFT;
+			if (tc != tileColCur) {
+				tileColCur = tc;
+				tileCur = &s_rayTiles[tileRow * s_rayTileCols + tc];
+			}
+			passIdx = tileCur->idx;
+			passCount = tileCur->n;
+			soaBase = tileCur->soa;
+		}
 		// Per-pixel object pre-filter. When RayTraceScene built the per-frame SoA
 		// batch, one AVX2 group covers up to 8 objects with six 32-byte loads of
 		// contiguous read-only data; otherwise (batch unavailable, or more objects
 		// than the batch holds) the scalar rayAABB_inv loop runs. Both paths
-		// evaluate the same expression tree per box and visit objects in the same
-		// order, so for the finite ray/AABB data the renderer produces they take
+		// evaluate the same expression tree per box and visit objects in ascending
+		// index order (a tile batch holds a per-tile subset), so for the finite
+		// ray/AABB data the renderer produces they take
 		// the same decisions and the image is unchanged (verified bit-identical
 		// over the frame; a degenerate zero-length direction component, which the
 		// camera never produces, is unspecified under -ffast-math).
-		if (useSoaBatch) {
+		if (useSoaBatch || useTiles) {
 			const __m256 bvx = _mm256_set1_ps(pixBias.x), bvy = _mm256_set1_ps(pixBias.y), bvz = _mm256_set1_ps(pixBias.z);
 			const __m256 ivx = _mm256_set1_ps(pixInvDir.x), ivy = _mm256_set1_ps(pixInvDir.y), ivz = _mm256_set1_ps(pixInvDir.z);
 			const __m256 farv = _mm256_set1_ps(FLT_MAX);
 			const int groups = (passCount + 7) >> 3;
 			for (int g = 0; g < groups; g++) {
-				const float *gp = s_aabbSoa + (size_t)g * 48;
+				const float *gp = soaBase + (size_t)g * 48;
 				__m256 tx0 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 0), ivx, bvx);
 				__m256 tx1 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 8), ivx, bvx);
 				__m256 ty0 = _mm256_fmsub_ps(_mm256_loadu_ps(gp + 16), ivy, bvy);
@@ -1040,25 +1273,23 @@ static void RayTraceRowFunc(void *arg) {
 			int inShadow = shadowHit >= 0;
 			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
 
-			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
-			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
-			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
-			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
+			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS] = {FLT_MAX, FLT_MAX, FLT_MAX};
+			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS] = {-1, -1, -1};
+			float emissiveDistances[numberOfLightSamples];
 			for (int e = 0; e < emissiveObjectCount; e++) {
 				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
-				float dist = Float3_Length(toEmissive);
-				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
-					if (dist < topEmissiveDistances[t]) {
-						// insert into sorted list
-						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
-							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
-							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
-						}
-						topEmissiveDistances[t] = dist;
-						topEmissiveIndices[t] = emissiveObjectIndices[e];
-						break;
-					}
+				emissiveDistances[e] = Float3_Length(toEmissive);
+			}
+			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+				int best = -1;
+				float bestDist = FLT_MAX;
+				for (int e = 0; e < emissiveObjectCount; e++) {
+					if (emissiveDistances[e] < bestDist) { bestDist = emissiveDistances[e]; best = e; }
 				}
+				if (best < 0) break;
+				topEmissiveDistances[t] = bestDist;
+				topEmissiveIndices[t] = emissiveObjectIndices[best];
+				emissiveDistances[best] = FLT_MAX;
 			}
 
 			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
@@ -1108,44 +1339,27 @@ static void RayTraceRowFunc(void *arg) {
 	}
 }
 
-static void RayTraceLightRowFunc(void *arg) {
-	RayTraceTask *restrict task = arg;
-	Camera *restrict camera = task->camera;
-	int width = camera->screenWidth;
-	int row = task->row;
+#define LIGHT_ROW_TILE 256
 
-	const int s0 = row / REFLECTION_RESOLUTION;
-	const int s1 = s0 + 1 < s_lightSliceCount ? s0 + 1 : s0;
-	const float t1 = (float)(row - s0 * REFLECTION_RESOLUTION) * (1.0f / REFLECTION_RESOLUTION);
-	const float t0 = 1.0f - t1;
-	const float3 *restrict reflA = s_lightReflection + (size_t)s0 * width;
-	const float3 *restrict reflB = s_lightReflection + (size_t)s1 * width;
-	const float3 *restrict emitA = s_lightEmission + (size_t)s0 * width;
-	const float3 *restrict emitB = s_lightEmission + (size_t)s1 * width;
-	const float3 *restrict shadowA = s_lightShadow + (size_t)s0 * width;
-	const float3 *restrict shadowB = s_lightShadow + (size_t)s1 * width;
-
-	float3 catchReflections[width];
-	float3 catchEmissions[width];
-	float3 catchShadow[width];
-	for (int x = 0; x < width; x++) {
-		catchReflections[x] = (float3){
-			reflA[x].x * t0 + reflB[x].x * t1,
-			reflA[x].y * t0 + reflB[x].y * t1,
-			reflA[x].z * t0 + reflB[x].z * t1};
-		catchEmissions[x] = (float3){
-			emitA[x].x * t0 + emitB[x].x * t1,
-			emitA[x].y * t0 + emitB[x].y * t1,
-			emitA[x].z * t0 + emitB[x].z * t1};
-		catchShadow[x] = (float3){
-			shadowA[x].x * t0 + shadowB[x].x * t1,
-			shadowA[x].y * t0 + shadowB[x].y * t1,
-			shadowA[x].z * t0 + shadowB[x].z * t1};
+static void LightRowBlendSlice(float3 *win, const float3 *a, const float3 *b, int n, float t0, float t1) {
+	const __m256 vt0 = _mm256_set1_ps(t0);
+	const __m256 vt1 = _mm256_set1_ps(t1);
+	int i = 0;
+	for (; i + 2 <= n; i += 2) {
+		__m256 va = _mm256_loadu_ps((const float *)(a + i));
+		__m256 vb = _mm256_loadu_ps((const float *)(b + i));
+		_mm256_storeu_ps((float *)(win + i), _mm256_fmadd_ps(vb, vt1, _mm256_mul_ps(va, vt0)));
 	}
+	for (; i < n; i++)
+		win[i] = (float3){a[i].x * t0 + b[i].x * t1,
+		                  a[i].y * t0 + b[i].y * t1,
+		                  a[i].z * t0 + b[i].z * t1};
+}
 
-	// blur reflection emission and shadows contributions across the row
-	for (int x = 0; x < width; x++) {
-		if (camera->depthBuffer[row * width + x] >= DEPTH_FAR) continue; // skip sky pixels
+static void LightRowBlurClamped(const float3 *srcC, const float3 *srcE, const float3 *srcS, int srcOff,
+                                int xFrom, int xTo, int width,
+                                float3 *accC, float3 *accE, float3 *accS, int accOff) {
+	for (int x = xFrom; x < xTo; x++) {
 		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedShadow = {0.0f, 0.0f, 0.0f};
@@ -1153,15 +1367,16 @@ static void RayTraceLightRowFunc(void *arg) {
 		for (int kernelSize = BLUR_RADIUS * 2 + 1; kernelSize > 0; kernelSize--) {
 			int kIdx = x + kernelSize - BLUR_RADIUS - 1;
 			if (kIdx >= 0 && kIdx < width) {
-				accumulatedColor.x += catchReflections[kIdx].x;
-				accumulatedColor.y += catchReflections[kIdx].y;
-				accumulatedColor.z += catchReflections[kIdx].z;
-				accumulatedEmission.x += catchEmissions[kIdx].x;
-				accumulatedEmission.y += catchEmissions[kIdx].y;
-				accumulatedEmission.z += catchEmissions[kIdx].z;
-				accumulatedShadow.x += catchShadow[kIdx].x;
-				accumulatedShadow.y += catchShadow[kIdx].y;
-				accumulatedShadow.z += catchShadow[kIdx].z;
+				const int i = kIdx - srcOff;
+				accumulatedColor.x += srcC[i].x;
+				accumulatedColor.y += srcC[i].y;
+				accumulatedColor.z += srcC[i].z;
+				accumulatedEmission.x += srcE[i].x;
+				accumulatedEmission.y += srcE[i].y;
+				accumulatedEmission.z += srcE[i].z;
+				accumulatedShadow.x += srcS[i].x;
+				accumulatedShadow.y += srcS[i].y;
+				accumulatedShadow.z += srcS[i].z;
 				samples++;
 			}
 		}
@@ -1177,32 +1392,136 @@ static void RayTraceLightRowFunc(void *arg) {
 			accumulatedShadow.y *= invW;
 			accumulatedShadow.z *= invW;
 		}
-		float3 base = camera->framebufferHdr[row * width + x];
-		float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
-		float3 combined = {
-			base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * camera->reflectBuffer[row * width + x].w,
-			base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * camera->reflectBuffer[row * width + x].w,
-			base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * camera->reflectBuffer[row * width + x].w};
+		accC[x - accOff] = accumulatedColor;
+		accE[x - accOff] = accumulatedEmission;
+		accS[x - accOff] = accumulatedShadow;
+	}
+}
 
-		float3 ownEmission = camera->bloomBuffer[row * width + x];
-		camera->bloomBuffer[row * width + x] = (float3){
-			ownEmission.x + accumulatedEmission.x,
-			ownEmission.y + accumulatedEmission.y,
-			ownEmission.z + accumulatedEmission.z,
-		};
+static void LightRowBlurRun(const float3 *srcC, const float3 *srcE, const float3 *srcS, int srcOff,
+                            int xFrom, int xTo, int width,
+                            float3 *accC, float3 *accE, float3 *accS, int accOff) {
+	int xa = xFrom > BLUR_RADIUS ? xFrom : BLUR_RADIUS;
+	int xb = xTo < width - BLUR_RADIUS ? xTo : width - BLUR_RADIUS;
+	if (xa > xTo) xa = xTo;
+	if (xb < xa) xb = xa;
+	if (xFrom < xa)
+		LightRowBlurClamped(srcC, srcE, srcS, srcOff, xFrom, xa, width, accC, accE, accS, accOff);
+	if (xb < xTo)
+		LightRowBlurClamped(srcC, srcE, srcS, srcOff, xb, xTo, width, accC, accE, accS, accOff);
 
-		camera->framebufferHdr[row * width + x] = combined;
+	const __m256 invW = _mm256_set1_ps(1.0f / (float)(BLUR_RADIUS * 2 + 1));
+	int x = xa;
+	for (; x + 2 <= xb; x += 2) {
+		const float3 *pC = srcC + (x - srcOff);
+		const float3 *pE = srcE + (x - srcOff);
+		const float3 *pS = srcS + (x - srcOff);
+		__m256 aC = _mm256_setzero_ps();
+		__m256 aE = _mm256_setzero_ps();
+		__m256 aS = _mm256_setzero_ps();
+		for (int d = BLUR_RADIUS; d >= -BLUR_RADIUS; d--) {
+			aC = _mm256_add_ps(aC, _mm256_loadu_ps((const float *)(pC + d)));
+			aE = _mm256_add_ps(aE, _mm256_loadu_ps((const float *)(pE + d)));
+			aS = _mm256_add_ps(aS, _mm256_loadu_ps((const float *)(pS + d)));
+		}
+		_mm256_storeu_ps((float *)(accC + (x - accOff)), _mm256_mul_ps(aC, invW));
+		_mm256_storeu_ps((float *)(accE + (x - accOff)), _mm256_mul_ps(aE, invW));
+		_mm256_storeu_ps((float *)(accS + (x - accOff)), _mm256_mul_ps(aS, invW));
+	}
+	if (x < xb)
+		LightRowBlurClamped(srcC, srcE, srcS, srcOff, x, xb, width, accC, accE, accS, accOff);
+}
 
-		// Visualize postion buffer for debugging
-		// float3 posVal = camera->positionBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = PackColorSafe(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f);
-		
-		// camera->framebufferLdr[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
-		// camera->framebufferLdr[row * width + x] = PackColorSafe(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z);
-		// float2 motionColor = camera->motionVectorBuffer[row * width + x];
-		// camera->framebufferLdr[row * width + x] = PackColor(motionColor.x / 4.0f, 0.0f, motionColor.y / 4.0f);
+static void RayTraceLightRowFunc(void *arg) {
+	RayTraceTask *restrict task = arg;
+	Camera *restrict camera = task->camera;
+	int width = camera->screenWidth;
+	int height = camera->screenHeight;
+	int row = task->row;
+
+	// One task owns the REFLECTION_RESOLUTION rows that share the same two
+	// slices; the first of them is the first slice unchanged.
+	const int s0 = row / REFLECTION_RESOLUTION;
+	const int s1 = s0 + 1 < s_lightSliceCount ? s0 + 1 : s0;
+	const int rowEnd = row + REFLECTION_RESOLUTION < height ? row + REFLECTION_RESOLUTION : height;
+	const float3 *restrict reflA = s_lightReflection + (size_t)s0 * width;
+	const float3 *restrict emitA = s_lightEmission + (size_t)s0 * width;
+	const float3 *restrict shadowA = s_lightShadow + (size_t)s0 * width;
+	const float3 *reflB = s_lightReflection + (size_t)s1 * width;
+	const float3 *emitB = s_lightEmission + (size_t)s1 * width;
+	const float3 *shadowB = s_lightShadow + (size_t)s1 * width;
+
+	float3 windowReflections[LIGHT_ROW_TILE + 2 * BLUR_RADIUS];
+	float3 windowEmissions[LIGHT_ROW_TILE + 2 * BLUR_RADIUS];
+	float3 windowShadow[LIGHT_ROW_TILE + 2 * BLUR_RADIUS];
+	float3 accC[LIGHT_ROW_TILE];
+	float3 accE[LIGHT_ROW_TILE];
+	float3 accS[LIGHT_ROW_TILE];
+
+	for (int x0 = 0; x0 < width; x0 += LIGHT_ROW_TILE) {
+		int x1 = x0 + LIGHT_ROW_TILE;
+		if (x1 > width) x1 = width;
+		int w0 = x0 - BLUR_RADIUS;
+		if (w0 < 0) w0 = 0;
+		int w1 = x1 + BLUR_RADIUS;
+		if (w1 > width) w1 = width;
+
+		for (int r = row; r < rowEnd; r++) {
+			const float3 *srcC = reflA;
+			const float3 *srcE = emitA;
+			const float3 *srcS = shadowA;
+			int srcOff = 0;
+			if (r != row) {
+				const float t1 = (float)(r - s0 * REFLECTION_RESOLUTION) * (1.0f / REFLECTION_RESOLUTION);
+				const float t0 = 1.0f - t1;
+				LightRowBlendSlice(windowReflections, reflA + w0, reflB + w0, w1 - w0, t0, t1);
+				LightRowBlendSlice(windowEmissions, emitA + w0, emitB + w0, w1 - w0, t0, t1);
+				LightRowBlendSlice(windowShadow, shadowA + w0, shadowB + w0, w1 - w0, t0, t1);
+				srcC = windowReflections;
+				srcE = windowEmissions;
+				srcS = windowShadow;
+				srcOff = w0;
+			}
+			LightRowBlurRun(srcC, srcE, srcS, srcOff, x0, x1, width, accC, accE, accS, x0);
+
+			const size_t rowBase = (size_t)r * width;
+			const float *restrict depthRow = camera->depthBuffer + rowBase;
+			const float3 *restrict reflWRow = camera->reflectBuffer + rowBase;
+			float3 *restrict fbRow = camera->framebufferHdr + rowBase;
+			float3 *restrict bloomRow = camera->bloomBuffer + rowBase;
+			for (int x = x0; x < x1; x++) {
+				if (depthRow[x] >= DEPTH_FAR) continue; // skip sky pixels
+				float3 accumulatedColor = accC[x - x0];
+				float3 accumulatedEmission = accE[x - x0];
+				float3 accumulatedShadow = accS[x - x0];
+				float3 base = fbRow[x];
+				float shadowMod = 0.03f + 0.97f * fminf(accumulatedShadow.x, 1.0f);
+				float3 combined = {
+					base.x * shadowMod + accumulatedEmission.x + accumulatedColor.x * reflWRow[x].w,
+					base.y * shadowMod + accumulatedEmission.y + accumulatedColor.y * reflWRow[x].w,
+					base.z * shadowMod + accumulatedEmission.z + accumulatedColor.z * reflWRow[x].w};
+
+				float3 ownEmission = bloomRow[x];
+				bloomRow[x] = (float3){
+					ownEmission.x + accumulatedEmission.x,
+					ownEmission.y + accumulatedEmission.y,
+					ownEmission.z + accumulatedEmission.z,
+				};
+
+				fbRow[x] = combined;
+
+				// Visualize postion buffer for debugging
+				// float3 posVal = camera->positionBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = PackColorSafe(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f);
+				
+				// camera->framebufferLdr[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
+				// camera->framebufferLdr[row * width + x] = PackColorSafe(camera->bloomBuffer[row * width + x].x, camera->bloomBuffer[row * width + x].y, camera->bloomBuffer[row * width + x].z);
+				// float2 motionColor = camera->motionVectorBuffer[row * width + x];
+				// camera->framebufferLdr[row * width + x] = PackColor(motionColor.x / 4.0f, 0.0f, motionColor.y / 4.0f);
+			}
+		}
 	}
 }
 
@@ -1241,13 +1560,27 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 
 	if (!lightSlicesReserve(camera->screenWidth, camera->screenHeight)) return;
 
+	buildAllAabbSoa(objects, objectCount);
+
+	// Screen-space binning of the same batch for the row kernel (see s_rayTiles).
+	s_rayTilesValid = 0;
+	if (s_aabbSoaValid && camera->screenWidth <= WIDTH && camera->screenHeight <= HEIGHT) {
+		float3 fwd = Float3_Normalize(camera->forward);
+		float3 rgt = Float3_Normalize(camera->right);
+		float3 up_ = Float3_Normalize(camera->up);
+		s_rayTilesValid = rayBuildTiles(objects, frustumPassIndices, frustumPassCount,
+		                                camera->position, fwd, rgt, up_,
+		                                camera->aspect, camera->fovScale,
+		                                camera->screenWidth, camera->screenHeight);
+	}
+
 	for (int row = 0; row < camera->screenHeight; row++) {
 		taskQueue->tasks[row] = (RayTraceTask){row, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
 		poolAdd(threadPool, RayTraceRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
 
-	for (int row = 0; row < camera->screenHeight; row++) {
+	for (int row = 0; row < camera->screenHeight; row += REFLECTION_RESOLUTION) {
 		poolAdd(threadPool, RayTraceLightRowFunc, &taskQueue->tasks[row]);
 	}
 	poolWait(threadPool);
@@ -1621,25 +1954,23 @@ static void RayTraceColumnFunc(void *arg) {
 			int inShadow = shadowHit >= 0;
 			catchShadowValue = inShadow ? (float3){0.0f, 0.0f, 0.0f} : (float3){1.0f, 1.0f, 1.0f};
 
-			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS];
-			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS];
-			memset(topEmissiveDistances, 0x7F, sizeof(float) * TOP_EMISSIVE_OBJECTS);
-			memset(topEmissiveIndices, -1, sizeof(int) * TOP_EMISSIVE_OBJECTS);
+			float topEmissiveDistances[TOP_EMISSIVE_OBJECTS] = {FLT_MAX, FLT_MAX, FLT_MAX};
+			int topEmissiveIndices[TOP_EMISSIVE_OBJECTS] = {-1, -1, -1};
+			float emissiveDistances[numberOfLightSamples];
 			for (int e = 0; e < emissiveObjectCount; e++) {
 				float3 toEmissive = Float3_Sub(objects[emissiveObjectIndices[e]].position, bestHitPos);
-				float dist = Float3_Length(toEmissive);
-				for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
-					if (dist < topEmissiveDistances[t]) {
-						// insert into sorted list
-						for (int s = TOP_EMISSIVE_OBJECTS - 1; s > t; s--) {
-							topEmissiveDistances[s] = topEmissiveDistances[s - 1];
-							topEmissiveIndices[s] = topEmissiveIndices[s - 1];
-						}
-						topEmissiveDistances[t] = dist;
-						topEmissiveIndices[t] = emissiveObjectIndices[e];
-						break;
-					}
+				emissiveDistances[e] = Float3_Length(toEmissive);
+			}
+			for (int t = 0; t < TOP_EMISSIVE_OBJECTS; t++) {
+				int best = -1;
+				float bestDist = FLT_MAX;
+				for (int e = 0; e < emissiveObjectCount; e++) {
+					if (emissiveDistances[e] < bestDist) { bestDist = emissiveDistances[e]; best = e; }
 				}
+				if (best < 0) break;
+				topEmissiveDistances[t] = bestDist;
+				topEmissiveIndices[t] = emissiveObjectIndices[best];
+				emissiveDistances[best] = FLT_MAX;
 			}
 
 			float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
@@ -1748,6 +2079,8 @@ void RayTraceSceneColumn(const Object *objects, int objectCount, Camera *camera,
 		if (Frustum_TestAABB(&frustum, objects[i].worldBBmin, objects[i].worldBBmax))
 			frustumPassIndices[frustumPassCount++] = i;
 	}
+
+	buildAllAabbSoa(objects, objectCount);
 
 	for (int col = 0; col < camera->screenWidth; col++) {
 		taskQueue->tasks[col] = (RayTraceTask){col, camera, objects, objectCount, lib, skybox, frustum, frustumPassIndices, frustumPassCount};
