@@ -19,10 +19,14 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 
 	// read header
 	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures;
-	fread(&fileSize, sizeof(uint32), 1, file);
-	fread(&triangleStructSize, sizeof(uint32), 1, file);
-	fread(&triangleCountRead, sizeof(uint32), 1, file);
-	fread(&hasTextures, sizeof(uint32), 1, file);
+	if (fread(&fileSize, sizeof(uint32), 1, file) != 1 ||
+		fread(&triangleStructSize, sizeof(uint32), 1, file) != 1 ||
+		fread(&triangleCountRead, sizeof(uint32), 1, file) != 1 ||
+		fread(&hasTextures, sizeof(uint32), 1, file) != 1) {
+		fprintf(stderr, "Error: %s is not a model file.\n", filename);
+		fclose(file);
+		return;
+	}
 
 	// hasTextures bit 0 = textures present, bit 1 = cull backfaces
 	obj->cullBackfaces = (hasTextures & 2) != 0;
@@ -43,6 +47,23 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 			fseek(file, 16, SEEK_SET);
 		}
 	}
+
+	// the field reads below assume the writer's single record layout, so a file
+	// that does not match it is corrupt
+	long dataStart = ftell(file);
+	long fileEnd = -1;
+	if (dataStart >= 0 && fseek(file, 0, SEEK_END) == 0) fileEnd = ftell(file);
+	unsigned long long recordSize = 5ull * sizeof(float3) + 3ull * sizeof(float) +
+									6ull * sizeof(uint16) + sizeof(uint32);
+	unsigned long long expectedSize = (unsigned long long)dataStart +
+									  (hasTextures ? (unsigned long long)textureSize * textureSize * 9 : 0) +
+									  (unsigned long long)triangleCount * recordSize;
+	if (triangleStructSize != recordSize || fileEnd < 0 || (unsigned long long)fileEnd != expectedSize) {
+		fprintf(stderr, "Error: %s is truncated or corrupt.\n", filename);
+		fclose(file);
+		return;
+	}
+	fseek(file, dataStart, SEEK_SET);
 
 	// load textures if present
 	Textures *tex = NULL;
