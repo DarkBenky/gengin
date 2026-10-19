@@ -1,5 +1,7 @@
 # Tasks
 
+- [ ] Add support for open ai API in llmOpt
+
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
