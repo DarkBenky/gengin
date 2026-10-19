@@ -4,7 +4,7 @@
 #include <time.h>
 #include <stdio.h>
 
-#define SAMPLES 200000000
+#define SAMPLES 20000000
 
 int main() {
 	float3 *rayDir = malloc(SAMPLES * sizeof(float3));
