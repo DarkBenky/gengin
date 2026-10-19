@@ -26,12 +26,13 @@ preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResea
     llmOpt/scripts/gengin-opt.sh local --hermes        # Hermes TUI instead
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
+    llmOpt/scripts/gengin-opt.sh openai                # direct OpenAI API
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
     llmOpt/scripts/gengin-opt.sh --headless            # unattended oneshot (-z)
     llmOpt/scripts/gengin-opt.sh --harness hermes      # same session on Hermes Agent (shorthand: --hermes)
     llmOpt/scripts/gengin-opt.sh ml [provider]         # ML/OpenCL-kernel objective (needs a GPU)
 
-Provider words (`local` / `deepseek` / `openrouter <id>`) work in any order and
+Provider words (`local` / `deepseek` / `openai` / `openrouter <id>`) work in any order and
 default to the local server. The session prompt is `prompts/optimize.md`
 (`prompts/optimize-ml.md` in `ml` mode) — edit those to change what a session does.
 Switch model mid-session with `/model custom:local:Qwen3.8-27B`.
@@ -146,7 +147,7 @@ answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
 
 | Want to change       | Where                                                        |
 |----------------------|--------------------------------------------------------------|
-| API keys (local)     | `llmOpt/.env` (`KEY`, `GITHUB_TOKEN`, `DEEPSEEK_API_KEY`), then `setup-hermes.sh` |
+| API keys (local)     | `llmOpt/.env` (`KEY`, `GITHUB_TOKEN`, `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`), then `setup-hermes.sh` |
 | API keys (VM)        | `/etc/gengin-llmopt/secrets.env` (root-only, the only place), then restart |
 | Session behaviour    | `prompts/optimize.md` / `prompts/optimize-ml.md` (read per session) |
 | Tuning / model (VM)  | `llmOpt/.env` from `.env.example`; model via `scripts/set-openrouter-model.sh <id>` |
@@ -223,7 +224,10 @@ Watches `origin/main`; on a new commit it prepares an exact-SHA sandbox, runs
 preflight + clean baseline, mints a budget-capped temporary OpenRouter key, runs
 one agent session under Xvfb, and deletes the key on every exit path. One session
 at a time; new commits coalesce to the newest. `GENGIN_OFFPEAK_WAIT=1` in
-`llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window.
+`llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window
+(deepseek sessions only; OpenAI has no off-peak prices). `OPENROUTER_MODEL=openai`
+runs every session on the direct OpenAI API (`GENGIN_OPENAI_MODEL`, default
+`gpt-6.1-sol`).
 `GENGIN_SUPERVISED_TUI=1` runs the session inside a real `dsh-tui` in a tmux
 session (`gengin-tui` attaches to it; Ctrl-a d detaches; pre-flight failures
 fall back to headless).
@@ -271,6 +275,8 @@ cheaper model once the prompt crosses a token threshold:
 
     llmOpt/scripts/gengin-opt.sh anthropic/claude-haiku-5.5:anthropic --max-context 99K deepseek
 
+The fallback word can be `deepseek` (direct DeepSeek API) or `openai` (direct
+OpenAI API, model via `GENGIN_OPENAI_MODEL`) instead of an OpenRouter id.
 `--budget 15` caps session spend (warns the model at 80%/95%, HTTP 402 past it);
 `--wait-offpeak` waits for DeepSeek's half-price window. Every request is logged to
 SQLite and shown at `http://127.0.0.1:8787/logs` (per-interval chart, cache-hit %,

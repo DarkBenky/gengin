@@ -323,6 +323,101 @@ class DirectMemberTests(unittest.TestCase):
         self.assertEqual(status, 200)
 
 
+class OpenAIDirectTests(unittest.TestCase):
+    def setUp(self):
+        proxy._route = None
+
+    def tearDown(self):
+        proxy._route = None
+
+    def test_openai_member_registration_and_key(self):
+        status, response = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000, "openaiKey": "sk-oai"})
+        self.assertEqual(status, 200)
+        self.assertEqual(proxy._route["members"][1]["upstream"], "openai")
+        self.assertEqual(proxy._route["openaiKey"], "sk-oai")
+        self.assertEqual(response["upstreams"], ["openrouter", "openai"])
+
+    def test_openai_member_needs_a_key(self):
+        os.environ.pop("OPENAI_API_KEY", None)
+        status, _ = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000})
+        self.assertEqual(status, 400)
+
+    def test_openai_member_accepts_env_key(self):
+        os.environ["OPENAI_API_KEY"] = "sk-env"
+        try:
+            status, _ = proxy._route_register({
+                "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                      "upstream": "openai"}],
+                "maxContext": 1000})
+        finally:
+            os.environ.pop("OPENAI_API_KEY", None)
+        self.assertEqual(status, 200)
+
+    def test_openai_member_selection_rewrites_model(self):
+        status, _ = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000, "openaiKey": "sk-oai"})
+        self.assertEqual(status, 200)
+        body = make_body("x" * 6000)  # ~2000 estimated tokens >= 1000
+        model, info = proxy._route_apply(body, PRIMARY, 6000, "conv-openai")
+        self.assertEqual(model, "gpt-6.1-sol")
+        self.assertEqual(info["upstream"], "openai")
+        self.assertEqual(body["model"], "gpt-6.1-sol")
+
+    def test_openai_path_translation(self):
+        self.assertEqual(
+            proxy._upstream_path("/api/v1/chat/completions", "openai"),
+            "/v1/chat/completions")
+        self.assertEqual(
+            proxy._upstream_path("/api/v1/models", "openai"), "/v1/models")
+
+    def test_openai_leg_sets_stream_usage_only(self):
+        body = {"model": "gpt-6.1-sol", "stream": True,
+                "messages": [{"role": "user", "content": "hi"}]}
+        applied, skip = proxy._apply_filters(body, "gpt-6.1-sol",
+                                             upstream="openai")
+        self.assertEqual(applied, ["stream_options"])
+        self.assertEqual(skip, "")
+        self.assertNotIn("provider", body)
+        self.assertEqual(body["stream_options"], {"include_usage": True})
+
+    def test_openai_cost_uses_the_price_table(self):
+        usage = {"prompt_tokens": 1000000, "completion_tokens": 100000,
+                 "prompt_tokens_details": {"cached_tokens": 400000}}
+        # gpt-6.1-sol: $2 input / $0.10 cached / $10 output per 1M tokens
+        expected = (400000 * 0.10 + 600000 * 2 + 100000 * 10) / 1e6
+        self.assertAlmostEqual(
+            proxy._response_cost("openai", "gpt-6.1-sol", usage), expected,
+            places=6)
+        self.assertAlmostEqual(proxy.openai_pricing.cost_usd(
+            "gpt-5.3-2026-07-14",
+            {"prompt_tokens": 1000000, "completion_tokens": 0}), 1.75,
+            places=6)
+        self.assertIsNone(proxy.openai_pricing.cost_usd("not-a-model", usage))
+
+    def test_openai_cost_counts_into_the_budget(self):
+        status, _ = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000, "openaiKey": "sk-oai", "budgetUsd": 10})
+        self.assertEqual(status, 200)
+        route = proxy._route
+        body = make_body()
+        _, info = proxy._route_apply(body, PRIMARY, 6000, "conv-oai-budget")
+        tap = proxy._ResponseTap(False)
+        tap.usage = {"prompt_tokens": 1000000, "completion_tokens": 100000,
+                     "prompt_tokens_details": {"cached_tokens": 0}}
+        proxy._route_observe("conv-oai-budget", info, tap, 6000)
+        self.assertGreater(route["spentUsd"], 2.0)
+
+
 class ReasoningReplayTests(unittest.TestCase):
     def setUp(self):
         with proxy._lock:

@@ -33,13 +33,14 @@ sed -e "s|__LLMOPT_DIR__|$LLMOPT_DIR|g" \
     "$TEMPLATE" > "$HERMES_DIR/config.yaml"
 
 # HERMES_HOME/.env is the profile's secret file.  KEY is the raw OpenRouter key
-# name in llmOpt/.env; DEEPSEEK_API_KEY enables the direct DeepSeek provider;
-# GITHUB_TOKEN is used by the create_pr tool.
+# name in llmOpt/.env; DEEPSEEK_API_KEY / OPENAI_API_KEY enable the direct
+# DeepSeek / OpenAI providers; GITHUB_TOKEN is used by the create_pr tool.
 if [[ -f "$SECRET_SRC" ]]; then
   KEY_VALUE="$(grep -E '^KEY=' "$SECRET_SRC" | head -1 | cut -d= -f2- || true)"
   DEEPSEEK_VALUE="$(grep -E '^DEEPSEEK_API_KEY=' "$SECRET_SRC" | head -1 | cut -d= -f2- || true)"
+  OPENAI_VALUE="$(grep -E '^OPENAI_API_KEY=' "$SECRET_SRC" | head -1 | cut -d= -f2- || true)"
   GITHUB_VALUE="$(grep -E '^GITHUB_TOKEN=' "$SECRET_SRC" | head -1 | cut -d= -f2- || true)"
-  if [[ -n "$KEY_VALUE" || -n "$DEEPSEEK_VALUE" ]]; then
+  if [[ -n "$KEY_VALUE" || -n "$DEEPSEEK_VALUE" || -n "$OPENAI_VALUE" ]]; then
     umask 077
     {
       if [[ -n "$KEY_VALUE" ]]; then
@@ -48,12 +49,15 @@ if [[ -f "$SECRET_SRC" ]]; then
       if [[ -n "$DEEPSEEK_VALUE" ]]; then
         printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_VALUE"
       fi
+      if [[ -n "$OPENAI_VALUE" ]]; then
+        printf 'OPENAI_API_KEY=%s\n' "$OPENAI_VALUE"
+      fi
       if [[ -n "$GITHUB_VALUE" ]]; then
         printf 'GITHUB_TOKEN=%s\n' "$GITHUB_VALUE"
       fi
     } > "$HERMES_DIR/.env"
   else
-    echo "warning: no KEY/DEEPSEEK_API_KEY in $SECRET_SRC — $HERMES_DIR/.env not written" >&2
+    echo "warning: no KEY/DEEPSEEK_API_KEY/OPENAI_API_KEY in $SECRET_SRC — $HERMES_DIR/.env not written" >&2
   fi
 else
   echo "warning: $SECRET_SRC not found — $HERMES_DIR/.env not written" >&2
@@ -88,4 +92,4 @@ else
 fi
 
 echo
-echo "run a session: $SCRIPT_DIR/gengin-opt.sh [local|openrouter|deepseek] [model] [--headless]"
+echo "run a session: $SCRIPT_DIR/gengin-opt.sh [local|openrouter|deepseek|openai] [model] [--headless]"

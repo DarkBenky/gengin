@@ -40,9 +40,10 @@ Context-aware route (registered at runtime, off by default): a launcher
 (`POST /route/register`), e.g. Claude Haiku -> DeepSeek.  Requests are served
 by the first member until the conversation's prompt is estimated to cross a
 token threshold, then that conversation switches to the second for good.  A
-member is either an OpenRouter model id, or `{model, upstream: deepseek}` for
-the DIRECT DeepSeek API (its own upstream, keyed by the registration's
-`deepseekKey`; OpenRouter-only filters are skipped for that leg).  That leg
+member is either an OpenRouter model id, or `{model, upstream: deepseek}` /
+`{model, upstream: openai}` for a DIRECT vendor API (its own upstream, keyed
+by the registration's `deepseekKey` / `openaiKey`; OpenRouter-only filters
+are skipped for that leg).  The deepseek leg
 keeps thinking mode on: the proxy remembers the `reasoning_content` of every
 response it served, replays it into the conversation's assistant messages
 (thinking mode 400s tool requests whose replayed messages lost the field -
@@ -53,8 +54,9 @@ chunk when streaming) plus a conservative estimate of the text added since.
 This targets price tiers (Haiku input costs 5x above a 100K prompt), not
 context windows.  Registration lives in proxy memory, expires after its TTL,
 and is inspectable at `GET /route`; `POST /route/clear` removes it
-(routeId-guarded).  The direct leg's cost is computed from DeepSeek's price
-table (off-peak aware, llmOpt/deepseek_pricing.py); every served request lands
+(routeId-guarded).  The direct legs' costs are computed from the vendor price tables
+(off-peak aware for DeepSeek, llmOpt/deepseek_pricing.py;
+llmOpt/openai_pricing.py for OpenAI); every served request lands
 in a SQLite log with a dashboard at `GET /logs`; and a route can carry a
 session budget (`budgetUsd`) that injects a warning at the configured
 fraction and at 95%, and stops the conversation with HTTP 402 once spent.
@@ -82,6 +84,7 @@ Env knobs (all optional):
   GENGIN_PROXY_LOG=-            # "-" = stderr, or an absolute file path
   GENGIN_PROXY_ROUTE_CHARS_PER_TOKEN=3  # estimate divisor; lower = switch sooner
   GENGIN_PROXY_DEEPSEEK_UPSTREAM=https://api.deepseek.com
+  GENGIN_PROXY_OPENAI_UPSTREAM=https://api.openai.com
   GENGIN_PROXY_LOG_DB=<llmOpt>/state/requests.db  # "" or 0 disables the log
   GENGIN_PROXY_BUDGET_WARN=0.8         # session-budget warning fraction
   GENGIN_PROXY_BUDGET_TEXT=...         # replace the budget warning text
@@ -104,13 +107,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import deepseek_pricing  # noqa: E402  (llmOpt/deepseek_pricing.py)
+import openai_pricing  # noqa: E402  (llmOpt/openai_pricing.py)
 
 PORT = int(os.environ.get("GENGIN_PROXY_PORT", "8787") or 8787)
 BIND = os.environ.get("GENGIN_PROXY_BIND", "127.0.0.1")
 UPSTREAM = os.environ.get("GENGIN_PROXY_UPSTREAM", "https://openrouter.ai").rstrip("/")
-# Second upstream for chain members tagged `{..., "upstream": "deepseek"}`.
+# Direct vendor upstreams for chain members tagged `{..., "upstream": ...}`.
 DEEPSEEK_UPSTREAM = os.environ.get(
     "GENGIN_PROXY_DEEPSEEK_UPSTREAM", "https://api.deepseek.com").rstrip("/")
+OPENAI_UPSTREAM = os.environ.get(
+    "GENGIN_PROXY_OPENAI_UPSTREAM", "https://api.openai.com").rstrip("/")
 QUANTIZATIONS = [
     q.strip()
     for q in os.environ.get(
@@ -727,7 +733,7 @@ def _route_active():
 
 def _normalize_member(member):
     """A route member: an OpenRouter model id, or {model, upstream} for a
-    direct vendor API (currently only `deepseek`)."""
+    direct vendor API (`deepseek` or `openai`)."""
     if isinstance(member, str):
         if not ROUTE_SLUG_RE.fullmatch(member):
             return None
@@ -736,7 +742,7 @@ def _normalize_member(member):
         model = member.get("model")
         upstream = member.get("upstream", "openrouter")
         if (not isinstance(model, str) or not ROUTE_SLUG_RE.fullmatch(model)
-                or upstream not in ("openrouter", "deepseek")):
+                or upstream not in ("openrouter", "deepseek", "openai")):
             return None
         return {"model": model, "upstream": upstream}
     return None
@@ -744,8 +750,9 @@ def _normalize_member(member):
 
 def _upstream_path(path, upstream):
     """Client path -> upstream path.  OpenRouter mirrors the client path; the
-    DeepSeek API lives under /v1 while the client talks to /api/v1."""
-    if upstream == "deepseek" and path.startswith("/api/v1"):
+    DeepSeek and OpenAI APIs live under /v1 while the client talks to
+    /api/v1."""
+    if upstream in ("deepseek", "openai") and path.startswith("/api/v1"):
         return "/v1" + path[len("/api/v1"):]
     return path
 
@@ -788,10 +795,18 @@ def _route_register(payload):
     deepseek_key = payload.get("deepseekKey", "")
     if not isinstance(deepseek_key, str) or len(deepseek_key) > 512:
         return 400, {"error": {"message": "route: deepseekKey must be a short string"}}
+    openai_key = payload.get("openaiKey", "")
+    if not isinstance(openai_key, str) or len(openai_key) > 512:
+        return 400, {"error": {"message": "route: openaiKey must be a short string"}}
     if (any(m["upstream"] == "deepseek" for m in members)
             and not deepseek_key and not os.environ.get("DEEPSEEK_API_KEY")):
         return 400, {"error": {"message":
             "route: a deepseek member needs deepseekKey (or DEEPSEEK_API_KEY "
+            "in the proxy environment)"}}
+    if (any(m["upstream"] == "openai" for m in members)
+            and not openai_key and not os.environ.get("OPENAI_API_KEY")):
+        return 400, {"error": {"message":
+            "route: an openai member needs openaiKey (or OPENAI_API_KEY "
             "in the proxy environment)"}}
     now = time.time()
     spec = {
@@ -807,6 +822,7 @@ def _route_register(payload):
                       "costUsd": 0.0} for _ in members],
         "switches": 0,
         "deepseekKey": deepseek_key,
+        "openaiKey": openai_key,
         "budgetUsd": float(budget) if budget is not None else None,
         "spentUsd": 0.0,
         "warnLevel": 0,
@@ -935,7 +951,7 @@ def _route_apply(body, model, raw_len, conversation):
 
 def _response_cost(upstream, model, usage, when=None):
     """Cost of one response: provider-reported when present (OpenRouter sends
-    `usage.cost`), computed from the price table for the direct DeepSeek leg."""
+    `usage.cost`), computed from the vendor price table for a direct leg."""
     cost = None
     if isinstance(usage, dict):
         raw = usage.get("cost")
@@ -943,6 +959,8 @@ def _response_cost(upstream, model, usage, when=None):
             cost = float(raw)
     if cost is None and upstream == "deepseek":
         cost = deepseek_pricing.cost_usd(model, usage, when)
+    if cost is None and upstream == "openai":
+        cost = openai_pricing.cost_usd(model, usage)
     return cost
 
 
@@ -1015,7 +1033,7 @@ def _route_observe(conversation, info, tap, raw_len):
 # --- request log -----------------------------------------------------------
 # One SQLite row per served request (tokens, cost, session, timing); served as
 # a small dashboard at GET /logs - the OpenRouter logs panel equivalent for
-# whatever runs through this proxy, including the direct DeepSeek leg.
+# whatever runs through this proxy, including the direct vendor legs.
 
 _LOG_SCHEMA = (
     "CREATE TABLE IF NOT EXISTS requests (ts REAL, date TEXT, route_id TEXT,"
@@ -1240,7 +1258,7 @@ LOGS_HTML = """<!doctype html>
  th{color:#8b8b94;font-weight:500;position:sticky;top:0;background:#151517}
  tr:hover td{background:#1b1b20}
  td.num,th.num{text-align:right}
- .up{color:#8fb4ff}.ds{color:#3ecf8e}
+ .up{color:#8fb4ff}.ds{color:#3ecf8e}.oai{color:#f0a84a}
  .muted{color:#77777f}
 </style></head><body>
 <h1>gengin request logs <span class="muted" id="range"></span></h1>
@@ -1323,7 +1341,7 @@ async function load() {
   const cols = [['date', 0], ['session', 0], ['model', 0], ['provider', 0], ['input', 1], ['output', 1], ['cached', 1], ['hit %', 1], ['cost', 1], ['ms', 1], ['status', 1]];
   let html = '<thead><tr>' + cols.map((c) => '<th' + (c[1] ? ' class="num"' : '') + '>' + c[0] + '</th>').join('') + '</tr></thead><tbody>';
   for (const r of rows.slice(0, 800)) {
-    const provider = r.upstream === 'deepseek' ? '<span class="ds">deepseek</span>' : '<span class="up">openrouter</span>';
+    const provider = r.upstream === 'deepseek' ? '<span class="ds">deepseek</span>' : r.upstream === 'openai' ? '<span class="oai">openai</span>' : '<span class="up">openrouter</span>';
     html += '<tr><td>' + esc(r.date) + '</td><td>' + esc(sessionName(r)) + '</td><td>' + esc(r.model) + '</td><td>' + provider + '</td><td class="num">' + fmtTok(r.prompt) + '</td><td class="num">' + fmtTok(r.completion) + '</td><td class="num">' + fmtTok(r.cache_hit) + '</td><td class="num">' + fmtPct(r.cache_hit, r.cache_miss) + '</td><td class="num">' + fmtCost(r.cost) + '</td><td class="num">' + (r.ms == null ? '-' : r.ms) + '</td><td class="num">' + (r.status == null ? '-' : r.status) + '</td></tr>';
   }
   $('table').innerHTML = html + '</tbody>';
@@ -1435,10 +1453,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _upstream_request(self, body, headers, upstream="openrouter", key=""):
-        if upstream == "deepseek":
+        if upstream in ("deepseek", "openai"):
             headers = dict(headers)
             headers["Authorization"] = "Bearer " + key
-            url = DEEPSEEK_UPSTREAM + _upstream_path(self.path, upstream)
+            base = DEEPSEEK_UPSTREAM if upstream == "deepseek" else OPENAI_UPSTREAM
+            url = base + _upstream_path(self.path, upstream)
         else:
             url = UPSTREAM + self.path
         req = urllib.request.Request(
@@ -1530,14 +1549,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         upstream_kind = route_info["upstream"] if route_info else "openrouter"
         upstream_key = ""
-        if upstream_kind != "openrouter":
+        if upstream_kind == "deepseek":
             upstream_key = (route_info["route"].get("deepseekKey")
                             or os.environ.get("DEEPSEEK_API_KEY", ""))
-            if not upstream_key:
-                _log_line(f"POST {self.path} model={model} error=no-route-key")
-                self._send_json(502, {"error": {"message":
-                    "proxy: the deepseek chain leg has no API key"}})
-                return
+        elif upstream_kind == "openai":
+            upstream_key = (route_info["route"].get("openaiKey")
+                            or os.environ.get("OPENAI_API_KEY", ""))
+        if upstream_kind != "openrouter" and not upstream_key:
+            _log_line(f"POST {self.path} model={model} error=no-route-key")
+            self._send_json(502, {"error": {"message":
+                f"proxy: the {upstream_kind} chain leg has no API key"}})
+            return
 
         if route_info is not None:
             blocked = _budget_block(route_info["route"])

@@ -9,6 +9,7 @@
 #   gengin-opt.sh local --web           dsh Web UI instead (no browser popup; :3081)
 #   gengin-opt.sh local --headless      auto-run one-shot instead of a UI
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
+#   gengin-opt.sh openai [model]        direct OpenAI API (needs OPENAI_API_KEY)
 #   gengin-opt.sh openrouter PRIMARY --max-context 99K FALLBACK
 #                                       switch to FALLBACK at 99K prompt tokens
 #   gengin-opt.sh ml [local|openrouter|deepseek] [model]  ML layer objective
@@ -46,10 +47,11 @@ WAIT_OFFPEAK=0
 HARNESS="${GENGIN_HARNESS:-dsh}"
 
 usage() {
-  echo "usage: $0 [local|openrouter|deepseek] [model] [--goal TEXT] [--headless] [--dry-run]"
-  echo "       $0 ml [local|openrouter|deepseek] [model] [--goal TEXT] [--headless]"
+  echo "usage: $0 [local|openrouter|deepseek|openai] [model] [--goal TEXT] [--headless] [--dry-run]"
+  echo "       $0 ml [local|openrouter|deepseek|openai] [model] [--goal TEXT] [--headless]"
   echo "       $0 openrouter PRIMARY --max-context 99K FALLBACK [--goal TEXT]"
   echo "       $0 openrouter PRIMARY --max-context 99K --budget 15 deepseek"
+  echo "       $0 openrouter PRIMARY --max-context 99K --budget 15 openai"
   echo "       $0 openrouter --supervised --model M --query-file F --usage-file U"
   echo "       --budget USD session spend cap; --wait-offpeak waits for half-price hours"
   echo "       --harness dsh|hermes selects the agent harness (default: dsh)"
@@ -359,6 +361,14 @@ while [[ $# -gt 0 ]]; do
         PRESET=deepseek
         PROVIDER_ARGS=(--provider deepseek); shift
       fi ;;
+    openai|oa)
+      if [[ "$ROUTE_FLAG" -eq 1 && ${#MODEL_ARGS[@]} -gt 0 && -z "$ROUTE_FALLBACK" ]]; then
+        # Inside a chain the word names the fallback leg (direct OpenAI API).
+        ROUTE_FALLBACK="openai"; shift
+      else
+        PRESET=openai
+        PROVIDER_ARGS=(--provider openai); shift
+      fi ;;
     --model)
       [[ $# -ge 2 ]] || { echo "error: --model needs a value" >&2; exit 2; }
       MODEL="$2"; MODEL_ARGS=(-m "$2"); shift 2 ;;
@@ -437,6 +447,7 @@ if [[ -n "$PRESET" && ${#MODEL_ARGS[@]} -eq 0 ]]; then
   case "$PRESET" in
     local)      MODEL_ARGS=(-m "${GENGIN_LOCAL_MODEL:-Qwen3.8-27B}") ;;
     deepseek)   MODEL_ARGS=(-m "${GENGIN_DEEPSEEK_MODEL:-deepseek-v4-flash}") ;;
+    openai)     MODEL_ARGS=(-m "${GENGIN_OPENAI_MODEL:-gpt-6.1-sol}") ;;
     openrouter) MODEL_ARGS=(-m "${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}") ;;
   esac
 fi
@@ -635,7 +646,7 @@ if [[ -z "$route_budget" ]]; then
 fi
 route_enabled=0
 if [[ -n "$route_max_context" || -n "$route_fallback" ]]; then
-  if [[ "$PRESET" == "local" || "$PRESET" == "deepseek" ]]; then
+  if [[ "$PRESET" == "local" || "$PRESET" == "deepseek" || "$PRESET" == "openai" ]]; then
     if [[ "$ROUTE_FLAG" -eq 1 ]]; then
       echo "error: a chain needs OpenRouter models — the '${PRESET}' preset bypasses the proxy (chain syntax: PRIMARY --max-context 99K FALLBACK)" >&2
       exit 2
@@ -650,28 +661,36 @@ if [[ -n "$route_max_context" || -n "$route_fallback" ]]; then
 fi
 
 if [[ "$route_enabled" -eq 1 ]]; then
-  # `deepseek` as the fallback word means the DIRECT DeepSeek API: the proxy
-  # holds a second upstream for that leg, so the key rides along with the
-  # loopback registration.  Any other word is an OpenRouter model id.
-  route_fallback_direct=0
-  route_ds_key=""
+  # `deepseek`/`openai` as the fallback word mean the DIRECT vendor API: the
+  # proxy holds a second upstream for that leg, so the key rides along with
+  # the loopback registration.  Any other word is an OpenRouter model id.
+  route_fallback_upstream=""
+  route_direct_key=""
+  route_key_name=""
   case "$route_fallback" in
     deepseek|ds)
-      route_fallback_direct=1
+      route_fallback_upstream="deepseek"
       route_fallback="${GENGIN_DEEPSEEK_MODEL:-deepseek-v4-flash}"
-      route_ds_key="${DEEPSEEK_API_KEY:-}"
-      if [[ -z "$route_ds_key" ]]; then
-        route_ds_key="$(grep -E '^DEEPSEEK_API_KEY=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-      fi
-      if [[ -z "$route_ds_key" ]]; then
-        echo "error: the deepseek fallback needs DEEPSEEK_API_KEY (environment or llmOpt/.env)" >&2
-        exit 2
-      fi
-      [[ "$route_ds_key" =~ ^[A-Za-z0-9._-]+$ ]] || {
-        echo "error: DEEPSEEK_API_KEY contains unexpected characters" >&2; exit 2; }
+      route_key_name="DEEPSEEK_API_KEY"
+      ;;
+    openai|oa)
+      route_fallback_upstream="openai"
+      route_fallback="${GENGIN_OPENAI_MODEL:-gpt-6.1-sol}"
+      route_key_name="OPENAI_API_KEY"
       ;;
   esac
-  if [[ "$route_fallback_direct" -eq 0 ]]; then
+  if [[ -n "$route_fallback_upstream" ]]; then
+    route_direct_key="${!route_key_name:-}"
+    if [[ -z "$route_direct_key" ]]; then
+      route_direct_key="$(grep -E "^${route_key_name}=" "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+    fi
+    if [[ -z "$route_direct_key" ]]; then
+      echo "error: the $route_fallback_upstream fallback needs $route_key_name (environment or llmOpt/.env)" >&2
+      exit 2
+    fi
+    [[ "$route_direct_key" =~ ^[A-Za-z0-9._-]+$ ]] || {
+      echo "error: $route_key_name contains unexpected characters" >&2; exit 2; }
+  else
     [[ "$route_fallback" =~ ^[A-Za-z0-9._:/-]+$ ]] || {
       echo "error: invalid fallback model: $route_fallback" >&2; exit 2; }
   fi
@@ -690,7 +709,7 @@ if [[ "$route_enabled" -eq 1 ]]; then
     awk "BEGIN{exit !($route_budget > 0)}" || {
       echo "error: --budget must be greater than 0, got: $route_budget" >&2; exit 2; }
   fi
-  if [[ "$route_fallback_direct" -eq 1 ]]; then
+  if [[ "$route_fallback_upstream" == "deepseek" ]]; then
     # DeepSeek halves its prices outside the peak windows: warn, and optionally
     # wait, so a long session does not run at full price.
     offpeak_rc=0
@@ -719,9 +738,9 @@ if [[ "$route_enabled" -eq 1 ]]; then
     PRESET=openrouter
     PROVIDER_ARGS=(--provider openrouter)
   fi
-  if [[ "$route_fallback_direct" -eq 1 ]]; then
-    route_fallback_member="$(printf '{"model":"%s","upstream":"deepseek"}' "$route_fallback")"
-    route_fallback_label="$route_fallback (direct DeepSeek API)"
+  if [[ -n "$route_fallback_upstream" ]]; then
+    route_fallback_member="$(printf '{"model":"%s","upstream":"%s"}' "$route_fallback" "$route_fallback_upstream")"
+    route_fallback_label="$route_fallback (direct $route_fallback_upstream API)"
   else
     route_fallback_member="\"$route_fallback\""
     route_fallback_label="$route_fallback"
@@ -736,7 +755,7 @@ if [[ "$route_enabled" -eq 1 ]]; then
     fi
     route_json="$(printf '{"members":["%s",%s],"maxContext":%s,"ttlSeconds":%s,"label":"gengin-opt"%s%s}' \
       "$route_primary" "$route_fallback_member" "$route_tokens" "$route_ttl" \
-      "${route_ds_key:+,\"deepseekKey\":\"$route_ds_key\"}" \
+      "${route_direct_key:+,\"${route_fallback_upstream}Key\":\"$route_direct_key\"}" \
       "${route_budget:+,\"budgetUsd\":$route_budget}")"
     if ! curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' \
         -d "$route_json" "http://127.0.0.1:$PROXY_PORT/route/register" >/dev/null 2>&1; then
@@ -749,7 +768,7 @@ fi
 
 # OpenRouter traffic goes through the local filtering proxy (model.base_url in
 # the rendered Hermes config).  Warn early when it is not running.
-if [[ "$PRESET" != "local" && "$PRESET" != "deepseek" ]]; then
+if [[ "$PRESET" != "local" && "$PRESET" != "deepseek" && "$PRESET" != "openai" ]]; then
   PROXY_PORT="${GENGIN_PROXY_PORT:-8787}"
   if ! curl -fsS --max-time 2 "http://127.0.0.1:$PROXY_PORT/health" >/dev/null 2>&1; then
     echo "warning: OpenRouter proxy not reachable on http://127.0.0.1:$PROXY_PORT — start it with llmOpt/scripts/setup-openrouter-proxy.sh" >&2
@@ -759,6 +778,12 @@ if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
   DEEPSEEK_VALUE="$(grep -E '^DEEPSEEK_API_KEY=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
   if [[ -n "$DEEPSEEK_VALUE" ]]; then
     export DEEPSEEK_API_KEY="$DEEPSEEK_VALUE"
+  fi
+fi
+if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  OPENAI_VALUE="$(grep -E '^OPENAI_API_KEY=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  if [[ -n "$OPENAI_VALUE" ]]; then
+    export OPENAI_API_KEY="$OPENAI_VALUE"
   fi
 fi
 

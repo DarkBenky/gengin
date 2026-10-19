@@ -102,6 +102,8 @@ KNOWN_KEYS = {
     "GENGIN_ROUTE_FALLBACK_MODEL",
     "GENGIN_ROUTE_TTL_SECONDS",
     "GENGIN_ROUTE_BUDGET_USD",
+    # Session model for OPENROUTER_MODEL=openai (direct OpenAI API).
+    "GENGIN_OPENAI_MODEL",
     # Hold a pending commit (re-checked every poll) until DeepSeek's off-peak
     # (half-price) window before preparing or launching a session.
     "GENGIN_OFFPEAK_WAIT",
@@ -135,16 +137,22 @@ KNOWN_KEYS = {
 HEX_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ROUTE_MODEL_RE = re.compile(r"^[A-Za-z0-9._:/-]+$")
-# In the fallback position `deepseek`/`ds` selects the DIRECT DeepSeek API (the
-# proxy holds a second upstream for it); any other value is an OpenRouter id.
-ROUTE_DIRECT_FALLBACKS = {"deepseek", "ds"}
+# In the fallback position `deepseek`/`ds`/`openai`/`oai` selects the DIRECT
+# vendor API (the proxy holds a second upstream for each); any other value is
+# an OpenRouter id.
+ROUTE_DEEPSEEK_FALLBACKS = {"deepseek", "ds"}
+ROUTE_OPENAI_FALLBACKS = {"openai", "oai"}
+ROUTE_DIRECT_FALLBACKS = ROUTE_DEEPSEEK_FALLBACKS | ROUTE_OPENAI_FALLBACKS
 ROUTE_DEEPSEEK_MODEL = "deepseek-v4-flash"
-# OPENROUTER_MODEL=deepseek/ds runs the WHOLE session on the direct DeepSeek
-# API through the proxy (no switching): the session model is the direct model
-# itself and the "fallback" is the same model under its legacy id below a
+ROUTE_OPENAI_MODEL = "gpt-6.1-sol"
+# OPENROUTER_MODEL=deepseek/ds/openai/oai runs the WHOLE session on the direct
+# vendor API through the proxy (no switching): the session model is the direct
+# model itself and the "fallback" is the same model under a sibling id below a
 # never-reached threshold, so the route only carries the key, the cost log and
-# the budget.  (Both ids are billed at the Flash price.)
+# the budget.  (Both DeepSeek ids are billed at the Flash price; both OpenAI
+# ids are billed at the same tier.)
 ROUTE_DEEPSEEK_ALIAS = "deepseek-flash"
+ROUTE_OPENAI_ALIAS = "gpt-6-sol"
 ROUTE_DIRECT_MAX_CONTEXT = 10000000
 
 
@@ -341,12 +349,13 @@ class Config:
     quick_ask_log: str = ""
     # cost-aware route ("" / 0 means off; set both keys or neither).
     route_fallback_model: str = ""
-    route_fallback_direct: bool = False
+    route_fallback_upstream: str = ""
     route_max_context_tokens: int = 0
     route_ttl_seconds: int = 0
     route_budget_usd: float = 0.0
     offpeak_wait: bool = False
     direct_session: bool = False
+    direct_upstream: str = ""
     management_key: str = ""
 
     def mcp_python(self):
@@ -426,6 +435,43 @@ def _deepseek_key_from_env_or_credential():
     return ""
 
 
+def _openai_key_from_env_or_credential():
+    """OpenAI key from the environment or a credential/secrets file.
+
+    Same sources and order as the DeepSeek helper above: $OPENAI_API_KEY,
+    files in $CREDENTIALS_DIRECTORY (a dedicated credential, or the single
+    secrets file exposed under another name), then the console's secrets
+    path.  Each file may be a raw key or dotenv-style KEY=VALUE lines.
+    """
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if key:
+        return key
+    cred_dir = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    candidates = [
+        os.path.join(cred_dir, "OPENAI_API_KEY"),
+        os.path.join(cred_dir, "OPENROUTER_MANAGEMENT_KEY"),
+        "/etc/gengin-llmopt/secrets.env",
+    ] if cred_dir else ["/etc/gengin-llmopt/secrets.env"]
+    for path in candidates:
+        try:
+            with open(path) as fh:
+                content = fh.read()
+        except OSError:
+            continue
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("OPENAI_API_KEY="):
+                return line.split("=", 1)[1].strip().strip("'\"")
+    return ""
+
+
+def _openai_session_model(values):
+    """Session model for OPENROUTER_MODEL=openai (env wins over the .env file)."""
+    model = (os.environ.get("GENGIN_OPENAI_MODEL", "").strip()
+             or (values.get("GENGIN_OPENAI_MODEL", "") or "").strip())
+    return model or ROUTE_OPENAI_MODEL
+
+
 def load_config(require_management_key=True):
     """Parse and validate llmOpt/.env. Returns (config, errors)."""
     values, errors = parse_env_file(ENV_FILE)
@@ -441,8 +487,17 @@ def load_config(require_management_key=True):
     watch_branch = text("WATCH_BRANCH")
     model = text("OPENROUTER_MODEL")
     direct_session = model in ROUTE_DIRECT_FALLBACKS
+    direct_upstream = ""
     if direct_session:
-        model = ROUTE_DEEPSEEK_MODEL
+        direct_upstream = ("openai" if model in ROUTE_OPENAI_FALLBACKS
+                           else "deepseek")
+        if direct_upstream == "openai":
+            model = _openai_session_model(values)
+            if not ROUTE_MODEL_RE.fullmatch(model):
+                errors.append("GENGIN_OPENAI_MODEL: invalid model id "
+                              f"{model!r}")
+        else:
+            model = ROUTE_DEEPSEEK_MODEL
     display = text("GENGIN_DISPLAY")
     headless_mode = text("HEADLESS_MODE")
     state_dir = text("STATE_DIR")
@@ -515,16 +570,30 @@ def load_config(require_management_key=True):
             route_max_context_tokens = parse_size_tokens(route_max_context_raw)
         except ValueError as exc:
             errors.append(f"GENGIN_ROUTE_MAX_CONTEXT: {exc}")
-    route_fallback_direct = route_fallback_model in ROUTE_DIRECT_FALLBACKS
+    route_fallback_is_direct = route_fallback_model in ROUTE_DIRECT_FALLBACKS
+    route_fallback_upstream = ""
+    if route_fallback_is_direct:
+        route_fallback_upstream = ("openai" if route_fallback_model
+                                   in ROUTE_OPENAI_FALLBACKS else "deepseek")
     if bool(route_max_context_raw) != bool(route_fallback_model):
         errors.append("GENGIN_ROUTE_MAX_CONTEXT and GENGIN_ROUTE_FALLBACK_MODEL: "
                       "set both or neither")
-    if route_fallback_direct:
-        route_fallback_model = ROUTE_DEEPSEEK_MODEL
-        if not _deepseek_key_from_env_or_credential():
-            errors.append("GENGIN_ROUTE_FALLBACK_MODEL=deepseek needs "
-                          "DEEPSEEK_API_KEY in the supervisor environment "
-                          "(/etc/gengin-llmopt/secrets.env)")
+    if route_fallback_is_direct:
+        if route_fallback_upstream == "deepseek":
+            route_fallback_model = ROUTE_DEEPSEEK_MODEL
+            if not _deepseek_key_from_env_or_credential():
+                errors.append("GENGIN_ROUTE_FALLBACK_MODEL=deepseek needs "
+                              "DEEPSEEK_API_KEY in the supervisor environment "
+                              "(/etc/gengin-llmopt/secrets.env)")
+        else:
+            route_fallback_model = _openai_session_model(values)
+            if not ROUTE_MODEL_RE.fullmatch(route_fallback_model):
+                errors.append("GENGIN_ROUTE_FALLBACK_MODEL: invalid model id "
+                              f"{route_fallback_model!r}")
+            if not _openai_key_from_env_or_credential():
+                errors.append("GENGIN_ROUTE_FALLBACK_MODEL=openai needs "
+                              "OPENAI_API_KEY in the supervisor environment "
+                              "(/etc/gengin-llmopt/secrets.env)")
     elif route_fallback_model and not ROUTE_MODEL_RE.fullmatch(route_fallback_model):
         errors.append("GENGIN_ROUTE_FALLBACK_MODEL: invalid model id "
                       f"{route_fallback_model!r}")
@@ -551,12 +620,18 @@ def load_config(require_management_key=True):
                                   errors) or False
     if direct_session:
         if route_max_context_raw or route_fallback_model:
-            errors.append("OPENROUTER_MODEL=deepseek runs the whole session on "
-                          "the direct API: drop GENGIN_ROUTE_MAX_CONTEXT/"
+            errors.append(f"OPENROUTER_MODEL={direct_upstream} runs the whole "
+                          "session on the direct API: drop "
+                          "GENGIN_ROUTE_MAX_CONTEXT/"
                           "GENGIN_ROUTE_FALLBACK_MODEL (or keep the chain instead)")
-        if not _deepseek_key_from_env_or_credential():
-            errors.append("OPENROUTER_MODEL=deepseek needs DEEPSEEK_API_KEY in "
-                          "the supervisor environment "
+        if direct_upstream == "deepseek":
+            if not _deepseek_key_from_env_or_credential():
+                errors.append("OPENROUTER_MODEL=deepseek needs DEEPSEEK_API_KEY "
+                              "in the supervisor environment "
+                              "(/etc/gengin-llmopt/secrets.env)")
+        elif not _openai_key_from_env_or_credential():
+            errors.append("OPENROUTER_MODEL=openai needs OPENAI_API_KEY "
+                          "in the supervisor environment "
                           "(/etc/gengin-llmopt/secrets.env)")
     if model is not None and "/" not in model and not direct_session:
         errors.append("OPENROUTER_MODEL: expected provider/model format")
@@ -596,6 +671,7 @@ def load_config(require_management_key=True):
         openrouter_model=model,
         openrouter_budget_usd=budget,
         direct_session=direct_session,
+        direct_upstream=direct_upstream,
         session_timeout_seconds=ints["SESSION_TIMEOUT_SECONDS"],
         budget_poll_seconds=ints["BUDGET_POLL_SECONDS"],
         key_expiry_grace_seconds=ints["KEY_EXPIRY_GRACE_SECONDS"],
@@ -620,7 +696,7 @@ def load_config(require_management_key=True):
         quick_ask_max_questions=quick_ask_ints["QUICK_ASK_MAX_QUESTIONS"] or 0,
         quick_ask_log=quick_ask_log,
         route_fallback_model=route_fallback_model,
-        route_fallback_direct=route_fallback_direct,
+        route_fallback_upstream=route_fallback_upstream,
         route_max_context_tokens=route_max_context_tokens,
         route_ttl_seconds=route_ttl_seconds,
         route_budget_usd=route_budget_usd,
@@ -1046,7 +1122,8 @@ def check_openrouter_model(config):
 
     if config.direct_session:
         return ("openrouter_model", True,
-                f"{config.openrouter_model} (direct DeepSeek API)")
+                f"{config.openrouter_model} (direct "
+                f"{config.direct_upstream or 'deepseek'} API)")
     model = config.openrouter_model
     available = ork.model_available(model)
     if available is None:
@@ -1286,8 +1363,10 @@ def print_dry_run(config, state):
     if config.route_fallback_model:
         ttl = (f"{config.route_ttl_seconds}s" if config.route_ttl_seconds
                else "session timeout + grace")
-        label = (f"{config.route_fallback_model} (direct DeepSeek API)"
-                 if config.route_fallback_direct else config.route_fallback_model)
+        label = (f"{config.route_fallback_model} (direct "
+                 f"{config.route_fallback_upstream} API)"
+                 if config.route_fallback_upstream
+                 else config.route_fallback_model)
         print(f"  route:         -> {label} at "
               f"{config.route_max_context_tokens} prompt tokens (ttl {ttl})")
     else:
@@ -1340,7 +1419,8 @@ def run_once(config, state):
 
     # GENGIN_OFFPEAK_WAIT=1: hold the pending SHA (re-checked every poll) until
     # DeepSeek's half-price window; nothing is prepared or spent in peak hours.
-    if config.offpeak_wait:
+    # OPENROUTER_MODEL=openai sessions skip it - OpenAI has no off-peak prices.
+    if config.offpeak_wait and config.direct_upstream != "openai":
         peak, until = _offpeak_status()
         if peak:
             log("INFO", "offpeak.deferred", sha=state["pendingSha"] or tip,
@@ -1858,22 +1938,27 @@ def register_route(config):
     ttl = config.route_ttl_seconds or (
         config.session_timeout_seconds + config.key_expiry_grace_seconds)
     if config.direct_session:
-        # Whole session on the direct DeepSeek API through the proxy: member 0
-        # is the session model, the "fallback" is the same model under its
-        # legacy id below the never-reached threshold - nothing ever switches,
+        # Whole session on the direct vendor API through the proxy: member 0
+        # is the session model, the "fallback" is the same model under a
+        # sibling id below the never-reached threshold - nothing ever switches,
         # the route just carries the key, the cost log and the budget.
+        upstream = config.direct_upstream or "deepseek"
+        alias = (ROUTE_DEEPSEEK_ALIAS if upstream == "deepseek"
+                 else ROUTE_OPENAI_ALIAS)
+        key = (_deepseek_key_from_env_or_credential() if upstream == "deepseek"
+               else _openai_key_from_env_or_credential())
         registration = {
-            "members": [{"model": ROUTE_DEEPSEEK_MODEL, "upstream": "deepseek"},
-                        {"model": ROUTE_DEEPSEEK_ALIAS, "upstream": "deepseek"}],
+            "members": [{"model": config.openrouter_model, "upstream": upstream},
+                        {"model": alias, "upstream": upstream}],
             "maxContext": ROUTE_DIRECT_MAX_CONTEXT,
             "ttlSeconds": ttl,
             "label": "supervisor",
-            "deepseekKey": _deepseek_key_from_env_or_credential(),
+            upstream + "Key": key,
         }
     else:
-        if config.route_fallback_direct:
+        if config.route_fallback_upstream:
             fallback_member = {"model": config.route_fallback_model,
-                               "upstream": "deepseek"}
+                               "upstream": config.route_fallback_upstream}
         else:
             fallback_member = config.route_fallback_model
         registration = {
@@ -1882,8 +1967,11 @@ def register_route(config):
             "ttlSeconds": ttl,
             "label": "supervisor",
         }
-        if config.route_fallback_direct:
-            registration["deepseekKey"] = _deepseek_key_from_env_or_credential()
+        if config.route_fallback_upstream:
+            key = (_deepseek_key_from_env_or_credential()
+                   if config.route_fallback_upstream == "deepseek"
+                   else _openai_key_from_env_or_credential())
+            registration[config.route_fallback_upstream + "Key"] = key
     if config.route_budget_usd:
         registration["budgetUsd"] = config.route_budget_usd
     url = f"http://127.0.0.1:{_route_proxy_port()}/route/register"
