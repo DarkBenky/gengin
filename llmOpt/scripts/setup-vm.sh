@@ -21,7 +21,7 @@
 #   - enables unprivileged perf counters (unless --skip-perf)
 #
 # It seeds the single secrets file if absent; review it by hand:
-#   sudo nano /etc/gengin-llmopt/secrets.env   # management key + GITHUB_TOKEN
+#   sudo nano /etc/gengin-llmopt/secrets.env   # management key + GITHUB_TOKEN + vendor keys
 
 set -euo pipefail
 
@@ -318,7 +318,7 @@ if [[ ! -f "$SECRETS" ]]; then
   [[ -f "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY" ]] && mgmt="$(cat "$CRED_DIR/OPENROUTER_MANAGEMENT_KEY")"
   gh=""
   [[ -f /etc/gengin-llmopt/agent.env ]] && gh="$(sed -n 's/^GITHUB_TOKEN=//p' /etc/gengin-llmopt/agent.env | head -1)"
-  printf 'OPENROUTER_MANAGEMENT_KEY=%s\nGITHUB_TOKEN=%s\n' "$mgmt" "$gh" > "$SECRETS"
+  printf 'OPENROUTER_MANAGEMENT_KEY=%s\nGITHUB_TOKEN=%s\n#DEEPSEEK_API_KEY=\n#OPENAI_API_KEY=\n' "$mgmt" "$gh" > "$SECRETS"
   log "WARNING: seeded $SECRETS — review it before use:"
   log "  sudo nano $SECRETS"
 fi
@@ -377,7 +377,7 @@ sudo -H -u llmopt-agent install -d -m 700 /home/llmopt-agent/.ssh
 log "provisioning complete"
 log "next steps:"
 log "  1. review llmOpt/.env (seeded from .env.example)"
-log "  2. review /etc/gengin-llmopt/secrets.env (management key + GITHUB_TOKEN)"
+log "  2. review /etc/gengin-llmopt/secrets.env (management key + GITHUB_TOKEN + DEEPSEEK_API_KEY/OPENAI_API_KEY when used)"
 log "  3. copy the agent's SSH key into the agent's environment"
 log "  4. sudo systemctl enable --now gengin-xvfb.service"
 log "  5. sudo systemctl enable --now gengin-llmopt.service"
