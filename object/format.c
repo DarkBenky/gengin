@@ -124,7 +124,7 @@ void CameraMoveForward(Camera *camera, float amount) {
 
 void CameraMoveRight(Camera *camera, float amount) {
 	if (!camera) return;
-	float3 right = Float3_Cross(camera->forward, (float3){0.0f, 1.0f, 0.0f});
+	float3 right = Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, camera->forward));
 	camera->position.x += right.x * amount;
 	camera->position.y += right.y * amount;
 	camera->position.z += right.z * amount;
