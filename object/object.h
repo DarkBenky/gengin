@@ -150,6 +150,9 @@ void UploadVolumeToGpu(Volume *vol, CL_Context *ctx);
 void CalculateFaceEmissions(Object *obj, MaterialLib *lib);
 // trace ray in direction of query object if we hit something before query object return 0 else return emission from query object
 float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, const MaterialLib *lib);
+// Register the all-objects AABB SoA ([group][axis][8] groups, lane j = object j,
+// 64-byte aligned) that SampleEmission's occlusion pre-filter slab-tests.
+void SetOcclusionAabbSoa(const Object *objects, int objectCount, const float *soa);
 
 void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, const char *filename, MaterialLib *lib);
 void Object_Destroy(Object *obj);

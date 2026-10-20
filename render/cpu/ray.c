@@ -502,6 +502,7 @@ void applySkybox(const Skybox *skybox, Camera *camera, ThreadPool *threadPool, S
 static void buildAllAabbSoa(const Object *objects, int objectCount) {
 	s_allAabbSoaObjects = NULL;
 	s_allAabbSoaCount = 0;
+	SetOcclusionAabbSoa(NULL, 0, NULL);
 	if (objectCount > RAY_AABB_SOA_BOXES) return;
 	for (int j = 0; j < objectCount; j++) {
 		const Object *o = &objects[j];
@@ -516,6 +517,7 @@ static void buildAllAabbSoa(const Object *objects, int objectCount) {
 	}
 	s_allAabbSoaObjects = objects;
 	s_allAabbSoaCount = objectCount;
+	SetOcclusionAabbSoa(objects, objectCount, s_allAabbSoa);
 }
 
 // One 8-box slab group over the s_allAabbSoa layout [mnX8, mxX8, mnY8, mxY8,
