@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#define SERVER_MAX_REQUEST_SIZE (16u * 1024u * 1024u)
+
 void serverSetHandler(Server *s, RequestHandler handler) {
 	s->handler = handler;
 }
@@ -64,33 +66,42 @@ void serverRun(Server *s) {
 		// read request size header first
 		uint32 incoming_size = 0;
 		ssize_t nr = recv(client_fd, &incoming_size, sizeof(incoming_size), MSG_WAITALL);
-		if (nr == sizeof(incoming_size) && incoming_size > 0) {
-			free(s->currentRequest.data);
-			s->currentRequest.data = malloc(incoming_size);
-			if (s->currentRequest.data) {
-				nr = recv(client_fd, s->currentRequest.data, incoming_size, MSG_WAITALL);
-				s->currentRequest.size = (uint32)nr;
-				// first byte encodes request type, strip it from data the handler sees
-				if (s->currentRequest.size > 0) {
-					s->currentRequest.type = (s->currentRequest.data[0] == 1) ? POST : GET;
-					s->currentRequest.data++;
-					s->currentRequest.size--;
-				}
-			}
+		if (nr != sizeof(incoming_size) || incoming_size == 0 || incoming_size > SERVER_MAX_REQUEST_SIZE) {
+			close(client_fd);
+			continue;
 		}
+
+		free(s->currentRequest.data);
+		s->currentRequest.data = NULL;
+		s->currentRequest.size = 0;
+		char *requestBase = malloc(incoming_size);
+		if (!requestBase) {
+			close(client_fd);
+			continue;
+		}
+
+		nr = recv(client_fd, requestBase, incoming_size, MSG_WAITALL);
+		if (nr <= 0) {
+			s->currentRequest.data = requestBase;
+			close(client_fd);
+			continue;
+		}
+
+		// first byte encodes request type, strip it from data the handler sees
+		s->currentRequest.type = (requestBase[0] == 1) ? POST : GET;
+		s->currentRequest.data = requestBase + 1;
+		s->currentRequest.size = (uint32)nr - 1;
 
 		if (s->handler) {
 			s->handler(&s->currentRequest, &s->currentResponse);
 		}
 
 		// restore pointer before freeing
-		if (s->currentRequest.type == POST || s->currentRequest.type == GET) {
-			s->currentRequest.data--;
-		}
+		s->currentRequest.data = requestBase;
 
 		if (s->currentResponse.data && s->currentResponse.size > 0) {
-			send(client_fd, &s->currentResponse.size, sizeof(s->currentResponse.size), 0);
-			send(client_fd, s->currentResponse.data, s->currentResponse.size, 0);
+			send(client_fd, &s->currentResponse.size, sizeof(s->currentResponse.size), MSG_NOSIGNAL);
+			send(client_fd, s->currentResponse.data, s->currentResponse.size, MSG_NOSIGNAL);
 		}
 
 		close(client_fd);
