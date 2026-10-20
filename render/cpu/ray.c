@@ -1100,9 +1100,10 @@ static void RayTraceRowFunc(void *arg) {
 					uint32 texX = (uint32)xyCordsTexture.x * (tex->size - 1) / 65535;
 					uint32 texY = (uint32)xyCordsTexture.y * (tex->size - 1) / 65535;
 					uint32 texel = texY * tex->size + texX;
-					Color colorFromTexture = tex->colorMap[texel];
-					Color normalFromTexture = tex->normalMap[texel];
-					uint16 roughnessAndMetallicFromTexture = tex->MaterialMap[texel];
+					const Texel *tx = &tex->texels[texel];
+					Color colorFromTexture = tx->color;
+					Color normalFromTexture = tx->normal;
+					uint16 roughnessAndMetallicFromTexture = tx->mat;
 
 					// Texture maps are stored R=bits[0..7], G=bits[8..15], B=bits[16..23]
 					// UnpackColor reads R from bits[16..23], so channels would be swapped — extract directly.
@@ -1765,9 +1766,10 @@ static void RayTraceColumnFunc(void *arg) {
 					uint32 texX = (uint32)xyCordsTexture.x * (tex->size - 1) / 65535;
 					uint32 texY = (uint32)xyCordsTexture.y * (tex->size - 1) / 65535;
 					uint32 texel = texY * tex->size + texX;
-					Color colorFromTexture = tex->colorMap[texel];
-					Color normalFromTexture = tex->normalMap[texel];
-					uint16 roughnessAndMetallicFromTexture = tex->MaterialMap[texel];
+					const Texel *tx = &tex->texels[texel];
+					Color colorFromTexture = tx->color;
+					Color normalFromTexture = tx->normal;
+					uint16 roughnessAndMetallicFromTexture = tx->mat;
 
 					// Texture maps are stored R=bits[0..7], G=bits[8..15], B=bits[16..23]
 					// UnpackColor reads R from bits[16..23], so channels would be swapped — extract directly.
