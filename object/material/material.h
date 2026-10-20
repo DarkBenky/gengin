@@ -4,10 +4,16 @@
 #include "../format.h"
 #include <stdio.h>
 
+// The three maps are stored as separate blocks in the .bin but interleaved here,
+// so sampling one texel touches one cache line instead of three.
+typedef struct Texel {
+	Color color;  // RGBA8
+	Color normal; // RGBA8
+	uint16 mat;   // [roughness (uint8), metallic (uint8)]
+} Texel;
+
 typedef struct Textures {
-	Color *colorMap;     // size*size RGBA8
-	Color *normalMap;    // size*size RGBA8
-	uint16 *MaterialMap; // size*size [roughness (uint8), metallic (uint8)]
+	Texel *texels; // size*size interleaved records
 	uint32 size;
 } Textures;
 

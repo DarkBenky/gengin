@@ -1130,6 +1130,8 @@ void Object_Destroy(Object *obj) {
 	obj->normals = NULL;
 	free(obj->materialIds);
 	obj->materialIds = NULL;
+	free(obj->triShades);
+	obj->triShades = NULL;
 	obj->triangleCount = 0;
 	free(obj->bvh.nodes);
 	obj->bvh.nodes = NULL;
@@ -1667,6 +1669,25 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 			}
 		}
 	}
+	// The kernels read the vertices, normal, uv and material of one triangle per
+	// hit, so keep them together: one record, one cache line, one hit.
+	free(obj->triShades);
+	obj->triShades = NULL;
+	if (obj->triangleCount > 0 && obj->v1 && obj->v2 && obj->v3 && obj->normals && obj->uvs && obj->materialIds) {
+		obj->triShades = (TriShade *)aligned_alloc(64, sizeof(TriShade) * (size_t)obj->triangleCount);
+		if (obj->triShades) {
+			for (int t = 0; t < obj->triangleCount; t++) {
+				TriShade *ts = &obj->triShades[t];
+				const float3 a = obj->v1[t], b = obj->v2[t], c = obj->v3[t], n = obj->normals[t];
+				ts->v1x = a.x; ts->v1y = a.y; ts->v1z = a.z;
+				ts->v2x = b.x; ts->v2y = b.y; ts->v2z = b.z;
+				ts->v3x = c.x; ts->v3y = c.y; ts->v3z = c.z;
+				ts->nx = n.x; ts->ny = n.y; ts->nz = n.z;
+				ts->uv = obj->uvs[t];
+				ts->matId = obj->materialIds[t];
+			}
+		}
+	}
 	int nodeCount, triCount;
 	// getBvhStats(bvh, &nodeCount, &triCount);
 	// printf("BVH built with %d nodes %d triangles (%.2f%% overhead) %.2f average Triangles per node\n", nodeCount, triCount, 100.0f * nodeCount / triCount, (float)triCount / nodeCount);
@@ -2050,6 +2071,37 @@ void CalculateFaceEmissions(Object *obj, MaterialLib *lib) {
 	}
 }
 
+// SampleEmission's occlusion pre-filter slab-tests the frame's all-objects AABB
+// SoA (lane j = object j) when the caller's array is the one it was built from.
+static const Object *s_occlSoaObjects = NULL;
+static const float *s_occlSoa = NULL;
+static int s_occlSoaCount = 0;
+
+void SetOcclusionAabbSoa(const Object *objects, int objectCount, const float *soa) {
+	s_occlSoaObjects = soa ? objects : NULL;
+	s_occlSoa = soa;
+	s_occlSoaCount = soa ? objectCount : 0;
+}
+
+// One 8-box slab group; the per-lane op sequence replicates RayBoxIntersectV4
+// (sub then mul, same min/max tree, same miss sentinels) so both decide alike.
+static inline void aabbSoaGroup8(const float *gp, __m256 ox, __m256 oy, __m256 oz,
+                                 __m256 ivx, __m256 ivy, __m256 ivz, float tMinA[8], float tMaxA[8]) {
+	__m256 taX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 0), ox), ivx);
+	__m256 tbX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 8), ox), ivx);
+	__m256 taY = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 16), oy), ivy);
+	__m256 tbY = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 24), oy), ivy);
+	__m256 taZ = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 32), oz), ivz);
+	__m256 tbZ = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 40), oz), ivz);
+	__m256 tMin = _mm256_max_ps(_mm256_max_ps(_mm256_max_ps(_mm256_min_ps(taX, tbX), _mm256_min_ps(taY, tbY)), _mm256_min_ps(taZ, tbZ)), _mm256_setzero_ps());
+	__m256 tMax = _mm256_min_ps(_mm256_min_ps(_mm256_max_ps(taX, tbX), _mm256_max_ps(taY, tbY)), _mm256_max_ps(taZ, tbZ));
+	__m256 miss = _mm256_cmp_ps(tMin, tMax, _CMP_GT_OQ);
+	tMin = _mm256_blendv_ps(tMin, _mm256_set1_ps(FLT_MAX), miss);
+	tMax = _mm256_blendv_ps(tMax, _mm256_set1_ps(FLT_MIN), miss);
+	_mm256_storeu_ps(tMinA, tMin);
+	_mm256_storeu_ps(tMaxA, tMax);
+}
+
 float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 direction, int queryObject, const MaterialLib *lib) {
 	(void)lib;
 	if (!objs || queryObject < 0 || queryObject >= objCount) return (float3){0};
@@ -2074,25 +2126,45 @@ float3 SampleEmission(const Object *objs, int objCount, float3 position, float3 
 	// 			return (float3){0};
 	// }
 
-	// Vectorized occlusion: 4 bbox checks per call
-	for (int i = 0; i < objCount; i += 4) {
-		int n = objCount - i;
-		if (n > 4) n = 4;
+	// Vectorized occlusion: 8 bbox checks per slab group, or 4 per AoS call
+	const float *soa = (objs == s_occlSoaObjects && objCount == s_occlSoaCount) ? s_occlSoa : NULL;
+	if (soa) {
+		const __m256 ox = _mm256_set1_ps(position.x), oy = _mm256_set1_ps(position.y), oz = _mm256_set1_ps(position.z);
+		const __m256 ivx = _mm256_set1_ps(1.0f / direction.x), ivy = _mm256_set1_ps(1.0f / direction.y), ivz = _mm256_set1_ps(1.0f / direction.z);
+		float resMin[8], resMax[8];
+		for (int i = 0; i < objCount; i += 8) {
+			aabbSoaGroup8(soa + (size_t)(i >> 3) * 48, ox, oy, oz, ivx, ivy, ivz, resMin, resMax);
+			int n = objCount - i;
+			if (n > 8) n = 8;
+			for (int j = 0; j < n; j++) {
+				int idx = i + j;
+				if (idx == queryObject) continue;
+				// do not skip inside-box origins: a body has to block light to its own far side
+				if (resMin[j] >= resMax[j] || resMin[j] >= occluderMaxT) continue;
+				if (IntersectBVH_Shadow(&objs[idx], &objs[idx].bvh, position, direction))
+					return (float3){0};
+			}
+		}
+	} else {
+		for (int i = 0; i < objCount; i += 4) {
+			int n = objCount - i;
+			if (n > 4) n = 4;
 
-		RayBoxResult4 res = RayBoxIntersectV4(
-			&objs[i],
-			&objs[i + (n > 1 ? 1 : 0)],
-			&objs[i + (n > 2 ? 2 : 0)],
-			&objs[i + (n > 3 ? 3 : 0)],
-			position, direction);
+			RayBoxResult4 res = RayBoxIntersectV4(
+				&objs[i],
+				&objs[i + (n > 1 ? 1 : 0)],
+				&objs[i + (n > 2 ? 2 : 0)],
+				&objs[i + (n > 3 ? 3 : 0)],
+				position, direction);
 
-		for (int j = 0; j < n; j++) {
-			int idx = i + j;
-			if (idx == queryObject) continue;
-			// do not skip inside-box origins: a body has to block light to its own far side
-			if (res.tMin[j] >= res.tMax[j] || res.tMin[j] >= occluderMaxT) continue;
-			if (IntersectBVH_Shadow(&objs[idx], &objs[idx].bvh, position, direction))
-				return (float3){0};
+			for (int j = 0; j < n; j++) {
+				int idx = i + j;
+				if (idx == queryObject) continue;
+				// do not skip inside-box origins: a body has to block light to its own far side
+				if (res.tMin[j] >= res.tMax[j] || res.tMin[j] >= occluderMaxT) continue;
+				if (IntersectBVH_Shadow(&objs[idx], &objs[idx].bvh, position, direction))
+					return (float3){0};
+			}
 		}
 	}
 
