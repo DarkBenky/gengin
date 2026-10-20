@@ -33,9 +33,26 @@ preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResea
     llmOpt/scripts/gengin-opt.sh ml [provider]         # ML/OpenCL-kernel objective (needs a GPU)
 
 Provider words (`local` / `deepseek` / `openai` / `openrouter <id>`) work in any order and
-default to the local server. The session prompt is `prompts/optimize.md`
-(`prompts/optimize-ml.md` in `ml` mode) — edit those to change what a session does.
-Switch model mid-session with `/model custom:local:Qwen3.8-27B`.
+default to the local server. They work on both harnesses: dsh renders a per-run
+`--patch` overlay with the selected provider/model, and Hermes gets
+`--provider/-m`. Add `--hermes` to switch harness; on dsh, interactive runs use
+the TUI and `--headless` runs the one-shot. The session prompt is
+`prompts/optimize.md` (`prompts/optimize-ml.md` in `ml` mode) — edit those to
+change what a session does. Switch model mid-session with
+`/model custom:local:Qwen3.8-27B`.
+
+Cloud presets (`openai` / `deepseek` / `openrouter`) default to `max` reasoning;
+the local preset keeps the model default. Override with
+`GENGIN_REASONING_EFFORT`
+(`default|none|minimal|low|medium|high|xhigh|max|ultra`; `default` sends no
+effort, `ultra` maps to `max` on dsh). The launcher passes it to Hermes
+(`--reasoning`) and dsh (`agent-default-model.reasoning`).
+
+OpenAI model ids and prices are not hardcoded: `openai_pricing.py` fetches
+LiteLLM's public catalog, caches it in `state/openai_pricing.json`, and refreshes
+it every 24h (background in the proxy, on demand in the launcher/supervisor).
+`python3 llmOpt/openai_pricing.py models` lists current chat models and prices,
+`default` prints the auto-resolved model, and `refresh` forces an update.
 
 `ml` extras: needs a local model with >=64K context, and a sandbox that contains
 `machineLearning/bench/` (refresh with `git_pull_project`). The kernel bench pins
@@ -158,7 +175,7 @@ answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
 `llmOpt/.env` on the VM — the agent could mint unlimited keys.
 
-## Tools (33)
+## Tools (36)
 
 | Group              | Tools |
 |--------------------|-------|
@@ -166,11 +183,13 @@ Secrets never live in the checkout. Never put the OpenRouter *management* key in
 | Flight controller  | `flight_bench`, `flight_scenarios`, `flight_trace` |
 | ML layer kernels   | `ml_bench`, `ml_scenarios`, `ml_trace`, `ml_parity` |
 | Micro-bench        | `create_func_bench`, `run_func_bench`, `run_perf_stat`, `delete_func_bench` |
+| Codegen            | `show_asm`, `compare_asm` |
 | Visual evidence    | `compare_bench_frames`, `compare_images` |
 | Pull requests      | `list_pull_requests`, `fetch_pull_request`, `close_pull_request`, `comment_pull_request`, `label_pull_request` |
 | Hotspots           | `hot_annotate_func`, `hot_annotate_file` |
 | clangd             | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Environment        | `machine_info` |
+| Advisory decisions | `quick_ask` |
 | Session control    | `report_session_result` (supervised only) |
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate) ->
@@ -215,8 +234,13 @@ All tools work on `llmOpt/gengin/`; the repo root is untouched until
 
 Benches open a MiniFB window, so the server needs a display (`DISPLAY=:2` here).
 `run_perf_stat` and `make_flame` need unprivileged perf counters — run
-`scripts/enable-perf.sh` once. GPU work auto-pins the fastest free card;
-`GENGIN_NO_CLOUDS=1` skips the OpenCL cloud pass if it fails.
+`scripts/enable-perf.sh` once. `show_asm` / `compare_asm` compile a single
+TU with the project's codegen flags (LTO/PGO stripped); files without a
+`compile_commands.json` entry reuse include paths collected from the DB.
+`compare_asm` pins only the source file from the base ref; headers come from
+the current tree. Treat the result as supporting evidence, not a performance
+gate. GPU work auto-pins the fastest free card; `GENGIN_NO_CLOUDS=1` skips the
+OpenCL cloud pass if it fails.
 
 ## Unattended supervisor (VM)
 
@@ -226,8 +250,9 @@ one agent session under Xvfb, and deletes the key on every exit path. One sessio
 at a time; new commits coalesce to the newest. `GENGIN_OFFPEAK_WAIT=1` in
 `llmOpt/.env` holds new commits until DeepSeek's off-peak (half-price) window
 (deepseek sessions only; OpenAI has no off-peak prices). `OPENROUTER_MODEL=openai`
-runs every session on the direct OpenAI API (`GENGIN_OPENAI_MODEL`, default
-`gpt-6.1-sol`).
+runs every session on the direct OpenAI API (`GENGIN_OPENAI_MODEL`; unset means
+the newest chat model from the live pricing catalog, narrowed by
+`GENGIN_OPENAI_MODEL_PREFERENCE`).
 `GENGIN_SUPERVISED_TUI=1` runs the session inside a real `dsh-tui` in a tmux
 session (`gengin-tui` attaches to it; Ctrl-a d detaches; pre-flight failures
 fall back to headless).
@@ -276,7 +301,8 @@ cheaper model once the prompt crosses a token threshold:
     llmOpt/scripts/gengin-opt.sh anthropic/claude-haiku-5.5:anthropic --max-context 99K deepseek
 
 The fallback word can be `deepseek` (direct DeepSeek API) or `openai` (direct
-OpenAI API, model via `GENGIN_OPENAI_MODEL`) instead of an OpenRouter id.
+OpenAI API, model via `GENGIN_OPENAI_MODEL` or the live catalog) instead of an
+OpenRouter id.
 `--budget 15` caps session spend (warns the model at 80%/95%, HTTP 402 past it);
 `--wait-offpeak` waits for DeepSeek's half-price window. Every request is logged to
 SQLite and shown at `http://127.0.0.1:8787/logs` (per-interval chart, cache-hit %,

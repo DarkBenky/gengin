@@ -102,8 +102,16 @@ KNOWN_KEYS = {
     "GENGIN_ROUTE_FALLBACK_MODEL",
     "GENGIN_ROUTE_TTL_SECONDS",
     "GENGIN_ROUTE_BUDGET_USD",
-    # Session model for OPENROUTER_MODEL=openai (direct OpenAI API).
+    # Direct OpenAI API session: model override + catalog-driven selection
+    # and pricing source/cache (llmOpt/openai_pricing.py).
     "GENGIN_OPENAI_MODEL",
+    "GENGIN_OPENAI_MODEL_PREFERENCE",
+    "GENGIN_OPENAI_PRICING_URL",
+    "GENGIN_OPENAI_PRICING_CACHE",
+    "GENGIN_OPENAI_PRICING_TTL",
+    "GENGIN_OPENAI_PRICING_TIMEOUT",
+    # Reasoning effort for models that support it (empty = provider default).
+    "GENGIN_REASONING_EFFORT",
     # Hold a pending commit (re-checked every poll) until DeepSeek's off-peak
     # (half-price) window before preparing or launching a session.
     "GENGIN_OFFPEAK_WAIT",
@@ -144,15 +152,13 @@ ROUTE_DEEPSEEK_FALLBACKS = {"deepseek", "ds"}
 ROUTE_OPENAI_FALLBACKS = {"openai", "oai"}
 ROUTE_DIRECT_FALLBACKS = ROUTE_DEEPSEEK_FALLBACKS | ROUTE_OPENAI_FALLBACKS
 ROUTE_DEEPSEEK_MODEL = "deepseek-v4-flash"
-ROUTE_OPENAI_MODEL = "gpt-6.1-sol"
 # OPENROUTER_MODEL=deepseek/ds/openai/oai runs the WHOLE session on the direct
 # vendor API through the proxy (no switching): the session model is the direct
-# model itself and the "fallback" is the same model under a sibling id below a
-# never-reached threshold, so the route only carries the key, the cost log and
-# the budget.  (Both DeepSeek ids are billed at the Flash price; both OpenAI
-# ids are billed at the same tier.)
+# model itself and the "fallback" is a sibling id below a never-reached
+# threshold, so the route only carries the key, the cost log and the budget.
+# The OpenAI model and its alias come from the live pricing catalog
+# (llmOpt/openai_pricing.py), not from constants here.
 ROUTE_DEEPSEEK_ALIAS = "deepseek-flash"
-ROUTE_OPENAI_ALIAS = "gpt-6-sol"
 ROUTE_DIRECT_MAX_CONTEXT = 10000000
 
 
@@ -356,6 +362,7 @@ class Config:
     offpeak_wait: bool = False
     direct_session: bool = False
     direct_upstream: str = ""
+    reasoning_effort: str = ""
     management_key: str = ""
 
     def mcp_python(self):
@@ -466,10 +473,24 @@ def _openai_key_from_env_or_credential():
 
 
 def _openai_session_model(values):
-    """Session model for OPENROUTER_MODEL=openai (env wins over the .env file)."""
+    """Resolve the direct OpenAI model.
+
+    An explicit GENGIN_OPENAI_MODEL (env wins over .env) is used as-is;
+    otherwise the model comes from the live catalog using
+    GENGIN_OPENAI_MODEL_PREFERENCE (e.g. "sol,luna") or the newest chat model.
+    Returns "" when no model can be resolved (the caller reports it).
+    """
     model = (os.environ.get("GENGIN_OPENAI_MODEL", "").strip()
              or (values.get("GENGIN_OPENAI_MODEL", "") or "").strip())
-    return model or ROUTE_OPENAI_MODEL
+    if model:
+        return model
+    preference = (os.environ.get("GENGIN_OPENAI_MODEL_PREFERENCE", "").strip()
+                  or (values.get("GENGIN_OPENAI_MODEL_PREFERENCE", "") or "").strip())
+    try:
+        import openai_pricing
+        return openai_pricing.pick_default(preference)
+    except Exception:
+        return ""
 
 
 def load_config(require_management_key=True):
@@ -493,11 +514,26 @@ def load_config(require_management_key=True):
                            else "deepseek")
         if direct_upstream == "openai":
             model = _openai_session_model(values)
-            if not ROUTE_MODEL_RE.fullmatch(model):
+            if not model:
+                errors.append("OPENROUTER_MODEL=openai: no model resolved; "
+                              "set GENGIN_OPENAI_MODEL or run "
+                              "llmOpt/openai_pricing.py refresh")
+            elif not ROUTE_MODEL_RE.fullmatch(model):
                 errors.append("GENGIN_OPENAI_MODEL: invalid model id "
                               f"{model!r}")
         else:
             model = ROUTE_DEEPSEEK_MODEL
+    reasoning_raw = (os.environ.get("GENGIN_REASONING_EFFORT", "").strip()
+                     or (values.get("GENGIN_REASONING_EFFORT", "") or "").strip())
+    if reasoning_raw.lower() == "default":
+        reasoning_effort = ""
+    else:
+        reasoning_effort = reasoning_raw or "max"
+    if reasoning_effort and reasoning_effort not in (
+            "none", "minimal", "low", "medium", "high", "xhigh", "max",
+            "ultra"):
+        errors.append("GENGIN_REASONING_EFFORT: expected "
+                      "default|none|minimal|low|medium|high|xhigh|max|ultra")
     display = text("GENGIN_DISPLAY")
     headless_mode = text("HEADLESS_MODE")
     state_dir = text("STATE_DIR")
@@ -587,7 +623,11 @@ def load_config(require_management_key=True):
                               "(/etc/gengin-llmopt/secrets.env)")
         else:
             route_fallback_model = _openai_session_model(values)
-            if not ROUTE_MODEL_RE.fullmatch(route_fallback_model):
+            if not route_fallback_model:
+                errors.append("GENGIN_ROUTE_FALLBACK_MODEL=openai: no model "
+                              "resolved; set GENGIN_OPENAI_MODEL or run "
+                              "llmOpt/openai_pricing.py refresh")
+            elif not ROUTE_MODEL_RE.fullmatch(route_fallback_model):
                 errors.append("GENGIN_ROUTE_FALLBACK_MODEL: invalid model id "
                               f"{route_fallback_model!r}")
             if not _openai_key_from_env_or_credential():
@@ -672,6 +712,7 @@ def load_config(require_management_key=True):
         openrouter_budget_usd=budget,
         direct_session=direct_session,
         direct_upstream=direct_upstream,
+        reasoning_effort=reasoning_effort,
         session_timeout_seconds=ints["SESSION_TIMEOUT_SECONDS"],
         budget_poll_seconds=ints["BUDGET_POLL_SECONDS"],
         key_expiry_grace_seconds=ints["KEY_EXPIRY_GRACE_SECONDS"],
@@ -1360,6 +1401,7 @@ def print_dry_run(config, state):
     print(f"  run on start:  {config.run_on_start}")
     print(f"  harness:       {config.harness}")
     print(f"  model:         {config.openrouter_model}")
+    print(f"  reasoning:     {config.reasoning_effort or 'provider default'}")
     if config.route_fallback_model:
         ttl = (f"{config.route_ttl_seconds}s" if config.route_ttl_seconds
                else "session timeout + grace")
@@ -1943,8 +1985,14 @@ def register_route(config):
         # sibling id below the never-reached threshold - nothing ever switches,
         # the route just carries the key, the cost log and the budget.
         upstream = config.direct_upstream or "deepseek"
-        alias = (ROUTE_DEEPSEEK_ALIAS if upstream == "deepseek"
-                 else ROUTE_OPENAI_ALIAS)
+        if upstream == "deepseek":
+            alias = ROUTE_DEEPSEEK_ALIAS
+        else:
+            try:
+                import openai_pricing
+                alias = openai_pricing.pick_alias(config.openrouter_model)
+            except Exception:
+                alias = config.openrouter_model + "-fallback"
         key = (_deepseek_key_from_env_or_credential() if upstream == "deepseek"
                else _openai_key_from_env_or_credential())
         registration = {
@@ -2059,6 +2107,16 @@ def run_session(config, state, target_sha):
                       .replace("__LOCAL_MODEL__", "local-model")
                       .replace("__DISPLAY__", config.gengin_display)
                       .replace("__MODEL__", config.openrouter_model))
+    if config.harness == "dsh":
+        effort = "max" if config.reasoning_effort == "ultra" else config.reasoning_effort
+        reasoning_line = (f"    reasoning: {effort}\n" if effort else "")
+        cfg_text = cfg_text.replace("    # __REASONING__\n", reasoning_line)
+    else:
+        reasoning_block = (
+            f"agent:\n  reasoning_effort: {config.reasoning_effort}\n"
+            if config.reasoning_effort else "")
+        cfg_text = cfg_text.replace("# __REASONING_EFFORT__\n",
+                                    reasoning_block)
     # The harness filters the MCP child environment; the session variables must
     # be delivered through the config env block. Hermes expands ${VAR} from its
     # process environment; dsh evaluates !!js expressions in the host process

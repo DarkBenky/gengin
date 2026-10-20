@@ -40,6 +40,7 @@
   config:
     provider: gengin-proxy
     model: __MODEL__
+    # __REASONING__
 
 # Proprietary code: no session-log contribution to DeepSeek. The OTel row is
 # launcher-owned (config cannot disable it) - the launcher exports

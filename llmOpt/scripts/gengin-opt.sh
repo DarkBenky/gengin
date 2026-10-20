@@ -75,6 +75,24 @@ parse_tokens() {
   printf '%s' "$size"
 }
 
+resolve_openai_model() {
+  # Explicit GENGIN_OPENAI_MODEL wins (environment, then llmOpt/.env);
+  # otherwise the live pricing catalog picks a chat model.  A comma-separated
+  # GENGIN_OPENAI_MODEL_PREFERENCE (e.g. "sol,luna") narrows the choice.
+  local model="${GENGIN_OPENAI_MODEL:-}"
+  local preference="${GENGIN_OPENAI_MODEL_PREFERENCE:-}"
+  if [[ -z "$model" ]]; then
+    model="$(grep -E '^GENGIN_OPENAI_MODEL=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  fi
+  if [[ -z "$preference" ]]; then
+    preference="$(grep -E '^GENGIN_OPENAI_MODEL_PREFERENCE=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  fi
+  if [[ -z "$model" ]]; then
+    model="$(GENGIN_OPENAI_MODEL_PREFERENCE="$preference" python3 "$LLMOPT_DIR/openai_pricing.py" default 2>/dev/null || true)"
+  fi
+  printf '%s' "$model"
+}
+
 ensure_route_proxy() {
   # Health-check the proxy; start the desktop user unit when one is installed.
   local port="$1"
@@ -119,12 +137,40 @@ for m in (d.get("data") or []) + (d.get("models") or []):
 ' 2>/dev/null || true
 }
 
+mcp_patch_block() {
+  # The gengin optimizer MCP server row shared by every dsh surface that does
+  # not already carry it in its base profile (local profiles + TUI overlays).
+  local python_bin="${1:-python3}" display_value="${2:-:2}"
+  cat <<YAML
+# The gengin optimizer tools (same wiring as the headless profile).
+- insert:
+    - id: mcp-gengin
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gengin
+        transport: stdio
+        # Build/bench tools run for many minutes (make_bench is 5 runs); the
+        # 60 s default aborts them mid-flight.
+        toolCallTimeoutMs: 1800000
+        command: $python_bin
+        args: ["$LLMOPT_DIR/mcp_server.py"]
+        env:
+          PYTHONUNBUFFERED: "1"
+          DISPLAY: !!js process.env.DISPLAY ?? '$display_value'
+          OPENROUTER_API_KEY: !!js "process.env.OPENROUTER_API_KEY ?? ''"
+          GITHUB_TOKEN: !!js "process.env.GITHUB_TOKEN ?? ''"
+YAML
+}
+
 local_patch_rows() {
   # The patch body shared by every local surface (headless one-shot, Web UI,
   # TUI overlay): the local router provider, the default model, the
   # session-log opt-out, the longer bash deadline and the gengin MCP wiring.
-  # Args: base_url model python_bin display_value.
+  # Args: base_url model python_bin display_value reasoning.
   local base="$1" model="$2" python_bin="$3" display_value="$4"
+  local reasoning="${5:-}" reasoning_line=""
+  [[ "$reasoning" == "ultra" ]] && reasoning="max"
+  [[ -n "$reasoning" ]] && reasoning_line="    reasoning: $reasoning"
   cat <<YAML
 - id: llm-pi-ai
   config:
@@ -142,6 +188,7 @@ local_patch_rows() {
   config:
     provider: local-gengin
     model: $model
+$reasoning_line
 # Proprietary code: no session-log contribution to DeepSeek.
 - id: session-log-deepseek
   disabled: true
@@ -150,24 +197,61 @@ local_patch_rows() {
 - id: bash-sandbox
   config:
     timeoutMs: 1800000
-# The gengin optimizer tools (same wiring as the headless profile).
-- insert:
-    - id: mcp-gengin
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: gengin
-        transport: stdio
-        # Build/bench tools run for many minutes (make_bench is 5 runs); the
-        # 60 s default aborts them mid-flight.
-        toolCallTimeoutMs: 1800000
-        command: ${python_bin:-python3}
-        args: ["$LLMOPT_DIR/mcp_server.py"]
-        env:
-          PYTHONUNBUFFERED: "1"
-          DISPLAY: !!js process.env.DISPLAY ?? '$display_value'
-          OPENROUTER_API_KEY: !!js "process.env.OPENROUTER_API_KEY ?? ''"
-          GITHUB_TOKEN: !!js "process.env.GITHUB_TOKEN ?? ''"
 YAML
+  mcp_patch_block "$python_bin" "$display_value"
+}
+
+render_dsh_run_overlay() {
+  # One-run dsh overlay for non-local presets: the chosen provider/model
+  # replaces the profile's proxy route. Args: model key_env base_url api
+  # compat reasoning with_mcp. compat is proxy/deepseek (max_tokens) or native.
+  local model="$1" key_env="$2" base_url="$3" api="$4" compat="$5" reasoning="$6" with_mcp="${7:-0}"
+  local overlay="$DSH_DIR/cache/gengin-run-overlay.yml"
+  mkdir -p "$DSH_DIR/cache"
+  {
+    echo "# Rendered by llmOpt/scripts/gengin-opt.sh - per-run dsh provider/model."
+    echo "# Regenerated on every run; edit the script, not this file."
+    cat <<YAML
+- id: llm-pi-ai
+  config:
+    providers:
+      gengin-run:
+        apiKeyEnv: $key_env
+        api: $api
+        baseURL: $base_url
+YAML
+    case "$compat" in
+      proxy|deepseek)
+        cat <<'YAML'
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+YAML
+        ;;
+    esac
+    cat <<YAML
+        models:
+          - id: "$model"
+- id: agent-default-model
+  config:
+    provider: gengin-run
+    model: "$model"
+YAML
+    if [[ -n "$reasoning" ]]; then
+      printf '    reasoning: %s\n' "$reasoning"
+    fi
+    if [[ "$with_mcp" == "1" ]]; then
+      local py
+      py="$(command -v python3 || true)"
+      if [[ -n "$py" ]] && ! "$py" -c 'import mcp' >/dev/null 2>&1; then
+        echo "warning: $py lacks the 'mcp' package - gengin MCP tools (PR ops, benches) will be unavailable" >&2
+        echo "  install: $py -m pip install -r $LLMOPT_DIR/requirements-mcp.txt" >&2
+      fi
+      mcp_patch_block "$py" "${GENGIN_DISPLAY:-:2}"
+    fi
+  } > "$overlay"
+  chmod 600 "$overlay"
+  DSH_RUN_OVERLAY="$overlay"
 }
 
 render_local_dsh_profile() {
@@ -230,9 +314,26 @@ YAML
     echo "# Rendered by llmOpt/scripts/gengin-opt.sh (local preset: $profile) - the"
     echo "# local OpenAI-compatible router instead of the OpenRouter proxy. Regenerated"
     echo "# on every local run; edit the script, not this file."
-    local_patch_rows "$base" "$model" "$python_bin" "$display_value"
+    local_patch_rows "$base" "$model" "$python_bin" "$display_value" "$REASONING_EFFORT"
   } > "$patch_dir/cordis.patch.yml"
   chmod 600 "$patch_dir/cordis.patch.yml"
+}
+
+resolve_tui_launcher() {
+  # The dsh TUI is a third-party plugin; boot through its launcher so the
+  # plugin tags the run correctly (plain `dsh --profile dsh-tui` skips the UI
+  # when stdout is not a TTY).
+  if command -v dsh-tui >/dev/null 2>&1; then
+    TUI_LAUNCHER=(dsh-tui)
+  elif [[ -f "$DSH_DIR/profiles/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js" ]]; then
+    TUI_LAUNCHER=(node "$DSH_DIR/profiles/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js")
+  else
+    echo "error: the dsh TUI is not installed (no dsh-tui command, no profile copy)" >&2
+    echo "  install: npm install -g @deepseek-harness-tui/dsh-tui" >&2
+    echo "           DSH_HOME=\"$DSH_DIR\" dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui" >&2
+    echo "  or use:  $0 <preset> --headless | $0 local --web | $0 --hermes" >&2
+    exit 1
+  fi
 }
 
 render_local_tui_overlay() {
@@ -257,7 +358,7 @@ render_local_tui_overlay() {
     echo "# Rendered by llmOpt/scripts/gengin-opt.sh - optimizer overlay for the"
     echo "# dsh-tui profile (--patch). Regenerated on every local run; edit the"
     echo "# script, not this file."
-    local_patch_rows "$base" "$model" "$python_bin" "$display_value"
+    local_patch_rows "$base" "$model" "$python_bin" "$display_value" "$REASONING_EFFORT"
   } > "$overlay"
   chmod 600 "$overlay"
   TUI_OVERLAY="$overlay"
@@ -447,9 +548,13 @@ if [[ -n "$PRESET" && ${#MODEL_ARGS[@]} -eq 0 ]]; then
   case "$PRESET" in
     local)      MODEL_ARGS=(-m "${GENGIN_LOCAL_MODEL:-Qwen3.8-27B}") ;;
     deepseek)   MODEL_ARGS=(-m "${GENGIN_DEEPSEEK_MODEL:-deepseek-v4-flash}") ;;
-    openai)     MODEL_ARGS=(-m "${GENGIN_OPENAI_MODEL:-gpt-6.1-sol}") ;;
+    openai)     MODEL_ARGS=(-m "$(resolve_openai_model)") ;;
     openrouter) MODEL_ARGS=(-m "${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}") ;;
   esac
+fi
+if [[ "$PRESET" == "openai" && ${#MODEL_ARGS[@]} -gt 0 && -z "${MODEL_ARGS[1]}" ]]; then
+  echo "error: no OpenAI model resolved; set GENGIN_OPENAI_MODEL or run llmOpt/openai_pricing.py refresh" >&2
+  exit 2
 fi
 
 # UI selection: `local` (dsh) is interactive by default -> the dsh TUI. The
@@ -675,8 +780,12 @@ if [[ "$route_enabled" -eq 1 ]]; then
       ;;
     openai|oa)
       route_fallback_upstream="openai"
-      route_fallback="${GENGIN_OPENAI_MODEL:-gpt-6.1-sol}"
+      route_fallback="$(resolve_openai_model)"
       route_key_name="OPENAI_API_KEY"
+      if [[ -z "$route_fallback" ]]; then
+        echo "error: no OpenAI model resolved; set GENGIN_OPENAI_MODEL or run llmOpt/openai_pricing.py refresh" >&2
+        exit 2
+      fi
       ;;
   esac
   if [[ -n "$route_fallback_upstream" ]]; then
@@ -838,16 +947,37 @@ QUERY_FILE="$HARNESS_DIR/cache/query-$(date +%s).md"
     echo "Start now. Work the profile -> micro-benchmark -> pre-mortem -> apply -> validate -> PR loop."
   fi
 } > "$QUERY_FILE"
+
+# Reasoning effort. Cloud presets default to max; the local preset keeps the
+# model/provider default. `default` explicitly means "send no reasoning effort".
+REASONING_EFFORT="${GENGIN_REASONING_EFFORT:-}"
+if [[ -z "$REASONING_EFFORT" ]]; then
+  REASONING_EFFORT="$(grep -E '^GENGIN_REASONING_EFFORT=' "$LLMOPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+fi
+if [[ "$REASONING_EFFORT" == "default" ]]; then
+  REASONING_EFFORT=""
+elif [[ -z "$REASONING_EFFORT" ]]; then
+  case "$PRESET" in
+    local) ;;
+    *) REASONING_EFFORT="max" ;;
+  esac
+fi
+REASONING_ARGS=()
+if [[ -n "$REASONING_EFFORT" ]]; then
+  case "$REASONING_EFFORT" in
+    none|minimal|low|medium|high|xhigh|max|ultra) ;;
+    *) echo "error: GENGIN_REASONING_EFFORT must be default|none|minimal|low|medium|high|xhigh|max|ultra, got: $REASONING_EFFORT" >&2; exit 2 ;;
+  esac
+  REASONING_ARGS=(--reasoning "$REASONING_EFFORT")
+fi
 if [[ "$HARNESS" == "dsh" ]]; then
-  # dsh reads the model and endpoint from a rendered profile patch layer under
-  # DSH_HOME; provider/model CLI flags are Hermes-only. The local preset is
-  # honored: it renders profiles/local (headless one-shot) and
-  # profiles/local-web (the interactive Web UI) against the local router
-  # instead of the headless profile (OpenRouter proxy route). Interactive
-  # local runs boot the Web UI so the session can be steered; --headless
-  # keeps the auto-run one-shot.
+  # dsh reads the model and endpoint from a patch layer. `local` renders a
+  # dedicated profile; every other preset renders a per-run --patch overlay so
+  # the provider/model words work on dsh too. Interactive runs use the TUI;
+  # --headless keeps the one-shot.
   DSH_PROFILE="headless"
   TUI_MODE=0
+  DSH_OVERLAY=""
   if [[ "$PRESET" == "local" ]]; then
     export LOCAL_LLM_KEY="${LOCAL_LLM_KEY:-none}"
     if [[ "$HEADLESS" -eq 1 ]]; then
@@ -866,27 +996,42 @@ if [[ "$HARNESS" == "dsh" ]]; then
       # Interactive default: the dsh TUI (a terminal UI plugin for dsh). The
       # plugin profile is initialized once into DSH_HOME; our wiring rides as
       # a regenerated --patch overlay so the TUI keeps owning its own files.
-      # Boot through the dsh-tui LAUNCHER (it tags the launch for the plugin);
-      # the plain `dsh --profile dsh-tui` route silently skips the frontend
-      # whenever stdout is not a TTY (capture hooks, pipes) - no error, no UI.
       DSH_PROFILE="dsh-tui"
       TUI_MODE=1
-      if command -v dsh-tui >/dev/null 2>&1; then
-        TUI_LAUNCHER=(dsh-tui)
-      elif [[ -f "$HARNESS_DIR/profiles/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js" ]]; then
-        # The global command is a shim over exactly this profile copy.
-        TUI_LAUNCHER=(node "$HARNESS_DIR/profiles/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js")
-      else
-        echo "error: the dsh TUI is not installed (no dsh-tui command, no profile copy)" >&2
-        echo "  install: npm install -g @deepseek-harness-tui/dsh-tui" >&2
-        echo "           DSH_HOME=\"$HARNESS_DIR\" dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui" >&2
-        echo "  or use:  $0 local --web | $0 local --hermes | $0 local --headless" >&2
-        exit 1
-      fi
+      resolve_tui_launcher
       render_local_tui_overlay "$HARNESS_DIR"
+      DSH_OVERLAY="$TUI_OVERLAY"
     fi
-  elif [[ ${#PROVIDER_ARGS[@]} -gt 0 ]]; then
-    echo "note: --provider/-m are ignored on dsh — set GENGIN_OPENROUTER_MODEL and re-run setup-dsh.sh" >&2
+  else
+    # Non-local presets: replace the profile's proxy route with the selected
+    # provider/model. Direct vendors get their native endpoint; OpenRouter
+    # keeps the filtering proxy.
+    dsh_model="${MODEL_ARGS[1]:-${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}}"
+    if [[ ! "$dsh_model" =~ ^[A-Za-z0-9._:/-]+$ ]]; then
+      echo "error: invalid model id: $dsh_model" >&2
+      exit 2
+    fi
+    dsh_reasoning="$REASONING_EFFORT"
+    [[ "$dsh_reasoning" == "ultra" ]] && dsh_reasoning="max"
+    use_mcp=0
+    [[ "$HEADLESS" -eq 0 ]] && use_mcp=1
+    case "$PRESET" in
+      deepseek)
+        render_dsh_run_overlay "$dsh_model" DEEPSEEK_API_KEY \
+          "https://api.deepseek.com/v1" openai-completions deepseek "$dsh_reasoning" "$use_mcp" ;;
+      openai)
+        render_dsh_run_overlay "$dsh_model" OPENAI_API_KEY \
+          "https://api.openai.com/v1" openai-responses native "$dsh_reasoning" "$use_mcp" ;;
+      *)
+        render_dsh_run_overlay "$dsh_model" OPENROUTER_API_KEY \
+          "http://127.0.0.1:${GENGIN_PROXY_PORT:-8787}/api/v1" openai-completions proxy "$dsh_reasoning" "$use_mcp" ;;
+    esac
+    DSH_OVERLAY="$DSH_RUN_OVERLAY"
+    if [[ "$HEADLESS" -eq 0 ]]; then
+      DSH_PROFILE="dsh-tui"
+      TUI_MODE=1
+      resolve_tui_launcher
+    fi
   fi
   if [[ "$WEB_MODE" -eq 1 ]]; then
     CMD=(dsh --profile "$DSH_PROFILE" --no-open --port "$WEB_PORT")
@@ -894,8 +1039,11 @@ if [[ "$HARNESS" == "dsh" ]]; then
   elif [[ "$TUI_MODE" -eq 1 ]]; then
     # dsh-tui takes host options before `--` and the literal prompt after it;
     # the plugin auto-submits that prompt once the UI is up.
-    CMD=("${TUI_LAUNCHER[@]}" --patch "$TUI_OVERLAY" -- "$(cat "$QUERY_FILE")")
-    DISPLAY_CMD=("${TUI_LAUNCHER[@]}" --patch "$TUI_OVERLAY" -- "<query: $(wc -c <"$QUERY_FILE") bytes>")
+    CMD=("${TUI_LAUNCHER[@]}" --patch "$DSH_OVERLAY" -- "$(cat "$QUERY_FILE")")
+    DISPLAY_CMD=("${TUI_LAUNCHER[@]}" --patch "$DSH_OVERLAY" -- "<query: $(wc -c <"$QUERY_FILE") bytes>")
+  elif [[ -n "$DSH_OVERLAY" ]]; then
+    CMD=(dsh --profile "$DSH_PROFILE" --patch "$DSH_OVERLAY" "$(cat "$QUERY_FILE")")
+    DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" --patch "$DSH_OVERLAY" "<query: $(wc -c <"$QUERY_FILE") bytes>")
   else
     CMD=(dsh --profile "$DSH_PROFILE" "$(cat "$QUERY_FILE")")
     DISPLAY_CMD=(dsh --profile "$DSH_PROFILE" "<query: $(wc -c <"$QUERY_FILE") bytes>")
@@ -904,10 +1052,10 @@ elif [[ "$HEADLESS" -eq 1 ]]; then
   # `-z` is the scripted one-shot entry point (final answer only) and the only
   # form that supports --usage-file.
   USAGE_FILE="$HARNESS_DIR/cache/usage-$(date +%s).json"
-  CMD=(hermes -z "$(cat "$QUERY_FILE")" --yolo --usage-file "$USAGE_FILE")
-  DISPLAY_CMD=(hermes -z "<query: $(wc -c <"$QUERY_FILE") bytes>" --yolo --usage-file "$USAGE_FILE")
+  CMD=(hermes -z "$(cat "$QUERY_FILE")" --yolo --usage-file "$USAGE_FILE" "${REASONING_ARGS[@]}")
+  DISPLAY_CMD=(hermes -z "<query: $(wc -c <"$QUERY_FILE") bytes>" --yolo --usage-file "$USAGE_FILE" "${REASONING_ARGS[@]}")
 else
-  CMD=(hermes chat --source tool --query-file "$QUERY_FILE")
+  CMD=(hermes chat --source tool --query-file "$QUERY_FILE" "${REASONING_ARGS[@]}")
   DISPLAY_CMD=("${CMD[@]}")
 fi
 
@@ -917,8 +1065,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
       echo "# local Web UI mode: no browser popup; start the session in the UI with"
       echo "# the brief at $HARNESS_DIR/cache/query-latest.md (written at launch)"
     elif [[ "$TUI_MODE" -eq 1 ]]; then
-      echo "# local TUI mode: the session brief is the first prompt; overlay at"
-      echo "# $TUI_OVERLAY"
+      echo "# TUI mode: the session brief is the first prompt; overlay at"
+      echo "# $DSH_OVERLAY"
     fi
     printf 'DSH_HOME=%q ' "$HARNESS_DIR"
     printf '%q ' "${DISPLAY_CMD[@]}"
@@ -1033,7 +1181,7 @@ if [[ "$HARNESS" == "dsh" ]]; then
   echo "Query:     $QUERY_FILE"
   if [[ "$TUI_MODE" -eq 1 ]]; then
     echo "Mode:      dsh TUI (first launch shows its own setup wizard)"
-    echo "Overlay:   $TUI_OVERLAY"
+    echo "Overlay:   $DSH_OVERLAY"
     echo "If it starts without the brief, paste: Read $QUERY_FILE and execute the work it describes."
     ensure_tty_stdout
   fi

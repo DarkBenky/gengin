@@ -40,12 +40,31 @@ MODEL_VALUE="${GENGIN_OPENROUTER_MODEL:-deepseek/deepseek-v4-flash-0731}"
 python3 - "$TEMPLATE" "$PATCH_FILE" "$LLMOPT_DIR" "${PYTHON_BIN:-python3}" \
     "$DISPLAY_VALUE" "$MODEL_VALUE" <<'PY'
 import sys
+import os
 template, out, llmopt_dir, python_bin, display, model = sys.argv[1:7]
 text = open(template).read()
 text = (text.replace("__LLMOPT_DIR__", llmopt_dir)
             .replace("__PYTHON__", python_bin)
             .replace("__DISPLAY__", display)
             .replace("__MODEL__", model))
+reasoning = os.environ.get("GENGIN_REASONING_EFFORT", "").strip()
+if not reasoning:
+    try:
+        for line in open(os.path.join(llmopt_dir, ".env")):
+            line = line.strip()
+            if line.startswith("GENGIN_REASONING_EFFORT="):
+                reasoning = line.split("=", 1)[1].strip().strip("'\"")
+                break
+    except OSError:
+        pass
+if reasoning == "default":
+    reasoning = ""
+elif not reasoning:
+    reasoning = "max"
+if reasoning == "ultra":
+    reasoning = "max"
+text = text.replace("    # __REASONING__\n",
+                    f"    reasoning: {reasoning}\n" if reasoning else "")
 marker = "# __SESSION_ENV__"
 if marker not in text:
     sys.exit(f"error: template lacks the {marker} marker")

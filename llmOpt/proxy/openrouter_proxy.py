@@ -1738,6 +1738,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    # Model prices come from the live OpenAI catalog; refresh the cache in the
+    # background so the first request never waits on github.
+    openai_pricing.refresh_async()
     server = ThreadingHTTPServer((BIND, PORT), ProxyHandler)
     server.daemon_threads = True
     _log_line(f"listening on http://{BIND}:{PORT} -> {UPSTREAM} (port {PORT})")

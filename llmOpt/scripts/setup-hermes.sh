@@ -32,6 +32,22 @@ sed -e "s|__LLMOPT_DIR__|$LLMOPT_DIR|g" \
     -e "s|__DISPLAY__|$DISPLAY_VALUE|g" \
     "$TEMPLATE" > "$HERMES_DIR/config.yaml"
 
+# Optional reasoning effort (empty = provider default). Set it in the
+# environment or llmOpt/.env; render it into the project-scoped config.
+REASONING_VALUE="${GENGIN_REASONING_EFFORT:-}"
+if [[ -z "$REASONING_VALUE" && -f "$SECRET_SRC" ]]; then
+  REASONING_VALUE="$(grep -E '^GENGIN_REASONING_EFFORT=' "$SECRET_SRC" | head -1 | cut -d= -f2- || true)"
+fi
+[[ "$REASONING_VALUE" == "default" ]] && REASONING_VALUE=""
+python3 - "$HERMES_DIR/config.yaml" "$REASONING_VALUE" <<'PY'
+import sys
+path, effort = sys.argv[1:3]
+text = open(path).read()
+block = f"agent:\n  reasoning_effort: {effort}\n" if effort else ""
+text = text.replace("# __REASONING_EFFORT__\n", block)
+open(path, "w").write(text)
+PY
+
 # HERMES_HOME/.env is the profile's secret file.  KEY is the raw OpenRouter key
 # name in llmOpt/.env; DEEPSEEK_API_KEY / OPENAI_API_KEY enable the direct
 # DeepSeek / OpenAI providers; GITHUB_TOKEN is used by the create_pr tool.

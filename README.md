@@ -4,6 +4,8 @@
 
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
+- [ ] New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
+
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
 
 - [ ] Map loading files

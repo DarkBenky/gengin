@@ -22,6 +22,7 @@ if _llmOpt_dir not in sys.path:
 
 from mcp.server.fastmcp import FastMCP
 
+import asm_tools as _asm
 import getFunc as _gf
 import main as _main
 import quick_ask as _qa
@@ -597,6 +598,42 @@ def delete_func_bench(func_name: str) -> str:
 
 
 # ===================================================================
+# Assembly inspection (Godbolt-style)
+# ===================================================================
+
+@mcp.tool()
+def show_asm(rel_path: str, func: str = "", extra_flags: str = "") -> str:
+    """Compile one translation unit with the project's codegen flags and return
+    Intel-syntax assembly.  Pass func to extract a single function; omit it for
+    the whole file.  extra_flags adds target-specific defines such as
+    -DFLIGHT_BENCH or -DBENCH_MODE.  This is per-TU clang -S output (LTO and PGO
+    flags stripped), so use it as supporting evidence for vectorization, spills,
+    hoisted loads, or branch removal -- not as a performance gate."""
+    try:
+        result = _asm.showAsm(_main.PROJECT_DIR, rel_path, func, extra_flags)
+    except (_asm.AsmError, OSError, ValueError) as exc:
+        result = {"error": str(exc)}
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def compare_asm(rel_path: str, func: str = "", base_ref: str = "HEAD",
+                extra_flags: str = "") -> str:
+    """Diff normalized assembly between the current working tree and base_ref
+    (default HEAD).  Pass func to compare one function; omit it for the whole
+    file.  extra_flags adds target-specific defines such as -DFLIGHT_BENCH or
+    -DBENCH_MODE.  Returns a unified diff plus instruction/vector/branch deltas.
+    Use it to confirm the mechanism of a candidate change; bench results and
+    flight gates remain authoritative."""
+    try:
+        result = _asm.compareAsm(
+            _main.PROJECT_DIR, rel_path, func, base_ref, extra_flags)
+    except (_asm.AsmError, OSError, ValueError) as exc:
+        result = {"error": str(exc)}
+    return json.dumps(result, indent=2)
+
+
+# ===================================================================
 # Perf hotspot annotation
 # ===================================================================
 
@@ -746,6 +783,6 @@ if __name__ == "__main__":
     setup_script = "setup-hermes.sh" if harness == "hermes" else "setup-dsh.sh"
     print(f"gengin-optimizer MCP server (stdio) — sandbox: {_gengin_dir}", file=sys.stderr)
     print(f"Indexed {len(_gf._functions)} functions in {len(_gf._sources)} source files.", file=sys.stderr)
-    print("18 domain tools; file editing/navigation is provided by the harness.", file=sys.stderr)
+    print("Domain tools; file editing/navigation is provided by the harness.", file=sys.stderr)
     print(f"Configure: llmOpt/scripts/{setup_script} — run: llmOpt/scripts/gengin-opt.sh", file=sys.stderr)
     mcp.run()

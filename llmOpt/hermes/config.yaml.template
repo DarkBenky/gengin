@@ -18,6 +18,7 @@ model:
   # assistant turn, which DeepSeek thinking mode requires.
   reasoning_echo: true
 
+# __REASONING_EFFORT__
 provider_routing:
   sort: price
 

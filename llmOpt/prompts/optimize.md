@@ -111,6 +111,13 @@ CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
 Completing ANY rung with real measured work counts that rung as walked; a
 rung that refutes with numbers is recorded in `codebase_context.md` and the
 ladder CONTINUES — a refuted rung never ends the session early.
+TOOL AVAILABILITY: if a rung needs an MCP tool that is absent from this
+session's tool list (for example `list_pull_requests`, `fetch_pull_request`,
+or `create_pr`), treat that rung as UNAVAILABLE and continue to the next rung;
+record the gap in `codebase_context.md`.  A missing tool is not a session
+blocker while any other rung still has work.  `report_session_result` is
+supervisor-only: in a manual session it returns "GENGIN_SESSION_RESULT_PATH is
+not set" (or is absent) — ignore that and finish normally.
 Candidates come from the `## Node map`, ranked by its flame percentages — a
 structural candidate may target the subsystem around a node rather than the
 function itself.  If that section is empty (first session on a fresh
@@ -196,6 +203,13 @@ PR is NOT a candidate:
    - IPC > 1.5: CPU-bound and healthy; IPC < 0.7: memory-bound.
    - cache-miss rate > 1%: memory pressure — risky in the 32-threaded renderer.
    - branch-miss rate > 5%: unpredictable branches.
+8b. `show_asm(rel_path, func)` / `compare_asm(rel_path, func, base_ref)` —
+   confirm the mechanism in the generated x86-64: vectorization width, hoisted
+   loads, branch removal, spills, instruction count.  `compare_asm` diffs the
+   current tree against `HEAD` (or any ref) after renumbering local labels.
+   Pass `extra_flags` for target builds (`-DBENCH_MODE`, `-DFLIGHT_BENCH`).
+   This is per-TU `-S` output with LTO/PGO flags stripped — supporting evidence
+   only; bench numbers and correctness remain the gate.
 9. Decision: `run_func_bench` shows a real win (>= 1% on ns/call, consistent
    across runs, correctness PASS) → Phase 3.  The cache-miss/branch-miss
    counters inform the pre-mortem — they do not veto a measured win on their
@@ -327,13 +341,20 @@ END of the session.
     The branch name is derived automatically; do NOT pass one.  In a manual
     (unsupervised) session where the tool asks for one, pass
     `branch="llmopt/<8-hex-sha>/<topic>"` (from `git rev-parse HEAD`).
-    If it fails on credentials (401/403), report `blocked` and STOP — never
-    hunt for tokens or use browser/GitHub-UI workarounds.
+    If it fails on credentials (401/403), record the credential failure and
+    continue with a rung that does not need GitHub (flight controller or
+    general improvements); never hunt for tokens or use browser/GitHub-UI
+    workarounds.  Only report `blocked` when no remaining rung can be
+    attempted.
     Never merge.  Never force-push or rewrite branches.
-20. `report_session_result(status, summary, pr_url)` — call EXACTLY ONCE before
-    exit.  status: `pr_created` (with pr_url), `no_change` (no safe measurable
+20. `report_session_result(status, summary, pr_url)` — supervised sessions
+    only; call it EXACTLY ONCE before exit when the tool is available.
+    status: `pr_created` (with pr_url), `no_change` (no safe measurable
     optimization found; leave the sandbox clean), `blocked` (environment
     problem), or `failed`.  The supervisor uses this artifact as the outcome.
+    In a manual session the tool returns "GENGIN_SESSION_RESULT_PATH is not
+    set" (or is absent) — that is expected; ignore it and finish with your
+    final answer.  Never treat a missing report tool as a blocker.
 21. Move to the next hotspot and repeat the cycle.  The session ends when a PR
     is opened, or when the SESSION EFFORT BUDGET conditions are met and no
     safe candidate survives — then report `no_change`.
@@ -640,8 +661,8 @@ Apply directly in those rare cases and validate with `make_bench`.
 ## EDITING & NAVIGATION TOOLS
 - `read_file` / `search_files` / `terminal` — read and search anything.
 - Prefer the domain tools (`make_flame`, `hot_annotate_*`, `create_func_bench`,
-  `run_func_bench`, `run_perf_stat`, `make_bench`, `flight_bench`,
-  `flight_scenarios`, `flight_trace`, `create_pr`,
+  `run_func_bench`, `run_perf_stat`, `show_asm`, `compare_asm`, `make_bench`,
+  `flight_bench`, `flight_scenarios`, `flight_trace`, `create_pr`,
   `report_session_result`) over ad-hoc terminal pipelines — they keep results
   in the run artifacts the supervisor audits.
 - `patch` — targeted edit (fuzzy matcher; returns a unified diff).  Preferred.
@@ -649,6 +670,8 @@ Apply directly in those rare cases and validate with `make_bench`.
 - `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`,
   `lsp_diagnostics_all` — semantic clangd queries.
 - `hot_annotate_func` / `hot_annotate_file` — perf-annotated source.
+- `show_asm` / `compare_asm` — per-TU assembly and a normalized diff against a
+  git ref; LTO/PGO flags are stripped, so use it as mechanism evidence only.
 - `quick_ask` — cheap Jev decision model (typed answers with probabilities, no
   text).  Use it for narrow judgments over text you provide.  Advisory: it can
   be wrong — check confidence and decide yourself.  Prefer `yes_no`/`choices`;
