@@ -1130,6 +1130,8 @@ void Object_Destroy(Object *obj) {
 	obj->normals = NULL;
 	free(obj->materialIds);
 	obj->materialIds = NULL;
+	free(obj->triShades);
+	obj->triShades = NULL;
 	obj->triangleCount = 0;
 	free(obj->bvh.nodes);
 	obj->bvh.nodes = NULL;
@@ -1664,6 +1666,25 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 					ls[32 + l] = e1.x; ls[40 + l] = e1.y; ls[48 + l] = e1.z;
 					ls[64 + l] = e2.x; ls[72 + l] = e2.y; ls[80 + l] = e2.z;
 				}
+			}
+		}
+	}
+	// The kernels read the vertices, normal, uv and material of one triangle per
+	// hit, so keep them together: one record, one cache line, one hit.
+	free(obj->triShades);
+	obj->triShades = NULL;
+	if (obj->triangleCount > 0 && obj->v1 && obj->v2 && obj->v3 && obj->normals && obj->uvs && obj->materialIds) {
+		obj->triShades = (TriShade *)aligned_alloc(64, sizeof(TriShade) * (size_t)obj->triangleCount);
+		if (obj->triShades) {
+			for (int t = 0; t < obj->triangleCount; t++) {
+				TriShade *ts = &obj->triShades[t];
+				const float3 a = obj->v1[t], b = obj->v2[t], c = obj->v3[t], n = obj->normals[t];
+				ts->v1x = a.x; ts->v1y = a.y; ts->v1z = a.z;
+				ts->v2x = b.x; ts->v2y = b.y; ts->v2z = b.z;
+				ts->v3x = c.x; ts->v3y = c.y; ts->v3z = c.z;
+				ts->nx = n.x; ts->ny = n.y; ts->nz = n.z;
+				ts->uv = obj->uvs[t];
+				ts->matId = obj->materialIds[t];
 			}
 		}
 	}

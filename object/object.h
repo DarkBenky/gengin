@@ -97,6 +97,20 @@ typedef struct UvCords {
 	uint16 uv3y;
 } UvCords;
 
+// One 64-byte record per triangle.  The row and column kernels read the three
+// vertices, the normal, the uv block and the material of the same triangle for
+// every hit, which was five random lines across five arrays.  The vectors are
+// stored as three floats each (float3 carries a pad lane) so the record stays
+// inside one cache line.  Rebuilt with the BVH.
+typedef struct TriShade {
+	float v1x, v1y, v1z;
+	float v2x, v2y, v2z;
+	float v3x, v3y, v3z;
+	float nx, ny, nz;
+	UvCords uv;
+	int matId;
+} TriShade;
+
 typedef struct Object {
 	float3 position;
 	float3 rotation;
@@ -128,6 +142,7 @@ typedef struct Object {
 	UvCords *uvs;
 
 	int *materialIds;
+	TriShade *triShades; // per-triangle hot-path copy, NULL until the BVH is built
 	int triangleCount;
 
 	bool hasTexture;

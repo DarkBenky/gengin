@@ -1037,10 +1037,10 @@ static void RayTraceRowFunc(void *arg) {
 
 		const Object *obj = &objects[bestObj];
 
+		const TriShade *ts = obj->triShades ? &obj->triShades[bestTri] : NULL;
 		float3 v0, v1, v2;
-		v0 = obj->v1[bestTri];
-		v1 = obj->v2[bestTri];
-		v2 = obj->v3[bestTri];
+		if (ts) { v0 = (float3){ts->v1x, ts->v1y, ts->v1z}; v1 = (float3){ts->v2x, ts->v2y, ts->v2z}; v2 = (float3){ts->v3x, ts->v3y, ts->v3z}; }
+		else { v0 = obj->v1[bestTri]; v1 = obj->v2[bestTri]; v2 = obj->v3[bestTri]; }
 
 		// check if object has textures
 		uvCoordinates xyCordsTexture = {0, 0};
@@ -1055,10 +1055,10 @@ static void RayTraceRowFunc(void *arg) {
 				obj->_invScale.x * lt.x + obj->_invScale.y * lt.y + obj->_invScale.z * lt.z,
 				obj->_invRotSin.x * lt.x + obj->_invRotSin.y * lt.y + obj->_invRotSin.z * lt.z,
 				obj->_invRotCos.x * lt.x + obj->_invRotCos.y * lt.y + obj->_invRotCos.z * lt.z};
-			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, obj->uvs[bestTri]);
+			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, ts ? ts->uv : obj->uvs[bestTri]);
 		}
 
-		float3 ln = obj->normals[bestTri];
+		float3 ln = ts ? (float3){ts->nx, ts->ny, ts->nz} : obj->normals[bestTri];
 		float3 n = {
 			obj->_fwdRot0.x * ln.x + obj->_fwdRot0.y * ln.y + obj->_fwdRot0.z * ln.z,
 			obj->_fwdRot1.x * ln.x + obj->_fwdRot1.y * ln.y + obj->_fwdRot1.z * ln.z,
@@ -1083,7 +1083,7 @@ static void RayTraceRowFunc(void *arg) {
 		float metallicFromTexture_Float = 0.0f;
 
 		if (lib && obj->materialIds) {
-			int matId = obj->materialIds[bestTri];
+			int matId = ts ? ts->matId : obj->materialIds[bestTri];
 			if (matId >= 0 && matId < lib->count) {
 				color = lib->entries[matId].color;
 				// emission = lib->entries[matId].emission;
@@ -1146,7 +1146,7 @@ static void RayTraceRowFunc(void *arg) {
 			};
 			float nTexLen = Float3_Length(nTex);
 			if (nTexLen > 1e-3f) {
-				UvCords uvCords = obj->uvs[bestTri];
+				UvCords uvCords = ts ? ts->uv : obj->uvs[bestTri];
 				float dU1 = ((int)uvCords.uv2x - (int)uvCords.uv1x) / 65535.0f;
 				float dV1 = ((int)uvCords.uv2y - (int)uvCords.uv1y) / 65535.0f;
 				float dU2 = ((int)uvCords.uv3x - (int)uvCords.uv1x) / 65535.0f;
@@ -1706,10 +1706,10 @@ static void RayTraceColumnFunc(void *arg) {
 
 		const Object *obj = &objects[bestObj];
 
+		const TriShade *ts = obj->triShades ? &obj->triShades[bestTri] : NULL;
 		float3 v0, v1, v2;
-		v0 = obj->v1[bestTri];
-		v1 = obj->v2[bestTri];
-		v2 = obj->v3[bestTri];
+		if (ts) { v0 = (float3){ts->v1x, ts->v1y, ts->v1z}; v1 = (float3){ts->v2x, ts->v2y, ts->v2z}; v2 = (float3){ts->v3x, ts->v3y, ts->v3z}; }
+		else { v0 = obj->v1[bestTri]; v1 = obj->v2[bestTri]; v2 = obj->v3[bestTri]; }
 
 		// check if object has textures
 		uvCoordinates xyCordsTexture = {0, 0};
@@ -1724,10 +1724,10 @@ static void RayTraceColumnFunc(void *arg) {
 				obj->_invScale.x * lt.x + obj->_invScale.y * lt.y + obj->_invScale.z * lt.z,
 				obj->_invRotSin.x * lt.x + obj->_invRotSin.y * lt.y + obj->_invRotSin.z * lt.z,
 				obj->_invRotCos.x * lt.x + obj->_invRotCos.y * lt.y + obj->_invRotCos.z * lt.z};
-			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, obj->uvs[bestTri]);
+			xyCordsTexture = calculateUvCoordinatesForTriangle(localHit, v0, v1, v2, ts ? ts->uv : obj->uvs[bestTri]);
 		}
 
-		float3 ln = obj->normals[bestTri];
+		float3 ln = ts ? (float3){ts->nx, ts->ny, ts->nz} : obj->normals[bestTri];
 		float3 n = {
 			obj->_fwdRot0.x * ln.x + obj->_fwdRot0.y * ln.y + obj->_fwdRot0.z * ln.z,
 			obj->_fwdRot1.x * ln.x + obj->_fwdRot1.y * ln.y + obj->_fwdRot1.z * ln.z,
@@ -1752,7 +1752,7 @@ static void RayTraceColumnFunc(void *arg) {
 		float metallicFromTexture_Float = 0.0f;
 
 		if (lib && obj->materialIds) {
-			int matId = obj->materialIds[bestTri];
+			int matId = ts ? ts->matId : obj->materialIds[bestTri];
 			if (matId >= 0 && matId < lib->count) {
 				color = lib->entries[matId].color;
 				// emission = lib->entries[matId].emission;
@@ -1808,7 +1808,7 @@ static void RayTraceColumnFunc(void *arg) {
 			};
 			float nTexLen = Float3_Length(nTex);
 			if (nTexLen > 1e-3f) {
-				UvCords uvCords = obj->uvs[bestTri];
+				UvCords uvCords = ts ? ts->uv : obj->uvs[bestTri];
 				float dU1 = ((int)uvCords.uv2x - (int)uvCords.uv1x) / 65535.0f;
 				float dV1 = ((int)uvCords.uv2y - (int)uvCords.uv1y) / 65535.0f;
 				float dU2 = ((int)uvCords.uv3x - (int)uvCords.uv1x) / 65535.0f;
