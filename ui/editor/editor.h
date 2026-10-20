@@ -353,14 +353,64 @@ static const char *modeName(enum EditorMode mode) {
 	}
 }
 
+static float3 typeNameColor(const char *typeName) {
+	if (strncmp(typeName, "__buildin_", 10) == 0) {
+		float3 cyan = {0.45f, 0.85f, 1.0f};
+		return cyan;
+	}
+	if (strncmp(typeName, "__custom_obj_", 13) == 0) {
+		float3 green = {0.35f, 1.0f, 0.35f};
+		return green;
+	}
+	float3 amber = {1.0f, 0.75f, 0.3f}; // merged or generated objects
+	return amber;
+}
+
+// cuts the tail of text until it fits maxWidth, marking the cut with ".."
+static void trimTextToWidth(struct Alphabet *alphabet, char *text, float scale, int maxWidth) {
+	int len = (int)strlen(text);
+	bool trimmed = false;
+	while (len > 0 && MeasureTextWidth(alphabet, text, scale) > maxWidth) {
+		len--;
+		text[len] = '\0';
+		trimmed = true;
+	}
+	if (!trimmed || len <= 2) return;
+	int ellipsisWidth = MeasureTextWidth(alphabet, "..", scale);
+	while (len > 2 && MeasureTextWidth(alphabet, text, scale) + ellipsisWidth > maxWidth) {
+		len--;
+		text[len] = '\0';
+	}
+	strcat(text, "..");
+}
+
+static void dimRect(float3 *framebuffer, int fbWidth, int fbHeight, int left, int top, int right, int bottom, float factor) {
+	if (left < 0) left = 0;
+	if (top < 0) top = 0;
+	if (right > fbWidth) right = fbWidth;
+	if (bottom > fbHeight) bottom = fbHeight;
+	for (int row = top; row < bottom; row++) {
+		float3 *line = framebuffer + row * fbWidth;
+		for (int col = left; col < right; col++) {
+			line[col].x *= factor;
+			line[col].y *= factor;
+			line[col].z *= factor;
+		}
+	}
+}
+
 void drawStats(editorUi *ui, int x, int y, int width, int height) {
 	const int characterSize = 8;
+	const int panelPad = 5;
 	float3 white = {1.0f, 1.0f, 1.0f};
 	float3 yellow = {1.0f, 1.0f, 0.0f};
 
 	// editor inactive: only advertise how to open it
 	if (!ui->editorActive) {
-		const float hintScale = 1.5f;
+		const float hintScale = 1.0f;
+		int hintWidth = MeasureTextWidth(ui->alphabet, "Tab", hintScale) + MeasureTextWidth(ui->alphabet, " ", hintScale) + MeasureTextWidth(ui->alphabet, "open editor", hintScale);
+		dimRect(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, x - panelPad, y - panelPad, x + hintWidth + panelPad, y + (int)(characterSize * hintScale) + panelPad, 0.25f);
+
 		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, "Tab", x, y, hintScale, yellow);
 		int descX = x + MeasureTextWidth(ui->alphabet, "Tab", hintScale) + MeasureTextWidth(ui->alphabet, " ", hintScale);
 		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, "open editor", descX, y, hintScale, white);
@@ -373,6 +423,18 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 	int n = 0;
 
 	snprintf(lines[n++], 32, "mode: %s  snap: %s", modeName(ui->mode), ui->snapToGrid ? "on" : "off");
+
+	// ObjectPathOrType is zero initialized: cut at the first NUL so the
+	char typeText[sizeof(ui->selectedObject->ObjectPathOrType) + 4];
+	int typeRow = -1;
+	if (selected != NULL) {
+		int typeLen = 0;
+		while (typeLen < (int)sizeof(selected->ObjectPathOrType) && selected->ObjectPathOrType[typeLen] != '\0') typeLen++;
+		memcpy(typeText, selected->ObjectPathOrType, typeLen);
+		typeText[typeLen] = '\0';
+		typeRow = n;
+		lines[n++][0] = '\0';
+	}
 
 	if (selected != NULL) {
 		float3 pos = selected->position;
@@ -396,7 +458,7 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 		fmtTriangles(lines[n++], 32, triCount);
 	}
 
-	lines[n][0] = '\0'; // blank line between stats and hints
+	lines[n][0] = '\0';
 	n++;
 
 	char snapHint[32], uniformHint[32];
@@ -425,11 +487,26 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 	if (scale >= 1.0f) scale = (float)(int)scale;
 
 	int lineHeight = (int)(characterSize * scale);
+
+	// type line: keep the panel's font size and cut the tail, readable first
+	const char *typeLabel = "type: ";
+	int typeLabelWidth = 0;
+	int typeTextWidth = 0;
+	if (typeRow >= 0) {
+		typeLabelWidth = MeasureTextWidth(ui->alphabet, typeLabel, scale);
+		trimTextToWidth(ui->alphabet, typeText, scale, width - typeLabelWidth);
+		typeTextWidth = MeasureTextWidth(ui->alphabet, typeText, scale);
+	}
+
+	int panelWidth = (int)(maxChars * characterSize * scale);
+	if (typeRow >= 0 && typeLabelWidth + typeTextWidth > panelWidth) panelWidth = typeLabelWidth + typeTextWidth;
+	int panelHeight = totalRows * lineHeight;
+	dimRect(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, x - panelPad, y - panelPad, x + panelWidth + panelPad, y + panelHeight + panelPad, 0.25f);
+
 	float3 cyan = {0.45f, 0.85f, 1.0f};
 	float3 green = {0.35f, 1.0f, 0.35f};
 	float3 red = {1.0f, 0.3f, 0.3f};
 
-	// top line: labels white, mode value cyan, snap state green/red
 	int topX = x;
 	const char *modeLabel = "mode: ";
 	RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, modeLabel, topX, y, scale, white);
@@ -442,7 +519,14 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 	RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, ui->snapToGrid ? "on" : "off", topX, y, scale, ui->snapToGrid ? green : red);
 
 	for (int i = 1; i < n; i++) {
+		if (i == typeRow) continue;
 		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, lines[i], x, y + i * lineHeight, scale, white);
+	}
+
+	if (typeRow >= 0) {
+		int rowY = y + typeRow * lineHeight;
+		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, typeLabel, x, rowY, scale, white);
+		RenderTextHdr(ui->cam->framebufferHdr, ui->cam->screenWidth, ui->cam->screenHeight, ui->alphabet, typeText, x + typeLabelWidth, rowY, scale, typeNameColor(typeText));
 	}
 
 	for (int i = 0; i < hintCount; i++) {

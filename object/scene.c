@@ -67,6 +67,7 @@ Object *ObjectList_Add(ObjectList *list) {
 	}
 	Object *obj = &list->objects[list->count++];
 	*obj = (Object){0};
+	Object_SetGeneratedName(obj, "__object_", NULL);
 	return obj;
 }
 
@@ -99,6 +100,7 @@ void ObjectList_Merge(ObjectList *src, ObjectList *dst) {
 	if (totalTris == 0) return;
 
 	Object *out = ObjectList_Add(dst);
+	Object_SetGeneratedName(out, "__merged_object_", NULL);
 	out->position = (float3){0};
 	out->rotation = (float3){0};
 	out->scale = (float3){1.0f, 1.0f, 1.0f};

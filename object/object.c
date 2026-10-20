@@ -15,6 +15,16 @@ static inline float3 TransformPoint(const Object *obj, float3 local) {
 	return TransformPointTRS(local, obj->position, obj->rotation, obj->scale);
 }
 
+void Object_SetGeneratedName(Object *obj, const char *prefix, const char *middle) {
+	if (!obj || !prefix) return;
+	char randomPart[16];
+	generateRandomString(randomPart, sizeof(randomPart));
+	if (middle)
+		snprintf(obj->ObjectPathOrType, sizeof(obj->ObjectPathOrType), "%s%s_%s", prefix, middle, randomPart);
+	else
+		snprintf(obj->ObjectPathOrType, sizeof(obj->ObjectPathOrType), "%s%s", prefix, randomPart);
+}
+
 bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward) {
 	// cull only if the entire world AABB is behind the camera plane
 	float3 mn = obj->worldBBmin;
@@ -92,6 +102,8 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_cube_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -169,6 +181,8 @@ static float3 SphereFaceNormal(float3 v1, float3 v2, float3 v3) {
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
 void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_sphere_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -228,6 +242,8 @@ void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, f
 }
 
 void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_sphere_high_res_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -287,6 +303,8 @@ void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, f
 }
 
 void CreatePlane(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_plane_", NULL);
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -328,6 +346,8 @@ void CreatePlane(Object *obj, float3 position, float3 rotation, float3 scale, fl
 }
 
 void CreateQuad(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_quad_", NULL);
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -371,6 +391,8 @@ void CreateQuad(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define DISK_SEGMENTS 24
 
 void CreateDisk(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_disk_", NULL);
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -421,6 +443,8 @@ void CreateDisk(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define CONE_SEGMENTS 24
 
 void CreateCone(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_cone_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -476,6 +500,8 @@ void CreateCone(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define CYLINDER_SEGMENTS 24
 
 void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_cylinder_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -539,6 +565,8 @@ void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale,
 #define TUBE_SEGMENTS 24
 
 void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_tube_", NULL);
+	
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -596,6 +624,8 @@ void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define CAPSULE_RINGS 6
 
 void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_capsule_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -674,6 +704,8 @@ void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, 
 #define HEMISPHERE_RINGS 8
 
 void CreateHemisphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_hemisphere_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -752,6 +784,8 @@ static float3 TorusPoint(float u, float v, float major, float minor) {
 }
 
 void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_torus_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -810,6 +844,8 @@ void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, fl
 }
 
 void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_pyramid_", NULL);
+	
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -864,6 +900,8 @@ void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, 
 #define PRISM_SEGMENTS 3
 
 void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_prism_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -936,6 +974,8 @@ void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, fl
 #define UVSPHERE_RINGS 16
 
 void CreateUVSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_uvsphere_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -1019,6 +1059,8 @@ static int IcoSubdivide(Object *obj, float3 a, float3 b, float3 c, int level, in
 }
 
 void CreateIcosphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_icosphere_", NULL);
+	
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;

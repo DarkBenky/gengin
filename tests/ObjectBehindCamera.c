@@ -5,7 +5,10 @@
 #define SAMPLES 100000
 
 int main() {
-	Object *objects = malloc(sizeof(Object) * SAMPLES);
+	Object *objects = calloc(SAMPLES, sizeof(Object));
+	if (!objects) return 1;
+	for (int i = 0; i < SAMPLES; i++)
+		snprintf(objects[i].ObjectPathOrType, sizeof(objects[i].ObjectPathOrType), "__bench_behind_%d", i);
 	bool *results = malloc(sizeof(bool) * SAMPLES);
 	Bool2 *resultsV2 = malloc(sizeof(Bool2) * SAMPLES / 2);
 	Bool4 *resultsV4 = malloc(sizeof(Bool4) * SAMPLES / 4);

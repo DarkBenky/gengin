@@ -98,6 +98,8 @@ typedef struct UvCords {
 } UvCords;
 
 typedef struct Object {
+	char ObjectPathOrType[128];
+
 	float3 position;
 	float3 rotation;
 	float3 scale;
@@ -142,6 +144,20 @@ typedef struct Object {
 
 	BVH bvh;
 } Object;
+
+static inline void generateRandomString(char *str, int length) {
+	const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	for (size_t i = 0; i < length - 1; i++) {
+		int key = rand() % (int)(sizeof(charset) - 1);
+		str[i] = charset[key];
+	}
+	str[length - 1] = '\0';
+}
+
+// Fills ObjectPathOrType with "<prefix><middle>_<random>" (middle optional).
+// Every object creation path goes through here; snprintf truncates so long
+// paths cannot overflow the fixed-size field.
+void Object_SetGeneratedName(Object *obj, const char *prefix, const char *middle);
 
 void LoadVolume(Volume *vol, const char *filename, float3 position, float3 rotation, float3 scale, VolumeType type);
 void UploadVolumeToGpu(Volume *vol, CL_Context *ctx);
