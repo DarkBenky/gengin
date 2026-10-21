@@ -45,9 +45,8 @@
 // one, so the pool hand-off costs more than the blur it feeds: the 212 tasks a frame needs today
 // (2 rounds x row+col band) measure 2.19 ms of pure hand-off against 0.24 ms for 22 empty tasks.
 // Coarser bands measure row blur 0.76 -> 0.21 ms and column blur 0.215 -> 0.147 ms with bit-identical
-// output (bench/aoWide).  The band size is an explicit argument now: the full-resolution column pass
-// (the only other caller) still passes COLUMNS_PER_TASK, and the legacy CalculateAmbientOcclusion*Mp
-// entry points below still size their bands from ROWS_PER_TASK.
+// output (bench/aoWide).  The band size is an explicit argument now: the legacy CalculateAmbientOcclusion*Mp
+// entry points below still size their bands from COLUMNS_PER_TASK and ROWS_PER_TASK.
 #ifndef AO_SMOOTH_BLUR_ROWS_PER_TASK
 #define AO_SMOOTH_BLUR_ROWS_PER_TASK 8
 #endif
@@ -1617,7 +1616,6 @@ static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(Camera *c
 		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlusSkipBetterBlur, &tasks[t]);
 	}
 	poolWait(threadPool);
-	columnBlurMpBetter(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool, camera->depthBuffer, COLUMNS_PER_TASK);
 	SmoothAmbientOcclusionWide(camera, threadPool);
 }
 
