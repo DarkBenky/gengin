@@ -32,6 +32,8 @@ int ObjectList_CountTriangles(const ObjectList *list);
 // path => [file path](if build in skip)
 // suffix => _random16letters
 
+// TODO: create load functions that will load the objects from the one file config
+
 // Merge all objects in src into a single world-space mesh added to dst.
 // Src objects are destroyed and the list is reset after merging.
 void ObjectList_Merge(ObjectList *src, ObjectList *dst);
