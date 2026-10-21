@@ -55,7 +55,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 }
 
 void destroyCamera(Camera *camera) {
-	if (!camera) return;
+	if (!camera || !camera->framebufferLdr) return;
 	free(camera->framebufferLdr);
 	free(camera->framebufferHdr);
 	free(camera->tempFramebufferHdr);
@@ -82,6 +82,7 @@ void destroyCamera(Camera *camera) {
 	camera->positionBuffer = NULL;
 	camera->reflectBuffer = NULL;
 	camera->depthBuffer = NULL;
+	camera->ambientOcclusionBuffer = NULL;
 	camera->reflectCache = NULL;
 	camera->tempBuffer_1 = NULL;
 	camera->tempBuffer_2 = NULL;
