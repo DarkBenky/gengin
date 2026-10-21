@@ -161,18 +161,27 @@ static void onRequest(const Request *req, Response *res) {
 	} else if (req->type == POST) {
 		// get object count and objects data from client and update server state
 		uint32 numOfObjects;
+		if (req->size < sizeof(uint32)) {
+			responseWrite(res, "Invalid request size", 20);
+			return;
+		}
 		memcpy(&numOfObjects, req->data, sizeof(uint32));
-		Object *objects = (Object *)(req->data + sizeof(uint32));
+		if (numOfObjects > (req->size - sizeof(uint32)) / sizeof(Object)) {
+			responseWrite(res, "Invalid request size", 20);
+			return;
+		}
 
 		for (uint32 i = 0; i < numOfObjects; i++) {
-			int index = findObjectIndex(state, objects[i].Id);
+			Object obj;
+			memcpy(&obj, req->data + sizeof(uint32) + i * sizeof(Object), sizeof(Object));
+			int index = findObjectIndex(state, obj.Id);
 			if (index >= 0) {
 				memcpy(&state->previousObjects[index], &state->currentObjects[index], sizeof(Object));
-				state->currentObjects[index] = objects[i];
-				state->currentObjects[index].TimeStamp = nowMs();
+				obj.TimeStamp = nowMs();
+				state->currentObjects[index] = obj;
 			} else {
-				objects[i].TimeStamp = nowMs();
-				addObject(state, objects[i]);
+				obj.TimeStamp = nowMs();
+				addObject(state, obj);
 			}
 		}
 		responseWrite(res, "Objects updated", 15);
