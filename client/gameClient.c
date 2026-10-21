@@ -164,6 +164,10 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 	}
 	uint32 numObjects;
 	memcpy(&numObjects, res.data, sizeof(uint32));
+	if (numObjects > (res.size - sizeof(uint32)) / sizeof(requestObject)) {
+		clientFreeResponse(&res);
+		return;
+	}
 
 	// track which registry entries were seen to detect removals
 	bool *seen = calloc(reg->count, sizeof(bool));
