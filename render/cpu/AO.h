@@ -1332,7 +1332,7 @@ typedef struct {
 	const float *restrict src;
 	int dstWidth;
 	float *restrict dst;
-} DownsampleTask;
+} SampleAoTask;
 
 typedef struct {
 	int row;	 // first row of the band (full-resolution rows)
@@ -1349,8 +1349,8 @@ typedef struct {
 	const float *restrict txTab;
 } UpsampleTask;
 
-static void DownsampleAoRows(void *arg) {
-	DownsampleTask *restrict task = arg;
+static void SampleAoRows(void *arg) {
+	SampleAoTask *restrict task = arg;
 	const int scale = AO_SMOOTH_DOWNSCALE;
 	const int srcWidth = task->srcWidth;
 	const int minX = KERNEL_SIZE_HALF;
@@ -1359,21 +1359,18 @@ static void DownsampleAoRows(void *arg) {
 	const int dstWidth = task->dstWidth;
 	float *restrict dst = task->dst;
 	const int endRow = task->row + task->rows;
-	const float inv = 1.0f / (float)(scale * scale);
+	const float inv = 1.0f / (float)scale;
 
 	for (int oy = task->row; oy < endRow; oy++) {
-		const int sy = oy * scale;
+		const float *restrict rowPtr = src + (oy * scale + scale / 2) * srcWidth;
 		for (int ox = 0; ox < dstWidth; ox++) {
 			const int sx = ox * scale;
 			float sum = 0.0f;
-			for (int y = 0; y < scale; y++) {
-				const float *restrict rowPtr = src + (sy + y) * srcWidth;
-				for (int x = 0; x < scale; x++) {
-					int px = sx + x;
-					if (px < minX) px = minX;
-					if (px > maxX) px = maxX;
-					sum += rowPtr[px];
-				}
+			for (int x = 0; x < scale; x++) {
+				int px = sx + x;
+				if (px < minX) px = minX;
+				if (px > maxX) px = maxX;
+				sum += rowPtr[px];
 			}
 			dst[oy * dstWidth + ox] = sum * inv;
 		}
@@ -1472,12 +1469,12 @@ static void SmoothAmbientOcclusionWide(Camera *camera, ThreadPool *threadPool) {
 	}
 
 	const int downTaskCount = (smallH + AO_SMOOTH_ROWS_PER_TASK - 1) / AO_SMOOTH_ROWS_PER_TASK;
-	DownsampleTask downTasks[downTaskCount];
+	SampleAoTask downTasks[downTaskCount];
 	for (int t = 0; t < downTaskCount; t++) {
 		const int row = t * AO_SMOOTH_ROWS_PER_TASK;
 		const int rows = smallH - row < AO_SMOOTH_ROWS_PER_TASK ? smallH - row : AO_SMOOTH_ROWS_PER_TASK;
-		downTasks[t] = (DownsampleTask){row, rows, width, camera->ambientOcclusionBuffer, smallW, smallAO};
-		poolAdd(threadPool, DownsampleAoRows, &downTasks[t]);
+		downTasks[t] = (SampleAoTask){row, rows, width, camera->ambientOcclusionBuffer, smallW, smallAO};
+		poolAdd(threadPool, SampleAoRows, &downTasks[t]);
 	}
 	poolWait(threadPool);
 
@@ -1607,17 +1604,17 @@ static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(Camera *c
 	camera->maxDepth = FLT_MIN;
 	camera->minDepth = FLT_MAX;
 
+	const int scale = AO_SMOOTH_DOWNSCALE;
 	const int height = camera->screenHeight;
-	const int taskCount = (height + AO_ROWS_PER_TASK - 1) / AO_ROWS_PER_TASK;
+	const int taskCount = (height + scale - 1) / scale;
 	AmbientOcclusionTask tasks[taskCount];
 	for (int t = 0; t < taskCount; t++) {
-		const int row = t * AO_ROWS_PER_TASK;
-		const int rows = height - row < AO_ROWS_PER_TASK ? height - row : AO_ROWS_PER_TASK;
-		tasks[t] = (AmbientOcclusionTask){row, rows, camera};
+		const int row = t * scale + scale / 2;
+		if (row >= height) break;
+		tasks[t] = (AmbientOcclusionTask){row, 1, camera};
 		poolAdd(threadPool, CalculateAmbientOcclusionV2RowPlusSkipBetterBlur, &tasks[t]);
 	}
 	poolWait(threadPool);
-	columnBlurMpBetter(camera->screenWidth, camera->screenHeight, camera->ambientOcclusionBuffer, threadPool, camera->depthBuffer, COLUMNS_PER_TASK);
 	SmoothAmbientOcclusionWide(camera, threadPool);
 }
 
