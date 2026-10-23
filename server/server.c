@@ -74,7 +74,8 @@ void serverRun(Server *s) {
 		free(s->currentRequest.data);
 		s->currentRequest.data = NULL;
 		s->currentRequest.size = 0;
-		char *requestBase = malloc(incoming_size);
+		// +1: the wire payload is not NUL-terminated and handlers print it with %s
+		char *requestBase = malloc(incoming_size + 1);
 		if (!requestBase) {
 			close(client_fd);
 			continue;
@@ -86,6 +87,8 @@ void serverRun(Server *s) {
 			close(client_fd);
 			continue;
 		}
+
+		requestBase[nr] = '\0';
 
 		// first byte encodes request type, strip it from data the handler sees
 		s->currentRequest.type = (requestBase[0] == 1) ? POST : GET;
