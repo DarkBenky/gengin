@@ -2087,7 +2087,7 @@ static inline void KGen_w128_h128_c256_f3_n256_Forward(CL_Context *ctx, KGenConv
 	CL_SetArgBuffer(&layer->pip, 3, output);
 	CL_SetArgInt(&layer->pip, 4, activation);
 	CL_SetArgInt(&layer->pip, 5, accumulate);
-	CL_Dispatch2D(ctx, &layer->pip, 2048, 128, layer->localX, layer->localY);
+	CL_Dispatch2D(ctx, &layer->pip, 1024, 128, layer->localX, layer->localY);
 }
 
 // Run: host input -> scratch buffers -> Forward -> host output

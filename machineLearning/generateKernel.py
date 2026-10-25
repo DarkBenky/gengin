@@ -176,6 +176,8 @@ CONV_SPLIT_TARGET = 16384   # work items we would like in flight
 CONV_SPLIT_FLOOR = 1024     # below this many work items the per-item floor starves the device
 CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
+CONV_WIDE_PIXELS = 16384    # from this map size up a doubled filter block still fills the device
+CONV_MAX_WIDE_PER_ITEM = 32
 CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
 CONV_BLOCK_BUDGET = 16      # accumulators per work item (filters x columns)
 
@@ -246,7 +248,8 @@ def convPlan(width, height, channels, filterSize, filters):
     want = max(1, CONV_SPLIT_TARGET // max(1, width * height))
     want = min(want, filters)
     perItem = -(-filters // want)                      # ceil
-    perItem = min(perItem, CONV_MAX_PER_ITEM)
+    perItem = min(perItem, CONV_MAX_WIDE_PER_ITEM if width * height >= CONV_WIDE_PIXELS
+                  else CONV_MAX_PER_ITEM)
     perItem = max(CONV_MIN_PER_ITEM, perItem)
     perItem = min(perItem, filters)
     groups = -(-filters // perItem)                    # ceil
