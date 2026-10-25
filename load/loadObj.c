@@ -3,7 +3,6 @@
 #include "../object/material/material.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include "../util/bbox.h"
 
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
@@ -11,6 +10,8 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
 		return;
 	}
+
+	Object_SetGeneratedName(obj, "__custom_obj_", filename);
 	FILE *file = fopen(filename, "rb");
 	if (file == NULL) {
 		fprintf(stderr, "Error: Could not open file %s\n", filename);

@@ -22,6 +22,9 @@ typedef uint32_t u32;
 typedef uint8_t uint8;
 typedef uint16_t uint16;
 typedef uint32_t uint32;
+typedef uint64_t u64;
+typedef uint64_t uint64;
+typedef int64_t int64;
 typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
@@ -29,6 +32,7 @@ typedef int32_t int32;
 typedef uint32_t Color;
 
 #define boll bool
+#define memcopy memcpy
 
 #define HexToUint32(hex) ((uint32)(0xFF000000 | (hex)))
 #define RGBToUint32(r, g, b) ((uint32)(0xFF000000 | ((uint32)(r) << 16) | ((uint32)(g) << 8) | (uint32)(b)))

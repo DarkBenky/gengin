@@ -23,6 +23,17 @@ void ObjectList_Remove(ObjectList *list, int index); // destroys object at index
 void ObjectList_Destroy(ObjectList *list);			 // destroys every object and frees the array
 int ObjectList_CountTriangles(const ObjectList *list);
 
+// TODO: create serialization functions
+// for build in objects use just some string as identifying the shape
+// for merged objects, we need to create file and save the binary and add path to the file
+// for imported objects, we just save the path to the exiting file
+// we can keep same style of naming so
+// prefix => [__custom_obj_, __buildin_`shapeName`_, __merged_object_]
+// path => [file path](if build in skip)
+// suffix => _random16letters
+
+// TODO: create load functions that will load the objects from the one file config
+
 // Merge all objects in src into a single world-space mesh added to dst.
 // Src objects are destroyed and the list is reset after merging.
 void ObjectList_Merge(ObjectList *src, ObjectList *dst);

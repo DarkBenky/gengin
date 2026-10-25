@@ -1,7 +1,5 @@
 # Tasks
 
-- [ ] Add support for open ai API in llmOpt
-
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
 - [ ] New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
@@ -9,7 +7,7 @@
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
 
 - [ ] Map loading files
-  - [ ] Object struct needs new field PathObjectType this can be used for saving scene and loading scene the object loading method needs to be updated to save the path to the struct of loaded object if object is created my merging multiple object on scene saving we need to create the file for that object
+  - [X] Object struct needs new field PathObjectType this can be used for saving scene and loading scene the object loading method needs to be updated to save the path to the struct of loaded object if object is created my merging multiple object on scene saving we need to create the file for that object
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
   - [ ] generate synthetic maps and camera movements (saved in the map file) so we can capture frames for upscaling model
@@ -351,6 +349,8 @@
     - [x] Add debug text to show mode, position, rotation, and scale of the selected model
     - [x] add snap mode
   - [x] Crete test and different version to find best method for compute heavy methods
+
+- [X] Add support for open ai API in llmOpt
 
 ## Current Render
 
