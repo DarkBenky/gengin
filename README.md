@@ -1,5 +1,7 @@
 # Tasks
 
+- [ ] fix objects jittering (network - server code) idea : have bigger position rotation scale buffers so it is not line interpolation but more complex functions 
+
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
 - [ ] New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
