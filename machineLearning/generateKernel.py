@@ -499,28 +499,47 @@ def generateKernel(width, height, channels, filterSize, filters=1):
                     out.append(f"{body}}}")
                 out.append("")
 
+    # Lane neighbours own separate pixels, so a scalar store wastes a sector
+    # each; the filter block is contiguous, so four values go out as one float4.
+    pack = 4 if (filters % 4) == 0 and (perItem % 4) == 0 else 1
+
     for p in range(blockX):
         storeX = "x" if p == 0 else f"x + {p}"
-        for b in range(perItem):
+        for first in range(0, perItem, pack):
             if guarded:
-                out.append(f"{body}if (n0 + {b} < {filters})")
+                out.append(f"{body}if (n0 + {first} < {filters})")
             out.append(f"{body}{{")
             inner = body + "    "
-            name = accName(p, b)
-            acc = f"({name}.x + {name}.y) + ({name}.z + {name}.w)" if vec else name
-            out.append(f"{inner}float sum = {acc} + bias[{nTerm(b)}];")
-            out.append("")
-            out.append(f"{inner}float value = sum;")
-            out.append(f"{inner}switch (activation)")
-            out.append(f"{inner}{{")
-            out.append(f"{inner}    case ReLU:    value = max(sum, 0.0f); break;")
-            out.append(f"{inner}    case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;")
-            out.append(f"{inner}    case Tanh:    value = tanh(sum); break;")
-            out.append(f"{inner}    case None:    value = sum; break;")
-            out.append(f"{inner}}}")
-            out.append("")
-            out.append(f"{inner}const int idx = (y * {width} + {storeX}) * {filters} + {nTerm(b)};")
-            out.append(f"{inner}output[idx] = accumulate ? output[idx] + value : value;")
+            if pack > 1:
+                out.append(f"{inner}float4 value4 = (float4)(0.0f);")
+                out.append("")
+            for b in range(first, first + pack):
+                name = accName(p, b)
+                acc = f"({name}.x + {name}.y) + ({name}.z + {name}.w)" if vec else name
+                if pack > 1:
+                    out.append(f"{inner}{{")
+                line = f"{inner}    " if pack > 1 else inner
+                out.append(f"{line}float sum = {acc} + bias[{nTerm(b)}];")
+                out.append("")
+                out.append(f"{line}float value = sum;")
+                out.append(f"{line}switch (activation)")
+                out.append(f"{line}{{")
+                out.append(f"{line}    case ReLU:    value = max(sum, 0.0f); break;")
+                out.append(f"{line}    case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;")
+                out.append(f"{line}    case Tanh:    value = tanh(sum); break;")
+                out.append(f"{line}    case None:    value = sum; break;")
+                out.append(f"{line}}}")
+                out.append("")
+                if pack > 1:
+                    out.append(f"{line}value4.s{b - first} = value;")
+                    out.append(f"{inner}}}")
+                    out.append("")
+                else:
+                    out.append(f"{line}const int idx = (y * {width} + {storeX}) * {filters} + {nTerm(b)};")
+                    out.append(f"{line}output[idx] = accumulate ? output[idx] + value : value;")
+            if pack > 1:
+                out.append(f"{inner}const int idx = (y * {width} + {storeX}) * {filters} + {nTerm(first)};")
+                out.append(f"{inner}*(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;")
             out.append(f"{body}}}")
             out.append("")
 
