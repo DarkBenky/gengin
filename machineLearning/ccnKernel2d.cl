@@ -1259,67 +1259,70 @@ __kernel void cnn2dFilter_w28_h28_c1_f3_n16(
     }
 
     {
-        float sum = a0 + bias[(n0 + 0)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = a1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 28 + x) * 16 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1 + bias[(n0 + 1)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 28 + x) * 16 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 28 + x) * 16 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 28 + x) * 16 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
@@ -1612,67 +1615,70 @@ __kernel void cnn2dFilter_w14_h14_c16_f3_n32(
     }
 
     {
-        float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[(n0 + 0)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 14 + x) * 32 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[(n0 + 1)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 14 + x) * 32 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 14 + x) * 32 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 14 + x) * 32 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
@@ -2583,259 +2589,271 @@ __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
     }
 
     {
-        float sum = a0_0 + bias[(n0 + 0)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a0_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = a0_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a0_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a0_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a0_1 + bias[(n0 + 1)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a0_2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a0_3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1_0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 1) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a1_1 + bias[(n0 + 1)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1_2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1_3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2_0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 2) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a2_1 + bias[(n0 + 1)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 2) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2_2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x + 2) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2_3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x + 2) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a3_0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 3) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a3_1 + bias[(n0 + 1)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x + 3) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a3_2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x + 3) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a3_3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x + 3) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
@@ -2843,7 +2861,7 @@ __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
 // cnn2dFilter_w128_h128_c256_f3_n256 -- generated by generateKernel.py (kernelGen v2, do not edit by hand)
 // width=128 height=128 channels=256 filterSize=3 filters=256
 // dims: in 128x128x256 -> out 128x128x256 (output channels = 256) | weights [256][3][3][256] | bias [256]
-// plan: 16 filter(s) in registers, 64x2 work group, 1024 weight quads staged in __local per tap, 2 x-block(s) x 16 filter groups
+// plan: 32 filter(s) in registers, 64x2 work group, 2048 weight quads staged in __local per tap, 2 x-block(s) x 8 filter groups
 // params: input, filterWeights, bias, output, activation, accumulate
 // ---------------------------------------------------------------------------
 __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
@@ -2855,7 +2873,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     const int accumulate)
 {
     const int bx = get_group_id(0) % 2;
-    const int n0 = (get_group_id(0) / 2) * 16;
+    const int n0 = (get_group_id(0) / 2) * 32;
     const int y0 = get_group_id(1) * 2;
     const int tx = get_local_id(0);
     const int ty = get_local_id(1);
@@ -2864,7 +2882,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     const int y = y0 + ty;
     const int ok = (x < 128 && y < 128);
 
-    __local float4 weightsLocal[1024];
+    __local float4 weightsLocal[2048];
 
     float4 a0 = (float4)(0.0f);
     float4 a1 = (float4)(0.0f);
@@ -2882,6 +2900,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     float4 a13 = (float4)(0.0f);
     float4 a14 = (float4)(0.0f);
     float4 a15 = (float4)(0.0f);
+    float4 a16 = (float4)(0.0f);
+    float4 a17 = (float4)(0.0f);
+    float4 a18 = (float4)(0.0f);
+    float4 a19 = (float4)(0.0f);
+    float4 a20 = (float4)(0.0f);
+    float4 a21 = (float4)(0.0f);
+    float4 a22 = (float4)(0.0f);
+    float4 a23 = (float4)(0.0f);
+    float4 a24 = (float4)(0.0f);
+    float4 a25 = (float4)(0.0f);
+    float4 a26 = (float4)(0.0f);
+    float4 a27 = (float4)(0.0f);
+    float4 a28 = (float4)(0.0f);
+    float4 a29 = (float4)(0.0f);
+    float4 a30 = (float4)(0.0f);
+    float4 a31 = (float4)(0.0f);
 
     // tap (0, 0)
     weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 0 + 4 * ((tid) % 64));
@@ -2892,6 +2926,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 0 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 0 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 0 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 0 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 0 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 0 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 0 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 0 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 0 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 0 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 0 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && y >= 1 && x >= 1)
@@ -2916,6 +2958,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -2929,6 +2987,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 256 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 256 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 256 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 256 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 256 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 256 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 256 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 256 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 256 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 256 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 256 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && y >= 1)
@@ -2953,6 +3019,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -2966,6 +3048,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 512 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 512 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 512 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 512 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 512 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 512 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 512 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 512 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 512 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 512 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 512 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && y >= 1 && x < 127)
@@ -2990,6 +3080,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3003,6 +3109,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 768 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 768 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 768 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 768 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 768 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 768 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 768 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 768 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 768 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 768 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 768 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && x >= 1)
@@ -3027,6 +3141,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3040,6 +3170,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1024 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1024 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1024 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 1024 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 1024 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 1024 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 1024 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 1024 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 1024 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 1024 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 1024 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok)
@@ -3064,6 +3202,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3077,6 +3231,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1280 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1280 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1280 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 1280 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 1280 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 1280 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 1280 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 1280 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 1280 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 1280 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 1280 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && x < 127)
@@ -3101,6 +3263,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3114,6 +3292,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1536 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1536 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1536 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 1536 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 1536 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 1536 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 1536 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 1536 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 1536 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 1536 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 1536 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && y < 127 && x >= 1)
@@ -3138,6 +3324,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3151,6 +3353,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1792 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1792 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1792 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 1792 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 1792 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 1792 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 1792 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 1792 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 1792 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 1792 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 1792 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && y < 127)
@@ -3175,6 +3385,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3188,6 +3414,14 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 2048 + 4 * ((tid + 640) % 64));
     weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 2048 + 4 * ((tid + 768) % 64));
     weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 2048 + 4 * ((tid + 896) % 64));
+    weightsLocal[tid + 1024] = *(__global const float4*)(filterWeights + (n0 + (tid + 1024) / 64) * 2304 + 2048 + 4 * ((tid + 1024) % 64));
+    weightsLocal[tid + 1152] = *(__global const float4*)(filterWeights + (n0 + (tid + 1152) / 64) * 2304 + 2048 + 4 * ((tid + 1152) % 64));
+    weightsLocal[tid + 1280] = *(__global const float4*)(filterWeights + (n0 + (tid + 1280) / 64) * 2304 + 2048 + 4 * ((tid + 1280) % 64));
+    weightsLocal[tid + 1408] = *(__global const float4*)(filterWeights + (n0 + (tid + 1408) / 64) * 2304 + 2048 + 4 * ((tid + 1408) % 64));
+    weightsLocal[tid + 1536] = *(__global const float4*)(filterWeights + (n0 + (tid + 1536) / 64) * 2304 + 2048 + 4 * ((tid + 1536) % 64));
+    weightsLocal[tid + 1664] = *(__global const float4*)(filterWeights + (n0 + (tid + 1664) / 64) * 2304 + 2048 + 4 * ((tid + 1664) % 64));
+    weightsLocal[tid + 1792] = *(__global const float4*)(filterWeights + (n0 + (tid + 1792) / 64) * 2304 + 2048 + 4 * ((tid + 1792) % 64));
+    weightsLocal[tid + 1920] = *(__global const float4*)(filterWeights + (n0 + (tid + 1920) / 64) * 2304 + 2048 + 4 * ((tid + 1920) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok && y < 127 && x < 127)
@@ -3212,6 +3446,22 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
             a13 += v * weightsLocal[832 + q];
             a14 += v * weightsLocal[896 + q];
             a15 += v * weightsLocal[960 + q];
+            a16 += v * weightsLocal[1024 + q];
+            a17 += v * weightsLocal[1088 + q];
+            a18 += v * weightsLocal[1152 + q];
+            a19 += v * weightsLocal[1216 + q];
+            a20 += v * weightsLocal[1280 + q];
+            a21 += v * weightsLocal[1344 + q];
+            a22 += v * weightsLocal[1408 + q];
+            a23 += v * weightsLocal[1472 + q];
+            a24 += v * weightsLocal[1536 + q];
+            a25 += v * weightsLocal[1600 + q];
+            a26 += v * weightsLocal[1664 + q];
+            a27 += v * weightsLocal[1728 + q];
+            a28 += v * weightsLocal[1792 + q];
+            a29 += v * weightsLocal[1856 + q];
+            a30 += v * weightsLocal[1920 + q];
+            a31 += v * weightsLocal[1984 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3488,13 +3738,285 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         output[idx] = accumulate ? output[idx] + value : value;
     }
 
+    if (ok)
+    {
+        float sum = (a16.x + a16.y) + (a16.z + a16.w) + bias[n0 + 16];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 16;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a17.x + a17.y) + (a17.z + a17.w) + bias[n0 + 17];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 17;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a18.x + a18.y) + (a18.z + a18.w) + bias[n0 + 18];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 18;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a19.x + a19.y) + (a19.z + a19.w) + bias[n0 + 19];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 19;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a20.x + a20.y) + (a20.z + a20.w) + bias[n0 + 20];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 20;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a21.x + a21.y) + (a21.z + a21.w) + bias[n0 + 21];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 21;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a22.x + a22.y) + (a22.z + a22.w) + bias[n0 + 22];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 22;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a23.x + a23.y) + (a23.z + a23.w) + bias[n0 + 23];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 23;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a24.x + a24.y) + (a24.z + a24.w) + bias[n0 + 24];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 24;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a25.x + a25.y) + (a25.z + a25.w) + bias[n0 + 25];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 25;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a26.x + a26.y) + (a26.z + a26.w) + bias[n0 + 26];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 26;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a27.x + a27.y) + (a27.z + a27.w) + bias[n0 + 27];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 27;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a28.x + a28.y) + (a28.z + a28.w) + bias[n0 + 28];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 28;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a29.x + a29.y) + (a29.z + a29.w) + bias[n0 + 29];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 29;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a30.x + a30.y) + (a30.z + a30.w) + bias[n0 + 30];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 30;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a31.x + a31.y) + (a31.z + a31.w) + bias[n0 + 31];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x) * 256 + n0 + 31;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
 }
 
 // ---------------------------------------------------------------------------
 // cnn2dFilter_w128_h128_c256_f3_n12 -- generated by generateKernel.py (kernelGen v2, do not edit by hand)
 // width=128 height=128 channels=256 filterSize=3 filters=12
 // dims: in 128x128x256 -> out 128x128x12 (output channels = 12) | weights [12][3][3][256] | bias [12]
-// plan: 12 filter(s) in registers, 64x2 work group, 768 weight quads staged in __local per tap, 2 x-block(s) x 1 filter groups
+// plan: 12 filter(s) in registers, 64x2 work group, 768 weight quads staged in __local per tap, 1 x-block(s) x 1 filter groups, 2 output columns per work item
 // params: input, filterWeights, bias, output, activation, accumulate
 // ---------------------------------------------------------------------------
 __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
@@ -3505,30 +4027,42 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     const int activation,
     const int accumulate)
 {
-    const int bx = get_group_id(0) % 2;
-    const int n0 = (get_group_id(0) / 2) * 12;
+    const int bx = get_group_id(0) % 1;
+    const int n0 = (get_group_id(0) / 1) * 12;
     const int y0 = get_group_id(1) * 2;
     const int tx = get_local_id(0);
     const int ty = get_local_id(1);
     const int tid = ty * 64 + tx;
-    const int x = bx * 64 + tx;
+    const int x = (bx * 64 + tx) * 2;
     const int y = y0 + ty;
     const int ok = (x < 128 && y < 128);
 
     __local float4 weightsLocal[768];
 
-    float4 a0 = (float4)(0.0f);
-    float4 a1 = (float4)(0.0f);
-    float4 a2 = (float4)(0.0f);
-    float4 a3 = (float4)(0.0f);
-    float4 a4 = (float4)(0.0f);
-    float4 a5 = (float4)(0.0f);
-    float4 a6 = (float4)(0.0f);
-    float4 a7 = (float4)(0.0f);
-    float4 a8 = (float4)(0.0f);
-    float4 a9 = (float4)(0.0f);
-    float4 a10 = (float4)(0.0f);
-    float4 a11 = (float4)(0.0f);
+    float4 a0_0 = (float4)(0.0f);
+    float4 a0_1 = (float4)(0.0f);
+    float4 a0_2 = (float4)(0.0f);
+    float4 a0_3 = (float4)(0.0f);
+    float4 a0_4 = (float4)(0.0f);
+    float4 a0_5 = (float4)(0.0f);
+    float4 a0_6 = (float4)(0.0f);
+    float4 a0_7 = (float4)(0.0f);
+    float4 a0_8 = (float4)(0.0f);
+    float4 a0_9 = (float4)(0.0f);
+    float4 a0_10 = (float4)(0.0f);
+    float4 a0_11 = (float4)(0.0f);
+    float4 a1_0 = (float4)(0.0f);
+    float4 a1_1 = (float4)(0.0f);
+    float4 a1_2 = (float4)(0.0f);
+    float4 a1_3 = (float4)(0.0f);
+    float4 a1_4 = (float4)(0.0f);
+    float4 a1_5 = (float4)(0.0f);
+    float4 a1_6 = (float4)(0.0f);
+    float4 a1_7 = (float4)(0.0f);
+    float4 a1_8 = (float4)(0.0f);
+    float4 a1_9 = (float4)(0.0f);
+    float4 a1_10 = (float4)(0.0f);
+    float4 a1_11 = (float4)(0.0f);
 
     // tap (0, 0)
     weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 0 + 4 * ((tid) % 64));
@@ -3539,24 +4073,38 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 0 + 4 * ((tid + 640) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    if (ok && y >= 1 && x >= 1)
+    if (ok && y >= 1)
     {
-        const int base_0_0 = (y - 1) * 32768 + (x - 1) * 256;
+        const int base_0_0_0 = (y - 1) * 32768 + (x - 1) * 256;
+        const int base_0_0_1 = (y - 1) * 32768 + x * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_0_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = (x >= 1) ? *(__global const float4*)(input + base_0_0_0 + 4 * q) : (float4)(0.0f);
+            const float4 v1 = *(__global const float4*)(input + base_0_0_1 + 4 * q);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3572,22 +4120,36 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok && y >= 1)
     {
-        const int base_0_1 = (y - 1) * 32768 + x * 256;
+        const int base_0_1_0 = (y - 1) * 32768 + x * 256;
+        const int base_0_1_1 = (y - 1) * 32768 + (x + 1) * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_0_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = *(__global const float4*)(input + base_0_1_0 + 4 * q);
+            const float4 v1 = (x < 127) ? *(__global const float4*)(input + base_0_1_1 + 4 * q) : (float4)(0.0f);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3601,24 +4163,38 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 512 + 4 * ((tid + 640) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    if (ok && y >= 1 && x < 127)
+    if (ok && y >= 1)
     {
-        const int base_0_2 = (y - 1) * 32768 + (x + 1) * 256;
+        const int base_0_2_0 = (y - 1) * 32768 + (x + 1) * 256;
+        const int base_0_2_1 = (y - 1) * 32768 + (x + 2) * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_0_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = (x < 127) ? *(__global const float4*)(input + base_0_2_0 + 4 * q) : (float4)(0.0f);
+            const float4 v1 = (x < 126) ? *(__global const float4*)(input + base_0_2_1 + 4 * q) : (float4)(0.0f);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3632,24 +4208,38 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 768 + 4 * ((tid + 640) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    if (ok && x >= 1)
+    if (ok)
     {
-        const int base_1_0 = y * 32768 + (x - 1) * 256;
+        const int base_1_0_0 = y * 32768 + (x - 1) * 256;
+        const int base_1_0_1 = y * 32768 + x * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_1_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = (x >= 1) ? *(__global const float4*)(input + base_1_0_0 + 4 * q) : (float4)(0.0f);
+            const float4 v1 = *(__global const float4*)(input + base_1_0_1 + 4 * q);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3665,22 +4255,36 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        const int base_1_1 = y * 32768 + x * 256;
+        const int base_1_1_0 = y * 32768 + x * 256;
+        const int base_1_1_1 = y * 32768 + (x + 1) * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_1_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = *(__global const float4*)(input + base_1_1_0 + 4 * q);
+            const float4 v1 = (x < 127) ? *(__global const float4*)(input + base_1_1_1 + 4 * q) : (float4)(0.0f);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3694,24 +4298,38 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1280 + 4 * ((tid + 640) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    if (ok && x < 127)
+    if (ok)
     {
-        const int base_1_2 = y * 32768 + (x + 1) * 256;
+        const int base_1_2_0 = y * 32768 + (x + 1) * 256;
+        const int base_1_2_1 = y * 32768 + (x + 2) * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_1_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = (x < 127) ? *(__global const float4*)(input + base_1_2_0 + 4 * q) : (float4)(0.0f);
+            const float4 v1 = (x < 126) ? *(__global const float4*)(input + base_1_2_1 + 4 * q) : (float4)(0.0f);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3725,24 +4343,38 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1536 + 4 * ((tid + 640) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    if (ok && y < 127 && x >= 1)
+    if (ok && y < 127)
     {
-        const int base_2_0 = (y + 1) * 32768 + (x - 1) * 256;
+        const int base_2_0_0 = (y + 1) * 32768 + (x - 1) * 256;
+        const int base_2_0_1 = (y + 1) * 32768 + x * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_2_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = (x >= 1) ? *(__global const float4*)(input + base_2_0_0 + 4 * q) : (float4)(0.0f);
+            const float4 v1 = *(__global const float4*)(input + base_2_0_1 + 4 * q);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3758,22 +4390,36 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok && y < 127)
     {
-        const int base_2_1 = (y + 1) * 32768 + x * 256;
+        const int base_2_1_0 = (y + 1) * 32768 + x * 256;
+        const int base_2_1_1 = (y + 1) * 32768 + (x + 1) * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_2_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = *(__global const float4*)(input + base_2_1_0 + 4 * q);
+            const float4 v1 = (x < 127) ? *(__global const float4*)(input + base_2_1_1 + 4 * q) : (float4)(0.0f);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -3787,31 +4433,45 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 2048 + 4 * ((tid + 640) % 64));
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    if (ok && y < 127 && x < 127)
+    if (ok && y < 127)
     {
-        const int base_2_2 = (y + 1) * 32768 + (x + 1) * 256;
+        const int base_2_2_0 = (y + 1) * 32768 + (x + 1) * 256;
+        const int base_2_2_1 = (y + 1) * 32768 + (x + 2) * 256;
         for (int q = 0; q < 64; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_2_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = (x < 127) ? *(__global const float4*)(input + base_2_2_0 + 4 * q) : (float4)(0.0f);
+            const float4 v1 = (x < 126) ? *(__global const float4*)(input + base_2_2_1 + 4 * q) : (float4)(0.0f);
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[64 + q];
+            a1_1 += v1 * weightsLocal[64 + q];
+            a0_2 += v0 * weightsLocal[128 + q];
+            a1_2 += v1 * weightsLocal[128 + q];
+            a0_3 += v0 * weightsLocal[192 + q];
+            a1_3 += v1 * weightsLocal[192 + q];
+            a0_4 += v0 * weightsLocal[256 + q];
+            a1_4 += v1 * weightsLocal[256 + q];
+            a0_5 += v0 * weightsLocal[320 + q];
+            a1_5 += v1 * weightsLocal[320 + q];
+            a0_6 += v0 * weightsLocal[384 + q];
+            a1_6 += v1 * weightsLocal[384 + q];
+            a0_7 += v0 * weightsLocal[448 + q];
+            a1_7 += v1 * weightsLocal[448 + q];
+            a0_8 += v0 * weightsLocal[512 + q];
+            a1_8 += v1 * weightsLocal[512 + q];
+            a0_9 += v0 * weightsLocal[576 + q];
+            a1_9 += v1 * weightsLocal[576 + q];
+            a0_10 += v0 * weightsLocal[640 + q];
+            a1_10 += v1 * weightsLocal[640 + q];
+            a0_11 += v0 * weightsLocal[704 + q];
+            a1_11 += v1 * weightsLocal[704 + q];
         }
     }
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if (ok)
     {
-        float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[n0 + 0];
+        float sum = (a0_0.x + a0_0.y) + (a0_0.z + a0_0.w) + bias[n0 + 0];
 
         float value = sum;
         switch (activation)
@@ -3828,7 +4488,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[n0 + 1];
+        float sum = (a0_1.x + a0_1.y) + (a0_1.z + a0_1.w) + bias[n0 + 1];
 
         float value = sum;
         switch (activation)
@@ -3845,7 +4505,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[n0 + 2];
+        float sum = (a0_2.x + a0_2.y) + (a0_2.z + a0_2.w) + bias[n0 + 2];
 
         float value = sum;
         switch (activation)
@@ -3862,7 +4522,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[n0 + 3];
+        float sum = (a0_3.x + a0_3.y) + (a0_3.z + a0_3.w) + bias[n0 + 3];
 
         float value = sum;
         switch (activation)
@@ -3879,7 +4539,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a4.x + a4.y) + (a4.z + a4.w) + bias[n0 + 4];
+        float sum = (a0_4.x + a0_4.y) + (a0_4.z + a0_4.w) + bias[n0 + 4];
 
         float value = sum;
         switch (activation)
@@ -3896,7 +4556,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a5.x + a5.y) + (a5.z + a5.w) + bias[n0 + 5];
+        float sum = (a0_5.x + a0_5.y) + (a0_5.z + a0_5.w) + bias[n0 + 5];
 
         float value = sum;
         switch (activation)
@@ -3913,7 +4573,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a6.x + a6.y) + (a6.z + a6.w) + bias[n0 + 6];
+        float sum = (a0_6.x + a0_6.y) + (a0_6.z + a0_6.w) + bias[n0 + 6];
 
         float value = sum;
         switch (activation)
@@ -3930,7 +4590,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a7.x + a7.y) + (a7.z + a7.w) + bias[n0 + 7];
+        float sum = (a0_7.x + a0_7.y) + (a0_7.z + a0_7.w) + bias[n0 + 7];
 
         float value = sum;
         switch (activation)
@@ -3947,7 +4607,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a8.x + a8.y) + (a8.z + a8.w) + bias[n0 + 8];
+        float sum = (a0_8.x + a0_8.y) + (a0_8.z + a0_8.w) + bias[n0 + 8];
 
         float value = sum;
         switch (activation)
@@ -3964,7 +4624,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a9.x + a9.y) + (a9.z + a9.w) + bias[n0 + 9];
+        float sum = (a0_9.x + a0_9.y) + (a0_9.z + a0_9.w) + bias[n0 + 9];
 
         float value = sum;
         switch (activation)
@@ -3981,7 +4641,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a10.x + a10.y) + (a10.z + a10.w) + bias[n0 + 10];
+        float sum = (a0_10.x + a0_10.y) + (a0_10.z + a0_10.w) + bias[n0 + 10];
 
         float value = sum;
         switch (activation)
@@ -3998,7 +4658,7 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a11.x + a11.y) + (a11.z + a11.w) + bias[n0 + 11];
+        float sum = (a0_11.x + a0_11.y) + (a0_11.z + a0_11.w) + bias[n0 + 11];
 
         float value = sum;
         switch (activation)
@@ -4010,6 +4670,210 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         }
 
         const int idx = (y * 128 + x) * 12 + n0 + 11;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_0.x + a1_0.y) + (a1_0.z + a1_0.w) + bias[n0 + 0];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 0;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_1.x + a1_1.y) + (a1_1.z + a1_1.w) + bias[n0 + 1];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 1;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_2.x + a1_2.y) + (a1_2.z + a1_2.w) + bias[n0 + 2];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 2;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_3.x + a1_3.y) + (a1_3.z + a1_3.w) + bias[n0 + 3];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 3;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_4.x + a1_4.y) + (a1_4.z + a1_4.w) + bias[n0 + 4];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 4;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_5.x + a1_5.y) + (a1_5.z + a1_5.w) + bias[n0 + 5];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 5;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_6.x + a1_6.y) + (a1_6.z + a1_6.w) + bias[n0 + 6];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 6;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_7.x + a1_7.y) + (a1_7.z + a1_7.w) + bias[n0 + 7];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 7;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_8.x + a1_8.y) + (a1_8.z + a1_8.w) + bias[n0 + 8];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 8;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_9.x + a1_9.y) + (a1_9.z + a1_9.w) + bias[n0 + 9];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 9;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_10.x + a1_10.y) + (a1_10.z + a1_10.w) + bias[n0 + 10];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 10;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+
+    if (ok)
+    {
+        float sum = (a1_11.x + a1_11.y) + (a1_11.z + a1_11.w) + bias[n0 + 11];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 11;
         output[idx] = accumulate ? output[idx] + value : value;
     }
 
