@@ -3,6 +3,10 @@
 #include <string.h>
 #include <time.h>
 
+#define HISTORY_SIZE 4
+// a raw second difference over three noisy samples amplifies jitter, hence the damp
+#define ACCEL_DAMP 0.5f
+
 static uint32 nowMs(void) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -24,8 +28,21 @@ typedef struct {
 } RequestData;
 
 typedef struct {
-	Object *previousObjects;
-	Object *currentObjects;
+	uint32 TimeStamp;
+	float3 Position;
+	float3 Rotation;
+	float3 Scale;
+} Sample;
+
+typedef struct {
+	uint32 Id;
+	Sample history[HISTORY_SIZE];
+	uint32 head;
+	uint32 count;
+} ObjectEntry;
+
+typedef struct {
+	ObjectEntry *objects;
 	uint32 objectCount;
 	uint32 objectCapacity;
 } ServerState;
@@ -33,23 +50,35 @@ typedef struct {
 void initServerState(ServerState *state) {
 	state->objectCount = 0;
 	state->objectCapacity = 16;
-	state->previousObjects = malloc(state->objectCapacity * sizeof(Object));
-	state->currentObjects = malloc(state->objectCapacity * sizeof(Object));
+	state->objects = malloc(state->objectCapacity * sizeof(ObjectEntry));
 }
 
-void addObject(ServerState *state, Object obj) {
+static void pushSample(ObjectEntry *e, const Sample *s) {
+	e->history[e->head] = *s;
+	e->head = (e->head + 1) % HISTORY_SIZE;
+	if (e->count < HISTORY_SIZE)
+		e->count++;
+}
+
+static const Sample *sampleBack(const ObjectEntry *e, uint32 back) {
+	return &e->history[(e->head + HISTORY_SIZE - 1 - back) % HISTORY_SIZE];
+}
+
+void addObject(ServerState *state, uint32 id, const Sample *s) {
 	if (state->objectCount >= state->objectCapacity) {
 		state->objectCapacity *= 2;
-		state->previousObjects = realloc(state->previousObjects, state->objectCapacity * sizeof(Object));
-		state->currentObjects = realloc(state->currentObjects, state->objectCapacity * sizeof(Object));
+		state->objects = realloc(state->objects, state->objectCapacity * sizeof(ObjectEntry));
 	}
-	state->previousObjects[state->objectCount] = obj;
-	state->currentObjects[state->objectCount++] = obj;
+	ObjectEntry *e = &state->objects[state->objectCount++];
+	e->Id = id;
+	e->head = 0;
+	e->count = 0;
+	pushSample(e, s);
 }
 
 int findObjectIndex(const ServerState *state, uint32 id) {
 	for (uint32 i = 0; i < state->objectCount; i++) {
-		if (state->currentObjects[i].Id == id) {
+		if (state->objects[i].Id == id) {
 			return i;
 		}
 	}
@@ -57,24 +86,76 @@ int findObjectIndex(const ServerState *state, uint32 id) {
 }
 
 void freeServerState(ServerState *state) {
-	free(state->previousObjects);
-	free(state->currentObjects);
+	free(state->objects);
 }
 
 void removeOldObjects(ServerState *state) {
 	uint32 now = nowMs();
 	uint32 newCount = 0;
 	for (uint32 i = 0; i < state->objectCount; i++) {
-		if (now - state->currentObjects[i].TimeStamp <= 10000) {
-			state->previousObjects[newCount] = state->previousObjects[i];
-			state->currentObjects[newCount] = state->currentObjects[i];
-			newCount++;
+		if (now - sampleBack(&state->objects[i], 0)->TimeStamp <= 10000) {
+			state->objects[newCount++] = state->objects[i];
 		}
 	}
 	state->objectCount = newCount;
 }
 
-void InterpolateObjectsNextPosition(const ServerState *state, uint32 id, Object *updatedObject) {
+static float3 unwrapFloat3(float3 ref, float3 v) {
+	while (v.x - ref.x > 180.0f) v.x -= 360.0f;
+	while (ref.x - v.x > 180.0f) v.x += 360.0f;
+	while (v.y - ref.y > 180.0f) v.y -= 360.0f;
+	while (ref.y - v.y > 180.0f) v.y += 360.0f;
+	while (v.z - ref.z > 180.0f) v.z -= 360.0f;
+	while (ref.z - v.z > 180.0f) v.z += 360.0f;
+	return v;
+}
+
+static float3 extrapLinearFloat3(float3 p1, uint32 t1, float3 p2, uint32 t2, uint32 now) {
+	float h2 = (float)(int32)(t2 - t1);
+	if (h2 <= 0.0f)
+		return p2;
+	float dt = (float)(int32)(now - t2);
+	if (dt < 0.0f)
+		dt = 0.0f;
+	if (dt > h2)
+		dt = h2;
+	float3 out = {
+		p2.x + (p2.x - p1.x) / h2 * dt,
+		p2.y + (p2.y - p1.y) / h2 * dt,
+		p2.z + (p2.z - p1.z) / h2 * dt};
+	return out;
+}
+
+static float3 extrapFloat3(float3 p0, uint32 t0, float3 p1, uint32 t1, float3 p2, uint32 t2, uint32 now) {
+	float h1 = (float)(int32)(t1 - t0);
+	float h2 = (float)(int32)(t2 - t1);
+	if (h1 <= 0.0f || h2 <= 0.0f)
+		return p2;
+	float dt = (float)(int32)(now - t2);
+	if (dt < 0.0f)
+		dt = 0.0f;
+	if (dt > h2)
+		dt = h2;
+	float3 v1 = {
+		(p1.x - p0.x) / h1,
+		(p1.y - p0.y) / h1,
+		(p1.z - p0.z) / h1};
+	float3 v2 = {
+		(p2.x - p1.x) / h2,
+		(p2.y - p1.y) / h2,
+		(p2.z - p1.z) / h2};
+	float3 accel = {
+		(v2.x - v1.x) * ACCEL_DAMP / (h1 + h2),
+		(v2.y - v1.y) * ACCEL_DAMP / (h1 + h2),
+		(v2.z - v1.z) * ACCEL_DAMP / (h1 + h2)};
+	float3 out = {
+		p2.x + v2.x * dt + 0.5f * accel.x * dt * dt,
+		p2.y + v2.y * dt + 0.5f * accel.y * dt * dt,
+		p2.z + v2.z * dt + 0.5f * accel.z * dt * dt};
+	return out;
+}
+
+void extrapolateObjectNext(const ServerState *state, uint32 id, Object *updatedObject) {
 	int index = findObjectIndex(state, id);
 	uint32 now = nowMs();
 	updatedObject->Id = id;
@@ -86,62 +167,25 @@ void InterpolateObjectsNextPosition(const ServerState *state, uint32 id, Object 
 		updatedObject->Scale.x = updatedObject->Scale.y = updatedObject->Scale.z = 0.0f;
 		return;
 	}
-	Object *prev = &state->previousObjects[index];
-	Object *curr = &state->currentObjects[index];
-
-	float deltaTime = (float)(curr->TimeStamp - prev->TimeStamp);
-	if (deltaTime == 0.0f) {
-		updatedObject->Position = curr->Position;
-		updatedObject->Rotation = curr->Rotation;
-		updatedObject->Scale = curr->Scale;
+	const ObjectEntry *e = &state->objects[index];
+	const Sample *s2 = sampleBack(e, 0);
+	if (e->count < 2) {
+		updatedObject->Position = s2->Position;
+		updatedObject->Rotation = s2->Rotation;
+		updatedObject->Scale = s2->Scale;
 		return;
 	}
-
-	float3 deltaPos = {
-		curr->Position.x - prev->Position.x,
-		curr->Position.y - prev->Position.y,
-		curr->Position.z - prev->Position.z};
-
-	float3 positionChangeRate = {
-		deltaPos.x / deltaTime,
-		deltaPos.y / deltaTime,
-		deltaPos.z / deltaTime};
-
-	float3 deltaRotation = {
-		curr->Rotation.x - prev->Rotation.x,
-		curr->Rotation.y - prev->Rotation.y,
-		curr->Rotation.z - prev->Rotation.z};
-
-	float3 rotationChangeRate = {
-		deltaRotation.x / deltaTime,
-		deltaRotation.y / deltaTime,
-		deltaRotation.z / deltaTime};
-
-	float3 deltaScale = {
-		curr->Scale.x - prev->Scale.x,
-		curr->Scale.y - prev->Scale.y,
-		curr->Scale.z - prev->Scale.z};
-
-	float3 scaleChangeRate = {
-		deltaScale.x / deltaTime,
-		deltaScale.y / deltaTime,
-		deltaScale.z / deltaTime};
-
-	float timeSinceLastUpdate = (float)(now - curr->TimeStamp);
-	if (timeSinceLastUpdate > deltaTime)
-		timeSinceLastUpdate = deltaTime;
-
-	updatedObject->Position.x = curr->Position.x + positionChangeRate.x * timeSinceLastUpdate;
-	updatedObject->Position.y = curr->Position.y + positionChangeRate.y * timeSinceLastUpdate;
-	updatedObject->Position.z = curr->Position.z + positionChangeRate.z * timeSinceLastUpdate;
-
-	updatedObject->Rotation.x = curr->Rotation.x + rotationChangeRate.x * timeSinceLastUpdate;
-	updatedObject->Rotation.y = curr->Rotation.y + rotationChangeRate.y * timeSinceLastUpdate;
-	updatedObject->Rotation.z = curr->Rotation.z + rotationChangeRate.z * timeSinceLastUpdate;
-
-	updatedObject->Scale.x = curr->Scale.x + scaleChangeRate.x * timeSinceLastUpdate;
-	updatedObject->Scale.y = curr->Scale.y + scaleChangeRate.y * timeSinceLastUpdate;
-	updatedObject->Scale.z = curr->Scale.z + scaleChangeRate.z * timeSinceLastUpdate;
+	const Sample *s1 = sampleBack(e, 1);
+	if (e->count == 2) {
+		updatedObject->Position = extrapLinearFloat3(s1->Position, s1->TimeStamp, s2->Position, s2->TimeStamp, now);
+		updatedObject->Rotation = extrapLinearFloat3(unwrapFloat3(s2->Rotation, s1->Rotation), s1->TimeStamp, s2->Rotation, s2->TimeStamp, now);
+		updatedObject->Scale = extrapLinearFloat3(s1->Scale, s1->TimeStamp, s2->Scale, s2->TimeStamp, now);
+		return;
+	}
+	const Sample *s0 = sampleBack(e, 2);
+	updatedObject->Position = extrapFloat3(s0->Position, s0->TimeStamp, s1->Position, s1->TimeStamp, s2->Position, s2->TimeStamp, now);
+	updatedObject->Rotation = extrapFloat3(unwrapFloat3(s2->Rotation, s0->Rotation), s0->TimeStamp, unwrapFloat3(s2->Rotation, s1->Rotation), s1->TimeStamp, s2->Rotation, s2->TimeStamp, now);
+	updatedObject->Scale = extrapFloat3(s0->Scale, s0->TimeStamp, s1->Scale, s1->TimeStamp, s2->Scale, s2->TimeStamp, now);
 }
 
 static ServerState *gState;
@@ -154,7 +198,7 @@ static void onRequest(const Request *req, Response *res) {
 		memcpy(out, &state->objectCount, sizeof(uint32));
 		void *outObjects = (char *)out + sizeof(uint32);
 		for (uint32 i = 0; i < state->objectCount; i++)
-			InterpolateObjectsNextPosition(state, state->currentObjects[i].Id, &((Object *)outObjects)[i]);
+			extrapolateObjectNext(state, state->objects[i].Id, &((Object *)outObjects)[i]);
 
 		responseWrite(res, (char *)out, state->objectCount * sizeof(Object) + sizeof(uint32));
 		free(out);
@@ -174,14 +218,17 @@ static void onRequest(const Request *req, Response *res) {
 		for (uint32 i = 0; i < numOfObjects; i++) {
 			Object obj;
 			memcpy(&obj, req->data + sizeof(uint32) + i * sizeof(Object), sizeof(Object));
+			obj.TimeStamp = nowMs();
+			Sample s;
+			s.TimeStamp = obj.TimeStamp;
+			s.Position = obj.Position;
+			s.Rotation = obj.Rotation;
+			s.Scale = obj.Scale;
 			int index = findObjectIndex(state, obj.Id);
 			if (index >= 0) {
-				memcpy(&state->previousObjects[index], &state->currentObjects[index], sizeof(Object));
-				obj.TimeStamp = nowMs();
-				state->currentObjects[index] = obj;
+				pushSample(&state->objects[index], &s);
 			} else {
-				obj.TimeStamp = nowMs();
-				addObject(state, obj);
+				addObject(state, obj.Id, &s);
 			}
 		}
 		responseWrite(res, "Objects updated", 15);
@@ -197,7 +244,7 @@ int main(void) {
 	Server s;
 	serverInit(&s, 8081);
 	serverSetHandler(&s, onRequest);
-	printf("[server] listening on port 8080\n");
+	printf("[server] listening on port 8081\n");
 	serverRun(&s);
 	serverShutdown(&s);
 	return 0;

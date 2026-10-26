@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 #include <unistd.h>
 #include "../object/format.h"
 #include "../object/scene.h"
@@ -45,6 +46,22 @@ static inline char *modelTypeToPath(ModelType model) {
 
 static inline uint32 idInstance(uint32 id) {
 	return id & 0x00FFFFFF;
+}
+
+static uint32 nowMs(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint32)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000u);
+}
+
+static float3 unwrapFloat3(float3 ref, float3 v) {
+	while (v.x - ref.x > 180.0f) v.x -= 360.0f;
+	while (ref.x - v.x > 180.0f) v.x += 360.0f;
+	while (v.y - ref.y > 180.0f) v.y -= 360.0f;
+	while (ref.y - v.y > 180.0f) v.y += 360.0f;
+	while (v.z - ref.z > 180.0f) v.z -= 360.0f;
+	while (ref.z - v.z > 180.0f) v.z += 360.0f;
+	return v;
 }
 
 void idRegister_Init(idRegister *reg, uint32 initialCapacity) {
@@ -155,6 +172,8 @@ void postObjects(const Client *c, const RequestData *request) {
 	clientFreeResponse(&res);
 }
 
+static uint32 lastPollMs;
+
 void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegister *reg) {
 	ClientResponse res = clientGet(c, "get objects", strlen("get objects") + 1);
 	// printf("[client] GET response (%u bytes)\n", res.size);
@@ -168,6 +187,10 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 		clientFreeResponse(&res);
 		return;
 	}
+
+	uint32 now = nowMs();
+	float alpha = lastPollMs ? 1.0f - expf(-(float)(now - lastPollMs) / 100.0f) : 1.0f;
+	lastPollMs = now;
 
 	// track which registry entries were seen to detect removals
 	bool *seen = calloc(reg->count, sizeof(bool));
@@ -186,13 +209,13 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 			for (uint32 j = 0; j < reg->count; j++) {
 				if (reg->Ids[j] == obj->Id) {
 					Object *o = &scene->objects[reg->Indices[j]];
-					float alpha = 0.2f;
+					float3 rot = unwrapFloat3(o->rotation, obj->Rotation);
 					o->position.x += (obj->Position.x - o->position.x) * alpha;
 					o->position.y += (obj->Position.y - o->position.y) * alpha;
 					o->position.z += (obj->Position.z - o->position.z) * alpha;
-					o->rotation.x += (obj->Rotation.x - o->rotation.x) * alpha;
-					o->rotation.y += (obj->Rotation.y - o->rotation.y) * alpha;
-					o->rotation.z += (obj->Rotation.z - o->rotation.z) * alpha;
+					o->rotation.x += (rot.x - o->rotation.x) * alpha;
+					o->rotation.y += (rot.y - o->rotation.y) * alpha;
+					o->rotation.z += (rot.z - o->rotation.z) * alpha;
 					o->scale.x += (obj->Scale.x - o->scale.x) * alpha;
 					o->scale.y += (obj->Scale.y - o->scale.y) * alpha;
 					o->scale.z += (obj->Scale.z - o->scale.z) * alpha;
@@ -244,7 +267,7 @@ int main(void) {
 	idRegister objectRegistry;
 	idRegister_Init(&objectRegistry, 16);
 
-	Client c = {.host = "127.0.0.1", .port = 8080};
+	Client c = {.host = "127.0.0.1", .port = 8081};
 
 	uint32 f16SceneIndex = (uint32)scene.count;
 	Object *planeF16 = ObjectList_Add(&scene);
@@ -273,7 +296,7 @@ int main(void) {
 	getObjects(&c, &scene, &matLib, &objectRegistry);
 
 	// simulate a second client posting a new R27 object
-	Client c2 = {.host = "127.0.0.1", .port = 8080};
+	Client c2 = {.host = "127.0.0.1", .port = 8081};
 
 	ObjectList scene2;
 	ObjectList_Init(&scene2, 0);
@@ -326,9 +349,7 @@ int main(void) {
 		clock_t start = clock();
 		getObjects(&c, &scene, &matLib, &objectRegistry);
 		RequestData_Reset(&request);
-		for (uint32 i = 0; i < scene.count; i++) {
-			addObjectToRequestData(&request, &scene.objects[i], objectRegistry.Ids[i]);
-		}
+		addFromRegistry(&request, &objectRegistry, &scene, f16Id);
 		postObjects(&c, &request);
 		clock_t end = clock();
 		float elapsed = (float)(end - start) / CLOCKS_PER_SEC;
