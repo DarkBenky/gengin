@@ -240,10 +240,10 @@ void getObjects(const Client *c, ObjectList *scene, MaterialLib *matLib, idRegis
 				Object *newObj = ObjectList_Add(scene); // may realloc scene->objects
 				LoadObj(path, newObj, matLib);
 				CreateObjectBVH(newObj, &newObj->bvh);
-				Object_UpdateWorldBounds(newObj);
 				newObj->position = obj->Position;
 				newObj->rotation = obj->Rotation;
 				newObj->scale = obj->Scale;
+				Object_UpdateWorldBounds(newObj);
 				idRegister_Add(reg, obj->Id, sceneIndex);
 				seen = realloc(seen, reg->count * sizeof(bool));
 				seen[reg->count - 1] = true;

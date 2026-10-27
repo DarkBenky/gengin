@@ -45,10 +45,12 @@ void drawTileScaled(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, 
 	int srcY = 0;
 	if (dstX < 0) {
 		srcX -= (int)(dstX / scaleX);
+		scaledW += dstX;
 		dstX = 0;
 	}
 	if (dstY < 0) {
 		srcY -= (int)(dstY / scaleY);
+		scaledH += dstY;
 		dstY = 0;
 	}
 
@@ -104,10 +106,12 @@ void drawTileColorScaled(uint32 *dst, int dstWidth, int dstHeight, Tile tile, in
 	int srcX = 0, srcY = 0;
 	if (dstX < 0) {
 		srcX -= (int)(dstX / scaleX);
+		scaledW += dstX;
 		dstX = 0;
 	}
 	if (dstY < 0) {
 		srcY -= (int)(dstY / scaleY);
+		scaledH += dstY;
 		dstY = 0;
 	}
 	if (dstX + scaledW > dstWidth) scaledW = dstWidth - dstX;
@@ -134,10 +138,12 @@ void drawTileColorScaledHdr(float3 *dst, int dstWidth, int dstHeight, Tile tile,
 	int srcX = 0, srcY = 0;
 	if (dstX < 0) {
 		srcX -= (int)(dstX / scaleX);
+		scaledW += dstX;
 		dstX = 0;
 	}
 	if (dstY < 0) {
 		srcY -= (int)(dstY / scaleY);
+		scaledH += dstY;
 		dstY = 0;
 	}
 	if (dstX + scaledW > dstWidth) scaledW = dstWidth - dstX;
