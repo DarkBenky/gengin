@@ -737,8 +737,8 @@ static void CalculateAmbientOcclusionV2RowPlusSkip(void *arg) {
  * the finite-negative case, where the scalar does blur. */
 #define AO_INV_OVERFLOW_THRESHOLD 2.9387359e-39f
 
-#define AO_TAP8(v, d, k)                                                             \
-	do {                                                                             \
+#define AO_TAP8(v, d, k)                                                              \
+	do {                                                                              \
 		const __m256 diff_ = _mm256_and_ps(_mm256_sub_ps((d), centerDepth), absMask); \
 		__m256 w_ = _mm256_sub_ps(one, _mm256_mul_ps(diff_, invT));                   \
 		w_ = _mm256_max_ps(zero, _mm256_min_ps(w_, one));                             \
@@ -859,8 +859,14 @@ static void aoColBlurVec8(float *restrict image, const float *restrict depth,
 		pend1 = pend0;
 		pend0 = res;
 
-		v0 = v1; v1 = v2; v2 = v3; v3 = v4;
-		d0 = d1; d1 = d2; d2 = d3; d3 = d4;
+		v0 = v1;
+		v1 = v2;
+		v2 = v3;
+		v3 = v4;
+		d0 = d1;
+		d1 = d2;
+		d2 = d3;
+		d3 = d4;
 		{
 			int ny = y + KERNEL_SIZE_HALF + 1;
 			if (ny >= height) ny = height - 1;
@@ -968,9 +974,9 @@ static void CalculateAmbientOcclusionV2RowPlusSkipBetterBlur(void *arg) {
 				__m256 vsY = _mm256_add_ps(_mm256_set1_ps((float)row), _mm256_mul_ps(vry, vpr));
 				__m256 in = _mm256_and_ps(
 					_mm256_and_ps(_mm256_cmp_ps(vsX, _mm256_setzero_ps(), _CMP_GE_OQ),
-						_mm256_cmp_ps(vsX, _mm256_set1_ps((float)width), _CMP_LT_OQ)),
+								  _mm256_cmp_ps(vsX, _mm256_set1_ps((float)width), _CMP_LT_OQ)),
 					_mm256_and_ps(_mm256_cmp_ps(vsY, _mm256_setzero_ps(), _CMP_GE_OQ),
-						_mm256_cmp_ps(vsY, _mm256_set1_ps((float)height), _CMP_LT_OQ)));
+								  _mm256_cmp_ps(vsY, _mm256_set1_ps((float)height), _CMP_LT_OQ)));
 				int mask = _mm256_movemask_ps(in);
 				__m256i vidx = _mm256_add_epi32(
 					_mm256_mullo_epi32(_mm256_cvttps_epi32(vsY), _mm256_set1_epi32(width)),
@@ -1258,7 +1264,7 @@ static void columnBlurMpBetter(int width, int height, float *restrict image, Thr
 }
 
 typedef struct {
-	int row;	 // first row of the band
+	int row;  // first row of the band
 	int rows; // rows in the band
 	int width;
 	float *image;
@@ -1326,7 +1332,7 @@ static void rowBlurMpBetter(int width, int height, float *restrict image, Thread
 }
 
 typedef struct {
-	int row;	 // first row of the band (small buffer rows)
+	int row; // first row of the band (small buffer rows)
 	int rows;
 	int srcWidth;
 	const float *restrict src;
@@ -1335,7 +1341,7 @@ typedef struct {
 } DownsampleTask;
 
 typedef struct {
-	int row;	 // first row of the band (full-resolution rows)
+	int row; // first row of the band (full-resolution rows)
 	int rows;
 	int dstWidth;
 	float *restrict dst;
@@ -1397,8 +1403,14 @@ static void UpsampleAoRows(void *arg) {
 		const float fy = ((float)y + 0.5f) / (float)scale - 0.5f;
 		int y0 = (int)floorf(fy);
 		float ty = fy - (float)y0;
-		if (y0 < 0) { y0 = 0; ty = 0.0f; }
-		if (y0 >= srcHeight - 1) { y0 = srcHeight - 1; ty = 0.0f; }
+		if (y0 < 0) {
+			y0 = 0;
+			ty = 0.0f;
+		}
+		if (y0 >= srcHeight - 1) {
+			y0 = srcHeight - 1;
+			ty = 0.0f;
+		}
 		int y1 = y0 + 1;
 		if (y1 >= srcHeight) y1 = srcHeight - 1;
 
@@ -1495,8 +1507,14 @@ static void SmoothAmbientOcclusionWide(Camera *camera, ThreadPool *threadPool) {
 		const float fx = ((float)x + 0.5f) / (float)AO_SMOOTH_DOWNSCALE - 0.5f;
 		int x0 = (int)floorf(fx);
 		float tx = fx - (float)x0;
-		if (x0 < 0) { x0 = 0; tx = 0.0f; }
-		if (x0 >= smallW - 1) { x0 = smallW - 1; tx = 0.0f; }
+		if (x0 < 0) {
+			x0 = 0;
+			tx = 0.0f;
+		}
+		if (x0 >= smallW - 1) {
+			x0 = smallW - 1;
+			tx = 0.0f;
+		}
 		int x1 = x0 + 1;
 		if (x1 >= smallW) x1 = smallW - 1;
 		upX0[x] = x0;
@@ -1622,7 +1640,7 @@ static void CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(Camera *c
 }
 
 typedef struct {
-	int row;	 // first row of the band
+	int row;  // first row of the band
 	int rows; // rows in the band
 	int width;
 	int height;

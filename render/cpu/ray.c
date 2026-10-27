@@ -25,10 +25,10 @@
 // once — no per-pixel staging, no gather. Lanes past the group's box count hold
 // stale values and are never read: the kernel consumes lane (ci & 7) for
 // ci < passCount only, and it requires passCount <= RAY_AABB_SOA_BOXES.
-#define RAY_AABB_SOA_GROUPS 32   // 256 boxes
+#define RAY_AABB_SOA_GROUPS 32 // 256 boxes
 #define RAY_AABB_SOA_BOXES (RAY_AABB_SOA_GROUPS * 8)
 static float s_aabbSoa[RAY_AABB_SOA_GROUPS * 48] __attribute__((aligned(64)));
-static int s_aabbSoaValid = 0;   // 0 -> the row kernel keeps the scalar pre-filter
+static int s_aabbSoaValid = 0; // 0 -> the row kernel keeps the scalar pre-filter
 
 // The row kernel evaluates the shadow / emissive / reflection block once per
 // REFLECTION_RESOLUTION rows; the light pass rebuilds every row from two slices.
@@ -102,20 +102,25 @@ static int s_rayTilesValid = 0;
 static int s_rayTileCols = 0;
 static int s_rayTilePassCount = 0;
 
-typedef struct { int x0, x1, y0, y1; } RayRect;
+typedef struct {
+	int x0, x1, y0, y1;
+} RayRect;
 
 // Bounding rectangle, in pixels, of an object's world AABB projection; the full
 // screen when any corner sits at or behind the camera plane.
 static RayRect rayProjectAABBRect(const Object *o, float3 camPos, float3 fwd, float3 rgt, float3 up_,
-                                  float aspect, float fovScale, int width, int height) {
+								  float aspect, float fovScale, int width, int height) {
 	float xmin = 1e30f, xmax = -1e30f, ymin = 1e30f, ymax = -1e30f;
 	for (int c = 0; c < 8; c++) {
-		float3 p = { c & 1 ? o->worldBBmax.x : o->worldBBmin.x,
-		             c & 2 ? o->worldBBmax.y : o->worldBBmin.y,
-		             c & 4 ? o->worldBBmax.z : o->worldBBmin.z };
+		float3 p = {c & 1 ? o->worldBBmax.x : o->worldBBmin.x,
+					c & 2 ? o->worldBBmax.y : o->worldBBmin.y,
+					c & 4 ? o->worldBBmax.z : o->worldBBmin.z};
 		float3 q = Float3_Sub(p, camPos);
 		float A = Float3_Dot(fwd, q);
-		if (A <= 1e-3f) { RayRect full = {0, width - 1, 0, height - 1}; return full; }
+		if (A <= 1e-3f) {
+			RayRect full = {0, width - 1, 0, height - 1};
+			return full;
+		}
 		float ndcX = Float3_Dot(rgt, q) / (aspect * fovScale * A);
 		float ndcY = Float3_Dot(up_, q) / (fovScale * A);
 		float px = (ndcX + 1.0f) * 0.5f * (float)width - 0.5f;
@@ -128,7 +133,10 @@ static RayRect rayProjectAABBRect(const Object *o, float3 camPos, float3 fwd, fl
 	// NaN basis (degenerate camera) poisons the min/max; a huge-coordinate scene
 	// can push the rect past the int range. The former goes full-screen, the
 	// latter is clamped, so the casts below always see an in-range value.
-	if (!(xmin <= xmax) || !(ymin <= ymax)) { RayRect full = {0, width - 1, 0, height - 1}; return full; }
+	if (!(xmin <= xmax) || !(ymin <= ymax)) {
+		RayRect full = {0, width - 1, 0, height - 1};
+		return full;
+	}
 	if (xmin < -2.0f) xmin = -2.0f;
 	if (xmin > (float)width + 2.0f) xmin = (float)width + 2.0f;
 	if (xmax < -2.0f) xmax = -2.0f;
@@ -138,17 +146,21 @@ static RayRect rayProjectAABBRect(const Object *o, float3 camPos, float3 fwd, fl
 	if (ymax < -2.0f) ymax = -2.0f;
 	if (ymax > (float)height + 2.0f) ymax = (float)height + 2.0f;
 	RayRect r;
-	r.x0 = (int)floorf(xmin) - 1; if (r.x0 < 0) r.x0 = 0;
-	r.x1 = (int)ceilf(xmax) + 1;  if (r.x1 > width - 1) r.x1 = width - 1;
-	r.y0 = (int)floorf(ymin) - 1; if (r.y0 < 0) r.y0 = 0;
-	r.y1 = (int)ceilf(ymax) + 1;  if (r.y1 > height - 1) r.y1 = height - 1;
+	r.x0 = (int)floorf(xmin) - 1;
+	if (r.x0 < 0) r.x0 = 0;
+	r.x1 = (int)ceilf(xmax) + 1;
+	if (r.x1 > width - 1) r.x1 = width - 1;
+	r.y0 = (int)floorf(ymin) - 1;
+	if (r.y0 < 0) r.y0 = 0;
+	r.y1 = (int)ceilf(ymax) + 1;
+	if (r.y1 > height - 1) r.y1 = height - 1;
 	return r;
 }
 
 // Returns 0 when a tile overflows RAY_TILE_MAX, leaving the frame on the flat batch.
 static int rayBuildTiles(const Object *objects, const int *passIdx, int passCount,
-                         float3 camPos, float3 fwd, float3 rgt, float3 up_,
-                         float aspect, float fovScale, int width, int height) {
+						 float3 camPos, float3 fwd, float3 rgt, float3 up_,
+						 float aspect, float fovScale, int width, int height) {
 	RayRect rects[RAY_AABB_SOA_BOXES];
 	for (int j = 0; j < passCount; j++)
 		rects[j] = rayProjectAABBRect(&objects[passIdx[j]], camPos, fwd, rgt, up_, aspect, fovScale, width, height);
@@ -524,7 +536,7 @@ static void buildAllAabbSoa(const Object *objects, int objectCount) {
 // are bit-identical; only the staging differs (SoA loads, no transpose,
 // invDir hoisted by the caller).
 static inline void raySlabGroup8(const float *gp, float3 ro, __m256 ivx, __m256 ivy, __m256 ivz,
-                                 float tMinA[8], float tMaxA[8]) {
+								 float tMinA[8], float tMaxA[8]) {
 	const __m256 ox = _mm256_set1_ps(ro.x), oy = _mm256_set1_ps(ro.y), oz = _mm256_set1_ps(ro.z);
 	__m256 taX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 0), ox), ivx);
 	__m256 tbX = _mm256_mul_ps(_mm256_sub_ps(_mm256_load_ps(gp + 8), ox), ivx);
@@ -547,7 +559,8 @@ static void rayCollision(Object *restrict objects, int objectCount, float3 rayOr
 	if (hitPos) *hitPos = (float3){0.0f, 0.0f, 0.0f};
 
 	const float *restrict soa = (objects == s_allAabbSoaObjects && objectCount == s_allAabbSoaCount)
-		? s_allAabbSoa : NULL;
+									? s_allAabbSoa
+									: NULL;
 
 	// Fast shadow path (scalar, kept for reference)
 	// if (!hitTriIdx && !hitPos) {
@@ -838,31 +851,31 @@ static inline uvCoordinates calculateUvCoordinatesForTriangle(const float3 hitPo
 // pre-filter paths) so both visit objects in the same order with the same
 // decisions.  Requires in scope: objects, orig, dx, dy, dz, bestT, bestObj,
 // bestTri, bestHitPos.
-#define RAY_PRE_TRY_OBJECT(OBJIDX, TAABB)                                                     \
-	do {                                                                                      \
-		const int i_ = (OBJIDX);                                                              \
-		if ((TAABB) >= bestT) break;                                                          \
-		int triIdx_ = -1;                                                                     \
-		float3 hitPos_ = {0.0f, 0.0f, 0.0f};                                                  \
+#define RAY_PRE_TRY_OBJECT(OBJIDX, TAABB)                                                                    \
+	do {                                                                                                     \
+		const int i_ = (OBJIDX);                                                                             \
+		if ((TAABB) >= bestT) break;                                                                         \
+		int triIdx_ = -1;                                                                                    \
+		float3 hitPos_ = {0.0f, 0.0f, 0.0f};                                                                 \
 		IntersectBVH(&objects[i_], &objects[i_].bvh, orig, (float3){dx, dy, dz}, bestT, &triIdx_, &hitPos_); \
-		if (triIdx_ < 0) break;                                                               \
-		float t_ = (hitPos_.x - orig.x) * dx + (hitPos_.y - orig.y) * dy + (hitPos_.z - orig.z) * dz; \
-		if (t_ > 0.0f && t_ < bestT) {                                                        \
-			bestT = t_;                                                                       \
-			bestObj = i_;                                                                     \
-			bestTri = triIdx_;                                                                \
-			bestHitPos = hitPos_;                                                             \
-		}                                                                                     \
+		if (triIdx_ < 0) break;                                                                              \
+		float t_ = (hitPos_.x - orig.x) * dx + (hitPos_.y - orig.y) * dy + (hitPos_.z - orig.z) * dz;        \
+		if (t_ > 0.0f && t_ < bestT) {                                                                       \
+			bestT = t_;                                                                                      \
+			bestObj = i_;                                                                                    \
+			bestTri = triIdx_;                                                                               \
+			bestHitPos = hitPos_;                                                                            \
+		}                                                                                                    \
 	} while (0)
 // The per-pixel ray setup is divider-bound: one 1/sqrtf plus three 1/d
 // reciprocals per pixel, and the branchy pixel body around it does not hide the
 // FP divider. Eight columns of a group are therefore computed together with
 // AVX2 divps/sqrtps.
 static inline void RaySetup8(float rx, float ry, float rz, float sx, float sy, float sz,
-                             int width, int x0, float *dxo, float *dyo, float *dzo,
-                             float *ixo, float *iyo, float *izo) {
+							 int width, int x0, float *dxo, float *dyo, float *dzo,
+							 float *ixo, float *iyo, float *izo) {
 	__m256 xv = _mm256_add_ps(_mm256_set1_ps((float)x0),
-	                          _mm256_setr_ps(0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f));
+							  _mm256_setr_ps(0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f));
 	__m256 ndc = _mm256_sub_ps(
 		_mm256_mul_ps(_mm256_div_ps(xv, _mm256_set1_ps((float)width)), _mm256_set1_ps(2.0f)),
 		_mm256_set1_ps(1.0f));
@@ -962,7 +975,7 @@ static void RayTraceRowFunc(void *arg) {
 
 		if ((x & 7) == 0) {
 			RaySetup8(rx, ry, rz, sx, sy, sz, width, x,
-			          setupDx, setupDy, setupDz, setupIx, setupIy, setupIz);
+					  setupDx, setupDy, setupDz, setupIx, setupIy, setupIz);
 		}
 		const int lane = x & 7;
 		float dx = setupDx[lane];
@@ -1285,7 +1298,10 @@ static void RayTraceRowFunc(void *arg) {
 				int best = -1;
 				float bestDist = FLT_MAX;
 				for (int e = 0; e < emissiveObjectCount; e++) {
-					if (emissiveDistances[e] < bestDist) { bestDist = emissiveDistances[e]; best = e; }
+					if (emissiveDistances[e] < bestDist) {
+						bestDist = emissiveDistances[e];
+						best = e;
+					}
 				}
 				if (best < 0) break;
 				topEmissiveDistances[t] = bestDist;
@@ -1353,13 +1369,13 @@ static void LightRowBlendSlice(float3 *win, const float3 *a, const float3 *b, in
 	}
 	for (; i < n; i++)
 		win[i] = (float3){a[i].x * t0 + b[i].x * t1,
-		                  a[i].y * t0 + b[i].y * t1,
-		                  a[i].z * t0 + b[i].z * t1};
+						  a[i].y * t0 + b[i].y * t1,
+						  a[i].z * t0 + b[i].z * t1};
 }
 
 static void LightRowBlurClamped(const float3 *srcC, const float3 *srcE, const float3 *srcS, int srcOff,
-                                int xFrom, int xTo, int width,
-                                float3 *accC, float3 *accE, float3 *accS, int accOff) {
+								int xFrom, int xTo, int width,
+								float3 *accC, float3 *accE, float3 *accS, int accOff) {
 	for (int x = xFrom; x < xTo; x++) {
 		float3 accumulatedColor = {0.0f, 0.0f, 0.0f};
 		float3 accumulatedEmission = {0.0f, 0.0f, 0.0f};
@@ -1400,8 +1416,8 @@ static void LightRowBlurClamped(const float3 *srcC, const float3 *srcE, const fl
 }
 
 static void LightRowBlurRun(const float3 *srcC, const float3 *srcE, const float3 *srcS, int srcOff,
-                            int xFrom, int xTo, int width,
-                            float3 *accC, float3 *accE, float3 *accS, int accOff) {
+							int xFrom, int xTo, int width,
+							float3 *accC, float3 *accE, float3 *accS, int accOff) {
 	int xa = xFrom > BLUR_RADIUS ? xFrom : BLUR_RADIUS;
 	int xb = xTo < width - BLUR_RADIUS ? xTo : width - BLUR_RADIUS;
 	if (xa > xTo) xa = xTo;
@@ -1514,7 +1530,7 @@ static void RayTraceLightRowFunc(void *arg) {
 				// Visualize postion buffer for debugging
 				// float3 posVal = camera->positionBuffer[row * width + x];
 				// camera->framebufferLdr[row * width + x] = PackColorSafe(posVal.x / 10.0f, posVal.y / 10.0f, posVal.z / 10.0f);
-				
+
 				// camera->framebufferLdr[row * width + x] = (uint32)camera->triangleIdBuffer[row * width + x];
 				// camera->framebufferLdr[row * width + x] = (uint32)camera->objectIdBuffer[row * width + x];
 				// camera->framebufferLdr[row * width + x] = (uint32)camera->uvBuffer[row * width + x].x;
@@ -1570,9 +1586,9 @@ void RayTraceScene(const Object *objects, int objectCount, Camera *camera, const
 		float3 rgt = Float3_Normalize(camera->right);
 		float3 up_ = Float3_Normalize(camera->up);
 		s_rayTilesValid = rayBuildTiles(objects, frustumPassIndices, frustumPassCount,
-		                                camera->position, fwd, rgt, up_,
-		                                camera->aspect, camera->fovScale,
-		                                camera->screenWidth, camera->screenHeight);
+										camera->position, fwd, rgt, up_,
+										camera->aspect, camera->fovScale,
+										camera->screenWidth, camera->screenHeight);
 	}
 
 	for (int row = 0; row < camera->screenHeight; row++) {
@@ -1966,7 +1982,10 @@ static void RayTraceColumnFunc(void *arg) {
 				int best = -1;
 				float bestDist = FLT_MAX;
 				for (int e = 0; e < emissiveObjectCount; e++) {
-					if (emissiveDistances[e] < bestDist) { bestDist = emissiveDistances[e]; best = e; }
+					if (emissiveDistances[e] < bestDist) {
+						bestDist = emissiveDistances[e];
+						best = e;
+					}
 				}
 				if (best < 0) break;
 				topEmissiveDistances[t] = bestDist;

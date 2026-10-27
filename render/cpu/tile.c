@@ -126,7 +126,6 @@ void drawTileColorScaled(uint32 *dst, int dstWidth, int dstHeight, Tile tile, in
 	}
 }
 
-
 void drawTileColorScaledHdr(float3 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y, float scaleX, float scaleY, float3 color) {
 	int scaledW = (int)(tile.width * scaleX);
 	int scaledH = (int)(tile.height * scaleY);

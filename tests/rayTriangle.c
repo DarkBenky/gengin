@@ -211,4 +211,3 @@ int main() {
 // New V8 rayTriangle (early uNum): 18.546 ns/call
 // New V9 rayTriangle (branch hints): 19.348 ns/call
 // New V10 rayTriangle (FMA): 18.173 ns/call
-

@@ -101,12 +101,18 @@ void removeOldObjects(ServerState *state) {
 }
 
 static float3 unwrapFloat3(float3 ref, float3 v) {
-	while (v.x - ref.x > 180.0f) v.x -= 360.0f;
-	while (ref.x - v.x > 180.0f) v.x += 360.0f;
-	while (v.y - ref.y > 180.0f) v.y -= 360.0f;
-	while (ref.y - v.y > 180.0f) v.y += 360.0f;
-	while (v.z - ref.z > 180.0f) v.z -= 360.0f;
-	while (ref.z - v.z > 180.0f) v.z += 360.0f;
+	while (v.x - ref.x > 180.0f)
+		v.x -= 360.0f;
+	while (ref.x - v.x > 180.0f)
+		v.x += 360.0f;
+	while (v.y - ref.y > 180.0f)
+		v.y -= 360.0f;
+	while (ref.y - v.y > 180.0f)
+		v.y += 360.0f;
+	while (v.z - ref.z > 180.0f)
+		v.z -= 360.0f;
+	while (ref.z - v.z > 180.0f)
+		v.z += 360.0f;
 	return v;
 }
 

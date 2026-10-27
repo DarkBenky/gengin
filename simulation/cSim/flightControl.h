@@ -33,33 +33,33 @@
 #define LOOKAHEAD_STEPS 16
 
 typedef struct {
-    Plane plane;
+	Plane plane;
 
-    int LookaheadSteps;
+	int LookaheadSteps;
 } Controller;
 
 static void initController(Controller *ctrl, const Plane *plane) {
-    ctrl->plane = *plane;
-    ctrl->LookaheadSteps = LOOKAHEAD_STEPS;
+	ctrl->plane = *plane;
+	ctrl->LookaheadSteps = LOOKAHEAD_STEPS;
 }
 
 typedef struct {
-    float Elevator;
-    float ElevatorLoss;
-    float Aileron;
-    float AileronLoss;
-    float Rudder;
-    float RudderLoss;
-    float LossAngle;
+	float Elevator;
+	float ElevatorLoss;
+	float Aileron;
+	float AileronLoss;
+	float Rudder;
+	float RudderLoss;
+	float LossAngle;
 } ControllerOutput;
 
 typedef struct {
-    float FrontPitch; // 01 units, 0.5 neutral
-    float FrontYaw;
-    float BackPitch;
-    float BackYaw;
-    float ThrustPitch;
-    float ThrustYaw;
+	float FrontPitch; // 01 units, 0.5 neutral
+	float FrontYaw;
+	float BackPitch;
+	float BackYaw;
+	float ThrustPitch;
+	float ThrustYaw;
 } MissileControllerOutput;
 
 // Proportional-navigation command for the point-mass missile model.

@@ -4,12 +4,12 @@
 #include <time.h>
 
 typedef struct {
-    float averageTime;
-    float medianTime;
-    float minTime;
-    float maxTime;
-    float variance;
-    float p99Time;
+	float averageTime;
+	float medianTime;
+	float minTime;
+	float maxTime;
+	float variance;
+	float p99Time;
 } PerformanceMetrics;
 
 PerformanceMetrics ComputePerformanceMetrics(const float *timeTook, int samples);

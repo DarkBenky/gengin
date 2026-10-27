@@ -6,13 +6,12 @@
 
 #include "../object/format.h"
 
-
 static inline float angleToRadian(float angle) {
-    return angle * M_PI / 180.0f;
+	return angle * M_PI / 180.0f;
 }
 
 static inline float radianToAngle(float radian) {
-    return radian * 180.0f / M_PI;
+	return radian * 180.0f / M_PI;
 }
 
 #endif

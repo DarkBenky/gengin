@@ -5,8 +5,8 @@
 #include <stdio.h>
 
 typedef struct Textures {
-	Color *colorMap;     // size*size RGBA8
-	Color *normalMap;    // size*size RGBA8
+	Color *colorMap;	 // size*size RGBA8
+	Color *normalMap;	 // size*size RGBA8
 	uint16 *MaterialMap; // size*size [roughness (uint8), metallic (uint8)]
 	uint32 size;
 } Textures;

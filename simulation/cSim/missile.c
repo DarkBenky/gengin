@@ -38,7 +38,8 @@ static float missileWaveDrag(float mach) {
 
 static float missileBurnTime(const MissileSpec *spec) {
 	float total = 0.0f;
-	for (int i = 0; i < spec->stageCount; i++) total += spec->stages[i].burnTime;
+	for (int i = 0; i < spec->stageCount; i++)
+		total += spec->stages[i].burnTime;
 	return total > 0.0f ? total : 1.0f;
 }
 
@@ -132,8 +133,8 @@ int missileStep(Missile *m, float3 targetPosition, float3 targetVelocity, float 
 	float3 fwd = Float3_Normalize(m->velocity);
 	float3 rightRaw = Float3_Cross(fwd, (float3){0.0f, 1.0f, 0.0f, 0.0f});
 	float3 right = (Float3_Length(rightRaw) < 1e-4f)
-	                   ? (float3){1.0f, 0.0f, 0.0f, 0.0f}
-	                   : Float3_Normalize(rightRaw);
+					   ? (float3){1.0f, 0.0f, 0.0f, 0.0f}
+					   : Float3_Normalize(rightRaw);
 	float3 up = Float3_Normalize(Float3_Cross(right, fwd));
 
 	float altitude = m->position.y;
@@ -167,8 +168,8 @@ int missileStep(Missile *m, float3 targetPosition, float3 targetVelocity, float 
 
 	// Profile/wave drag + fin-induced drag, priced in fin-area terms.
 	float cdInduced = (m->spec.frontArea * (clFP * clFP + clFY * clFY) +
-	                   m->spec.backArea * (clBP * clBP + clBY * clBY)) /
-	                  ((float)M_PI * MISSILE_FIN_AR * MISSILE_OSWALD);
+					   m->spec.backArea * (clBP * clBP + clBY * clBY)) /
+					  ((float)M_PI * MISSILE_FIN_AR * MISSILE_OSWALD);
 	float dragMag = q * (refArea * (m->spec.cd0 + missileWaveDrag(mach)) + cdInduced);
 
 	float3 force = Float3_Scale(fwd, thrust - dragMag);

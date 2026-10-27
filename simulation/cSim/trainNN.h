@@ -54,7 +54,7 @@ typedef struct {
 	int eliteReachedTarget; // count of elite models that reached target this epoch
 	int totalReachedTarget; // count of all models that reached target this epoch
 	int epochsSinceLastTarget;
-	float maxAngleDeg;      // current MaxDivergenceDegrees for this epoch
+	float maxAngleDeg;	 // current MaxDivergenceDegrees for this epoch
 	Model backpropModel; // trained on the inputs and outputs models
 	Optimizer opt;
 	float lastBackpropLoss;
@@ -290,7 +290,8 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 
 			float distanceToTarget = Float3_Length(Float3_Sub(plane->position, p->targetPosition));
 			if (distanceToTarget < ACCEPTABLE_DISTANCE_TO_TARGET) {
-				printf("Model: %d reached target\n", modelIdx);					p->totalReachedTarget++;				// only count elite models (already sorted from last epoch) to avoid noise from lucky randoms
+				printf("Model: %d reached target\n", modelIdx);
+				p->totalReachedTarget++; // only count elite models (already sorted from last epoch) to avoid noise from lucky randoms
 				if (isElite[modelIdx])
 					p->eliteReachedTarget++;
 				// write the arrival position into this slot so visualization doesn't show a stale value
@@ -405,7 +406,9 @@ void epoch(ModelTrainer *p, Plane *plane, float *top10PercentLoss, float MaxDive
 		for (int pass = 0; pass < 4; pass++) {
 			for (int i = sampleCount - 1; i > 0; i--) {
 				int j = rand() % (i + 1);
-				int tmp = sampleIndices[i]; sampleIndices[i] = sampleIndices[j]; sampleIndices[j] = tmp;
+				int tmp = sampleIndices[i];
+				sampleIndices[i] = sampleIndices[j];
+				sampleIndices[j] = tmp;
 			}
 			for (int batchStart = 0; batchStart < sampleCount; batchStart += 128) {
 				int batchEnd = batchStart + 128;

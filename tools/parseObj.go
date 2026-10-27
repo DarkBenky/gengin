@@ -1200,11 +1200,11 @@ func writeFile(filename string, obj *FileObject, color *[3]float32, boost float3
 
 	// Binary layout:
 	// Header (20 bytes):
-	//   fileSize          uint32
+	//   fileSize           uint32
 	//   triangleStructSize uint32  — 108 bytes
-	//   triangleCount     uint32
-	//   hasTextures       uint32   — bit0: textures present, bit1: cull backfaces
-	//   textureSize       uint32   — texture edge length
+	//   triangleCount      uint32
+	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces
+	//   textureSize        uint32  — texture edge length
 	//
 	// Texture data (if hasTextures):
 	//   ColorMap     textureSize*textureSize*4 bytes (RGBA uint8)
@@ -1215,7 +1215,7 @@ func writeFile(filename string, obj *FileObject, color *[3]float32, boost float3
 	//   v1 v2 v3 normal   4 × float3 padded to float4 = 4×16 = 64
 	//   roughness metallic emission                    = 12
 	//   color float3 padded                            = 16
-	//   uv1[2] uv2[2] uv3[2] + 4 byte pad             = 16
+	//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
 
 	const triangleStructSize = uint32(4*16 + 12 + 16 + 16) // 108
 	texSize := obj.TexSize

@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 
-
 static inline const char *fmtInt(long v) {
 	static char buf[32];
 	char tmp[32];
@@ -40,7 +39,7 @@ static inline const char *fmtFloat(double v, int precision) {
 	return buf;
 }
 
-// e.g. 123 456 -> "123.456K", 1 234 567 -> "1.23M", 1 234 567 890 -> "1.23B" 
+// e.g. 123 456 -> "123.456K", 1 234 567 -> "1.23M", 1 234 567 890 -> "1.23B"
 static inline const char *fmtIntShort(long v) {
 	static char buf[32];
 	char suffix = '\0';

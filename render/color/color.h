@@ -5,7 +5,6 @@
 #include "../../util/threadPool.h"
 #include <math.h>
 
-
 // TODO: implement something like this maybe openCl kernel for this is ideal as post processing step
 // type RGB struct {
 // 	R uint8
@@ -37,12 +36,12 @@
 // 	return best
 // }
 
-
 Color PackColor(float r, float g, float b);
 Color PackColorF(float3 color);
 Color BlendColors(Color c1, Color c2, float t);
 float3 UnpackColor(Color c);
 int4 UnpackColorInt(Color c);
+Color BoostColor(Color c, float satAmount, float brightFactor);
 Color ApplyGamma(Color c, float gamma);
 Color ApplyExposure(Color c, float exposure);
 Color ApplyToneMapping(Color c);

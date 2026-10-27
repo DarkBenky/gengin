@@ -11,7 +11,11 @@
 #define DT (1.0f / 60.0f)
 #define MAX_STEPS ((int)(MISSILE_LIFETIME / DT))
 
-typedef enum { SC_TAIL, SC_HEADON, SC_CROSS, SC_JINK, SC_BEAM } ScenarioKind;
+typedef enum { SC_TAIL,
+			   SC_HEADON,
+			   SC_CROSS,
+			   SC_JINK,
+			   SC_BEAM } ScenarioKind;
 
 static const char *scenarioNames[] = {"tail", "head-on", "cross", "jink", "beam"};
 
@@ -58,7 +62,9 @@ static int finiteV(float3 v) {
 	return isfinite(v.x) && isfinite(v.y) && isfinite(v.z);
 }
 
-static float clampf01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
+static float clampf01(float v) {
+	return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+}
 
 // The outcomes a working guidance law must produce (regression gate): every
 // class connects head-on and in the tail chase; this agile set must also
@@ -110,10 +116,16 @@ static int runMissile(const char *model, ScenarioKind kind) {
 
 		if (burnout < 0.0f && m.phase == MISSILE_COAST) burnout = t;
 		if (!missileUpdate(&m, targetPos, targetVel, DT)) {
-			if (m.hit) { hit = 1; tHit = t; }
+			if (m.hit) {
+				hit = 1;
+				tHit = t;
+			}
 			break;
 		}
-		if (!finiteV(m.position) || !finiteV(m.velocity)) { unstable = 1; break; }
+		if (!finiteV(m.position) || !finiteV(m.velocity)) {
+			unstable = 1;
+			break;
+		}
 
 		float d = Float3_Length(Float3_Sub(targetPos, m.position));
 		if (d < minDist) minDist = d;
@@ -197,11 +209,16 @@ static int runTurn(const char *model, float *outHeading) {
 
 		float cur = atan2f(p.forward.x, p.forward.z);
 		float d = cur - prev;
-		while (d > 3.14159265f) d -= 6.28318531f;
-		while (d < -3.14159265f) d += 6.28318531f;
+		while (d > 3.14159265f)
+			d -= 6.28318531f;
+		while (d < -3.14159265f)
+			d += 6.28318531f;
 		cum += d;
 		prev = cur;
-		if (!finiteV(p.position) || !finiteV(p.velocity) || !isfinite(cum)) { unstable = 1; break; }
+		if (!finiteV(p.position) || !finiteV(p.velocity) || !isfinite(cum)) {
+			unstable = 1;
+			break;
+		}
 	}
 
 	printf("%-10s %-8s cumHeading=%8.1f deg  spd=%6.1f  alt=%8.1f  %s\n",

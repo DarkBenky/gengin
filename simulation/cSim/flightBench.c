@@ -38,19 +38,23 @@
 #define FB_SEEDS 4
 #define FB_MAX_SCENARIOS (FB_TIERS * FB_SEEDS)
 
-static const char *tierNames[FB_TIERS] = { "static", "drift", "weave", "step", "jink" };
+static const char *tierNames[FB_TIERS] = {"static", "drift", "weave", "step", "jink"};
 
 // Missile launch profiles per seed: {range (m), off-boresight (deg)}.  The mix
 // flies long-range boresight shots, standard and hard off-boresight turns and
 // an extreme-range energy fight, each against every tier's target motion.
 static const float fbMissileProfiles[FB_SEEDS][2] = {
-	{ 9000.0f, 0.0f },
-	{ 7000.0f, 30.0f },
-	{ 7000.0f, 60.0f },
-	{ 11000.0f, 15.0f },
+	{9000.0f, 0.0f},
+	{7000.0f, 30.0f},
+	{7000.0f, 60.0f},
+	{11000.0f, 15.0f},
 };
 
-typedef enum { TG_STATIC, TG_DRIFT, TG_WEAVE, TG_STEP, TG_JINK } TargetKind;
+typedef enum { TG_STATIC,
+			   TG_DRIFT,
+			   TG_WEAVE,
+			   TG_STEP,
+			   TG_JINK } TargetKind;
 
 typedef struct {
 	char id[24];
@@ -58,8 +62,8 @@ typedef struct {
 	TargetKind kind;
 	uint32_t seed;
 	float3 p0;
-	float3 v;       // primary velocity (m/s)
-	float3 v2;      // step tier: velocity after the switch
+	float3 v;		// primary velocity (m/s)
+	float3 v2;		// step tier: velocity after the switch
 	float3 lateral; // weave axis (unit)
 	float amplitude;
 	float omega;
@@ -103,13 +107,13 @@ static float fbRange(uint32_t *state, float lo, float hi) {
 }
 
 static float3 fbLateral(float3 v) {
-	float3 up = { 0.0f, 1.0f, 0.0f, 0.0f };
+	float3 up = {0.0f, 1.0f, 0.0f, 0.0f};
 	float3 axis = Float3_Cross(v, up);
 	if (Float3_Length(axis) < 1e-3f) {
-		axis = Float3_Cross(v, (float3){ 1.0f, 0.0f, 0.0f, 0.0f });
+		axis = Float3_Cross(v, (float3){1.0f, 0.0f, 0.0f, 0.0f});
 	}
 	if (Float3_Length(axis) < 1e-3f) {
-		return (float3){ 1.0f, 0.0f, 0.0f, 0.0f };
+		return (float3){1.0f, 0.0f, 0.0f, 0.0f};
 	}
 	return Float3_Normalize(axis);
 }
@@ -133,12 +137,12 @@ static void fbDraw(Scenario *s, int tier, uint32_t seed) {
 		cosf(elevation) * cosf(azimuth),
 		0.0f,
 	};
-	s->p0 = Float3_Add((float3){ 0.0f, 1000.0f, 0.0f, 1.0f }, Float3_Scale(direction, distance));
+	s->p0 = Float3_Add((float3){0.0f, 1000.0f, 0.0f, 1.0f}, Float3_Scale(direction, distance));
 
 	// Primary velocity: 12-45 m/s on a seeded horizontal heading.
 	float speed = fbRange(&rng, 12.0f, 45.0f);
 	float heading = fbRange(&rng, -3.14159265f, 3.14159265f);
-	s->v = (float3){ speed * sinf(heading), 0.0f, speed * cosf(heading), 0.0f };
+	s->v = (float3){speed * sinf(heading), 0.0f, speed * cosf(heading), 0.0f};
 	s->v2 = s->v;
 	s->lateral = fbLateral(s->v);
 	s->amplitude = fbRange(&rng, 30.0f, 120.0f);
@@ -149,7 +153,7 @@ static void fbDraw(Scenario *s, int tier, uint32_t seed) {
 
 	switch (s->kind) {
 	case TG_STATIC:
-		s->v = (float3){ 0.0f, 0.0f, 0.0f, 0.0f };
+		s->v = (float3){0.0f, 0.0f, 0.0f, 0.0f};
 		break;
 	case TG_STEP: {
 		// Sudden direction change of 30-150 deg plus 0.6-1.5x speed change.
@@ -185,7 +189,7 @@ static void fbTargetStep(const Scenario *s, TargetState *ts, float dt) {
 	ts->t += dt;
 	switch (s->kind) {
 	case TG_STATIC:
-		ts->velocity = (float3){ 0.0f, 0.0f, 0.0f, 0.0f };
+		ts->velocity = (float3){0.0f, 0.0f, 0.0f, 0.0f};
 		break;
 	case TG_WEAVE:
 		ts->velocity = Float3_Add(
@@ -238,7 +242,7 @@ static float3 fbRotateY(float3 v, float deg) {
 	float a = deg * 0.01745329f;
 	float c = cosf(a);
 	float s = sinf(a);
-	return (float3){ v.x * c + v.z * s, v.y, -v.x * s + v.z * c, 0.0f };
+	return (float3){v.x * c + v.z * s, v.y, -v.x * s + v.z * c, 0.0f};
 }
 
 typedef struct {
@@ -259,7 +263,7 @@ static void *fbWorker(void *arg) {
 }
 
 static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *modelPath, int missile, FILE *trace) {
-	ScenarioResult r = { 0 };
+	ScenarioResult r = {0};
 	r.scenario = s;
 	r.tHit = -1.0f;
 
@@ -270,7 +274,7 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *
 		// Missile launch profile by seed (range + off-boresight), see
 		// fbMissileProfiles; the target keeps flying its tier's motion.
 		const float *profile = fbMissileProfiles[s->seed];
-		float3 axis = Float3_Sub(target.position, (float3){ 0.0f, 1000.0f, 0.0f, 0.0f });
+		float3 axis = Float3_Sub(target.position, (float3){0.0f, 1000.0f, 0.0f, 0.0f});
 		axis.y = 0.0f;
 		axis = Float3_Normalize(axis);
 		float3 launchPos = Float3_Sub(target.position, Float3_Scale(axis, profile[0]));
@@ -303,16 +307,15 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *
 			if (r.tHit < 0.0f && dist <= FB_HIT_RADIUS) {
 				r.tHit = (float)(step + 1) * dt;
 			}
-			if (!isfinite(m.position.x) || !isfinite(m.position.y) || !isfinite(m.position.z)
-					|| !isfinite(m.velocity.x) || !isfinite(m.velocity.y) || !isfinite(m.velocity.z)) {
+			if (!isfinite(m.position.x) || !isfinite(m.position.y) || !isfinite(m.position.z) || !isfinite(m.velocity.x) || !isfinite(m.velocity.y) || !isfinite(m.velocity.z)) {
 				r.unstable = 1;
 			}
 			if (trace != NULL) {
 				fprintf(trace, "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
-					(float)(step + 1) * dt,
-					fbSafe(m.position.x), fbSafe(m.position.y), fbSafe(m.position.z),
-					fbSafe(target.position.x), fbSafe(target.position.y), fbSafe(target.position.z),
-					0.0f, 0.0f, 0.0f, fbSafe(dist));
+						(float)(step + 1) * dt,
+						fbSafe(m.position.x), fbSafe(m.position.y), fbSafe(m.position.z),
+						fbSafe(target.position.x), fbSafe(target.position.y), fbSafe(target.position.z),
+						0.0f, 0.0f, 0.0f, fbSafe(dist));
 			}
 			if (!alive) {
 				break;
@@ -328,8 +331,8 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *
 
 	Plane plane;
 	if (loadPlaneBin(&plane, modelPath,
-			(float3){ 0.0f, 0.0f, 1.0f, 0.0f }, (float3){ 0.0f, 1000.0f, 0.0f, 1.0f },
-			180.0f, 1.0f) != 0) {
+					 (float3){0.0f, 0.0f, 1.0f, 0.0f}, (float3){0.0f, 1000.0f, 0.0f, 1.0f},
+					 180.0f, 1.0f) != 0) {
 		fprintf(stderr, "flightBench: cannot load %s\n", modelPath);
 		exit(2);
 	}
@@ -339,7 +342,7 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *
 	TargetState target;
 	fbTargetInit(s, &target);
 
-	float momentum[3] = { 0.0f, 0.0f, 0.0f };
+	float momentum[3] = {0.0f, 0.0f, 0.0f};
 	float prevLoss = 0.0f;
 	float minDist = FLT_MAX;
 	double costs[FB_MAX_STEPS];
@@ -375,16 +378,15 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *
 		if (fabsf(out.Aileron - 0.5f) >= 0.49f || fabsf(out.Elevator - 0.5f) >= 0.49f || fabsf(out.Rudder - 0.5f) >= 0.49f) {
 			r.satSteps++;
 		}
-		if (!isfinite(ctrl.plane.position.x) || !isfinite(ctrl.plane.position.y) || !isfinite(ctrl.plane.position.z)
-				|| !isfinite(ctrl.plane.velocity.x) || !isfinite(ctrl.plane.velocity.y) || !isfinite(ctrl.plane.velocity.z)) {
+		if (!isfinite(ctrl.plane.position.x) || !isfinite(ctrl.plane.position.y) || !isfinite(ctrl.plane.position.z) || !isfinite(ctrl.plane.velocity.x) || !isfinite(ctrl.plane.velocity.y) || !isfinite(ctrl.plane.velocity.z)) {
 			r.unstable = 1;
 		}
 		if (trace != NULL) {
 			fprintf(trace, "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
-				(float)(step + 1) * dt,
-				fbSafe(ctrl.plane.position.x), fbSafe(ctrl.plane.position.y), fbSafe(ctrl.plane.position.z),
-				fbSafe(target.position.x), fbSafe(target.position.y), fbSafe(target.position.z),
-				fbSafe(out.Aileron), fbSafe(out.Elevator), fbSafe(out.Rudder), fbSafe(dist));
+					(float)(step + 1) * dt,
+					fbSafe(ctrl.plane.position.x), fbSafe(ctrl.plane.position.y), fbSafe(ctrl.plane.position.z),
+					fbSafe(target.position.x), fbSafe(target.position.y), fbSafe(target.position.z),
+					fbSafe(out.Aileron), fbSafe(out.Elevator), fbSafe(out.Rudder), fbSafe(dist));
 		}
 	}
 
@@ -537,7 +539,7 @@ int main(int argc, char **argv) {
 	for (int base = 0; base < count; base += threads) {
 		int batch = (count - base < threads) ? count - base : threads;
 		for (int k = 0; k < batch; k++) {
-			jobs[base + k] = (FbJob){ &scenarios[base + k], steps, dt, modelPath, missile, { 0 } };
+			jobs[base + k] = (FbJob){&scenarios[base + k], steps, dt, modelPath, missile, {0}};
 			if (pthread_create(&workers[k], NULL, fbWorker, &jobs[base + k]) != 0) {
 				fprintf(stderr, "flightBench: cannot start worker thread\n");
 				return 2;
@@ -554,7 +556,8 @@ int main(int argc, char **argv) {
 	printf("{\n");
 	printf("  \"version\": 1,\n");
 	printf("  \"settings\": {\"steps\": %d, \"dt\": %.9f, \"hitRadius\": %.1f, \"model\": \"%s\", "
-		   "\"loss\": \"V2PlusTuned2\", \"maxIterations\": 128},\n", steps, dt, FB_HIT_RADIUS, model);
+		   "\"loss\": \"V2PlusTuned2\", \"maxIterations\": 128},\n",
+		   steps, dt, FB_HIT_RADIUS, model);
 	printf("  \"suiteHash\": \"%08x\",\n", fbSuiteHash(scenarios, count, dt, suiteTag));
 	printf("  \"scenarios\": [\n");
 	for (int i = 0; i < count; i++) {

@@ -27,80 +27,80 @@ static bool rayTriangle(float3 ro, float3 rd,
 }
 
 static bool rayTriangleNew(float3 ro, float3 rd,
-                        float3 v0, float3 v1, float3 v2, float *tOut) {
-    const float eps = 1e-7f;
+						   float3 v0, float3 v1, float3 v2, float *tOut) {
+	const float eps = 1e-7f;
 
-    float3 e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
-    float3 e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+	float3 e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+	float3 e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
 
-    float3 h = {rd.y*e2.z - rd.z*e2.y,
-                rd.z*e2.x - rd.x*e2.z,
-                rd.x*e2.y - rd.y*e2.x};
+	float3 h = {rd.y * e2.z - rd.z * e2.y,
+				rd.z * e2.x - rd.x * e2.z,
+				rd.x * e2.y - rd.y * e2.x};
 
-    float a = e1.x*h.x + e1.y*h.y + e1.z*h.z;
-    if (fabsf(a) < eps) return false;
+	float a = e1.x * h.x + e1.y * h.y + e1.z * h.z;
+	if (fabsf(a) < eps) return false;
 
-    float3 s = {ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
+	float3 s = {ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
 
-    // Test u without dividing — just check sign relative to a
-    float u_num = s.x*h.x + s.y*h.y + s.z*h.z;
-    if (a > 0.0f ? (u_num < 0.0f || u_num > a) : (u_num > 0.0f || u_num < a))
-        return false;
+	// Test u without dividing — just check sign relative to a
+	float u_num = s.x * h.x + s.y * h.y + s.z * h.z;
+	if (a > 0.0f ? (u_num < 0.0f || u_num > a) : (u_num > 0.0f || u_num < a))
+		return false;
 
-    float3 q = {s.y*e1.z - s.z*e1.y,
-                s.z*e1.x - s.x*e1.z,
-                s.x*e1.y - s.y*e1.x};
+	float3 q = {s.y * e1.z - s.z * e1.y,
+				s.z * e1.x - s.x * e1.z,
+				s.x * e1.y - s.y * e1.x};
 
-    float v_num = rd.x*q.x + rd.y*q.y + rd.z*q.z;
-    if (a > 0.0f ? (v_num < 0.0f || u_num + v_num > a) : (v_num > 0.0f || u_num + v_num < a))
-        return false;
+	float v_num = rd.x * q.x + rd.y * q.y + rd.z * q.z;
+	if (a > 0.0f ? (v_num < 0.0f || u_num + v_num > a) : (v_num > 0.0f || u_num + v_num < a))
+		return false;
 
-    float t_num = e2.x*q.x + e2.y*q.y + e2.z*q.z;
-    if (a > 0.0f ? t_num < eps : t_num > -eps)
-        return false;
+	float t_num = e2.x * q.x + e2.y * q.y + e2.z * q.z;
+	if (a > 0.0f ? t_num < eps : t_num > -eps)
+		return false;
 
-    *tOut = t_num / a;
-    return true;
+	*tOut = t_num / a;
+	return true;
 }
 
 static float rayTriangleNewV2(float3 ro, float3 rd,
-                        float3 v0, float3 v1, float3 v2) {
-    const float eps = 1e-7f;
+							  float3 v0, float3 v1, float3 v2) {
+	const float eps = 1e-7f;
 
-    float3 e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
-    float3 e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+	float3 e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+	float3 e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
 
-    float3 h = {rd.y*e2.z - rd.z*e2.y,
-                rd.z*e2.x - rd.x*e2.z,
-                rd.x*e2.y - rd.y*e2.x};
+	float3 h = {rd.y * e2.z - rd.z * e2.y,
+				rd.z * e2.x - rd.x * e2.z,
+				rd.x * e2.y - rd.y * e2.x};
 
-    float a = e1.x*h.x + e1.y*h.y + e1.z*h.z;
-    if (fabsf(a) < eps) return MinFloat;
+	float a = e1.x * h.x + e1.y * h.y + e1.z * h.z;
+	if (fabsf(a) < eps) return MinFloat;
 
-    float3 s = {ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
+	float3 s = {ro.x - v0.x, ro.y - v0.y, ro.z - v0.z};
 
-    // Test u without dividing — just check sign relative to a
-    float u_num = s.x*h.x + s.y*h.y + s.z*h.z;
-    if (a > 0.0f ? (u_num < 0.0f || u_num > a) : (u_num > 0.0f || u_num < a))
-        return MinFloat;
+	// Test u without dividing — just check sign relative to a
+	float u_num = s.x * h.x + s.y * h.y + s.z * h.z;
+	if (a > 0.0f ? (u_num < 0.0f || u_num > a) : (u_num > 0.0f || u_num < a))
+		return MinFloat;
 
-    float3 q = {s.y*e1.z - s.z*e1.y,
-                s.z*e1.x - s.x*e1.z,
-                s.x*e1.y - s.y*e1.x};
+	float3 q = {s.y * e1.z - s.z * e1.y,
+				s.z * e1.x - s.x * e1.z,
+				s.x * e1.y - s.y * e1.x};
 
-    float v_num = rd.x*q.x + rd.y*q.y + rd.z*q.z;
-    if (a > 0.0f ? (v_num < 0.0f || u_num + v_num > a) : (v_num > 0.0f || u_num + v_num < a))
-        return MinFloat;
+	float v_num = rd.x * q.x + rd.y * q.y + rd.z * q.z;
+	if (a > 0.0f ? (v_num < 0.0f || u_num + v_num > a) : (v_num > 0.0f || u_num + v_num < a))
+		return MinFloat;
 
-    float t_num = e2.x*q.x + e2.y*q.y + e2.z*q.z;
-    if (a > 0.0f ? t_num < eps : t_num > -eps)
-        return MinFloat;
+	float t_num = e2.x * q.x + e2.y * q.y + e2.z * q.z;
+	if (a > 0.0f ? t_num < eps : t_num > -eps)
+		return MinFloat;
 
-    return t_num / a;
+	return t_num / a;
 }
 
 static float rayTriangleNewV3(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							  float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	float3 e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
 	float3 e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
@@ -121,11 +121,11 @@ static float rayTriangleNewV3(float3 ro, float3 rd,
 
 // V4: Scalar fields — explicit individual floats to avoid struct load/store overhead
 static float rayTriangleNewV4(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							  float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
 	float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-	float sx  = ro.x - v0.x, sy  = ro.y - v0.y, sz  = ro.z - v0.z;
+	float sx = ro.x - v0.x, sy = ro.y - v0.y, sz = ro.z - v0.z;
 
 	float hx = rd.y * e2z - rd.z * e2y;
 	float hy = rd.z * e2x - rd.x * e2z;
@@ -152,11 +152,11 @@ static float rayTriangleNewV4(float3 ro, float3 rd,
 
 // V5: Speculative q — compute q before u check to overlap cross-product latency with u eval
 static float rayTriangleNewV5(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							  float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
 	float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-	float sx  = ro.x - v0.x, sy  = ro.y - v0.y, sz  = ro.z - v0.z;
+	float sx = ro.x - v0.x, sy = ro.y - v0.y, sz = ro.z - v0.z;
 
 	float hx = rd.y * e2z - rd.z * e2y;
 	float hy = rd.z * e2x - rd.x * e2z;
@@ -185,11 +185,11 @@ static float rayTriangleNewV5(float3 ro, float3 rd,
 
 // V6: Combined branch — compute everything, single branch at end, reduces branch mispredicts
 static float rayTriangleNewV6(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							  float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
 	float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-	float sx  = ro.x - v0.x, sy  = ro.y - v0.y, sz  = ro.z - v0.z;
+	float sx = ro.x - v0.x, sy = ro.y - v0.y, sz = ro.z - v0.z;
 
 	float hx = rd.y * e2z - rd.z * e2y;
 	float hy = rd.z * e2x - rd.x * e2z;
@@ -229,7 +229,7 @@ static inline __m128 dot128(__m128 a, __m128 b) {
 }
 
 static float rayTriangleNewV7(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							  float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	__m128 vv0 = _mm_loadu_ps(&v0.x);
 	__m128 vv1 = _mm_loadu_ps(&v1.x);
@@ -260,11 +260,11 @@ static float rayTriangleNewV7(float3 ro, float3 rd,
 
 // V8: V4 + compute uNum before fabsf/division to overlap with reciprocal latency
 static float rayTriangleNewV8(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							  float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
 	float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-	float sx  = ro.x - v0.x, sy  = ro.y - v0.y, sz  = ro.z - v0.z;
+	float sx = ro.x - v0.x, sy = ro.y - v0.y, sz = ro.z - v0.z;
 
 	float hx = rd.y * e2z - rd.z * e2y;
 	float hy = rd.z * e2x - rd.x * e2z;
@@ -292,11 +292,11 @@ static float rayTriangleNewV8(float3 ro, float3 rd,
 
 // V9: V8 + branch hints — tell the compiler which exits are likely/unlikely for random data
 static float rayTriangleNewV9(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							  float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
 	float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-	float sx  = ro.x - v0.x, sy  = ro.y - v0.y, sz  = ro.z - v0.z;
+	float sx = ro.x - v0.x, sy = ro.y - v0.y, sz = ro.z - v0.z;
 
 	float hx = rd.y * e2z - rd.z * e2y;
 	float hy = rd.z * e2x - rd.x * e2z;
@@ -324,11 +324,11 @@ static float rayTriangleNewV9(float3 ro, float3 rd,
 
 // V10: V4 + explicit FMA for dot products to ensure fused multiply-add instructions
 static float rayTriangleNewV10(float3 ro, float3 rd,
-						float3 v0, float3 v1, float3 v2) {
+							   float3 v0, float3 v1, float3 v2) {
 	const float eps = 1e-7f;
 	float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
 	float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-	float sx  = ro.x - v0.x, sy  = ro.y - v0.y, sz  = ro.z - v0.z;
+	float sx = ro.x - v0.x, sy = ro.y - v0.y, sz = ro.z - v0.z;
 
 	// Cross product h = rd x e2 using explicit subtraction (FMA not beneficial here)
 	float hx = rd.y * e2z - rd.z * e2y;

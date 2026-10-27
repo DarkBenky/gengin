@@ -62,13 +62,11 @@ static inline char *benchBase64Encode(const uint8_t *data, int len) {
 	if (!out) return NULL;
 	int i = 0, j = 0;
 	while (i < len) {
-		uint32_t t = ((uint32_t)data[i] << 16)
-		           | (i+1 < len ? (uint32_t)data[i+1] << 8 : 0)
-		           | (i+2 < len ? (uint32_t)data[i+2]      : 0);
+		uint32_t t = ((uint32_t)data[i] << 16) | (i + 1 < len ? (uint32_t)data[i + 1] << 8 : 0) | (i + 2 < len ? (uint32_t)data[i + 2] : 0);
 		out[j++] = benchBase64Table[(t >> 18) & 0x3F];
 		out[j++] = benchBase64Table[(t >> 12) & 0x3F];
-		out[j++] = (i+1 < len) ? benchBase64Table[(t >> 6) & 0x3F] : '=';
-		out[j++] = (i+2 < len) ? benchBase64Table[t        & 0x3F] : '=';
+		out[j++] = (i + 1 < len) ? benchBase64Table[(t >> 6) & 0x3F] : '=';
+		out[j++] = (i + 2 < len) ? benchBase64Table[t & 0x3F] : '=';
 		i += 3;
 	}
 	out[j] = '\0';

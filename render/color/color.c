@@ -516,3 +516,24 @@ Color DarkenColor(Color c, float amount) {
 	col.z *= factor;
 	return PackColorF(col);
 }
+
+// Operates on the .bin texel layout (R in bits 0-7, G 8-15, B 16-23, A 24-31)
+// so it mirrors boostColor in tools/parseObj.go, alpha included.
+Color BoostColor(Color c, float satAmount, float brightFactor) {
+	if (satAmount == 1.0f && brightFactor == 1.0f) return c;
+
+	float rf = (float)(c & 0xFF) / 255.0f;
+	float gf = (float)((c >> 8) & 0xFF) / 255.0f;
+	float bf = (float)((c >> 16) & 0xFF) / 255.0f;
+	uint32 alpha = (c >> 24) & 0xFF;
+	float lum = 0.299f * rf + 0.587f * gf + 0.114f * bf;
+
+	float red = fminf(fmaxf((lum + satAmount * (rf - lum)) * brightFactor, 0.0f), 1.0f);
+	float green = fminf(fmaxf((lum + satAmount * (gf - lum)) * brightFactor, 0.0f), 1.0f);
+	float blue = fminf(fmaxf((lum + satAmount * (bf - lum)) * brightFactor, 0.0f), 1.0f);
+
+	uint32 r8 = (uint32)(red * 255.0f);
+	uint32 g8 = (uint32)(green * 255.0f);
+	uint32 b8 = (uint32)(blue * 255.0f);
+	return r8 | (g8 << 8) | (b8 << 16) | (alpha << 24);
+}

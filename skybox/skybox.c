@@ -47,7 +47,7 @@ static uint32 *loadJpeg(const char *path, int *outWidth, int *outHeight) {
 	jpeg_destroy_decompress(&cinfo);
 	fclose(f);
 
-	*outWidth  = w;
+	*outWidth = w;
 	*outHeight = h;
 	return pixels;
 }
@@ -63,30 +63,44 @@ void LoadSkybox(Skybox *skybox, const char *directory) {
 	memset(skybox, 0, sizeof(*skybox));
 
 	int w, h;
-	skybox->front  = loadFace(directory, "front",  &w, &h); skybox->imageWidth = w; skybox->imageHeight = h;
-	skybox->back   = loadFace(directory, "back",   &w, &h);
-	skybox->left   = loadFace(directory, "left",   &w, &h);
-	skybox->right  = loadFace(directory, "right",  &w, &h);
-	skybox->top    = loadFace(directory, "top",    &w, &h);
+	skybox->front = loadFace(directory, "front", &w, &h);
+	skybox->imageWidth = w;
+	skybox->imageHeight = h;
+	skybox->back = loadFace(directory, "back", &w, &h);
+	skybox->left = loadFace(directory, "left", &w, &h);
+	skybox->right = loadFace(directory, "right", &w, &h);
+	skybox->top = loadFace(directory, "top", &w, &h);
 	skybox->bottom = loadFace(directory, "bottom", &w, &h);
 }
 
 void DestroySkybox(Skybox *skybox) {
 	if (!skybox) return;
-	free(skybox->front);  skybox->front  = NULL;
-	free(skybox->back);   skybox->back   = NULL;
-	free(skybox->left);   skybox->left   = NULL;
-	free(skybox->right);  skybox->right  = NULL;
-	free(skybox->top);    skybox->top    = NULL;
-	free(skybox->bottom); skybox->bottom = NULL;
+	free(skybox->front);
+	skybox->front = NULL;
+	free(skybox->back);
+	skybox->back = NULL;
+	free(skybox->left);
+	skybox->left = NULL;
+	free(skybox->right);
+	skybox->right = NULL;
+	free(skybox->top);
+	skybox->top = NULL;
+	free(skybox->bottom);
+	skybox->bottom = NULL;
 }
 
 static inline Color sampleFace(const uint32 *face, int w, int h, float u, float v) {
 	if (!face) return 0xFF101010u;
 	int x = (int)(u * (float)(w - 1) + 0.5f);
 	int y = (int)(v * (float)(h - 1) + 0.5f);
-	if (x < 0) x = 0; else if (x >= w) x = w - 1;
-	if (y < 0) y = 0; else if (y >= h) y = h - 1;
+	if (x < 0)
+		x = 0;
+	else if (x >= w)
+		x = w - 1;
+	if (y < 0)
+		y = 0;
+	else if (y >= h)
+		y = h - 1;
 	return face[y * w + x];
 }
 

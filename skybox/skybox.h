@@ -4,16 +4,15 @@
 #include "../object/format.h"
 
 typedef struct Skybox {
-    uint32 *front;
-    uint32 *back;
-    uint32 *left;
-    uint32 *right;
-    uint32 *top;
-    uint32 *bottom;
-    int imageWidth;
-    int imageHeight;
+	uint32 *front;
+	uint32 *back;
+	uint32 *left;
+	uint32 *right;
+	uint32 *top;
+	uint32 *bottom;
+	int imageWidth;
+	int imageHeight;
 } Skybox;
-
 
 void LoadSkybox(Skybox *skybox, const char *directory);
 void DestroySkybox(Skybox *skybox);

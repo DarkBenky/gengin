@@ -12,17 +12,17 @@
 #define ML_MAX_PATH 512
 
 typedef struct {
-	const char *id;        // "conv:w28_h28_c1_k3_n16"
-	const char *shape;     // human readable shape, echoed into the JSON
-	const char *kind;      // conv | pool | dense | softmax | shuffle | bilinear | chain
+	const char *id;	   // "conv:w28_h28_c1_k3_n16"
+	const char *shape; // human readable shape, echoed into the JSON
+	const char *kind;  // conv | pool | dense | softmax | shuffle | bilinear | chain
 	int inFloats;
 	int outFloats;
-	int activation;        // KGenActivation value (see the generated header)
-	int accumulate;        // 0 = overwrite output, 1 = add into the seeded output
-	int reps;              // 0 = use the CLI default
+	int activation; // KGenActivation value (see the generated header)
+	int accumulate; // 0 = overwrite output, 1 = add into the seeded output
+	int reps;		// 0 = use the CLI default
 	float absTol;
 	float relTol;
-	const char *dataDir;   // holds in.bin / w.bin / b.bin / prev.bin / ref.bin (files optional)
+	const char *dataDir; // holds in.bin / w.bin / b.bin / prev.bin / ref.bin (files optional)
 } MlEntry;
 
 typedef int (*MlInitFn)(CL_Context *ctx, const char *clPath, const MlEntry *e);

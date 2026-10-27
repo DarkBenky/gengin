@@ -53,11 +53,8 @@ typedef struct editorUi {
 } editorUi;
 
 Error createEditorUi(ObjectList *objectList, editorUi *ui, Camera *cam, Input *input, struct Alphabet *alphabet) {
-	Error err;
 	if (ui == NULL || objectList == NULL || cam == NULL || input == NULL || alphabet == NULL) {
-		err.err = E_INVALID_ARG;
-		strcpy(err.msg, "Invalid arguments");
-		return err;
+		return Error_Make(E_INVALID_ARG, "Invalid arguments");
 	}
 	ui->scene = objectList;
 	ui->cam = cam;
@@ -71,9 +68,7 @@ Error createEditorUi(ObjectList *objectList, editorUi *ui, Camera *cam, Input *i
 	ui->scaleSpeed = 0.1f;
 	ui->snapToGrid = false;
 	ui->uniformScale = false;
-	err.err = nil;
-	strcpy(err.msg, "OK");
-	return err;
+	return Error_Ok();
 }
 
 void destroyEditorUi(editorUi *ui) {
@@ -81,31 +76,21 @@ void destroyEditorUi(editorUi *ui) {
 }
 
 Error activateEditorUi(editorUi *ui) {
-	Error err;
 	if (ui == NULL) {
-		err.err = E_INVALID_ARG;
-		strcpy(err.msg, "Invalid arguments");
-		return err;
+		return Error_Make(E_INVALID_ARG, "Invalid arguments");
 	}
 	ui->editorActive = true;
-	err.err = nil;
-	strcpy(err.msg, "OK");
-	return err;
+	return Error_Ok();
 }
 
 Error deactivateEditorUi(editorUi *ui) {
-	Error err;
 	if (ui == NULL) {
-		err.err = E_INVALID_ARG;
-		strcpy(err.msg, "Invalid arguments");
-		return err;
+		return Error_Make(E_INVALID_ARG, "Invalid arguments");
 	}
 	ui->selectedObject = NULL;
 	ui->mode = MOVE_MODE;
 	ui->editorActive = false;
-	err.err = nil;
-	strcpy(err.msg, "OK");
-	return err;
+	return Error_Ok();
 }
 
 void selectObject(editorUi *ui, int px, int py) {
@@ -429,7 +414,8 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 	int typeRow = -1;
 	if (selected != NULL) {
 		int typeLen = 0;
-		while (typeLen < (int)sizeof(selected->ObjectPathOrType) && selected->ObjectPathOrType[typeLen] != '\0') typeLen++;
+		while (typeLen < (int)sizeof(selected->ObjectPathOrType) && selected->ObjectPathOrType[typeLen] != '\0')
+			typeLen++;
 		memcpy(typeText, selected->ObjectPathOrType, typeLen);
 		typeText[typeLen] = '\0';
 		typeRow = n;
@@ -538,7 +524,7 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 }
 
 void editorStep(editorUi *ui, struct mfb_window *window, float dt, int x, int y, int width, int height) {
-	(void)window; // input is polled once per frame by the caller
+	(void)window;			  // input is polled once per frame by the caller
 	if (dt < 0.0f) dt = 0.0f; // speeds are per second: 1.0 = one unit per second
 
 	drawStats(ui, x, y, width, height);
@@ -572,124 +558,124 @@ void editorStep(editorUi *ui, struct mfb_window *window, float dt, int x, int y,
 		if (ui->selectedObject == NULL) return;
 
 		switch (ui->mode) {
-			case MOVE_MODE: {
-				float step = ui->moveSpeed * dt;
-				bool moving = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
-				// Y is up in this engine: arrows move on the X/Z ground plane, Shift/Ctrl move on Y
-				float yaw = ui->selectedObject->rotation.y;
-				float sy = sinf(yaw), cy = cosf(yaw);
-				if (input->keys[ForwardKey]) { // local +Z
-					ui->selectedObject->position.x += step * sy;
-					ui->selectedObject->position.z += step * cy;
-				} else if (input->keys[BackwardKey]) {
-					ui->selectedObject->position.x -= step * sy;
-					ui->selectedObject->position.z -= step * cy;
-				} else if (input->keys[LeftKey]) { // local -X
-					ui->selectedObject->position.x -= step * cy;
-					ui->selectedObject->position.z += step * sy;
-				} else if (input->keys[RightKey]) { // local +X
-					ui->selectedObject->position.x += step * cy;
-					ui->selectedObject->position.z -= step * sy;
-				} else if (input->keys[UpKey]) {
-					ui->selectedObject->position.y += step;
-				} else if (input->keys[DownKey]) {
-					ui->selectedObject->position.y -= step;
-				}
-
-				if (ui->snapToGrid && !moving) {
-					ui->selectedObject->position.x = roundf(ui->selectedObject->position.x / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->position.y = roundf(ui->selectedObject->position.y / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->position.z = roundf(ui->selectedObject->position.z / snapToGridSize) * snapToGridSize;
-				}
-
-				Object_UpdateWorldBounds(ui->selectedObject);
-
-				break;
+		case MOVE_MODE: {
+			float step = ui->moveSpeed * dt;
+			bool moving = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+			// Y is up in this engine: arrows move on the X/Z ground plane, Shift/Ctrl move on Y
+			float yaw = ui->selectedObject->rotation.y;
+			float sy = sinf(yaw), cy = cosf(yaw);
+			if (input->keys[ForwardKey]) { // local +Z
+				ui->selectedObject->position.x += step * sy;
+				ui->selectedObject->position.z += step * cy;
+			} else if (input->keys[BackwardKey]) {
+				ui->selectedObject->position.x -= step * sy;
+				ui->selectedObject->position.z -= step * cy;
+			} else if (input->keys[LeftKey]) { // local -X
+				ui->selectedObject->position.x -= step * cy;
+				ui->selectedObject->position.z += step * sy;
+			} else if (input->keys[RightKey]) { // local +X
+				ui->selectedObject->position.x += step * cy;
+				ui->selectedObject->position.z -= step * sy;
+			} else if (input->keys[UpKey]) {
+				ui->selectedObject->position.y += step;
+			} else if (input->keys[DownKey]) {
+				ui->selectedObject->position.y -= step;
 			}
-			case ROTATE_MODE: {
-				float step = ui->rotationSpeed * dt * DEG2RAD; // deg/s -> rad/s
-				bool rotating = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
 
-				// spin around the local bbox center instead of the model origin
-				float3 localCenter = {
-					0.5f * (ui->selectedObject->BBmin.x + ui->selectedObject->BBmax.x),
-					0.5f * (ui->selectedObject->BBmin.y + ui->selectedObject->BBmax.y),
-					0.5f * (ui->selectedObject->BBmin.z + ui->selectedObject->BBmax.z)};
-				float3 centerOffset = Float3_Mul(localCenter, ui->selectedObject->scale);
-				float3 oldCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+			if (ui->snapToGrid && !moving) {
+				ui->selectedObject->position.x = roundf(ui->selectedObject->position.x / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->position.y = roundf(ui->selectedObject->position.y / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->position.z = roundf(ui->selectedObject->position.z / snapToGridSize) * snapToGridSize;
+			}
 
+			Object_UpdateWorldBounds(ui->selectedObject);
+
+			break;
+		}
+		case ROTATE_MODE: {
+			float step = ui->rotationSpeed * dt * DEG2RAD; // deg/s -> rad/s
+			bool rotating = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+
+			// spin around the local bbox center instead of the model origin
+			float3 localCenter = {
+				0.5f * (ui->selectedObject->BBmin.x + ui->selectedObject->BBmax.x),
+				0.5f * (ui->selectedObject->BBmin.y + ui->selectedObject->BBmax.y),
+				0.5f * (ui->selectedObject->BBmin.z + ui->selectedObject->BBmax.z)};
+			float3 centerOffset = Float3_Mul(localCenter, ui->selectedObject->scale);
+			float3 oldCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+
+			if (input->keys[ForwardKey]) {
+				ui->selectedObject->rotation.y += step;
+			} else if (input->keys[BackwardKey]) {
+				ui->selectedObject->rotation.y -= step;
+			} else if (input->keys[LeftKey]) {
+				ui->selectedObject->rotation.x += step;
+			} else if (input->keys[RightKey]) {
+				ui->selectedObject->rotation.x -= step;
+			} else if (input->keys[UpKey]) {
+				ui->selectedObject->rotation.z += step;
+			} else if (input->keys[DownKey]) {
+				ui->selectedObject->rotation.z -= step;
+			}
+
+			if (ui->snapToGrid && !rotating) {
+				const float snapRad = snapToAngleSize * DEG2RAD;
+				ui->selectedObject->rotation.x = roundf(ui->selectedObject->rotation.x / snapRad) * snapRad;
+				ui->selectedObject->rotation.y = roundf(ui->selectedObject->rotation.y / snapRad) * snapRad;
+				ui->selectedObject->rotation.z = roundf(ui->selectedObject->rotation.z / snapRad) * snapRad;
+			}
+
+			// keep the bbox center where it was so the object spins in place
+			float3 newCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+			ui->selectedObject->position = Float3_Add(ui->selectedObject->position, Float3_Sub(oldCenter, newCenter));
+
+			Object_UpdateWorldBounds(ui->selectedObject);
+
+			break;
+		}
+		case SCALE_MODE: {
+			float step = ui->scaleSpeed * dt;
+			bool scaling = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+			if (ui->uniformScale) {
+				if (input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey]) {
+					float scaleAmount = input->keys[ForwardKey] || input->keys[BackwardKey] ? step : input->keys[LeftKey] || input->keys[RightKey] ? -step
+																								 : input->keys[UpKey] || input->keys[DownKey]	   ? -step
+																																				   : step;
+					ui->selectedObject->scale.x += scaleAmount;
+					ui->selectedObject->scale.y += scaleAmount;
+					ui->selectedObject->scale.z += scaleAmount;
+				}
+			} else {
 				if (input->keys[ForwardKey]) {
-					ui->selectedObject->rotation.y += step;
+					ui->selectedObject->scale.x += step;
 				} else if (input->keys[BackwardKey]) {
-					ui->selectedObject->rotation.y -= step;
+					ui->selectedObject->scale.x -= step;
 				} else if (input->keys[LeftKey]) {
-					ui->selectedObject->rotation.x += step;
+					ui->selectedObject->scale.y -= step;
 				} else if (input->keys[RightKey]) {
-					ui->selectedObject->rotation.x -= step;
+					ui->selectedObject->scale.y += step;
 				} else if (input->keys[UpKey]) {
-					ui->selectedObject->rotation.z += step;
+					ui->selectedObject->scale.z += step;
 				} else if (input->keys[DownKey]) {
-					ui->selectedObject->rotation.z -= step;
+					ui->selectedObject->scale.z -= step;
 				}
-
-				if (ui->snapToGrid && !rotating) {
-					const float snapRad = snapToAngleSize * DEG2RAD;
-					ui->selectedObject->rotation.x = roundf(ui->selectedObject->rotation.x / snapRad) * snapRad;
-					ui->selectedObject->rotation.y = roundf(ui->selectedObject->rotation.y / snapRad) * snapRad;
-					ui->selectedObject->rotation.z = roundf(ui->selectedObject->rotation.z / snapRad) * snapRad;
-				}
-
-				// keep the bbox center where it was so the object spins in place
-				float3 newCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
-				ui->selectedObject->position = Float3_Add(ui->selectedObject->position, Float3_Sub(oldCenter, newCenter));
-
-				Object_UpdateWorldBounds(ui->selectedObject);
-
-				break;
 			}
-			case SCALE_MODE: {
-				float step = ui->scaleSpeed * dt;
-				bool scaling = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
-				if (ui->uniformScale) {
-					if (input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey]) {
-						float scaleAmount = input->keys[ForwardKey] || input->keys[BackwardKey] ? step : input->keys[LeftKey] || input->keys[RightKey] ? -step
-																								  : input->keys[UpKey] || input->keys[DownKey] ? -step
-																																	: step;
-						ui->selectedObject->scale.x += scaleAmount;
-						ui->selectedObject->scale.y += scaleAmount;
-						ui->selectedObject->scale.z += scaleAmount;
-					}
-				} else {
-					if (input->keys[ForwardKey]) {
-						ui->selectedObject->scale.x += step;
-					} else if (input->keys[BackwardKey]) {
-						ui->selectedObject->scale.x -= step;
-					} else if (input->keys[LeftKey]) {
-						ui->selectedObject->scale.y -= step;
-					} else if (input->keys[RightKey]) {
-						ui->selectedObject->scale.y += step;
-					} else if (input->keys[UpKey]) {
-						ui->selectedObject->scale.z += step;
-					} else if (input->keys[DownKey]) {
-						ui->selectedObject->scale.z -= step;
-					}
-				}
 
-				if (ui->snapToGrid && !scaling) {
-					ui->selectedObject->scale.x = roundf(ui->selectedObject->scale.x / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->scale.y = roundf(ui->selectedObject->scale.y / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->scale.z = roundf(ui->selectedObject->scale.z / snapToGridSize) * snapToGridSize;
-				}
-
-				Object_UpdateWorldBounds(ui->selectedObject);
-
-				break;
+			if (ui->snapToGrid && !scaling) {
+				ui->selectedObject->scale.x = roundf(ui->selectedObject->scale.x / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->scale.y = roundf(ui->selectedObject->scale.y / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->scale.z = roundf(ui->selectedObject->scale.z / snapToGridSize) * snapToGridSize;
 			}
-			default: {
-				printf("Unknown editor mode\n");
-				ui->mode = MOVE_MODE;
-				break;
-			}
+
+			Object_UpdateWorldBounds(ui->selectedObject);
+
+			break;
+		}
+		default: {
+			printf("Unknown editor mode\n");
+			ui->mode = MOVE_MODE;
+			break;
+		}
 		}
 	}
 }

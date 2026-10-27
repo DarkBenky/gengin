@@ -28,17 +28,17 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 
 typedef struct {
 	float3 baseColor;
-	float3 extinctionScale;	// optical density per channel (try 10-30)
+	float3 extinctionScale;	 // optical density per channel (try 10-30)
 	float3 shadowExtinction; // per-channel extinction in shadow march — keep low (0.5-3)
-	float scatterG;			// Henyey-Greenstein asymmetry (-1..1, 0=isotropic)
-	float shadowDist;		// shadow march distance in local space
-	float3 ambientLight;		// minimum light level on shadow side, can be colored
+	float scatterG;			 // Henyey-Greenstein asymmetry (-1..1, 0=isotropic)
+	float shadowDist;		 // shadow march distance in local space
+	float3 ambientLight;	 // minimum light level on shadow side, can be colored
 	// god rays — set godRays=1 to enable, sunScreenPos computed automatically from cam->lightDir
 	int godRays;
 	float3 godRayColor;	   // additive tint, e.g. (1, 0.95, 0.8)
 	float godRayIntensity; // brightness multiplier, try 1.0-2.0
-	float godRayDecay;     // per-step attenuation, try 0.97
-	int blurRadius;        // gaussian blur radius in pixels (0 = skip, standard 3-8)
+	float godRayDecay;	   // per-step attenuation, try 0.97
+	int blurRadius;		   // gaussian blur radius in pixels (0 = skip, standard 3-8)
 } CloudParams;
 
 // Render clouds for one frame. vol->gpuDensity must already be uploaded via UploadVolumeToGpu.

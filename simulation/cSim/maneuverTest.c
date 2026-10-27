@@ -8,7 +8,9 @@
 #include "simulation/cSim/import.h"
 #include "simulation/cSim/simulate.h"
 
-static float clampf01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
+static float clampf01(float v) {
+	return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+}
 
 static float angleBetween(float3 a, float3 b) {
 	float d = a.x * b.x + a.y * b.y + a.z * b.z;
@@ -16,14 +18,22 @@ static float angleBetween(float3 a, float3 b) {
 	return atan2f(sqrtf(cx * cx + cy * cy + cz * cz), d) * 57.2958f;
 }
 
-static float pitchDeg(const Plane *p) { float y = p->forward.y; return asinf(y < -1 ? -1 : (y > 1 ? 1 : y)) * 57.2958f; }
+static float pitchDeg(const Plane *p) {
+	float y = p->forward.y;
+	return asinf(y < -1 ? -1 : (y > 1 ? 1 : y)) * 57.2958f;
+}
 static float gammaDeg(const Plane *p);
 static float aoaDegOf(const Plane *p);
 
 static float runLoop(float elev, float thr, float spd0, const char *label) {
-	Plane p; loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, spd0, thr);
+	Plane p;
+	loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, spd0, thr);
 	const float dt = 1.0f / 60.0f;
-	for (int i = 0; i < 60; i++) { planeSetElevator01(&p, 0.5f); planeSetAileron01(&p, 0.5f); updatePlane(&p, dt, NULL); }
+	for (int i = 0; i < 60; i++) {
+		planeSetElevator01(&p, 0.5f);
+		planeSetAileron01(&p, 0.5f);
+		updatePlane(&p, dt, NULL);
+	}
 	planeSetElevator01(&p, elev);
 	float cum = 0.0f, prev = atan2f(p.forward.y, p.forward.z);
 	float3 prevRight = planeGetRightVector(&p);
@@ -34,30 +44,40 @@ static float runLoop(float elev, float thr, float spd0, const char *label) {
 		updatePlane(&p, dt, NULL);
 		float cur = atan2f(p.forward.y, p.forward.z);
 		float d = cur - prev;
-		while (d > 3.14159265f) d -= 6.28318531f;
-		while (d < -3.14159265f) d += 6.28318531f;
-		cum += d; prev = cur;
+		while (d > 3.14159265f)
+			d -= 6.28318531f;
+		while (d < -3.14159265f)
+			d += 6.28318531f;
+		cum += d;
+		prev = cur;
 		float3 r = planeGetRightVector(&p);
-		float j = angleBetween(r, prevRight); prevRight = r;
+		float j = angleBetween(r, prevRight);
+		prevRight = r;
 		if (j > maxJump) maxJump = j;
 		if (i > 120 && fabsf(aoaDegOf(&p)) > maxAoa) maxAoa = fabsf(aoaDegOf(&p));
 		if (!isfinite(p.forward.x) || !isfinite(p.forward.y) || !isfinite(p.forward.z)) nonFinite = 1;
 	}
 	int ok = (maxAoa < 70.0f) && (maxJump < 6.0f) && !nonFinite;
 	printf("%-10s elev=%.1f thr=%.2f spd0=%.0f cumPitch=%8.1f maxAoA=%5.1f jump=%5.2f  endAlt=%7.1f  spd=%.1f  => %s\n",
-		label, elev, thr, spd0, cum * 57.2958f, maxAoa, maxJump, p.position.y, p.currentSpeed, ok ? "PASS" : "FAIL");
+		   label, elev, thr, spd0, cum * 57.2958f, maxAoa, maxJump, p.position.y, p.currentSpeed, ok ? "PASS" : "FAIL");
 	return ok;
 }
 
 static int runVertical(void) {
-	Plane p; loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, 250.0f, 0.9f);
+	Plane p;
+	loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, 250.0f, 0.9f);
 	const float dt = 1.0f / 60.0f;
-	for (int i = 0; i < 60; i++) { planeSetElevator01(&p, 0.5f); planeSetAileron01(&p, 0.5f); updatePlane(&p, dt, NULL); }
+	for (int i = 0; i < 60; i++) {
+		planeSetElevator01(&p, 0.5f);
+		planeSetAileron01(&p, 0.5f);
+		updatePlane(&p, dt, NULL);
+	}
 	float prevPitch = pitchDeg(&p);
 	int good = 0, n = 900;
 	for (int i = 0; i < n; i++) {
 		float pitch = pitchDeg(&p);
-		float rate = (pitch - prevPitch) / dt; prevPitch = pitch;
+		float rate = (pitch - prevPitch) / dt;
+		prevPitch = pitch;
 		float cmd = 0.5f - (85.0f - pitch) * 0.01f + rate * 0.005f;
 		planeSetElevator01(&p, clampf01(cmd));
 		updatePlane(&p, dt, NULL);
@@ -71,9 +91,14 @@ static int runVertical(void) {
 }
 
 static int runRoll(void) {
-	Plane p; loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, 250.0f, 1.0f);
+	Plane p;
+	loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, 250.0f, 1.0f);
 	const float dt = 1.0f / 60.0f;
-	for (int i = 0; i < 60; i++) { planeSetElevator01(&p, 0.5f); planeSetAileron01(&p, 0.5f); updatePlane(&p, dt, NULL); }
+	for (int i = 0; i < 60; i++) {
+		planeSetElevator01(&p, 0.5f);
+		planeSetAileron01(&p, 0.5f);
+		updatePlane(&p, dt, NULL);
+	}
 	planeSetAileron01(&p, 1.0f);
 	float cum = 0.0f, prev = p.bankAngle, maxJump = 0.0f;
 	float3 prevRight = planeGetRightVector(&p);
@@ -83,11 +108,15 @@ static int runRoll(void) {
 		updatePlane(&p, dt, NULL);
 		float cur = p.bankAngle;
 		float d = cur - prev;
-		while (d > 3.14159265f) d -= 6.28318531f;
-		while (d < -3.14159265f) d += 6.28318531f;
-		cum += d; prev = cur;
+		while (d > 3.14159265f)
+			d -= 6.28318531f;
+		while (d < -3.14159265f)
+			d += 6.28318531f;
+		cum += d;
+		prev = cur;
 		float3 r = planeGetRightVector(&p);
-		float j = angleBetween(r, prevRight); prevRight = r;
+		float j = angleBetween(r, prevRight);
+		prevRight = r;
 		if (j > maxJump) maxJump = j;
 		if (!isfinite(p.bankAngle)) nonFinite = 1;
 	}
@@ -110,9 +139,14 @@ static float aoaDegOf(const Plane *p) {
 }
 
 static int runModulatedLoop(void) {
-	Plane p; loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, 250.0f, 1.0f);
+	Plane p;
+	loadPlaneBin(&p, "simulation/simModels/F-16C.bin", (float3){0, 0, 1, 0}, (float3){0, 1000, 0, 0}, 250.0f, 1.0f);
 	const float dt = 1.0f / 60.0f;
-	for (int i = 0; i < 60; i++) { planeSetElevator01(&p, 0.5f); planeSetAileron01(&p, 0.5f); updatePlane(&p, dt, NULL); }
+	for (int i = 0; i < 60; i++) {
+		planeSetElevator01(&p, 0.5f);
+		planeSetAileron01(&p, 0.5f);
+		updatePlane(&p, dt, NULL);
+	}
 	float cum = 0.0f, prev = atan2f(p.forward.y, p.forward.z), maxAoa = 0.0f;
 	int nonFinite = 0;
 	for (int i = 0; i < 3600; i++) {
@@ -121,12 +155,18 @@ static int runModulatedLoop(void) {
 		updatePlane(&p, dt, NULL);
 		float cur = atan2f(p.forward.y, p.forward.z);
 		float d = cur - prev;
-		while (d > 3.14159265f) d -= 6.28318531f;
-		while (d < -3.14159265f) d += 6.28318531f;
-		cum += d; prev = cur;
+		while (d > 3.14159265f)
+			d -= 6.28318531f;
+		while (d < -3.14159265f)
+			d += 6.28318531f;
+		cum += d;
+		prev = cur;
 		float a2 = fabsf(aoaDegOf(&p));
 		if (a2 > maxAoa) maxAoa = a2;
-		if (!isfinite(cur)) { nonFinite = 1; break; }
+		if (!isfinite(cur)) {
+			nonFinite = 1;
+			break;
+		}
 	}
 	int ok = (fabsf(cum) >= 5.93412f) && (maxAoa < 60.0f) && !nonFinite;
 	printf("modLoop    cumPitch=%8.1f deg  maxAoA=%5.1f  endAlt=%7.1f  spd=%.1f  => %s\n", cum * 57.2958f, maxAoa, p.position.y, p.currentSpeed, ok ? "PASS" : "FAIL");

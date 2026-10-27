@@ -147,7 +147,6 @@ static void writeLogRows(FILE *file, const char *label, const Logs *logs) {
 	}
 }
 
-
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
 	float3 forward = planeGetForwardVector(plane);
@@ -241,7 +240,7 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// Start from the surfaces the plane actually has; a neutral start re-plans
 	// the whole approach from scratch on every frame.
 	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
-	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
+	float momentumCoefficient = 0.9f;																					   // how much of the previous momentum to keep
 	float learningRate = 0.05f;
 	// Finite-difference probe span. At 0.025 the two probes differ by less than
 	// the loss's step-to-step noise, so the gradient direction is noise-driven;

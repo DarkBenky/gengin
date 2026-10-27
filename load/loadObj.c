@@ -121,3 +121,73 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	obj->BBmax = BBmax;
 	fclose(file);
 }
+
+const float boostSatMax = 1.8;
+const float boostBrightMax = 1.35;
+
+static inline float2 boostFactor(float boost) {
+	float2 result;
+	result.x = 1.0f + (boostSatMax - 1.0f) * boost;
+	result.y = 1.0f + (boostBrightMax - 1.0f) * boost;
+	return result;
+}
+
+Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) {
+	if (filename == NULL || obj == NULL) {
+		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
+		return Error_Make(E_INVALID_ARG, "Invalid arguments");
+	}
+
+	FILE *file = fopen(filename, "wb");
+	if (file == NULL) {
+		fprintf(stderr, "Error: Could not open file %s\n", filename);
+		return Error_Make(E_FILE_OPEN_FAILED, "Could not open file");
+	}
+
+	// Binary layout:
+	// Header (20 bytes):
+	//   fileSize           uint32
+	//   triangleStructSize uint32  — 108 bytes
+	//   triangleCount      uint32
+	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces
+	//   textureSize        uint32  — texture edge length
+	//
+	// Texture data (if hasTextures):
+	//   ColorMap     textureSize*textureSize*4 bytes (RGBA uint8)
+	//   NormalMap    textureSize*textureSize*3 bytes (RGB uint8)
+	//   MaterialMap  textureSize*textureSize*2 bytes ([roughness, metallic] uint8)
+	//
+	// Per triangle (108 bytes):
+	//   v1 v2 v3 normal   4 × float3 padded to float4 = 4×16 = 64
+	//   roughness metallic emission                    = 12
+	//   color float3 padded                            = 16
+	//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
+
+	const uint32 triangleStructSize = 108;
+
+	uint32 triangleCount = obj->triangleCount;
+	uint32 hasTextures = obj->hasTexture ? 1 : 0;
+	bool cullBackfaces = obj->cullBackfaces;
+	uint32 textureSize = 4096; // default texture size
+	uint32 textureBytes = 0;
+
+	if (hasTextures) {
+		Material mat = lib->entries[obj->materialIds[0]];
+		Textures *tex = mat.textures;
+		textureSize = tex ? tex->size : 4096;
+		textureBytes = textureSize * textureSize * 9;
+	}
+
+	uint32 fileSize = 20 + triangleCount * triangleStructSize + (hasTextures ? textureBytes : 0);
+	hasTextures |= (cullBackfaces ? 2 : 0);
+
+	fwrite(&fileSize, sizeof(uint32), 1, file);
+	fwrite(&triangleStructSize, sizeof(uint32), 1, file);
+	fwrite(&triangleCount, sizeof(uint32), 1, file);
+	fwrite(&hasTextures, sizeof(uint32), 1, file);
+	fwrite(&textureSize, sizeof(uint32), 1, file);
+
+	if (obj->hasTexture) {
+		const float2 satBrightBoost = boostFactor(boost);
+	}
+};

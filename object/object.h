@@ -184,24 +184,22 @@ void CreateCube(
 
 void CreateSphere(
 	Object *obj,
-	float3 position, 
-	float3 rotation, 
-	float3 scale, 
-	float3 color, 
-	MaterialLib *lib, 
-	float emission, float 
-	roughness, float 
-	metallic);
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission, float roughness, float metallic);
 
 void CreateSphereHighResolution(
-	Object *obj, 
-	float3 position, 
-	float3 rotation, 
-	float3 scale, 
-	float3 color, 
-	MaterialLib *lib, 
-	float emission, 
-	float roughness, 
+	Object *obj,
+	float3 position,
+	float3 rotation,
+	float3 scale,
+	float3 color,
+	MaterialLib *lib,
+	float emission,
+	float roughness,
 	float metallic);
 
 void CreatePlane(
