@@ -1,5 +1,10 @@
 # Tasks
 
+- [ ] Align all allocations to 64 (malloc, calloc)
+  - [ ] test if this improve preformance
+  - [ ] try to align only hot staff
+    - [ ] compare with current / align all / smart align 
+
 - [ ] add to prompt that the general improvement prs should not be merged if they are change different systems ( soft lock )
 
 - [X] fix objects jittering (network - server code) idea : have bigger position rotation scale buffers so it is not line interpolation but more complex functions 
