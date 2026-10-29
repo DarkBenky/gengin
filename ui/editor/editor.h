@@ -12,7 +12,7 @@
 #include "MiniFB_enums.h"
 #include <MiniFB.h>
 
-#define ROWS_PER_TASK 8
+#define EDITOR_ROWS_PER_TASK 8
 #define DEG2RAD 0.017453292519943295f // engine stores rotations in radians
 #define RAD2DEG 57.29577951308232f
 const float3 highlightColor = {1.75f, 0.75f, 1.81f}; // Multipliers for each color channel
@@ -180,6 +180,27 @@ void highlightTaskFunctionV2(void *arg) {
 	}
 }
 
+static inline void highlightEdgePixel(float3 *restrict framebuffer, const int *restrict objectIdBuffer,
+                                      int idx, int row, int col, int imageWidth, int imageHeight, int targetId) {
+	// out-of-image counts as "not target", so the object gets
+	// outlined at screen edges too
+	bool edge =
+		col == 0 || objectIdBuffer[idx - 1] != targetId ||
+		col == imageWidth - 1 || objectIdBuffer[idx + 1] != targetId ||
+		row == 0 || objectIdBuffer[idx - imageWidth] != targetId ||
+		row == imageHeight - 1 || objectIdBuffer[idx + imageWidth] != targetId;
+
+	if (edge) {
+		framebuffer[idx] = (float3){1.0f, 1.0f, 1.0f};
+	} else {
+		float3 color = framebuffer[idx];
+		color.x *= highlightColor.x;
+		color.y *= highlightColor.y;
+		color.z *= highlightColor.z;
+		framebuffer[idx] = color;
+	}
+}
+
 void highlightTaskFunctionEdge(void *arg) {
 	highlightTask *task = (highlightTask *)arg;
 	int rowStart = task->rowStart;
@@ -190,30 +211,27 @@ void highlightTaskFunctionEdge(void *arg) {
 	float3 *restrict framebuffer = task->framebufferHdr;
 	int *restrict objectIdBuffer = task->objectIdBuffer;
 
-	const float3 white = {1.0f, 1.0f, 1.0f};
+	__m256i vTarget = _mm256_set1_epi32(targetId);
 
 	for (int row = rowStart; row < rowEnd; row++) {
-		for (int col = 0; col < imageWidth; col++) {
-			int idx = row * imageWidth + col;
-			if (objectIdBuffer[idx] != targetId) continue;
+		int base = row * imageWidth;
+		int col = 0;
+		for (; col + 8 <= imageWidth; col += 8) {
+			__m256i ids = _mm256_loadu_si256((__m256i *)&objectIdBuffer[base + col]);
+			int mask = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(ids, vTarget)));
+			if (!mask) continue; // no pixel of this group belongs to the selected object
 
-			// out-of-image counts as "not target", so the object gets
-			// outlined at screen edges too
-			bool edge =
-				col == 0 || objectIdBuffer[idx - 1] != targetId ||
-				col == imageWidth - 1 || objectIdBuffer[idx + 1] != targetId ||
-				row == 0 || objectIdBuffer[idx - imageWidth] != targetId ||
-				row == imageHeight - 1 || objectIdBuffer[idx + imageWidth] != targetId;
-
-			if (edge) {
-				framebuffer[idx] = white;
-			} else {
-				float3 color = framebuffer[idx];
-				color.x *= highlightColor.x;
-				color.y *= highlightColor.y;
-				color.z *= highlightColor.z;
-				framebuffer[idx] = color;
+			while (mask) {
+				int i = __builtin_ctz(mask);
+				mask &= mask - 1;
+				int c = col + i;
+				highlightEdgePixel(framebuffer, objectIdBuffer, base + c, row, c, imageWidth, imageHeight, targetId);
 			}
+		}
+		for (; col < imageWidth; col++) {
+			int idx = base + col;
+			if (objectIdBuffer[idx] != targetId) continue;
+			highlightEdgePixel(framebuffer, objectIdBuffer, idx, row, col, imageWidth, imageHeight, targetId);
 		}
 	}
 }
@@ -229,10 +247,10 @@ void applyHighlight(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 	if (ui->selectedObject != NULL && cam->objectIdBuffer != NULL) {
 		int targetId = (int)(ui->selectedObject - ui->scene->objects);
 		if (targetId >= 0 && targetId < ui->scene->count) {
-			highlightTask tasks[(HEIGHT + ROWS_PER_TASK - 1) / ROWS_PER_TASK];
+			highlightTask tasks[(HEIGHT + EDITOR_ROWS_PER_TASK - 1) / EDITOR_ROWS_PER_TASK];
 			int taskCount = 0;
-			for (int rowStart = 0; rowStart < height; rowStart += ROWS_PER_TASK) {
-				int rowEnd = rowStart + ROWS_PER_TASK;
+			for (int rowStart = 0; rowStart < height; rowStart += EDITOR_ROWS_PER_TASK) {
+				int rowEnd = rowStart + EDITOR_ROWS_PER_TASK;
 				if (rowEnd > height) rowEnd = height;
 				highlightTask *task = &tasks[taskCount++];
 				*task = (highlightTask){rowStart, rowEnd, width, height, targetId, cam->framebufferHdr, cam->objectIdBuffer};
@@ -263,10 +281,10 @@ void applyHighlightV2(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 	if (ui->selectedObject != NULL && cam->objectIdBuffer != NULL) {
 		int targetId = (int)(ui->selectedObject - ui->scene->objects);
 		if (targetId >= 0 && targetId < ui->scene->count) {
-			highlightTask tasks[(HEIGHT + ROWS_PER_TASK - 1) / ROWS_PER_TASK];
+			highlightTask tasks[(HEIGHT + EDITOR_ROWS_PER_TASK - 1) / EDITOR_ROWS_PER_TASK];
 			int taskCount = 0;
-			for (int rowStart = 0; rowStart < height; rowStart += ROWS_PER_TASK) {
-				int rowEnd = rowStart + ROWS_PER_TASK;
+			for (int rowStart = 0; rowStart < height; rowStart += EDITOR_ROWS_PER_TASK) {
+				int rowEnd = rowStart + EDITOR_ROWS_PER_TASK;
 				if (rowEnd > height) rowEnd = height;
 				highlightTask *task = &tasks[taskCount++];
 				*task = (highlightTask){rowStart, rowEnd, width, height, targetId, cam->framebufferHdr, cam->objectIdBuffer};
@@ -297,10 +315,10 @@ void applyHighlightEdge(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 	if (ui->selectedObject != NULL && cam->objectIdBuffer != NULL) {
 		int targetId = (int)(ui->selectedObject - ui->scene->objects);
 		if (targetId >= 0 && targetId < ui->scene->count) {
-			highlightTask tasks[(HEIGHT + ROWS_PER_TASK - 1) / ROWS_PER_TASK];
+			highlightTask tasks[(HEIGHT + EDITOR_ROWS_PER_TASK - 1) / EDITOR_ROWS_PER_TASK];
 			int taskCount = 0;
-			for (int rowStart = 0; rowStart < height; rowStart += ROWS_PER_TASK) {
-				int rowEnd = rowStart + ROWS_PER_TASK;
+			for (int rowStart = 0; rowStart < height; rowStart += EDITOR_ROWS_PER_TASK) {
+				int rowEnd = rowStart + EDITOR_ROWS_PER_TASK;
 				if (rowEnd > height) rowEnd = height;
 				highlightTask *task = &tasks[taskCount++];
 				*task = (highlightTask){rowStart, rowEnd, width, height, targetId, cam->framebufferHdr, cam->objectIdBuffer};
