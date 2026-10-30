@@ -200,7 +200,9 @@ Every PR carries exactly one category label (`create_pr(label=...)`,
 `prompts/optimize.md` (PR CATEGORIES AND LABELS). With 4+ open PRs of one
 category (all `Render Improvements*` label variants count together) a session
 verifies them and folds survivors into one consolidation PR —
-never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
+never across categories. `General Improvements` is soft-locked to one system
+per PR (and per consolidation batch). Requires GITHUB_TOKEN with `Issues: write`
+for labels.
 
 `create_pr` appends an `## Environment` section to every body: a
 `gengin-machine` marker (the host its numbers were measured on) plus the
