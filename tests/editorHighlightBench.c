@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #define SAMPLES 100
 #define WIDTH 1280
@@ -127,6 +128,8 @@ static int CheckHighlight(editorUi *ui, ThreadPool *pool, Camera *camera, Object
 }
 
 int main(void) {
+	mkdir("tests/img", 0755);
+
 	Camera camera;
 	memset(&camera, 0, sizeof(camera)); // deterministic seed for the ray tracer
 	initCamera(&camera, WIDTH, HEIGHT, 60.0f,

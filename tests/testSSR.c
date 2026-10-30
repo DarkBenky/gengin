@@ -6,6 +6,7 @@
 #include "../render/cpu/ray.h"
 #include "../render/cpu/ssr.h"
 #include <math.h>
+#include <sys/stat.h>
 
 #define SAMPLES 10
 #define OBJECT_COUNT 5 // 1 floor + 4 colored cubes
@@ -172,6 +173,8 @@ static void RunSSRMultiThreaded(const Object *objects, int objectCount, const Ma
 }
 
 int main() {
+	mkdir("tests/img", 0755);
+
 	int objectCount = OBJECT_COUNT;
 	Object *objects = malloc(sizeof(Object) * objectCount);
 	if (!objects) {

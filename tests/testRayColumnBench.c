@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 #define SAMPLES 128
 #define GRID_COLS 6
@@ -85,6 +86,8 @@ static void RenderColumn(const Object *objects, int objectCount, Camera *camera,
 }
 
 int main(void) {
+	mkdir("tests/img", 0755);
+
 	Object *objects = malloc(sizeof(Object) * OBJECT_COUNT);
 	if (!objects) {
 		fprintf(stderr, "Failed to allocate objects\n");
