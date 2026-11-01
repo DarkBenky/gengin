@@ -51,7 +51,7 @@ CL_Pipeline CL_Pipeline_FromSource(CL_Context *ctx, const char *src, const char 
 		   an uninitialized buffer here printed binary garbage downstream. */
 		char *log = calloc(log_size + 1, 1);
 		if (clGetProgramBuildInfo(pip.program, ctx->device, CL_PROGRAM_BUILD_LOG,
-		                          log_size, log, NULL) != CL_SUCCESS) {
+								  log_size, log, NULL) != CL_SUCCESS) {
 			log[0] = '\0';
 		}
 		log[log_size] = '\0';

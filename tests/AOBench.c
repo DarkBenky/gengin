@@ -10,8 +10,8 @@
 #include <unistd.h>
 
 #define SAMPLES 100
-#define WIDTH   1280
-#define HEIGHT  720
+#define WIDTH 1280
+#define HEIGHT 720
 
 static void FillSyntheticScene(Camera *camera) {
 	const int width = camera->screenWidth;
@@ -26,8 +26,7 @@ static void FillSyntheticScene(Camera *camera) {
 			const float u = ((float)x - halfW) * 0.05f;
 			const float v = ((float)y - halfH) * 0.05f;
 
-			const float h = 6.0f * sinf(u * 0.9f) * cosf(v * 1.1f)
-			              + 2.0f * sinf((u + v) * 2.3f);
+			const float h = 6.0f * sinf(u * 0.9f) * cosf(v * 1.1f) + 2.0f * sinf((u + v) * 2.3f);
 			const float dx = 5.4f * cosf(u * 0.9f) * cosf(v * 1.1f) + 4.6f * cosf((u + v) * 2.3f);
 			const float dz = -6.6f * sinf(u * 0.9f) * sinf(v * 1.1f) + 4.6f * cosf((u + v) * 2.3f);
 
@@ -47,9 +46,9 @@ static void FillSyntheticScene(Camera *camera) {
 int main(void) {
 	Camera camera;
 	initCamera(&camera, WIDTH, HEIGHT, 60.0f,
-	           (float3){0.0f, 0.0f, -30.0f},
-	           (float3){0.0f, 0.0f, 1.0f},
-	           (float3){0.3f, -0.8f, 0.2f});
+			   (float3){0.0f, 0.0f, -30.0f},
+			   (float3){0.0f, 0.0f, 1.0f},
+			   (float3){0.3f, -0.8f, 0.2f});
 	FillSyntheticScene(&camera);
 
 	long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
@@ -86,8 +85,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusion(&camera);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesSt[s] = (float)(t1.tv_sec - t0.tv_sec)
-		           + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesSt[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -95,8 +93,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionMp(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesMp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		           + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesMp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -104,8 +101,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2(&camera);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2St[s] = (float)(t1.tv_sec - t0.tv_sec)
-		             + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2St[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -113,8 +109,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2Mp(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2Mp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		             + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2Mp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -122,8 +117,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2Plus(&camera);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2PlusSt[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                 + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2PlusSt[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -131,8 +125,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2PlusMp(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2PlusMp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                 + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2PlusMp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -140,8 +133,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2PlusColumn(&camera);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2PlusColSt[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                    + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2PlusColSt[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -149,8 +141,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2PlusColumnMp(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2PlusColMp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                    + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2PlusColMp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -158,8 +149,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2PlusColumnSgMp(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2PlusColSgMp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                       + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2PlusColSgMp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -167,8 +157,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2PlusColumnMpPixelSkip(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2PlusColSkipMp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                         + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2PlusColSkipMp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -176,8 +165,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV2PlusColumnMpPixelSkipBetterBlur(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV2PlusColSkipBetterMp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                               + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV2PlusColSkipBetterMp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -185,8 +173,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		SmoothAmbientOcclusionWide(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesWideSmooth[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                   + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesWideSmooth[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -194,8 +181,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		applyAmbientOcclusion(&camera, pool, 2.0f);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesApplyTotal[s] = (float)(t1.tv_sec - t0.tv_sec)
-		                   + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesApplyTotal[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -203,8 +189,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV3(&camera);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV3St[s] = (float)(t1.tv_sec - t0.tv_sec)
-		             + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV3St[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	for (int s = 0; s < SAMPLES; s++) {
@@ -212,8 +197,7 @@ int main(void) {
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		CalculateAmbientOcclusionV3Mp(&camera, pool);
 		clock_gettime(CLOCK_MONOTONIC, &t1);
-		timesV3Mp[s] = (float)(t1.tv_sec - t0.tv_sec)
-		             + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
+		timesV3Mp[s] = (float)(t1.tv_sec - t0.tv_sec) + (float)(t1.tv_nsec - t0.tv_nsec) * 1e-9f;
 	}
 
 	PerformanceMetrics mSt = ComputePerformanceMetrics(timesSt, SAMPLES);
@@ -233,46 +217,46 @@ int main(void) {
 	PerformanceMetrics mV3Mp = ComputePerformanceMetrics(timesV3Mp, SAMPLES);
 
 	printf("=== AOBench: AO over %dx%d, %d samples ===\n",
-	       WIDTH, HEIGHT, SAMPLES);
+		   WIDTH, HEIGHT, SAMPLES);
 	printf("%-20s %8s  %10s  %9s  %7s\n", "Benchmark", "avg(ms)", "median(ms)", "p99(ms)", "speedup");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
-	       "V1 Single", mSt.averageTime * 1e3f, mSt.medianTime * 1e3f, mSt.p99Time * 1e3f, "-");
+		   "V1 Single", mSt.averageTime * 1e3f, mSt.medianTime * 1e3f, mSt.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V1 Multi", mMps.averageTime * 1e3f, mMps.medianTime * 1e3f, mMps.p99Time * 1e3f,
-	       mSt.medianTime / mMps.medianTime);
+		   "V1 Multi", mMps.averageTime * 1e3f, mMps.medianTime * 1e3f, mMps.p99Time * 1e3f,
+		   mSt.medianTime / mMps.medianTime);
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
-	       "V2 Single", mV2St.averageTime * 1e3f, mV2St.medianTime * 1e3f, mV2St.p99Time * 1e3f, "-");
+		   "V2 Single", mV2St.averageTime * 1e3f, mV2St.medianTime * 1e3f, mV2St.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V2 Multi", mV2Mp.averageTime * 1e3f, mV2Mp.medianTime * 1e3f, mV2Mp.p99Time * 1e3f,
-	       mV2St.medianTime / mV2Mp.medianTime);
+		   "V2 Multi", mV2Mp.averageTime * 1e3f, mV2Mp.medianTime * 1e3f, mV2Mp.p99Time * 1e3f,
+		   mV2St.medianTime / mV2Mp.medianTime);
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
-	       "V2Plus Single", mV2PlusSt.averageTime * 1e3f, mV2PlusSt.medianTime * 1e3f, mV2PlusSt.p99Time * 1e3f, "-");
+		   "V2Plus Single", mV2PlusSt.averageTime * 1e3f, mV2PlusSt.medianTime * 1e3f, mV2PlusSt.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V2Plus Multi", mV2PlusMp.averageTime * 1e3f, mV2PlusMp.medianTime * 1e3f, mV2PlusMp.p99Time * 1e3f,
-	       mV2PlusSt.medianTime / mV2PlusMp.medianTime);
+		   "V2Plus Multi", mV2PlusMp.averageTime * 1e3f, mV2PlusMp.medianTime * 1e3f, mV2PlusMp.p99Time * 1e3f,
+		   mV2PlusSt.medianTime / mV2PlusMp.medianTime);
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
-	       "V2PlusCol Single", mV2PlusColSt.averageTime * 1e3f, mV2PlusColSt.medianTime * 1e3f, mV2PlusColSt.p99Time * 1e3f, "-");
+		   "V2PlusCol Single", mV2PlusColSt.averageTime * 1e3f, mV2PlusColSt.medianTime * 1e3f, mV2PlusColSt.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V2PlusCol Multi", mV2PlusColMp.averageTime * 1e3f, mV2PlusColMp.medianTime * 1e3f, mV2PlusColMp.p99Time * 1e3f,
-	       mV2PlusColSt.medianTime / mV2PlusColMp.medianTime);
+		   "V2PlusCol Multi", mV2PlusColMp.averageTime * 1e3f, mV2PlusColMp.medianTime * 1e3f, mV2PlusColMp.p99Time * 1e3f,
+		   mV2PlusColSt.medianTime / mV2PlusColMp.medianTime);
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V2PlusColSg Multi", mV2PlusColSgMp.averageTime * 1e3f, mV2PlusColSgMp.medianTime * 1e3f, mV2PlusColSgMp.p99Time * 1e3f,
-	       mV2PlusColSt.medianTime / mV2PlusColSgMp.medianTime);
+		   "V2PlusColSg Multi", mV2PlusColSgMp.averageTime * 1e3f, mV2PlusColSgMp.medianTime * 1e3f, mV2PlusColSgMp.p99Time * 1e3f,
+		   mV2PlusColSt.medianTime / mV2PlusColSgMp.medianTime);
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V2PlusColSkip Multi", mV2PlusColSkipMp.averageTime * 1e3f, mV2PlusColSkipMp.medianTime * 1e3f, mV2PlusColSkipMp.p99Time * 1e3f,
-	       mV2PlusColMp.medianTime / mV2PlusColSkipMp.medianTime);
+		   "V2PlusColSkip Multi", mV2PlusColSkipMp.averageTime * 1e3f, mV2PlusColSkipMp.medianTime * 1e3f, mV2PlusColSkipMp.p99Time * 1e3f,
+		   mV2PlusColMp.medianTime / mV2PlusColSkipMp.medianTime);
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V2PlusColSkipBetter", mV2PlusColSkipBetterMp.averageTime * 1e3f, mV2PlusColSkipBetterMp.medianTime * 1e3f, mV2PlusColSkipBetterMp.p99Time * 1e3f,
-	       mV2PlusColSkipMp.medianTime / mV2PlusColSkipBetterMp.medianTime);
+		   "V2PlusColSkipBetter", mV2PlusColSkipBetterMp.averageTime * 1e3f, mV2PlusColSkipBetterMp.medianTime * 1e3f, mV2PlusColSkipBetterMp.p99Time * 1e3f,
+		   mV2PlusColSkipMp.medianTime / mV2PlusColSkipBetterMp.medianTime);
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
-	       "WideSmooth", mWideSmooth.averageTime * 1e3f, mWideSmooth.medianTime * 1e3f, mWideSmooth.p99Time * 1e3f, "-");
+		   "WideSmooth", mWideSmooth.averageTime * 1e3f, mWideSmooth.medianTime * 1e3f, mWideSmooth.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
-	       "Total (AO+apply)", mApplyTotal.averageTime * 1e3f, mApplyTotal.medianTime * 1e3f, mApplyTotal.p99Time * 1e3f, "-");
+		   "Total (AO+apply)", mApplyTotal.averageTime * 1e3f, mApplyTotal.medianTime * 1e3f, mApplyTotal.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %7s\n",
-	       "V3 Single", mV3St.averageTime * 1e3f, mV3St.medianTime * 1e3f, mV3St.p99Time * 1e3f, "-");
+		   "V3 Single", mV3St.averageTime * 1e3f, mV3St.medianTime * 1e3f, mV3St.p99Time * 1e3f, "-");
 	printf("%-20s %8.3f  %10.3f  %9.3f  %6.2fx\n",
-	       "V3 Multi", mV3Mp.averageTime * 1e3f, mV3Mp.medianTime * 1e3f, mV3Mp.p99Time * 1e3f,
-	       mV3St.medianTime / mV3Mp.medianTime);
+		   "V3 Multi", mV3Mp.averageTime * 1e3f, mV3Mp.medianTime * 1e3f, mV3Mp.p99Time * 1e3f,
+		   mV3St.medianTime / mV3Mp.medianTime);
 
 	// The fastHash keeps global call state now: per-pixel patterns depend on the
 	// call order, so ST vs MP (and any cross-variant pair) no longer produce the
@@ -290,7 +274,7 @@ int main(void) {
 		if (fabsf(camera.tempBuffer_2[i] - camera.ambientOcclusionBuffer[i]) > 1e-4f) {
 			if (mismatches < 5)
 				printf("V1 REPEAT MISMATCH at %d: %.5f vs %.5f\n", i,
-				       camera.tempBuffer_2[i], camera.ambientOcclusionBuffer[i]);
+					   camera.tempBuffer_2[i], camera.ambientOcclusionBuffer[i]);
 			mismatches++;
 		}
 	}

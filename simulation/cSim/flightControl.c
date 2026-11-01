@@ -152,7 +152,6 @@ static void writeLogRows(FILE *file, const char *label, const Logs *logs) {
 	}
 }
 
-
 static inline float rollMisalignment(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
 	float3 forward = planeGetForwardVector(plane);

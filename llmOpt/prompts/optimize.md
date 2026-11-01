@@ -111,6 +111,13 @@ CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
 Completing ANY rung with real measured work counts that rung as walked; a
 rung that refutes with numbers is recorded in `codebase_context.md` and the
 ladder CONTINUES — a refuted rung never ends the session early.
+TOOL AVAILABILITY: if a rung needs an MCP tool that is absent from this
+session's tool list (for example `list_pull_requests`, `fetch_pull_request`,
+or `create_pr`), treat that rung as UNAVAILABLE and continue to the next rung;
+record the gap in `codebase_context.md`.  A missing tool is not a session
+blocker while any other rung still has work.  `report_session_result` is
+supervisor-only: in a manual session it returns "GENGIN_SESSION_RESULT_PATH is
+not set" (or is absent) — ignore that and finish normally.
 Candidates come from the `## Node map`, ranked by its flame percentages — a
 structural candidate may target the subsystem around a node rather than the
 function itself.  If that section is empty (first session on a fresh
@@ -196,6 +203,13 @@ PR is NOT a candidate:
    - IPC > 1.5: CPU-bound and healthy; IPC < 0.7: memory-bound.
    - cache-miss rate > 1%: memory pressure — risky in the 32-threaded renderer.
    - branch-miss rate > 5%: unpredictable branches.
+8b. `show_asm(rel_path, func)` / `compare_asm(rel_path, func, base_ref)` —
+   confirm the mechanism in the generated x86-64: vectorization width, hoisted
+   loads, branch removal, spills, instruction count.  `compare_asm` diffs the
+   current tree against `HEAD` (or any ref) after renumbering local labels.
+   Pass `extra_flags` for target builds (`-DBENCH_MODE`, `-DFLIGHT_BENCH`).
+   This is per-TU `-S` output with LTO/PGO flags stripped — supporting evidence
+   only; bench numbers and correctness remain the gate.
 9. Decision: `run_func_bench` shows a real win (>= 1% on ns/call, consistent
    across runs, correctness PASS) → Phase 3.  The cache-miss/branch-miss
    counters inform the pre-mortem — they do not veto a measured win on their
@@ -327,13 +341,20 @@ END of the session.
     The branch name is derived automatically; do NOT pass one.  In a manual
     (unsupervised) session where the tool asks for one, pass
     `branch="llmopt/<8-hex-sha>/<topic>"` (from `git rev-parse HEAD`).
-    If it fails on credentials (401/403), report `blocked` and STOP — never
-    hunt for tokens or use browser/GitHub-UI workarounds.
+    If it fails on credentials (401/403), record the credential failure and
+    continue with a rung that does not need GitHub (flight controller or
+    general improvements); never hunt for tokens or use browser/GitHub-UI
+    workarounds.  Only report `blocked` when no remaining rung can be
+    attempted.
     Never merge.  Never force-push or rewrite branches.
-20. `report_session_result(status, summary, pr_url)` — call EXACTLY ONCE before
-    exit.  status: `pr_created` (with pr_url), `no_change` (no safe measurable
+20. `report_session_result(status, summary, pr_url)` — supervised sessions
+    only; call it EXACTLY ONCE before exit when the tool is available.
+    status: `pr_created` (with pr_url), `no_change` (no safe measurable
     optimization found; leave the sandbox clean), `blocked` (environment
     problem), or `failed`.  The supervisor uses this artifact as the outcome.
+    In a manual session the tool returns "GENGIN_SESSION_RESULT_PATH is not
+    set" (or is absent) — that is expected; ignore it and finish with your
+    final answer.  Never treat a missing report tool as a blocker.
 21. Move to the next hotspot and repeat the cycle.  The session ends when a PR
     is opened, or when the SESSION EFFORT BUDGET conditions are met and no
     safe candidate survives — then report `no_change`.
@@ -470,7 +491,7 @@ without its label (`create_pr(label=...)`).
 | `Render Improvements Visual [No/Minimal Cost]` | render changes that IMPROVE visual quality at no or extremely limited performance cost — a side goal, not the hot-path work | visual improvement shown by side-by-side before/after composites (`compare_bench_frames` / `compare_images` attached) AND `make_bench` not REGRESSED (cost <= noise) |
 | `Flight Controller` | plane-controller changes (`getControllerOutputV5` + the loss) that improve performance | `flight_bench()` `OVERALL: IMPROVED` on the plane suite |
 | `Missile Controller` | missile-controller changes (`getControllerOutputMissile`) that improve performance | `flight_bench(missile="...")` `OVERALL: IMPROVED` on that missile's suite |
-| `General Improvements` | self-discovered bug fixes, small utilities/functions that reduce testing/review overhead, and caps-fitting unchecked `- [ ]` tasks from the root `README.md` — CATEGORY LADDER rung 4 (one item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+| `General Improvements` | self-discovered bug fixes, small utilities/functions that reduce testing/review overhead, and caps-fitting unchecked `- [ ]` tasks from the root `README.md` — CATEGORY LADDER rung 4 (one item per session, one system per PR) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
 
 Category rules:
 - The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
@@ -478,6 +499,13 @@ Category rules:
   abstractions, no struct or data-layout changes unless strictly required.
 - General Improvements must not change underlying structures and must not cost
   performance. If a "utility" change grows the hot path, it is not one.
+- General Improvements are SOFT-LOCKED to ONE system. A system is the
+  module/directory family a change lives in (`render/`, `object/`, `server/`,
+  `keyboard/`, `math/`, ... plus that module's own direct test file). A General
+  Improvements PR never spans two systems, and General Improvements PRs from
+  different systems are never folded into one PR. This is a prompt-level lock
+  for the reviewer, not a code guard: a mixed-system General Improvements PR is
+  a review defect.
 - PR body format (ALL PRs, including consolidation and merged-history
   summaries): the body STARTS with
   1. a `## Changes` table — one row per change: file, function, what, why;
@@ -495,7 +523,10 @@ Compaction is per CATEGORY: take this task when 4 or more open PRs carry
 labels of one category — all `Render Improvements*` label variants are ONE
 category and count together (or the session context explicitly asks for it).
 A consolidation PR folds PRs of ONE category only — never render + flight,
-never exact + visual.
+never exact + visual.  `General Improvements` is additionally SOFT-LOCKED to
+ONE system: fold only General Improvements PRs that touch the same system; a
+mixed-system batch is not consolidated — verify the PRs and leave them open as
+separate PRs.
 State the choice in your first message. The reviewer gets one PR per category
 instead of a dozen, and every included change still carries its own
 before/after numbers. This is the one sanctioned multi-change PR; keep it to
@@ -556,7 +587,9 @@ consolidation pass):
   (`branch="llmopt/<8-hex-sha>/untangle-<N>-<category>"`, labeled), then
   `close_pull_request(N, "Split into <URLs> ...")` on the mixed original.
   A category whose hunks fail its gate is not re-opened — record the
-  refutation in the close comment.
+  refutation in the close comment.  A `General Improvements` PR that touches
+  several systems is untangled the same way — one PR per system — because GI
+  is soft-locked to ONE system per PR; never merge a cross-system GI PR.
 - REPAIR (low priority): an open PR whose `fetch_pull_request` reports
   `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
   onto its existing branch (normal push, NEVER force-push), re-run its gate,
@@ -602,8 +635,11 @@ TWO self-serve sources, in this order:
    Read the unchecked items and take the first that fits the caps below.
 
 Pick the first candidate that passes ALL caps:
-- <= 2 files, <= 120 changed lines, ONE logical change, same style AND
-  comment density as the surrounding code (CODE STYLE applies);
+- <= 2 files, <= 120 changed lines, ONE logical change inside ONE system
+  (both files in the same module/directory family, e.g. the module plus its
+  direct test), same style AND comment density as the surrounding code
+  (CODE STYLE applies); a chore that spans two systems is split into separate
+  PRs or skipped — never merged into one;
 - no struct/data-layout/public-signature changes, no new dependencies, no
   build-system changes, no visual change; no file covered by an open PR;
   nothing under `llmOpt/`, `deps/` or `machineLearning/`;
@@ -640,8 +676,8 @@ Apply directly in those rare cases and validate with `make_bench`.
 ## EDITING & NAVIGATION TOOLS
 - `read_file` / `search_files` / `terminal` — read and search anything.
 - Prefer the domain tools (`make_flame`, `hot_annotate_*`, `create_func_bench`,
-  `run_func_bench`, `run_perf_stat`, `make_bench`, `flight_bench`,
-  `flight_scenarios`, `flight_trace`, `create_pr`,
+  `run_func_bench`, `run_perf_stat`, `show_asm`, `compare_asm`, `make_bench`,
+  `flight_bench`, `flight_scenarios`, `flight_trace`, `create_pr`,
   `report_session_result`) over ad-hoc terminal pipelines — they keep results
   in the run artifacts the supervisor audits.
 - `patch` — targeted edit (fuzzy matcher; returns a unified diff).  Preferred.
@@ -649,6 +685,8 @@ Apply directly in those rare cases and validate with `make_bench`.
 - `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`,
   `lsp_diagnostics_all` — semantic clangd queries.
 - `hot_annotate_func` / `hot_annotate_file` — perf-annotated source.
+- `show_asm` / `compare_asm` — per-TU assembly and a normalized diff against a
+  git ref; LTO/PGO flags are stripped, so use it as mechanism evidence only.
 - `quick_ask` — cheap Jev decision model (typed answers with probabilities, no
   text).  Use it for narrow judgments over text you provide.  Advisory: it can
   be wrong — check confidence and decide yourself.  Prefer `yes_no`/`choices`;
@@ -763,6 +801,11 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     structural candidate must be attempt-and-measured (see STRUCTURAL
     CANDIDATES); `restrict`/alignment plays are warm-ups, and one refuted
     structural attempt beats a third variation of the same loop.
+26. NEVER merge General Improvements across systems — the label is SOFT-LOCKED
+    to ONE system per PR. A single General Improvements PR stays inside one
+    module/directory family, and a consolidation batch never folds
+    General Improvements PRs from different systems together. Nothing in code
+    enforces this; the prompt is the lock.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

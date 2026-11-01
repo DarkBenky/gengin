@@ -1,10 +1,25 @@
 #include "format.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <math.h>
 #include "../math/vector3.h"
 
 #define ALIGN64(n) (((n) + 63) & ~(size_t)63)
+
+Error Error_Make(int code, const char *msg) {
+	Error err;
+	err.err = code;
+	if (msg)
+		snprintf(err.msg, sizeof(err.msg), "%s", msg);
+	else
+		err.msg[0] = '\0';
+	return err;
+}
+
+Error Error_Ok(void) {
+	return Error_Make(nil, "OK");
+}
 
 void clearBuffers(Camera *camera) {
 	if (!camera) return;
@@ -124,7 +139,7 @@ void CameraMoveForward(Camera *camera, float amount) {
 
 void CameraMoveRight(Camera *camera, float amount) {
 	if (!camera) return;
-	float3 right = Float3_Cross(camera->forward, (float3){0.0f, 1.0f, 0.0f});
+	float3 right = Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, camera->forward));
 	camera->position.x += right.x * amount;
 	camera->position.y += right.y * amount;
 	camera->position.z += right.z * amount;

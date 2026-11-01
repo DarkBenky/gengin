@@ -3,11 +3,13 @@
 
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 LLMOPT_DIR = os.path.dirname(TESTS_DIR)
@@ -321,6 +323,229 @@ class DirectMemberTests(unittest.TestCase):
         finally:
             os.environ.pop("DEEPSEEK_API_KEY", None)
         self.assertEqual(status, 200)
+
+
+# Raw LiteLLM catalog fixture: only litellm_provider=openai entries are
+# imported, and only chat entries are auto-selected.  Costs are per token.
+CATALOG_FIXTURE = {
+    "gpt-6.1-sol": {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": 2e-06, "output_cost_per_token": 1e-05,
+        "cache_read_input_token_cost": 1e-07, "max_input_tokens": 922000,
+    },
+    "gpt-6.1-sol-2026-01-15": {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": 2e-06, "output_cost_per_token": 1e-05,
+        "cache_read_input_token_cost": 1e-07, "max_input_tokens": 922000,
+    },
+    "gpt-6-sol": {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": 2e-06, "output_cost_per_token": 1e-05,
+        "cache_read_input_token_cost": 2e-07, "max_input_tokens": 922000,
+    },
+    "gpt-5.6-luna": {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": 2e-07, "output_cost_per_token": 1.2e-06,
+        "cache_read_input_token_cost": 2e-08, "max_input_tokens": 922000,
+    },
+    "gpt-5.3": {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": 1.75e-06, "output_cost_per_token": 1.4e-05,
+        "cache_read_input_token_cost": 1.75e-07, "max_input_tokens": 272000,
+    },
+    "gpt-7-search-preview": {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": 5e-06, "output_cost_per_token": 2e-05,
+        "max_input_tokens": 128000,
+    },
+    "ft:gpt-6.1-sol": {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": 3e-06, "output_cost_per_token": 1.5e-05,
+        "max_input_tokens": 922000,
+    },
+    "text-embedding-3-large": {
+        "litellm_provider": "openai", "mode": "embedding",
+        "input_cost_per_token": 1.3e-07, "output_cost_per_token": 0,
+        "max_input_tokens": 8191,
+    },
+    "claude-sonnet": {
+        "litellm_provider": "anthropic", "mode": "chat",
+        "input_cost_per_token": 3e-06, "output_cost_per_token": 1.5e-05,
+    },
+}
+
+
+class OpenAIPricingFixture(unittest.TestCase):
+    """Point openai_pricing at a local LiteLLM-shaped catalog."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._dir = tempfile.mkdtemp(prefix="openai-pricing-")
+        cls._source = os.path.join(cls._dir, "litellm.json")
+        cls._cache = os.path.join(cls._dir, "cache.json")
+        with open(cls._source, "w") as fh:
+            json.dump(CATALOG_FIXTURE, fh)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._dir, ignore_errors=True)
+
+    def setUp(self):
+        self._env = mock.patch.dict(os.environ, {
+            "GENGIN_OPENAI_PRICING_URL": "file://" + self._source,
+            "GENGIN_OPENAI_PRICING_CACHE": self._cache,
+            "GENGIN_OPENAI_PRICING_TTL": "0",
+            "GENGIN_OPENAI_PRICING_TIMEOUT": "2",
+        })
+        self._env.start()
+        proxy.openai_pricing.reset_cache()
+        try:
+            os.unlink(self._cache)
+        except OSError:
+            pass
+        proxy.openai_pricing.ensure_catalog(force=True)
+
+    def tearDown(self):
+        self._env.stop()
+        proxy.openai_pricing.reset_cache()
+
+
+class OpenAIDirectTests(OpenAIPricingFixture):
+    def setUp(self):
+        super().setUp()
+        proxy._route = None
+
+    def tearDown(self):
+        proxy._route = None
+        super().tearDown()
+
+    def test_openai_member_registration_and_key(self):
+        status, response = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000, "openaiKey": "sk-oai"})
+        self.assertEqual(status, 200)
+        self.assertEqual(proxy._route["members"][1]["upstream"], "openai")
+        self.assertEqual(proxy._route["openaiKey"], "sk-oai")
+        self.assertEqual(response["upstreams"], ["openrouter", "openai"])
+
+    def test_openai_member_needs_a_key(self):
+        os.environ.pop("OPENAI_API_KEY", None)
+        status, _ = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000})
+        self.assertEqual(status, 400)
+
+    def test_openai_member_accepts_env_key(self):
+        os.environ["OPENAI_API_KEY"] = "sk-env"
+        try:
+            status, _ = proxy._route_register({
+                "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                      "upstream": "openai"}],
+                "maxContext": 1000})
+        finally:
+            os.environ.pop("OPENAI_API_KEY", None)
+        self.assertEqual(status, 200)
+
+    def test_openai_member_selection_rewrites_model(self):
+        status, _ = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000, "openaiKey": "sk-oai"})
+        self.assertEqual(status, 200)
+        body = make_body("x" * 6000)  # ~2000 estimated tokens >= 1000
+        model, info = proxy._route_apply(body, PRIMARY, 6000, "conv-openai")
+        self.assertEqual(model, "gpt-6.1-sol")
+        self.assertEqual(info["upstream"], "openai")
+        self.assertEqual(body["model"], "gpt-6.1-sol")
+
+    def test_openai_path_translation(self):
+        self.assertEqual(
+            proxy._upstream_path("/api/v1/chat/completions", "openai"),
+            "/v1/chat/completions")
+        self.assertEqual(
+            proxy._upstream_path("/api/v1/models", "openai"), "/v1/models")
+
+    def test_openai_leg_sets_stream_usage_only(self):
+        body = {"model": "gpt-6.1-sol", "stream": True,
+                "messages": [{"role": "user", "content": "hi"}]}
+        applied, skip = proxy._apply_filters(body, "gpt-6.1-sol",
+                                             upstream="openai")
+        self.assertEqual(applied, ["stream_options"])
+        self.assertEqual(skip, "")
+        self.assertNotIn("provider", body)
+        self.assertEqual(body["stream_options"], {"include_usage": True})
+
+    def test_openai_cost_uses_the_price_table(self):
+        usage = {"prompt_tokens": 1000000, "completion_tokens": 100000,
+                 "prompt_tokens_details": {"cached_tokens": 400000}}
+        # gpt-6.1-sol: $2 input / $0.10 cached / $10 output per 1M tokens
+        expected = (400000 * 0.10 + 600000 * 2 + 100000 * 10) / 1e6
+        self.assertAlmostEqual(
+            proxy._response_cost("openai", "gpt-6.1-sol", usage), expected,
+            places=6)
+        self.assertAlmostEqual(proxy.openai_pricing.cost_usd(
+            "gpt-5.3-2026-07-14",
+            {"prompt_tokens": 1000000, "completion_tokens": 0}), 1.75,
+            places=6)
+        self.assertIsNone(proxy.openai_pricing.cost_usd("not-a-model", usage))
+
+    def test_openai_cost_counts_into_the_budget(self):
+        status, _ = proxy._route_register({
+            "members": [PRIMARY, {"model": "gpt-6.1-sol",
+                                  "upstream": "openai"}],
+            "maxContext": 1000, "openaiKey": "sk-oai", "budgetUsd": 10})
+        self.assertEqual(status, 200)
+        route = proxy._route
+        body = make_body()
+        _, info = proxy._route_apply(body, PRIMARY, 6000, "conv-oai-budget")
+        tap = proxy._ResponseTap(False)
+        tap.usage = {"prompt_tokens": 1000000, "completion_tokens": 100000,
+                     "prompt_tokens_details": {"cached_tokens": 0}}
+        proxy._route_observe("conv-oai-budget", info, tap, 6000)
+        self.assertGreater(route["spentUsd"], 2.0)
+
+
+class OpenAICatalogTests(OpenAIPricingFixture):
+    def test_prices_come_from_the_catalog(self):
+        prices = proxy.openai_pricing.prices_for("gpt-6.1-sol")
+        self.assertAlmostEqual(prices["in"], 2.0)
+        self.assertAlmostEqual(prices["cached"], 0.10)
+        self.assertAlmostEqual(prices["out"], 10.0)
+
+    def test_provider_prefix_and_dated_snapshot_resolve(self):
+        self.assertAlmostEqual(
+            proxy.openai_pricing.prices_for("openai/gpt-6.1-sol-2026-01-15")["in"],
+            2.0)
+        self.assertAlmostEqual(
+            proxy.openai_pricing.prices_for("gpt-5.3-2026-07-14")["in"], 1.75)
+        self.assertIsNone(proxy.openai_pricing.prices_for("not-a-model"))
+
+    def test_default_is_newest_chat_model_and_prefers_undated(self):
+        self.assertEqual(proxy.openai_pricing.pick_default(), "gpt-6.1-sol")
+
+    def test_default_preference_narrows_the_family(self):
+        self.assertEqual(proxy.openai_pricing.pick_default("luna"),
+                         "gpt-5.6-luna")
+        self.assertEqual(proxy.openai_pricing.pick_default("missing, sol"),
+                         "gpt-6.1-sol")
+
+    def test_default_skips_special_and_fine_tuned_models(self):
+        self.assertEqual(proxy.openai_pricing.pick_default(), "gpt-6.1-sol")
+        names = [row["model"] for row in proxy.openai_pricing.chat_models()]
+        self.assertNotIn("gpt-7-search-preview", names)
+        self.assertNotIn("ft:gpt-6.1-sol", names)
+        self.assertNotIn("text-embedding-3-large", names)
+
+    def test_alias_differs_from_the_selected_model(self):
+        self.assertNotEqual(proxy.openai_pricing.pick_alias("gpt-6.1-sol"),
+                            "gpt-6.1-sol")
+
+    def test_catalog_parses_only_openai_entries(self):
+        names = {row["model"] for row in proxy.openai_pricing.chat_models()}
+        self.assertIn("gpt-6.1-sol", names)
+        self.assertNotIn("claude-sonnet", names)
 
 
 class ReasoningReplayTests(unittest.TestCase):

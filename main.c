@@ -222,8 +222,13 @@ int main() {
 		lastEditorTime = editorNow;
 		if (dt > 0.25f) dt = 0.25f; // clamp hitches so nothing teleports
 
+		unsigned winWidth = mfb_get_window_width(window);
+		unsigned winHeight = mfb_get_window_height(window);
+		int mouseX = winWidth > 0 ? (int)((long long)input.mouseX * WIDTH / (int)winWidth) : input.mouseX;
+		int mouseY = winHeight > 0 ? (int)((long long)input.mouseY * HEIGHT / (int)winHeight) : input.mouseY;
+
 		if (editor.editorActive && input.mouseDown[MOUSE_LEFT]) {
-			selectObject(&editor, input.mouseX, input.mouseY);
+			selectObject(&editor, mouseX, mouseY);
 		}
 		if (input.keys[KB_KEY_W]) CameraMoveForward(&camera, 0.2f);
 		if (input.keys[KB_KEY_S]) CameraMoveForward(&camera, -0.2f);
@@ -302,14 +307,14 @@ int main() {
 
 #ifndef BENCH_MODE
 		if (editor.editorActive) {
-			applyHighlightEdge(&editor, threadPool, input.mouseX, input.mouseY);
+			applyHighlightEdge(&editor, threadPool, mouseX, mouseY);
 		}
 		editorStep(&editor, window, dt, 20, 40, 320, 220);
 
 		char text[64];
 		double avgFrameTime = (frameTimes[0] + frameTimes[1] + frameTimes[2] + frameTimes[3]) * 0.25;
 		snprintf(text, sizeof(text), "FPS: %.1f", avgFrameTime > 0.0 ? 1.0 / avgFrameTime : 0.0);
-		RenderTextHdr(camera.framebufferHdr, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.75f, (float3){1.0f, 0.5f, 0.2f, 0.0f});
+		RenderTextHdr(camera.framebufferHdr, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.0f, (float3){1.0f, 0.5f, 0.2f, 0.0f});
 #endif
 
 		WNOW(wA);

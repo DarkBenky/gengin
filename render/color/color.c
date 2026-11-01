@@ -1,6 +1,7 @@
 #include "color.h"
 #include "../../math/scalar.h"
 #include "../../object/format.h"
+#include <immintrin.h>
 
 Color PackColor(float r, float g, float b) {
 	uint8 r8 = (uint8)(r * 255.0f);
@@ -50,7 +51,30 @@ static void ConvertToLdrRows(void *arg) {
 	const ConvertToLdrTask *task = arg;
 	const int start = task->startRow * task->width;
 	const int count = task->rows * task->width;
-	for (int i = 0; i < count; i++)
+	int i = 0;
+	const __m128 zero = _mm_setzero_ps();
+	const __m128 one = _mm_set1_ps(1.0f);
+	const __m128 s255 = _mm_set1_ps(255.0f);
+	const __m128i alpha = _mm_set1_epi32((int)0xFF000000u);
+	for (; i + 4 <= count; i += 4) {
+		__m128 p0 = _mm_loadu_ps(&task->inHdr[start + i + 0].x);
+		__m128 p1 = _mm_loadu_ps(&task->inHdr[start + i + 1].x);
+		__m128 p2 = _mm_loadu_ps(&task->inHdr[start + i + 2].x);
+		__m128 p3 = _mm_loadu_ps(&task->inHdr[start + i + 3].x);
+		_MM_TRANSPOSE4_PS(p0, p1, p2, p3);
+		__m128 mx = _mm_max_ps(p0, _mm_max_ps(p1, p2));
+		__m128 e = _mm_sub_ps(mx, one);
+		__m128 add = _mm_and_ps(e, _mm_cmpgt_ps(e, zero));
+		__m128 x = _mm_min_ps(_mm_max_ps(_mm_add_ps(p0, add), zero), one);
+		__m128 y = _mm_min_ps(_mm_max_ps(_mm_add_ps(p1, add), zero), one);
+		__m128 z = _mm_min_ps(_mm_max_ps(_mm_add_ps(p2, add), zero), one);
+		__m128i xi = _mm_cvttps_epi32(_mm_mul_ps(x, s255));
+		__m128i yi = _mm_cvttps_epi32(_mm_mul_ps(y, s255));
+		__m128i zi = _mm_cvttps_epi32(_mm_mul_ps(z, s255));
+		__m128i packed = _mm_or_si128(_mm_or_si128(_mm_slli_epi32(xi, 16), _mm_slli_epi32(yi, 8)), zi);
+		_mm_storeu_si128((__m128i *)&task->outLdr[start + i], _mm_or_si128(packed, alpha));
+	}
+	for (; i < count; i++)
 		task->outLdr[start + i] = ConvertPixelToLdr(task->inHdr[start + i]);
 }
 
@@ -491,4 +515,25 @@ Color DarkenColor(Color c, float amount) {
 	col.y *= factor;
 	col.z *= factor;
 	return PackColorF(col);
+}
+
+// Operates on the .bin texel layout (R in bits 0-7, G 8-15, B 16-23, A 24-31)
+// so it mirrors boostColor in tools/parseObj.go, alpha included.
+Color BoostColor(Color c, float satAmount, float brightFactor) {
+	if (satAmount == 1.0f && brightFactor == 1.0f) return c;
+
+	float rf = (float)(c & 0xFF) / 255.0f;
+	float gf = (float)((c >> 8) & 0xFF) / 255.0f;
+	float bf = (float)((c >> 16) & 0xFF) / 255.0f;
+	uint32 alpha = (c >> 24) & 0xFF;
+	float lum = 0.299f * rf + 0.587f * gf + 0.114f * bf;
+
+	float red = fminf(fmaxf((lum + satAmount * (rf - lum)) * brightFactor, 0.0f), 1.0f);
+	float green = fminf(fmaxf((lum + satAmount * (gf - lum)) * brightFactor, 0.0f), 1.0f);
+	float blue = fminf(fmaxf((lum + satAmount * (bf - lum)) * brightFactor, 0.0f), 1.0f);
+
+	uint32 r8 = (uint32)(red * 255.0f);
+	uint32 g8 = (uint32)(green * 255.0f);
+	uint32 b8 = (uint32)(blue * 255.0f);
+	return r8 | (g8 << 8) | (b8 << 16) | (alpha << 24);
 }

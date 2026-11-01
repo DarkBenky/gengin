@@ -48,7 +48,7 @@ static MlConfig configs[ML_MAX_CONFIGS];
 static int configCount = 0;
 
 typedef struct {
-	float *host;        // pinned/mapped host view (NULL when unavailable)
+	float *host; // pinned/mapped host view (NULL when unavailable)
 	CL_Buffer buf;
 } MlIoBuffer;
 
@@ -98,7 +98,7 @@ static int mlContains(const char *haystack, const char *needle) {
 }
 
 static CL_Context mlCreateContext(char *outPlatform, size_t platformLen,
-                                  char *outDevice, size_t deviceLen) {
+								  char *outDevice, size_t deviceLen) {
 	CL_Context ctx = {0};
 	const char *wantPlatform = getenv("GENGIN_CL_PLATFORM");
 	const char *wantDevice = getenv("GENGIN_CL_DEVICE");
@@ -166,7 +166,7 @@ static CL_Context mlCreateContext(char *outPlatform, size_t platformLen,
 		return ctx;
 	}
 	MlLogError("no OpenCL device matched platform=%s device=%s",
-	           wantPlatform ? wantPlatform : "*", wantDevice ? wantDevice : "*");
+			   wantPlatform ? wantPlatform : "*", wantDevice ? wantDevice : "*");
 	return ctx;
 }
 
@@ -276,10 +276,10 @@ static int mlReadManifest(const char *path) {
 		MlConfig *c = &configs[configCount];
 		char dataDir[ML_MAX_PATH] = {0};
 		int fields = sscanf(line,
-		                    "%255s\t%15s\t%511s\t%d\t%d\t%lf\t%lf\t%d\t%d\t%d\t%f\t%f\t%255s",
-		                    c->id, c->kind, c->shape, &c->inFloats, &c->outFloats, &c->flops,
-		                    &c->bytes, &c->activation, &c->accumulate, &c->reps, &c->absTol,
-		                    &c->relTol, dataDir);
+							"%255s\t%15s\t%511s\t%d\t%d\t%lf\t%lf\t%d\t%d\t%d\t%f\t%f\t%255s",
+							c->id, c->kind, c->shape, &c->inFloats, &c->outFloats, &c->flops,
+							&c->bytes, &c->activation, &c->accumulate, &c->reps, &c->absTol,
+							&c->relTol, dataDir);
 		if (fields < 12) {
 			MlLogError("bad manifest row (%d fields): %s", fields, line);
 			continue;
@@ -314,20 +314,20 @@ typedef struct {
 	int firstBad;
 	int outFloats;
 	int timed;
-        int innerReps;
+	int innerReps;
 } MlResult;
 
 static int mlIndexForId(const char *id) {
-        for (int i = 0; i < kMlEntryCount; i++) {
-                if (strcmp(kMlEntries[i].id, id) == 0) {
-                        return i;
-                }
-        }
+	for (int i = 0; i < kMlEntryCount; i++) {
+		if (strcmp(kMlEntries[i].id, id) == 0) {
+			return i;
+		}
+	}
 	return -1;
 }
 
 static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg,
-                        int warmup, int defaultReps, MlResult *res) {
+						int warmup, int defaultReps, MlResult *res) {
 	memset(res, 0, sizeof(*res));
 	res->id = cfg->id;
 	res->shape = cfg->shape;
@@ -358,7 +358,7 @@ static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg
 
 	MlIoBuffer in = {0}, out = {0};
 	if (mlBufferAlloc(ctx, &in, entry->inFloats) != 0 ||
-	    mlBufferAlloc(ctx, &out, entry->outFloats) != 0) {
+		mlBufferAlloc(ctx, &out, entry->outFloats) != 0) {
 		snprintf(res->error, sizeof(res->error), "buffer allocation failed");
 		mlBufferFree(ctx, &in);
 		mlBufferFree(ctx, &out);
@@ -458,8 +458,8 @@ static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg
 	}
 	if (getenv("ML_DEBUG") != NULL) {
 		fprintf(stderr, "    %s got[0..3] = %.4f %.4f %.4f %.4f\n", cfg->id,
-		        got[0], got[1], got[2], got[3]);
-	}	// ML_DEBUG_DUMP=<dir>: raw output of every config to <dir>/<id>.bin, so a
+				got[0], got[1], got[2], got[3]);
+	} // ML_DEBUG_DUMP=<dir>: raw output of every config to <dir>/<id>.bin, so a
 	// caller can check an exact expected result instead of only a diff.
 	const char *dumpDir = getenv("ML_DEBUG_DUMP");
 	if (dumpDir != NULL && dumpDir[0] != '\0') {
@@ -470,7 +470,8 @@ static void mlRunConfig(CL_Context *ctx, const char *clPath, const MlConfig *cfg
 			fwrite(got, sizeof(float), (size_t)entry->outFloats, dump);
 			fclose(dump);
 		}
-	}	float *want = (float *)mlAlloc((size_t)entry->outFloats * sizeof(float));
+	}
+	float *want = (float *)mlAlloc((size_t)entry->outFloats * sizeof(float));
 	snprintf(path, sizeof(path), "%s/ref.bin", cfg->dataDir);
 	if (!mlReadFloats(path, want, entry->outFloats)) {
 		snprintf(res->error, sizeof(res->error), "missing reference %s", path);
@@ -530,13 +531,13 @@ int main(int argc, char **argv) {
 			jsonPath = argv[++i];
 		} else {
 			fprintf(stderr, "usage: kernelBench --manifest FILE --cl FILE [--reps N] "
-			                "[--warmup N] [--json PATH]\n");
+							"[--warmup N] [--json PATH]\n");
 			return 2;
 		}
 	}
 	if (manifest == NULL || clPath == NULL) {
 		fprintf(stderr, "usage: kernelBench --manifest FILE --cl FILE [--reps N] "
-		                "[--warmup N] [--json PATH]\n");
+						"[--warmup N] [--json PATH]\n");
 		return 2;
 	}
 	if (reps < 1 || reps > 10000) {
@@ -562,7 +563,7 @@ int main(int argc, char **argv) {
 	char platformName[256] = {0};
 	char deviceName[256] = {0};
 	CL_Context ctx = mlCreateContext(platformName, sizeof(platformName),
-	                                 deviceName, sizeof(deviceName));
+									 deviceName, sizeof(deviceName));
 	if (ctx.context == NULL || ctx.queue == NULL) {
 		return 2;
 	}
@@ -572,11 +573,11 @@ int main(int argc, char **argv) {
 		mlRunConfig(&ctx, clPath, &configs[i], warmup, reps, &results[i]);
 		if (results[i].ok) {
 			fprintf(stderr, "  %-34s %8.3f ms  %7.1f GFLOP/s  init %6.1f ms\n",
-			        results[i].id, results[i].medianMs, results[i].gflops, results[i].initMs);
+					results[i].id, results[i].medianMs, results[i].gflops, results[i].initMs);
 		} else {
 			fprintf(stderr, "  %-34s FAILED: %s%s\n", results[i].id,
-			        results[i].error[0] ? results[i].error : "deviation over tolerance",
-			        results[i].firstBad >= 0 ? " (first bad element shown in JSON)" : "");
+					results[i].error[0] ? results[i].error : "deviation over tolerance",
+					results[i].firstBad >= 0 ? " (first bad element shown in JSON)" : "");
 		}
 	}
 
@@ -584,8 +585,8 @@ int main(int argc, char **argv) {
 	printf("{\n");
 	printf("  \"version\": 1,\n");
 	printf("  \"settings\": {\"platform\": \"%s\", \"device\": \"%s\", \"reps\": %d, "
-	       "\"warmup\": %d, \"manifest\": \"%s\"},\n",
-	       platformName, deviceName, reps, warmup, manifest);
+		   "\"warmup\": %d, \"manifest\": \"%s\"},\n",
+		   platformName, deviceName, reps, warmup, manifest);
 	printf("  \"configs\": [\n");
 	double logSumMs = 0.0, logSumFlops = 0.0;
 	int logCount = 0, passCount = 0, timeCount = 0;
@@ -601,23 +602,23 @@ int main(int argc, char **argv) {
 			timeCount++;
 		}
 		printf("    {\"id\": \"%s\", \"kind\": \"%s\", \"shape\": \"%s\", \"ok\": %s, "
-		       "\"error\": \"%s\", \"initMs\": %.3f, \"medianMs\": %.6f, \"p10Ms\": %.6f, "
-		       "\"p90Ms\": %.6f, \"p99Ms\": %.6f, \"minMs\": %.6f, \"meanMs\": %.6f, "
-		       "\"maxMs\": %.6f, \"gflops\": %.4f, \"gbps\": %.4f, \"maxAbs\": %.3e, "
-		       "\"maxRel\": %.3e, \"firstBad\": %d, \"outFloats\": %d, "
-		       "\"innerReps\": %d}%s\n",
-		       r->id, r->kind, r->shape, r->ok ? "true" : "false", r->error,
-		       r->initMs, r->medianMs, r->p10Ms, r->p90Ms, r->p99Ms, r->minMs,
-		       r->meanMs, r->maxMs, r->gflops, r->gbps,
-		       r->maxAbs, r->maxRel, r->firstBad, r->outFloats, r->innerReps,
-		       (i + 1 < configCount) ? "," : "");
+			   "\"error\": \"%s\", \"initMs\": %.3f, \"medianMs\": %.6f, \"p10Ms\": %.6f, "
+			   "\"p90Ms\": %.6f, \"p99Ms\": %.6f, \"minMs\": %.6f, \"meanMs\": %.6f, "
+			   "\"maxMs\": %.6f, \"gflops\": %.4f, \"gbps\": %.4f, \"maxAbs\": %.3e, "
+			   "\"maxRel\": %.3e, \"firstBad\": %d, \"outFloats\": %d, "
+			   "\"innerReps\": %d}%s\n",
+			   r->id, r->kind, r->shape, r->ok ? "true" : "false", r->error,
+			   r->initMs, r->medianMs, r->p10Ms, r->p90Ms, r->p99Ms, r->minMs,
+			   r->meanMs, r->maxMs, r->gflops, r->gbps,
+			   r->maxAbs, r->maxRel, r->firstBad, r->outFloats, r->innerReps,
+			   (i + 1 < configCount) ? "," : "");
 	}
 	printf("  ],\n");
 	printf("  \"aggregate\": {\"configs\": %d, \"passed\": %d, \"timed\": %d, "
-	       "\"geomeanMs\": %.6f, \"geomeanGflops\": %.4f}\n",
-	       configCount, passCount, timeCount,
-	       logCount ? exp(logSumMs / logCount) : 0.0,
-	       logCount ? exp(logSumFlops / logCount) : 0.0);
+		   "\"geomeanMs\": %.6f, \"geomeanGflops\": %.4f}\n",
+		   configCount, passCount, timeCount,
+		   logCount ? exp(logSumMs / logCount) : 0.0,
+		   logCount ? exp(logSumFlops / logCount) : 0.0);
 	printf("}\n");
 	fflush(stdout);
 	CL_Context_Destroy(&ctx);

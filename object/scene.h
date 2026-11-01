@@ -1,6 +1,9 @@
 #ifndef SCENE_H
 #define SCENE_H
 
+#include "format.h"
+#include "shape.h"
+
 typedef struct Object Object;
 typedef struct MaterialLib MaterialLib;
 
@@ -23,6 +26,31 @@ void ObjectList_Remove(ObjectList *list, int index); // destroys object at index
 void ObjectList_Destroy(ObjectList *list);			 // destroys every object and frees the array
 int ObjectList_CountTriangles(const ObjectList *list);
 
+// TODO: create serialization functions
+// for build in objects use just some string as identifying the shape
+// for merged objects, we need to create file and save the binary and add path to the file
+// for imported objects, we just save the path to the exiting file
+// we can keep same style of naming so
+// prefix => [__custom_obj_, __buildin_`shapeName`_, __merged_object_]
+// path => [file path](if build in skip)
+// suffix => _random16letters
+
+typedef enum ObjectType {
+	CUSTOM_OBJ,
+	BUILDIN_OBJ,
+	MERGED_OBJECT,
+} ObjectType;
+
+typedef struct ObjectRecord {
+	ObjectType type;
+	ShapeKind shapeKind;
+	char ObjectPathOrType[128];
+} ObjectRecord;
+
+Error SaveScene(const ObjectList *list, const MaterialLib *lib, const char *savePath);
+
+// TODO: create load functions that will load the objects from the one file config
+
 // Merge all objects in src into a single world-space mesh added to dst.
 // Src objects are destroyed and the list is reset after merging.
 void ObjectList_Merge(ObjectList *src, ObjectList *dst);
@@ -30,7 +58,5 @@ void ObjectList_Merge(ObjectList *src, ObjectList *dst);
 // Builds the demo scene into the list: tile grid, material grid, cube/sphere
 // samples, and one instance of every shape in shapeTable order.
 void Scene_BuildShowcase(ObjectList *list, MaterialLib *lib);
-
-#include "object.h"
 
 #endif // SCENE_H

@@ -4,32 +4,33 @@
 #define N 16
 
 typedef struct {
-    int       n;
-    long long result;
+	int n;
+	long long result;
 } FactArgs;
 
 static void factTask(void *arg) {
-    FactArgs *a = arg;
-    long long r = 1;
-    for (int i = 2; i <= a->n; i++) r *= i;
-    a->result = r;
+	FactArgs *a = arg;
+	long long r = 1;
+	for (int i = 2; i <= a->n; i++)
+		r *= i;
+	a->result = r;
 }
 
 int main(void) {
-    ThreadPool *pool = poolCreate(4, N);
+	ThreadPool *pool = poolCreate(4, N);
 
-    FactArgs args[N];
-    for (int i = 0; i < N; i++) {
-        args[i].n      = i;
-        args[i].result = 0;
-        poolAdd(pool, factTask, &args[i]);
-    }
+	FactArgs args[N];
+	for (int i = 0; i < N; i++) {
+		args[i].n = i;
+		args[i].result = 0;
+		poolAdd(pool, factTask, &args[i]);
+	}
 
-    poolWait(pool);
+	poolWait(pool);
 
-    for (int i = 0; i < N; i++)
-        printf("%2d! = %lld\n", args[i].n, args[i].result);
+	for (int i = 0; i < N; i++)
+		printf("%2d! = %lld\n", args[i].n, args[i].result);
 
-    poolDestroy(pool);
-    return 0;
+	poolDestroy(pool);
+	return 0;
 }

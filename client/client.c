@@ -48,7 +48,7 @@ static ClientResponse sendRequest(const Client *c, uint8 type, const char *data,
 		res.data = malloc(rsize);
 		if (res.data) {
 			nr = recv(fd, res.data, rsize, MSG_WAITALL);
-			res.size = (uint32)nr;
+			res.size = nr > 0 ? (uint32)nr : 0;
 		}
 	}
 

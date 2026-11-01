@@ -4,8 +4,10 @@
 #define SAMPLES 100000
 
 int main() {
-	Object *objects = malloc(sizeof(Object) * SAMPLES);
+	Object *objects = calloc(SAMPLES, sizeof(Object));
+	if (!objects) return 1;
 	for (int i = 0; i < SAMPLES; i++) {
+		snprintf(objects[i].ObjectPathOrType, sizeof(objects[i].ObjectPathOrType), "__bench_box_%d", i);
 		objects[i].worldBBmin = (float3){rand() / (float)RAND_MAX, rand() / (float)RAND_MAX, rand() / (float)RAND_MAX};
 		objects[i].worldBBmax = (float3){objects[i].worldBBmin.x + rand() / (float)RAND_MAX,
 										 objects[i].worldBBmin.y + rand() / (float)RAND_MAX,
@@ -67,9 +69,9 @@ int main() {
 		for (int k = 0; k < 4; k++)
 			hitsV4 += (resultsV4[i].tMin[k] != FLT_MAX);
 	printf("Hit rate -- old: %.2f%%  V2: %.2f%%  V4: %.2f%%\n",
-		100.0 * hitsOld / SAMPLES,
-		100.0 * hitsV2  / SAMPLES,
-		100.0 * hitsV4  / SAMPLES);
+		   100.0 * hitsOld / SAMPLES,
+		   100.0 * hitsV2 / SAMPLES,
+		   100.0 * hitsV4 / SAMPLES);
 
 	free(objects);
 	free(results);

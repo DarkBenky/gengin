@@ -15,6 +15,16 @@ static inline float3 TransformPoint(const Object *obj, float3 local) {
 	return TransformPointTRS(local, obj->position, obj->rotation, obj->scale);
 }
 
+void Object_SetGeneratedName(Object *obj, const char *prefix, const char *middle) {
+	if (!obj || !prefix) return;
+	char randomPart[16];
+	generateRandomString(randomPart, sizeof(randomPart));
+	if (middle)
+		snprintf(obj->ObjectPathOrType, sizeof(obj->ObjectPathOrType), "%s%s_%s", prefix, middle, randomPart);
+	else
+		snprintf(obj->ObjectPathOrType, sizeof(obj->ObjectPathOrType), "%s%s", prefix, randomPart);
+}
+
 bool ObjectBehindCamera(const Object *obj, float3 camPos, float3 camForward) {
 	// cull only if the entire world AABB is behind the camera plane
 	float3 mn = obj->worldBBmin;
@@ -92,6 +102,8 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
 void CreateCube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_cube_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -169,6 +181,8 @@ static float3 SphereFaceNormal(float3 v1, float3 v2, float3 v3) {
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha
 void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_sphere_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -206,10 +220,14 @@ void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, f
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -228,6 +246,8 @@ void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, f
 }
 
 void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_sphere_high_res_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -265,10 +285,14 @@ void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, f
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -287,6 +311,8 @@ void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, f
 }
 
 void CreatePlane(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_plane_", NULL);
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -312,8 +338,14 @@ void CreatePlane(Object *obj, float3 position, float3 rotation, float3 scale, fl
 	// XZ plane facing +Y
 	const float3 v0 = {-0.5f, 0.0f, -0.5f}, v1 = {0.5f, 0.0f, -0.5f}, v2 = {0.5f, 0.0f, 0.5f}, v3 = {-0.5f, 0.0f, 0.5f};
 	const float3 n = {0.0f, 1.0f, 0.0f};
-	obj->v1[0] = v0; obj->v2[0] = v3; obj->v3[0] = v1; obj->normals[0] = n;
-	obj->v1[1] = v1; obj->v2[1] = v3; obj->v3[1] = v2; obj->normals[1] = n;
+	obj->v1[0] = v0;
+	obj->v2[0] = v3;
+	obj->v3[0] = v1;
+	obj->normals[0] = n;
+	obj->v1[1] = v1;
+	obj->v2[1] = v3;
+	obj->v3[1] = v2;
+	obj->normals[1] = n;
 
 	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
 	for (int i = 0; i < triCount; i++)
@@ -328,6 +360,8 @@ void CreatePlane(Object *obj, float3 position, float3 rotation, float3 scale, fl
 }
 
 void CreateQuad(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_quad_", NULL);
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -353,8 +387,14 @@ void CreateQuad(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	// XY quad facing +Z
 	const float3 v0 = {-0.5f, -0.5f, 0.0f}, v1 = {0.5f, -0.5f, 0.0f}, v2 = {0.5f, 0.5f, 0.0f}, v3 = {-0.5f, 0.5f, 0.0f};
 	const float3 n = {0.0f, 0.0f, 1.0f};
-	obj->v1[0] = v0; obj->v2[0] = v1; obj->v3[0] = v2; obj->normals[0] = n;
-	obj->v1[1] = v0; obj->v2[1] = v2; obj->v3[1] = v3; obj->normals[1] = n;
+	obj->v1[0] = v0;
+	obj->v2[0] = v1;
+	obj->v3[0] = v2;
+	obj->normals[0] = n;
+	obj->v1[1] = v0;
+	obj->v2[1] = v2;
+	obj->v3[1] = v3;
+	obj->normals[1] = n;
 
 	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
 	for (int i = 0; i < triCount; i++)
@@ -371,6 +411,8 @@ void CreateQuad(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define DISK_SEGMENTS 24
 
 void CreateDisk(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_disk_", NULL);
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -403,7 +445,10 @@ void CreateDisk(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		float a1 = twoPi * (i + 1) / DISK_SEGMENTS;
 		float3 p0 = {cosf(a0) * radius, 0.0f, sinf(a0) * radius};
 		float3 p1 = {cosf(a1) * radius, 0.0f, sinf(a1) * radius};
-		obj->v1[i] = center; obj->v2[i] = p1; obj->v3[i] = p0; obj->normals[i] = n;
+		obj->v1[i] = center;
+		obj->v2[i] = p1;
+		obj->v3[i] = p0;
+		obj->normals[i] = n;
 	}
 
 	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
@@ -421,6 +466,8 @@ void CreateDisk(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define CONE_SEGMENTS 24
 
 void CreateCone(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_cone_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -453,10 +500,14 @@ void CreateCone(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		float a1 = twoPi * (i + 1) / CONE_SEGMENTS;
 		float3 p0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 p1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = apex; obj->v2[t] = p1; obj->v3[t] = p0;
+		obj->v1[t] = apex;
+		obj->v2[t] = p1;
+		obj->v3[t] = p0;
 		obj->normals[t] = SphereFaceNormal(apex, p1, p0);
 		t++;
-		obj->v1[t] = baseCenter; obj->v2[t] = p0; obj->v3[t] = p1;
+		obj->v1[t] = baseCenter;
+		obj->v2[t] = p0;
+		obj->v3[t] = p1;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -476,6 +527,8 @@ void CreateCone(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define CYLINDER_SEGMENTS 24
 
 void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_cylinder_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -510,16 +563,24 @@ void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale,
 		float3 top1 = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 bot0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 bot1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->v1[t] = top0;
+		obj->v2[t] = bot1;
+		obj->v3[t] = bot0;
 		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
 		t++;
-		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->v1[t] = top0;
+		obj->v2[t] = top1;
+		obj->v3[t] = bot1;
 		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
 		t++;
-		obj->v1[t] = topCenter; obj->v2[t] = top1; obj->v3[t] = top0;
+		obj->v1[t] = topCenter;
+		obj->v2[t] = top1;
+		obj->v3[t] = top0;
 		obj->normals[t] = (float3){0.0f, 1.0f, 0.0f};
 		t++;
-		obj->v1[t] = bottomCenter; obj->v2[t] = bot0; obj->v3[t] = bot1;
+		obj->v1[t] = bottomCenter;
+		obj->v2[t] = bot0;
+		obj->v3[t] = bot1;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -539,6 +600,8 @@ void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale,
 #define TUBE_SEGMENTS 24
 
 void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_tube_", NULL);
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -572,10 +635,14 @@ void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		float3 top1 = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 bot0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 bot1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->v1[t] = top0;
+		obj->v2[t] = bot1;
+		obj->v3[t] = bot0;
 		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
 		t++;
-		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->v1[t] = top0;
+		obj->v2[t] = top1;
+		obj->v3[t] = bot1;
 		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
 		t++;
 	}
@@ -596,6 +663,8 @@ void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 #define CAPSULE_RINGS 6
 
 void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_capsule_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -629,10 +698,14 @@ void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, 
 		float3 top1 = {cosf(a1) * radius, halfHeight, sinf(a1) * radius};
 		float3 bot0 = {cosf(a0) * radius, -halfHeight, sinf(a0) * radius};
 		float3 bot1 = {cosf(a1) * radius, -halfHeight, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->v1[t] = top0;
+		obj->v2[t] = bot1;
+		obj->v3[t] = bot0;
 		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
 		t++;
-		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->v1[t] = top0;
+		obj->v2[t] = top1;
+		obj->v3[t] = bot1;
 		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
 		t++;
 	}
@@ -649,10 +722,14 @@ void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, 
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -674,6 +751,8 @@ void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, 
 #define HEMISPHERE_RINGS 8
 
 void CreateHemisphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_hemisphere_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -712,10 +791,14 @@ void CreateHemisphere(Object *obj, float3 position, float3 rotation, float3 scal
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -726,7 +809,9 @@ void CreateHemisphere(Object *obj, float3 position, float3 rotation, float3 scal
 		float a1 = twoPi * (seg + 1) / HEMISPHERE_SEGMENTS;
 		float3 p0 = {cosf(a0) * radius, 0.0f, sinf(a0) * radius};
 		float3 p1 = {cosf(a1) * radius, 0.0f, sinf(a1) * radius};
-		obj->v1[t] = baseCenter; obj->v2[t] = p0; obj->v3[t] = p1;
+		obj->v1[t] = baseCenter;
+		obj->v2[t] = p0;
+		obj->v3[t] = p1;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -752,6 +837,8 @@ static float3 TorusPoint(float u, float v, float major, float minor) {
 }
 
 void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_torus_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -788,10 +875,14 @@ void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, fl
 			float3 b = TorusPoint(u1, v0, major, minor);
 			float3 c = TorusPoint(u0, v1, major, minor);
 			float3 d = TorusPoint(u1, v1, major, minor);
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = c; obj->v2[t] = d; obj->v3[t] = b;
+			obj->v1[t] = c;
+			obj->v2[t] = d;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(c, d, b);
 			t++;
 		}
@@ -810,6 +901,8 @@ void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, fl
 }
 
 void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_pyramid_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -838,14 +931,20 @@ void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, 
 	int t = 0;
 	for (int i = 0; i < 4; i++) {
 		float3 p = base[i], q = base[(i + 1) & 3];
-		obj->v1[t] = q; obj->v2[t] = p; obj->v3[t] = apex;
+		obj->v1[t] = q;
+		obj->v2[t] = p;
+		obj->v3[t] = apex;
 		obj->normals[t] = SphereFaceNormal(q, p, apex);
 		t++;
 	}
-	obj->v1[t] = base[0]; obj->v2[t] = base[1]; obj->v3[t] = base[2];
+	obj->v1[t] = base[0];
+	obj->v2[t] = base[1];
+	obj->v3[t] = base[2];
 	obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 	t++;
-	obj->v1[t] = base[0]; obj->v2[t] = base[2]; obj->v3[t] = base[3];
+	obj->v1[t] = base[0];
+	obj->v2[t] = base[2];
+	obj->v3[t] = base[3];
 	obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 	t++;
 
@@ -864,6 +963,8 @@ void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, 
 #define PRISM_SEGMENTS 3
 
 void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_prism_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -898,10 +999,14 @@ void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, fl
 		float3 topB = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 botA = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 botB = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = topA; obj->v2[t] = botB; obj->v3[t] = botA;
+		obj->v1[t] = topA;
+		obj->v2[t] = botB;
+		obj->v3[t] = botA;
 		obj->normals[t] = SphereFaceNormal(topA, botB, botA);
 		t++;
-		obj->v1[t] = topA; obj->v2[t] = topB; obj->v3[t] = botB;
+		obj->v1[t] = topA;
+		obj->v2[t] = topB;
+		obj->v3[t] = botB;
 		obj->normals[t] = SphereFaceNormal(topA, topB, botB);
 		t++;
 	}
@@ -912,10 +1017,14 @@ void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, fl
 		float3 topB = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 botA = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 botB = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = topB; obj->v3[t] = topA;
+		obj->v1[t] = top0;
+		obj->v2[t] = topB;
+		obj->v3[t] = topA;
 		obj->normals[t] = (float3){0.0f, 1.0f, 0.0f};
 		t++;
-		obj->v1[t] = bot0; obj->v2[t] = botA; obj->v3[t] = botB;
+		obj->v1[t] = bot0;
+		obj->v2[t] = botA;
+		obj->v3[t] = botB;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -936,6 +1045,8 @@ void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, fl
 #define UVSPHERE_RINGS 16
 
 void CreateUVSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_uvsphere_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -976,11 +1087,15 @@ void CreateUVSphere(Object *obj, float3 position, float3 rotation, float3 scale,
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			obj->uvs[t] = (UvCords){(uint16)(u0 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v1 * 65535.0f), (uint16)(u0 * 65535.0f), (uint16)(v1 * 65535.0f)};
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			obj->uvs[t] = (UvCords){(uint16)(u0 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v1 * 65535.0f)};
 			t++;
@@ -1007,7 +1122,9 @@ static float3 IcoMidpoint(float3 a, float3 b) {
 
 static int IcoSubdivide(Object *obj, float3 a, float3 b, float3 c, int level, int idx) {
 	if (level == 0) {
-		obj->v1[idx] = a; obj->v2[idx] = b; obj->v3[idx] = c;
+		obj->v1[idx] = a;
+		obj->v2[idx] = b;
+		obj->v3[idx] = c;
 		obj->normals[idx] = SphereFaceNormal(a, b, c);
 		return idx + 1;
 	}
@@ -1019,6 +1136,8 @@ static int IcoSubdivide(Object *obj, float3 a, float3 b, float3 c, int level, in
 }
 
 void CreateIcosphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
+	Object_SetGeneratedName(obj, "__buildin_icosphere_", NULL);
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -1045,14 +1164,9 @@ void CreateIcosphere(Object *obj, float3 position, float3 rotation, float3 scale
 
 	const float t = (1.0f + sqrtf(5.0f)) * 0.5f;
 	const float3 icoVerts[12] = {
-		{-1.0f, t, 0.0f}, {1.0f, t, 0.0f}, {-1.0f, -t, 0.0f}, {1.0f, -t, 0.0f},
-		{0.0f, -1.0f, t}, {0.0f, 1.0f, t}, {0.0f, -1.0f, -t}, {0.0f, 1.0f, -t},
-		{t, 0.0f, -1.0f}, {t, 0.0f, 1.0f}, {-t, 0.0f, -1.0f}, {-t, 0.0f, 1.0f}};
+		{-1.0f, t, 0.0f}, {1.0f, t, 0.0f}, {-1.0f, -t, 0.0f}, {1.0f, -t, 0.0f}, {0.0f, -1.0f, t}, {0.0f, 1.0f, t}, {0.0f, -1.0f, -t}, {0.0f, 1.0f, -t}, {t, 0.0f, -1.0f}, {t, 0.0f, 1.0f}, {-t, 0.0f, -1.0f}, {-t, 0.0f, 1.0f}};
 	const int icoFaces[20][3] = {
-		{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11},
-		{1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
-		{3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9},
-		{4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
+		{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8}, {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9}, {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
 	float3 verts[12];
 	for (int i = 0; i < 12; i++)
 		verts[i] = Float3_Scale(Float3_Normalize(icoVerts[i]), 0.5f);
@@ -1368,11 +1482,17 @@ typedef struct {
 static inline float BVHTriCentroidAxis(const Object *obj, int t, int axis) {
 	float a, b, c;
 	if (axis == 0) {
-		a = obj->v1[t].x; b = obj->v2[t].x; c = obj->v3[t].x;
+		a = obj->v1[t].x;
+		b = obj->v2[t].x;
+		c = obj->v3[t].x;
 	} else if (axis == 1) {
-		a = obj->v1[t].y; b = obj->v2[t].y; c = obj->v3[t].y;
+		a = obj->v1[t].y;
+		b = obj->v2[t].y;
+		c = obj->v3[t].y;
 	} else {
-		a = obj->v1[t].z; b = obj->v2[t].z; c = obj->v3[t].z;
+		a = obj->v1[t].z;
+		b = obj->v2[t].z;
+		c = obj->v3[t].z;
 	}
 	return (a + b + c) * 0.333333f;
 }
@@ -1416,14 +1536,20 @@ static int BVHSplitTriangles(const Object *obj, int *idx, int count, float3 mn, 
 			for (int i = 0; i < count; i++) {
 				int t = idx[i];
 				int b = (int)((BVHTriCentroidAxis(obj, t, ax) - mnv[ax]) * scale);
-				if (b < 0) b = 0; else if (b >= BVH_SAH_BINS) b = BVH_SAH_BINS - 1;
+				if (b < 0)
+					b = 0;
+				else if (b >= BVH_SAH_BINS)
+					b = BVH_SAH_BINS - 1;
 				float3 a = obj->v1[t], c1 = obj->v2[t], c2 = obj->v3[t];
 				float vmnx = MinF32(MinF32(a.x, c1.x), c2.x), vmxx = MaxF32(MaxF32(a.x, c1.x), c2.x);
 				float vmny = MinF32(MinF32(a.y, c1.y), c2.y), vmxy = MaxF32(MaxF32(a.y, c1.y), c2.y);
 				float vmnz = MinF32(MinF32(a.z, c1.z), c2.z), vmxz = MaxF32(MaxF32(a.z, c1.z), c2.z);
-				bins[b].mnx = MinF32(bins[b].mnx, vmnx); bins[b].mxx = MaxF32(bins[b].mxx, vmxx);
-				bins[b].mny = MinF32(bins[b].mny, vmny); bins[b].mxy = MaxF32(bins[b].mxy, vmxy);
-				bins[b].mnz = MinF32(bins[b].mnz, vmnz); bins[b].mxz = MaxF32(bins[b].mxz, vmxz);
+				bins[b].mnx = MinF32(bins[b].mnx, vmnx);
+				bins[b].mxx = MaxF32(bins[b].mxx, vmxx);
+				bins[b].mny = MinF32(bins[b].mny, vmny);
+				bins[b].mxy = MaxF32(bins[b].mxy, vmxy);
+				bins[b].mnz = MinF32(bins[b].mnz, vmnz);
+				bins[b].mxz = MaxF32(bins[b].mxz, vmxz);
 				bins[b].count++;
 			}
 			// left-to-right prefix sweep
@@ -1435,9 +1561,12 @@ static int BVHSplitTriangles(const Object *obj, int *idx, int count, float3 mn, 
 			lArea[0] = 0.0f;
 			for (int b = 0; b < BVH_SAH_BINS; b++) {
 				acc.count += bins[b].count;
-				acc.mnx = MinF32(acc.mnx, bins[b].mnx); acc.mxx = MaxF32(acc.mxx, bins[b].mxx);
-				acc.mny = MinF32(acc.mny, bins[b].mny); acc.mxy = MaxF32(acc.mxy, bins[b].mxy);
-				acc.mnz = MinF32(acc.mnz, bins[b].mnz); acc.mxz = MaxF32(acc.mxz, bins[b].mxz);
+				acc.mnx = MinF32(acc.mnx, bins[b].mnx);
+				acc.mxx = MaxF32(acc.mxx, bins[b].mxx);
+				acc.mny = MinF32(acc.mny, bins[b].mny);
+				acc.mxy = MaxF32(acc.mxy, bins[b].mxy);
+				acc.mnz = MinF32(acc.mnz, bins[b].mnz);
+				acc.mxz = MaxF32(acc.mxz, bins[b].mxz);
 				lCount[b + 1] = acc.count;
 				lArea[b + 1] = acc.count > 0 ? BVHSahArea(&acc) : 0.0f;
 			}
@@ -1448,9 +1577,12 @@ static int BVHSplitTriangles(const Object *obj, int *idx, int count, float3 mn, 
 			accR.count = 0;
 			for (int b = BVH_SAH_BINS - 1; b >= 1; b--) {
 				accR.count += bins[b].count;
-				accR.mnx = MinF32(accR.mnx, bins[b].mnx); accR.mxx = MaxF32(accR.mxx, bins[b].mxx);
-				accR.mny = MinF32(accR.mny, bins[b].mny); accR.mxy = MaxF32(accR.mxy, bins[b].mxy);
-				accR.mnz = MinF32(accR.mnz, bins[b].mnz); accR.mxz = MaxF32(accR.mxz, bins[b].mxz);
+				accR.mnx = MinF32(accR.mnx, bins[b].mnx);
+				accR.mxx = MaxF32(accR.mxx, bins[b].mxx);
+				accR.mny = MinF32(accR.mny, bins[b].mny);
+				accR.mxy = MaxF32(accR.mxy, bins[b].mxy);
+				accR.mnz = MinF32(accR.mnz, bins[b].mnz);
+				accR.mxz = MaxF32(accR.mxz, bins[b].mxz);
 				int nL = lCount[b], nR = accR.count;
 				if (nL == 0 || nR == 0) continue;
 				float cost = lArea[b] * (float)nL + BVHSahArea(&accR) * (float)nR;
@@ -1574,7 +1706,7 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 			}
 		}
 
-		if (w.count <= BVH_LEAF_SIMD) { // keeps triCount <= BVH_LEAF_SIMD, the SSE payload's lane count
+		if (w.count <= BVH_LEAF_SIMD) { // keeps triCount <= BVH_LEAF_SIMD, the AVX2 payload's lane count
 			node->triStart = w.start;
 			node->triCount = w.count;
 			// soa[] unused for leaves — parent already stored our bounds
@@ -1636,33 +1768,41 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 		stack[top++] = (WorkItem){leftIdx, w.start, mid, w.depth + 1};
 		stack[top++] = (WorkItem){leftIdx + 1, w.start + mid, w.count - mid, w.depth + 1};
 	}
-	// ---- per-leaf SoA triangle payload for the 4-wide SSE leaf test ----
+	// ---- per-leaf SoA triangle payload for the 8-wide AVX2 leaf test ----
 	// Same e1/e2 expressions as rayTriangle(); one pass over the leaves so the
-	// hot traversal never recomputes them and reads one contiguous 192 B block.
+	// hot traversal never recomputes them and reads one contiguous 384 B block.
 	int leafCount = 0;
 	for (int i = 0; i < bvh->nodeCount; i++) {
-		if (bvh->nodes[i].triCount > 0) bvh->nodes[i]._pad[0] = leafCount++;
-		else bvh->nodes[i]._pad[0] = -1;
+		if (bvh->nodes[i].triCount > 0)
+			bvh->nodes[i]._pad[0] = leafCount++;
+		else
+			bvh->nodes[i]._pad[0] = -1;
 	}
 	bvh->leafCount = leafCount;
 	bvh->leafSoa = NULL;
 	if (leafCount > 0) {
-		size_t leafBytes = sizeof(float) * 48 * (size_t)leafCount;
+		size_t leafBytes = sizeof(float) * 96 * (size_t)leafCount;
 		bvh->leafSoa = aligned_alloc(64, leafBytes);
 		if (bvh->leafSoa) {
 			memset(bvh->leafSoa, 0, leafBytes); // padding lanes: e1 == e2 == 0 -> rejected
 			for (int i = 0; i < bvh->nodeCount; i++) {
 				const BVHNode *node = &bvh->nodes[i];
 				if (node->triCount <= 0) continue;
-				float *ls = bvh->leafSoa + 48 * (size_t)node->_pad[0];
+				float *ls = bvh->leafSoa + 96 * (size_t)node->_pad[0];
 				for (int l = 0; l < node->triCount; l++) {
 					int t = bvh->triIndices[node->triStart + l];
 					float3 v0 = obj->v1[t];
 					float3 e1 = {obj->v2[t].x - v0.x, obj->v2[t].y - v0.y, obj->v2[t].z - v0.z};
 					float3 e2 = {obj->v3[t].x - v0.x, obj->v3[t].y - v0.y, obj->v3[t].z - v0.z};
-					ls[0 + l] = v0.x;  ls[4 + l] = v0.y;  ls[8 + l] = v0.z;
-					ls[16 + l] = e1.x; ls[20 + l] = e1.y; ls[24 + l] = e1.z;
-					ls[32 + l] = e2.x; ls[36 + l] = e2.y; ls[40 + l] = e2.z;
+					ls[0 + l] = v0.x;
+					ls[8 + l] = v0.y;
+					ls[16 + l] = v0.z;
+					ls[32 + l] = e1.x;
+					ls[40 + l] = e1.y;
+					ls[48 + l] = e1.z;
+					ls[64 + l] = e2.x;
+					ls[72 + l] = e2.y;
+					ls[80 + l] = e2.z;
 				}
 			}
 		}
@@ -1718,51 +1858,51 @@ static bool rayTriangle(float3 ro, float3 rd,
 	return true;
 }
 
-// ---- 4-wide SSE leaf triangle test ----------------------------------------
+// ---- 8-wide AVX2 leaf triangle test ----------------------------------------
 // Same Möller–Trumbore arithmetic as rayTriangle() above, but evaluated for the
-// (up to) 4 triangles of a BVH leaf at once out of the leaf's SoA payload
-// (bvh->leafSoa): lane = triangle, so every component is one __m128 and no
+// (up to) 8 triangles of a BVH leaf at once out of the leaf's SoA payload
+// (bvh->leafSoa): lane = triangle, so every component is one __m256 and no
 // per-lane branch is needed. Invalid/padding lanes have e1 == e2 == 0 -> a == 0
-// -> rejected, so a leaf with 1..3 triangles is handled by the same code.
+// -> rejected, so a leaf with 1..7 triangles is handled by the same code.
 // Returns the accept mask per lane; *tOut holds the per-lane t.
-static inline __m128 rayTriLeaf4Mask(const float *ls, float3 ro, float3 rd, __m128 *tOut, bool cull) {
-	const __m128 eps = _mm_set1_ps(1e-7f);
-	const __m128 zero = _mm_setzero_ps();
-	const __m128 one = _mm_set1_ps(1.0f);
-	const __m128 sign = _mm_set1_ps(-0.0f);
+static inline __m256 rayTriLeaf8Mask(const float *ls, float3 ro, float3 rd, __m256 *tOut, bool cull) {
+	const __m256 eps = _mm256_set1_ps(1e-7f);
+	const __m256 zero = _mm256_setzero_ps();
+	const __m256 one = _mm256_set1_ps(1.0f);
+	const __m256 sign = _mm256_set1_ps(-0.0f);
 
-	const __m128 rdx = _mm_set1_ps(rd.x), rdy = _mm_set1_ps(rd.y), rdz = _mm_set1_ps(rd.z);
-	const __m128 rox = _mm_set1_ps(ro.x), roy = _mm_set1_ps(ro.y), roz = _mm_set1_ps(ro.z);
+	const __m256 rdx = _mm256_set1_ps(rd.x), rdy = _mm256_set1_ps(rd.y), rdz = _mm256_set1_ps(rd.z);
+	const __m256 rox = _mm256_set1_ps(ro.x), roy = _mm256_set1_ps(ro.y), roz = _mm256_set1_ps(ro.z);
 
-	const __m128 v0x = _mm_load_ps(ls + 0),  v0y = _mm_load_ps(ls + 4),  v0z = _mm_load_ps(ls + 8);
-	const __m128 e1x = _mm_load_ps(ls + 16), e1y = _mm_load_ps(ls + 20), e1z = _mm_load_ps(ls + 24);
-	const __m128 e2x = _mm_load_ps(ls + 32), e2y = _mm_load_ps(ls + 36), e2z = _mm_load_ps(ls + 40);
+	const __m256 v0x = _mm256_load_ps(ls + 0), v0y = _mm256_load_ps(ls + 8), v0z = _mm256_load_ps(ls + 16);
+	const __m256 e1x = _mm256_load_ps(ls + 32), e1y = _mm256_load_ps(ls + 40), e1z = _mm256_load_ps(ls + 48);
+	const __m256 e2x = _mm256_load_ps(ls + 64), e2y = _mm256_load_ps(ls + 72), e2z = _mm256_load_ps(ls + 80);
 
-	const __m128 hx = _mm_sub_ps(_mm_mul_ps(rdy, e2z), _mm_mul_ps(rdz, e2y));
-	const __m128 hy = _mm_sub_ps(_mm_mul_ps(rdz, e2x), _mm_mul_ps(rdx, e2z));
-	const __m128 hz = _mm_sub_ps(_mm_mul_ps(rdx, e2y), _mm_mul_ps(rdy, e2x));
+	const __m256 hx = _mm256_sub_ps(_mm256_mul_ps(rdy, e2z), _mm256_mul_ps(rdz, e2y));
+	const __m256 hy = _mm256_sub_ps(_mm256_mul_ps(rdz, e2x), _mm256_mul_ps(rdx, e2z));
+	const __m256 hz = _mm256_sub_ps(_mm256_mul_ps(rdx, e2y), _mm256_mul_ps(rdy, e2x));
 
-	const __m128 a = _mm_add_ps(_mm_add_ps(_mm_mul_ps(e1x, hx), _mm_mul_ps(e1y, hy)), _mm_mul_ps(e1z, hz));
-	__m128 ok;
+	const __m256 a = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(e1x, hx), _mm256_mul_ps(e1y, hy)), _mm256_mul_ps(e1z, hz));
+	__m256 ok;
 	if (cull) {
-		ok = _mm_cmpge_ps(a, eps);
+		ok = _mm256_cmp_ps(a, eps, _CMP_GE_OQ);
 	} else {
-		ok = _mm_cmpge_ps(_mm_andnot_ps(sign, a), eps); // |a| >= eps
+		ok = _mm256_cmp_ps(_mm256_andnot_ps(sign, a), eps, _CMP_GE_OQ); // |a| >= eps
 	}
-	const __m128 f = _mm_div_ps(one, a);
+	const __m256 f = _mm256_div_ps(one, a);
 
-	const __m128 sx = _mm_sub_ps(rox, v0x), sy = _mm_sub_ps(roy, v0y), sz = _mm_sub_ps(roz, v0z);
-	const __m128 u = _mm_mul_ps(f, _mm_add_ps(_mm_add_ps(_mm_mul_ps(sx, hx), _mm_mul_ps(sy, hy)), _mm_mul_ps(sz, hz)));
-	ok = _mm_and_ps(ok, _mm_and_ps(_mm_cmpge_ps(u, zero), _mm_cmple_ps(u, one)));
+	const __m256 sx = _mm256_sub_ps(rox, v0x), sy = _mm256_sub_ps(roy, v0y), sz = _mm256_sub_ps(roz, v0z);
+	const __m256 u = _mm256_mul_ps(f, _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(sx, hx), _mm256_mul_ps(sy, hy)), _mm256_mul_ps(sz, hz)));
+	ok = _mm256_and_ps(ok, _mm256_and_ps(_mm256_cmp_ps(u, zero, _CMP_GE_OQ), _mm256_cmp_ps(u, one, _CMP_LE_OQ)));
 
-	const __m128 qx = _mm_sub_ps(_mm_mul_ps(sy, e1z), _mm_mul_ps(sz, e1y));
-	const __m128 qy = _mm_sub_ps(_mm_mul_ps(sz, e1x), _mm_mul_ps(sx, e1z));
-	const __m128 qz = _mm_sub_ps(_mm_mul_ps(sx, e1y), _mm_mul_ps(sy, e1x));
-	const __m128 v = _mm_mul_ps(f, _mm_add_ps(_mm_add_ps(_mm_mul_ps(rdx, qx), _mm_mul_ps(rdy, qy)), _mm_mul_ps(rdz, qz)));
-	ok = _mm_and_ps(ok, _mm_and_ps(_mm_cmpge_ps(v, zero), _mm_cmple_ps(_mm_add_ps(u, v), one)));
+	const __m256 qx = _mm256_sub_ps(_mm256_mul_ps(sy, e1z), _mm256_mul_ps(sz, e1y));
+	const __m256 qy = _mm256_sub_ps(_mm256_mul_ps(sz, e1x), _mm256_mul_ps(sx, e1z));
+	const __m256 qz = _mm256_sub_ps(_mm256_mul_ps(sx, e1y), _mm256_mul_ps(sy, e1x));
+	const __m256 v = _mm256_mul_ps(f, _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(rdx, qx), _mm256_mul_ps(rdy, qy)), _mm256_mul_ps(rdz, qz)));
+	ok = _mm256_and_ps(ok, _mm256_and_ps(_mm256_cmp_ps(v, zero, _CMP_GE_OQ), _mm256_cmp_ps(_mm256_add_ps(u, v), one, _CMP_LE_OQ)));
 
-	const __m128 t = _mm_mul_ps(f, _mm_add_ps(_mm_add_ps(_mm_mul_ps(e2x, qx), _mm_mul_ps(e2y, qy)), _mm_mul_ps(e2z, qz)));
-	ok = _mm_and_ps(ok, _mm_cmpge_ps(t, eps)); // t >= eps
+	const __m256 t = _mm256_mul_ps(f, _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(e2x, qx), _mm256_mul_ps(e2y, qy)), _mm256_mul_ps(e2z, qz)));
+	ok = _mm256_and_ps(ok, _mm256_cmp_ps(t, eps, _CMP_GE_OQ)); // t >= eps
 
 	*tOut = t;
 	return ok;
@@ -1770,24 +1910,25 @@ static inline __m128 rayTriLeaf4Mask(const float *ls, float3 ro, float3 rd, __m1
 
 // Closest-hit leaf test: returns the smallest accepted t below bestT, or
 // FLT_MAX when no triangle of the leaf is hit, plus the winning lane.
-static inline float rayTriangleLeaf4(const float *ls, float3 ro, float3 rd, float bestT, int *laneOut, bool cull) {
-	__m128 t;
-	__m128 ok = rayTriLeaf4Mask(ls, ro, rd, &t, cull);
-	ok = _mm_and_ps(ok, _mm_cmplt_ps(t, _mm_set1_ps(bestT)));
+static inline float rayTriangleLeaf8(const float *ls, float3 ro, float3 rd, float bestT, int *laneOut, bool cull) {
+	__m256 t;
+	__m256 ok = rayTriLeaf8Mask(ls, ro, rd, &t, cull);
+	ok = _mm256_and_ps(ok, _mm256_cmp_ps(t, _mm256_set1_ps(bestT), _CMP_LT_OQ));
 
-	__m128 tin = _mm_blendv_ps(_mm_set1_ps(FLT_MAX), t, ok);
-	__m128 m1 = _mm_min_ps(tin, _mm_shuffle_ps(tin, tin, _MM_SHUFFLE(1, 0, 3, 2)));
+	__m256 tin = _mm256_blendv_ps(_mm256_set1_ps(FLT_MAX), t, ok);
+	__m128 m = _mm_min_ps(_mm256_castps256_ps128(tin), _mm256_extractf128_ps(tin, 1));
+	__m128 m1 = _mm_min_ps(m, _mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 0, 3, 2)));
 	__m128 m2 = _mm_min_ps(m1, _mm_shuffle_ps(m1, m1, _MM_SHUFFLE(2, 3, 0, 1)));
 	const float tmin = _mm_cvtss_f32(m2);
 	if (tmin >= FLT_MAX) return FLT_MAX;
-	*laneOut = __builtin_ctz(_mm_movemask_ps(_mm_cmpeq_ps(tin, _mm_set1_ps(tmin))));
+	*laneOut = __builtin_ctz(_mm256_movemask_ps(_mm256_cmp_ps(tin, _mm256_set1_ps(tmin), _CMP_EQ_OQ)));
 	return tmin;
 }
 
 // Any-hit leaf test (shadow rays): true when any lane of the leaf is hit.
-static inline bool rayTriangleLeaf4Any(const float *ls, float3 ro, float3 rd, bool cull) {
-	__m128 t;
-	return _mm_movemask_ps(rayTriLeaf4Mask(ls, ro, rd, &t, cull)) != 0;
+static inline bool rayTriangleLeaf8Any(const float *ls, float3 ro, float3 rd, bool cull) {
+	__m256 t;
+	return _mm256_movemask_ps(rayTriLeaf8Mask(ls, ro, rd, &t, cull)) != 0;
 }
 
 static float rayAABB(float3 ro, float3 rd, float3 mn, float3 mx) {
@@ -1841,15 +1982,17 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 	float bestT = initialBestT;
 	int stack[64];
 	int top = 0;
-	stack[top++] = 0;
+	// the nearer child is entered directly and only the farther one is left
+	// pending, so an internal node hands over one stack slot instead of two
+	int cur = 0;
 
-	while (top > 0) {
-		const BVHNode *node = &bvh->nodes[stack[--top]];
+	for (;;) {
+		const BVHNode *node = &bvh->nodes[cur];
 
 		if (node->triCount > 0) {
 			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
 				int lane = 0;
-				float hit = rayTriangleLeaf4(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir, bestT, &lane, obj->cullBackfaces);
+				float hit = rayTriangleLeaf8(bvh->leafSoa + 96 * (size_t)node->_pad[0], rayOrigin, rayDir, bestT, &lane, obj->cullBackfaces);
 				if (hit < bestT) {
 					bestT = hit;
 					*hitTriIdx = bvh->triIndices[node->triStart + lane];
@@ -1864,6 +2007,9 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 					}
 				}
 			}
+			if (top == 0) break;
+			cur = stack[--top];
+			continue;
 		} else {
 			// test both children at once with SSE — bounds stored SoA in this node
 			float out[2];
@@ -1874,11 +2020,19 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 			int li = node->leftFirst, ri = li + 1;
 			if (tl <= tr) {
 				if (tr < FLT_MAX) stack[top++] = ri;
-				if (tl < FLT_MAX) stack[top++] = li;
+				if (tl < FLT_MAX) {
+					cur = li;
+					continue;
+				}
 			} else {
 				if (tl < FLT_MAX) stack[top++] = li;
-				if (tr < FLT_MAX) stack[top++] = ri;
+				if (tr < FLT_MAX) {
+					cur = ri;
+					continue;
+				}
 			}
+			if (top == 0) break;
+			cur = stack[--top];
 		}
 	}
 
@@ -1909,14 +2063,17 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 		r2.x * rayDir.x + r2.y * rayDir.y + r2.z * rayDir.z};
 	float3 invDir = {1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z};
 	float3 bias = {rayOrigin.x * invDir.x, rayOrigin.y * invDir.y, rayOrigin.z * invDir.z};
+	// the second child is entered directly and only the first stays pending, so
+	// an internal node hands over one stack slot instead of two
+	const __m128 farv = _mm_set1_ps(FLT_MAX);
 	int stack[64];
 	int top = 0;
-	stack[top++] = 0;
-	while (top > 0) {
-		const BVHNode *node = &bvh->nodes[stack[--top]];
+	int cur = 0;
+	for (;;) {
+		const BVHNode *node = &bvh->nodes[cur];
 		if (node->triCount > 0) {
 			if (bvh->leafSoa && node->triCount <= BVH_LEAF_SIMD) {
-				if (rayTriangleLeaf4Any(bvh->leafSoa + 48 * (size_t)node->_pad[0], rayOrigin, rayDir, obj->cullBackfaces))
+				if (rayTriangleLeaf8Any(bvh->leafSoa + 96 * (size_t)node->_pad[0], rayOrigin, rayDir, obj->cullBackfaces))
 					return true;
 			} else {
 				for (int i = 0; i < node->triCount; i++) {
@@ -1927,12 +2084,25 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 				}
 			}
 		} else {
-			float out[2];
-			rayAABB_inv_x2_soa(bias, invDir, node->soa, out);
+			// child0 liveness in bit 0, child1 in bit 2
+			const int live = _mm_movemask_ps(_mm_cmplt_ps(rayAABB_inv_x2_soa_packed(bias, invDir, node->soa), farv));
 			int li = node->leftFirst;
-			if (out[0] < FLT_MAX) stack[top++] = li;
-			if (out[1] < FLT_MAX) stack[top++] = li + 1;
+			if ((live & 5) == 5) {
+				stack[top++] = li;
+				cur = li + 1;
+				continue;
+			}
+			if (live & 4) {
+				cur = li + 1;
+				continue;
+			}
+			if (live & 1) {
+				cur = li;
+				continue;
+			}
 		}
+		if (top == 0) break;
+		cur = stack[--top];
 	}
 	return false;
 }

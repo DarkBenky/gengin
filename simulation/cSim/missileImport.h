@@ -4,7 +4,7 @@
 #define MISSILE_BIN_VERSION 1
 
 typedef struct {
-	float thrust;   // N
+	float thrust;	// N
 	float burnTime; // s
 } MissileStageSpec;
 
@@ -12,13 +12,13 @@ typedef struct {
 typedef struct {
 	char name[16];
 
-	float length;     // m
-	float diameter;   // m
+	float length;	// m
+	float diameter; // m
 	float finSpanFront;
 	float finSpanBack;
-	float emptyMass;      // kg
+	float emptyMass;	  // kg
 	float propellantMass; // kg
-	float inertiaRoll;    // kg*m^2
+	float inertiaRoll;	  // kg*m^2
 	float inertiaPitch;
 	float inertiaYaw;
 
@@ -30,10 +30,10 @@ typedef struct {
 	float stallAngle; // deg
 	float maxG;
 
-	float frontArea;    // m^2
-	float frontMaxDeg;  // deg
+	float frontArea;	// m^2
+	float frontMaxDeg;	// deg
 	float frontRateDeg; // deg/s
-	float backArea;     // m^2
+	float backArea;		// m^2
 	float backMaxDeg;
 	float backRateDeg;
 	float tvcMaxDeg; // deg
@@ -44,7 +44,7 @@ typedef struct {
 
 	float pnGain;
 	float fuseRadius; // m
-	float lifetime;   // s
+	float lifetime;	  // s
 } MissileSpec;
 
 // Returns 0 on success.

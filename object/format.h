@@ -22,6 +22,9 @@ typedef uint32_t u32;
 typedef uint8_t uint8;
 typedef uint16_t uint16;
 typedef uint32_t uint32;
+typedef uint64_t u64;
+typedef uint64_t uint64;
+typedef int64_t int64;
 typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
@@ -29,6 +32,7 @@ typedef int32_t int32;
 typedef uint32_t Color;
 
 #define boll bool
+#define memcopy memcpy
 
 #define HexToUint32(hex) ((uint32)(0xFF000000 | (hex)))
 #define RGBToUint32(r, g, b) ((uint32)(0xFF000000 | ((uint32)(r) << 16) | ((uint32)(g) << 8) | (uint32)(b)))
@@ -75,6 +79,10 @@ typedef struct Error {
 	char msg[64];
 } Error;
 
+// Error_Make copies msg into the fixed-size buffer (truncates), Error_Ok is nil/"OK".
+Error Error_Make(int code, const char *msg);
+Error Error_Ok(void);
+
 typedef struct Camera {
 	float3 position;
 	float3 forward;
@@ -90,7 +98,6 @@ typedef struct Camera {
 	float prevFovScale;
 	float prevAspect;
 
-
 	float fov;
 	float2 jitter;
 	int screenWidth;
@@ -100,9 +107,9 @@ typedef struct Camera {
 	float3 viewDir;
 	float3 halfVec;
 	float3 renderLightDir;
-	
+
 	float seed;
-	
+
 	uint32 *framebufferLdr;
 	float3 *framebufferHdr;
 	float3 *tempFramebufferHdr; // stable snapshot for post passes (SSR) that read the HDR buffer
@@ -114,7 +121,7 @@ typedef struct Camera {
 	float3 *bloomDst;
 	uvMap *uvBuffer;
 	float *depthBuffer;
-	
+
 	float maxDepth;
 	float minDepth;
 	pthread_mutex_t depthLock; // guards maxDepth/minDepth across worker threads
@@ -124,7 +131,7 @@ typedef struct Camera {
 	float3 *reflectCache;
 	float *tempBuffer_1;
 	float *tempBuffer_2;
-	float *shadowCache; 
+	float *shadowCache;
 	int *objectIdBuffer;
 	int *triangleIdBuffer;
 	int frameCounter;
@@ -146,6 +153,7 @@ enum ErrorTypes {
 	E_INVALID_ARG,
 	E_OUT_OF_MEMORY,
 	E_FILE_NOT_FOUND,
+	E_FILE_OPEN_FAILED
 	// NOTE: add more error types here if needed
 };
 

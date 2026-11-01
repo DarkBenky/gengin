@@ -270,7 +270,7 @@ pgo:
 # Profile the app: builds a frame-pointer twin (the shipped binary keeps its
 # LTO/inlining flags) and renders flame/icicle/call graph via tools/flame.sh.
 FLAME_BIN     = $(PROF_DIR)/main_flame
-FLAME_SECONDS = 10
+FLAME_SECONDS = 20
 
 flame:
 	@mkdir -p $(PROF_DIR)

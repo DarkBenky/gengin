@@ -33,10 +33,10 @@ int loadMissileBin(MissileSpec *spec, const char *path) {
 		return 4;
 	}
 
-#define READ_F(field)                       \
+#define READ_F(field)                                \
 	if (fread(&(field), sizeof(float), 1, f) != 1) { \
-		fclose(f);                          \
-		return 5;                           \
+		fclose(f);                                   \
+		return 5;                                    \
 	}
 	READ_F(spec->length);
 	READ_F(spec->diameter);
