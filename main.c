@@ -211,7 +211,8 @@ int main() {
 		const float2 jitterPattern[4] = {
 			{1.5f, 1.5f}, {-1.5f, 1.5f}, {-1.5f, -1.5f}, {1.5f, -1.5f}};
 		camera.jitter = jitterPattern[frame & 3];
-		camera.seed = frame * (int)35527.0f << 16 | (int)11369.0f;
+		// unsigned: the shift overflows signed int from frame 1 on
+		camera.seed = (int)(((unsigned)frame * 35527u << 16) | 11369u);
 
 		Input_Poll(&input, window);
 		if (input.keysDown[KB_KEY_ESCAPE]) break;
