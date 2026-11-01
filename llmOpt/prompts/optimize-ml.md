@@ -29,7 +29,7 @@ breaking `ml_parity` does not ship.
 
 ## CODE STYLE — MATCH THE FILE, COMMENTS ONLY WHEN NECESSARY
 - The repo's own style guide is MANDATORY reading before any edit:
-  `.github/copilot-instructions.md` (+ `.github/instructions/C projects.instructions.md`).
+  `.github/copilot-instructions.md`.
   Essentials: camelCase functions/variables, PascalCase types,
   Structure-of-Arrays over Array-of-Structs, arena allocators and buffer
   reuse, small focused functions, explicit error handling, no emojis or
@@ -37,6 +37,14 @@ breaking `ml_parity` does not ship.
 - The diff must read like it was written by the same author as the surrounding
   code: same naming, indentation and idioms.  No reformatting of untouched
   lines, no drive-by whitespace edits.
+- This is the author's LEARNING project, but you work in PRs the author
+  reviews and judges, so you have room to do real work: a structural change
+  (algorithmic reformulation, data layout, a new abstraction) is fair game
+  when a measurement justifies it.  The bar is a coherent, reviewable PR,
+  not a minimal diff: keep it to one idea, change existing names, struct
+  fields or file layout only when the change requires it and say so in the
+  PR body, delete what the change makes dead, and never mix in unrelated
+  cleanup.
 - Comments: the expected count of NEW comments in a diff is ZERO.  A new or
   edited comment must pass the why-test: without it, a future reader would be
   misled by code that looks wrong or surprising.  NEVER cite measurements,

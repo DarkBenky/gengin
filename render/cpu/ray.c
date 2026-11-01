@@ -1107,7 +1107,7 @@ static void RayTraceRowFunc(void *arg) {
 				if (hasTexture && lib->entries[matId].textures) {
 					// TODO: Bilinear filtering for texture sampling
 					// TODO: add mipmapping for texture sampling (currently only nearest-neighbor sampling is used)
-					// TODO: add 3 (highRes[current], midRes, lowRes) resolution levels for each texture map (color, normal, roughness/metallic)
+					// TODO: **Important**: add 3 (highRes[current], midRes, lowRes) resolution levels for each texture map (color, normal, roughness/metallic)
 					// TODO: build them when object is loaded
 					Textures *tex = lib->entries[matId].textures;
 					uint32 texX = (uint32)xyCordsTexture.x * (tex->size - 1) / 65535;

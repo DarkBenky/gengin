@@ -102,7 +102,7 @@ static inline void spawnShape(Object *obj, const ShapeSpawnRecord *r, MaterialLi
 	Object_UpdateWorldBounds(obj);
 }
 
-// TODO: implement parsing of the json input
-// TODO: implement saving of the scene to json file
+// TODO: **Important** implement parsing of the json input
+// TODO: **Important** implement saving of the scene to json file
 
 #endif
