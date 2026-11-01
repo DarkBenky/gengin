@@ -135,6 +135,7 @@ static inline float2 boostFactor(float boost) {
 	return result;
 }
 
+// One to one implementation of writeFile in parseObj.go
 Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) {
 	if (filename == NULL || obj == NULL || lib == NULL) {
 		fprintf(stderr, "Error: Invalid filename, object or material lib.\n");
@@ -209,11 +210,11 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		}
 	}
 
-	float zero4 = 0.0f;
 	char zeroPad[4] = {0, 0, 0, 0};
 
-	Material mat = lib->entries[obj->materialIds[0]];
+	Material mat;
 	for (int i = 0; i < triangleCount; i++) {
+		mat = lib->entries[obj->materialIds[i]];
 		fwrite(&obj->v1[i], sizeof(float3), 1, file);
 		fwrite(&obj->v2[i], sizeof(float3), 1, file);
 		fwrite(&obj->v3[i], sizeof(float3), 1, file);
