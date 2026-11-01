@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../util/bbox.h"
+#include "../render/color/color.h"
 
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	if (filename == NULL || obj == NULL) {
@@ -125,6 +126,8 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 const float boostSatMax = 1.8;
 const float boostBrightMax = 1.35;
 
+#define SAVE_TEXEL_CHUNK 4096 // texels per buffered write, keeps fwrite calls out of the inner loop
+
 static inline float2 boostFactor(float boost) {
 	float2 result;
 	result.x = 1.0f + (boostSatMax - 1.0f) * boost;
@@ -133,8 +136,8 @@ static inline float2 boostFactor(float boost) {
 }
 
 Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) {
-	if (filename == NULL || obj == NULL) {
-		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
+	if (filename == NULL || obj == NULL || lib == NULL) {
+		fprintf(stderr, "Error: Invalid filename, object or material lib.\n");
 		return Error_Make(E_INVALID_ARG, "Invalid arguments");
 	}
 
@@ -189,5 +192,43 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 
 	if (obj->hasTexture) {
 		const float2 satBrightBoost = boostFactor(boost);
+		Material mat = lib->entries[obj->materialIds[0]];
+		for (int i = 0; i < textureSize * textureSize; i++) {
+			Color col = mat.textures->colorMap[i];
+			col = BoostColor(col, satBrightBoost.x, satBrightBoost.y);
+			fwrite(&col, sizeof(Color), 1, file);
+		}
+		for (int i = 0; i < textureSize * textureSize; i++) {
+			Color col = mat.textures->normalMap[i];
+			uint8 *px = (uint8 *)&col;
+			fwrite(px, 3, 1, file); // file stores RGB only, alpha is dropped
+		}
+		for (int i = 0; i < textureSize * textureSize; i++) {
+			uint16 matProps = mat.textures->MaterialMap[i];
+			fwrite(&matProps, sizeof(uint16), 1, file);
+		}
 	}
+
+	float zero4 = 0.0f;
+	char zeroPad[4] = {0, 0, 0, 0};
+
+	Material mat = lib->entries[obj->materialIds[0]];
+	for (int i = 0; i < triangleCount; i++) {
+		fwrite(&obj->v1[i], sizeof(float3), 1, file);
+		fwrite(&obj->v2[i], sizeof(float3), 1, file);
+		fwrite(&obj->v3[i], sizeof(float3), 1, file);
+		fwrite(&obj->normals[i], sizeof(float3), 1, file);
+		fwrite(&mat.roughness, sizeof(float), 1, file);
+		fwrite(&mat.metallic, sizeof(float), 1, file);
+		fwrite(&mat.emission, sizeof(float), 1, file);
+		fwrite(&mat.color, sizeof(float3), 1, file);
+		fwrite(&obj->uvs[i].uv1x, sizeof(uint16), 1, file);
+		fwrite(&obj->uvs[i].uv1y, sizeof(uint16), 1, file);
+		fwrite(&obj->uvs[i].uv2x, sizeof(uint16), 1, file);
+		fwrite(&obj->uvs[i].uv2y, sizeof(uint16), 1, file);
+		fwrite(&obj->uvs[i].uv3x, sizeof(uint16), 1, file);
+		fwrite(&obj->uvs[i].uv3y, sizeof(uint16), 1, file);
+		fwrite(zeroPad, sizeof(char), 4, file); // 4-byte pad after UV block
+	}
+	fclose(file);
 };
