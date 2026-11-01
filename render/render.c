@@ -291,7 +291,7 @@ static float3 ReflectBasedOnMaterial(float3 rayDir, float3 normal, float roughne
 }
 
 static inline float FastSeed(float cameraSeed) {
-	uint32 h = (uint32)(cameraSeed * 1013904223.0f);
+	uint32 h = (uint32)(int64_t)(cameraSeed * 1013904223.0f);
 	h ^= h >> 16;
 	h *= 0x45d9f3bu;
 	h ^= h >> 16;
