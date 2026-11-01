@@ -451,9 +451,9 @@ Color HueShiftColor(Color c, float shift) {
 	// Convert back to RGB
 	int i = (int)(hue * 6.0f);
 	float f = hue * 6.0f - i;
-	float p = max * (1.0f - delta);
-	float q = max * (1.0f - f * delta);
-	float t = max * (1.0f - (1.0f - f) * delta);
+	float p = max - delta;
+	float q = max - f * delta;
+	float t = max - (1.0f - f) * delta;
 
 	switch (i % 6) {
 	case 0:
