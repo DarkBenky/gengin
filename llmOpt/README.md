@@ -214,6 +214,11 @@ pinned SHA, re-run the category gate, and record the result with
 closed with the same evidence, a host-specific non-transfer just gets the
 comment. See VERIFY in `prompts/optimize.md`.
 
+A PR that no longer merges is triaged by REPAIR: if the change is already at
+HEAD or the patched code is gone, the PR is closed with the evidence that
+covers it; if the change is still needed, its conflicts are ported onto the
+existing branch and its gate re-run. See REPAIR in `prompts/optimize.md`.
+
 ## Files
 
 | File                                                                                                    | Purpose |

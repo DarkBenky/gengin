@@ -298,8 +298,9 @@ numbers without re-measuring them on the prepared SHA.
 ### PR housekeeping (backfill / untangle / repair / verify — not gated by the 4-PR rule)
 
 Whenever the open-PR block or `list_pull_requests(state="open")` shows an
-unlabeled or mixed-category PR, you may fix it (a complete pass also satisfies
-the session effort bar, like a consolidation pass):
+unlabeled or mixed-category PR, or a PR that no longer merges, you may fix it
+(a complete pass also satisfies the session effort bar, like a consolidation
+pass):
 
 - BACKFILL: every open PR without a label gets one. An ML PR (files under
   `gengin/machineLearning/`) is `ML Improvements`; a render/flight/general PR
@@ -312,10 +313,21 @@ the session effort bar, like a consolidation pass):
   (`branch="llmopt/<8-hex-sha>/untangle-<N>-<category>"`, labeled), then
   `close_pull_request(N, "Split into <URLs> ...")` on the mixed original.
 - REPAIR (low priority): an open PR whose `fetch_pull_request` reports
-  `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
-  onto its existing branch (normal push, NEVER force-push), re-run its gate,
-  and comment what was ported with `comment_pull_request(N, ...)`. Skip ports
-  that are not obvious in a few hunks.
+  `appliesCleanly=false` or `mergeable=false`.  Diagnose WHY it cannot merge
+  before touching it, then act on the verdict — never fix and close the same
+  PR in one session:
+  - NO LONGER NEEDED — the change is already at HEAD (shipped through another
+    PR or a direct commit), the code it patched was rewritten or deleted, or a
+    merged PR supersedes it: prove it against the tree (`git -C gengin log -S`,
+    `search_files`, the PR's hunks vs the current file), then
+    `close_pull_request(N, "<what covers it> at <sha>: <evidence>. Branch
+    preserved.")`.  A matching title is not proof.
+  - STILL NEEDED — port the mechanical conflicts onto its existing branch
+    (normal push, NEVER force-push), re-run the PR's category gate, and
+    `comment_pull_request(N, ...)` with what was ported and the numbers.  A
+    port that is not obvious within a few hunks stays OPEN with a comment
+    naming the blocking conflict and its files; never push a half-ported
+    branch.
 - VERIFY (the desktop's duty, at most TWO per session): an open ML PR whose
   `machine` differs from `machine_info()` (or is empty) was measured on
   another host. Re-run its suite on THIS machine (`ml_bench` plus `ml_parity`

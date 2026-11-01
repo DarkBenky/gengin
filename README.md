@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] add more task if some PR can't be merged correct it
+- [ ] add more tasks if some PR can't be merged correct it
 
 - [ ] Align all allocations to 64 (malloc, calloc)
   - [ ] test if this improve preformance
