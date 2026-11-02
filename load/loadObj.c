@@ -6,6 +6,8 @@
 #include "../util/bbox.h"
 #include "../render/color/color.h"
 
+static const uint32 kTriangleStructSize = 108;
+
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	if (filename == NULL || obj == NULL) {
 		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
@@ -21,10 +23,14 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 
 	// read header
 	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures;
-	fread(&fileSize, sizeof(uint32), 1, file);
-	fread(&triangleStructSize, sizeof(uint32), 1, file);
-	fread(&triangleCountRead, sizeof(uint32), 1, file);
-	fread(&hasTextures, sizeof(uint32), 1, file);
+	if (fread(&fileSize, sizeof(uint32), 1, file) != 1 ||
+		fread(&triangleStructSize, sizeof(uint32), 1, file) != 1 ||
+		fread(&triangleCountRead, sizeof(uint32), 1, file) != 1 ||
+		fread(&hasTextures, sizeof(uint32), 1, file) != 1) {
+		fprintf(stderr, "Error: Truncated header in %s\n", filename);
+		fclose(file);
+		return;
+	}
 
 	// hasTextures bit 0 = textures present, bit 1 = cull backfaces
 	obj->cullBackfaces = (hasTextures & 2) != 0;
@@ -58,6 +64,21 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		}
 	} else {
 		obj->hasTexture = false;
+	}
+
+	long triangleStart = ftell(file);
+	long fileEnd = -1;
+	if (triangleStart >= 0 && fseek(file, 0, SEEK_END) == 0) {
+		fileEnd = ftell(file);
+		if (fseek(file, triangleStart, SEEK_SET) != 0) fileEnd = -1;
+	}
+	if (fileEnd >= 0 && (fileEnd < triangleStart ||
+						 (unsigned long long)(fileEnd - triangleStart) < (unsigned long long)triangleCount * kTriangleStructSize)) {
+		fprintf(stderr, "Error: Truncated triangle data in %s\n", filename);
+		Textures_Destroy(tex);
+		obj->hasTexture = false;
+		fclose(file);
+		return;
 	}
 
 	// printf("File size: %u bytes\n", fileSize);
@@ -167,8 +188,6 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	//   color float3 padded                            = 16
 	//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
 
-	const uint32 triangleStructSize = 108;
-
 	uint32 triangleCount = obj->triangleCount;
 	uint32 hasTextures = obj->hasTexture ? 1 : 0;
 	bool cullBackfaces = obj->cullBackfaces;
@@ -182,11 +201,11 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		textureBytes = textureSize * textureSize * 9;
 	}
 
-	uint32 fileSize = 20 + triangleCount * triangleStructSize + (hasTextures ? textureBytes : 0);
+	uint32 fileSize = 20 + triangleCount * kTriangleStructSize + (hasTextures ? textureBytes : 0);
 	hasTextures |= (cullBackfaces ? 2 : 0);
 
 	fwrite(&fileSize, sizeof(uint32), 1, file);
-	fwrite(&triangleStructSize, sizeof(uint32), 1, file);
+	fwrite(&kTriangleStructSize, sizeof(uint32), 1, file);
 	fwrite(&triangleCount, sizeof(uint32), 1, file);
 	fwrite(&hasTextures, sizeof(uint32), 1, file);
 	fwrite(&textureSize, sizeof(uint32), 1, file);
