@@ -1,4 +1,5 @@
 #include "threadPool.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,12 +38,18 @@ static void *worker(void *arg) {
 }
 
 ThreadPool *poolCreate(int nthreads, int queue_cap) {
+	if (nthreads <= 0 || queue_cap <= 0) return NULL;
 	ThreadPool *p = calloc(1, sizeof *p);
 	if (!p) return NULL;
 
 	int capacity = 1;
-	while (capacity < queue_cap)
+	while (capacity < queue_cap) {
+		if (capacity > INT_MAX / 2) {
+			free(p);
+			return NULL;
+		}
 		capacity <<= 1;
+	}
 
 	p->queue = malloc((size_t)capacity * sizeof(Task));
 	if (!p->queue) {
@@ -64,14 +71,29 @@ ThreadPool *poolCreate(int nthreads, int queue_cap) {
 	atomic_init(&p->claim, 0);
 	atomic_init(&p->published, 0);
 
-	pthread_mutex_init(&p->lock, NULL);
-	pthread_cond_init(&p->work_cond, NULL);
-	pthread_cond_init(&p->done_cond, NULL);
+	if (pthread_mutex_init(&p->lock, NULL) != 0) goto freeBuffers;
+	if (pthread_cond_init(&p->work_cond, NULL) != 0) goto destroyLock;
+	if (pthread_cond_init(&p->done_cond, NULL) != 0) goto destroyWorkCond;
 
-	for (int i = 0; i < nthreads; i++)
-		pthread_create(&p->threads[i], NULL, worker, p);
+	for (int i = 0; i < nthreads; i++) {
+		if (pthread_create(&p->threads[i], NULL, worker, p) != 0) {
+			p->nthreads = i;
+			poolDestroy(p);
+			return NULL;
+		}
+	}
 
 	return p;
+
+destroyWorkCond:
+	pthread_cond_destroy(&p->work_cond);
+destroyLock:
+	pthread_mutex_destroy(&p->lock);
+freeBuffers:
+	free(p->queue);
+	free(p->threads);
+	free(p);
+	return NULL;
 }
 
 void poolAdd(ThreadPool *p, task_fn fn, void *arg) {
