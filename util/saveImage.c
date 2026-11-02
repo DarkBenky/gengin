@@ -4,7 +4,10 @@ void SaveImage(const char *filename, const Camera *camera) {
 	if (!filename || !camera || !camera->framebufferLdr) return;
 
 	FILE *f = fopen(filename, "wb");
-	if (!f) return;
+	if (!f) {
+		fprintf(stderr, "Error: Could not open %s for writing.\n", filename);
+		return;
+	}
 
 	int width = camera->screenWidth;
 	int height = camera->screenHeight;
@@ -92,5 +95,6 @@ void SaveImage(const char *filename, const Camera *camera) {
 		fwrite(row, 1, rowSize, f);
 	}
 
-	fclose(f);
+	if (fclose(f) != 0)
+		fprintf(stderr, "Error: Could not write %s.\n", filename);
 }
