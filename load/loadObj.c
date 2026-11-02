@@ -232,6 +232,7 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	}
 
 	char zeroPad[4] = {0, 0, 0, 0};
+	UvCords zeroUv = {0};
 
 	Material mat;
 	for (int i = 0; i < triangleCount; i++) {
@@ -244,13 +245,15 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		fwrite(&mat.metallic, sizeof(float), 1, file);
 		fwrite(&mat.emission, sizeof(float), 1, file);
 		fwrite(&mat.color, sizeof(float3), 1, file);
-		fwrite(&obj->uvs[i].uv1x, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv1y, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv2x, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv2y, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv3x, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv3y, sizeof(uint16), 1, file);
+		const UvCords *uv = obj->uvs ? &obj->uvs[i] : &zeroUv;
+		fwrite(&uv->uv1x, sizeof(uint16), 1, file);
+		fwrite(&uv->uv1y, sizeof(uint16), 1, file);
+		fwrite(&uv->uv2x, sizeof(uint16), 1, file);
+		fwrite(&uv->uv2y, sizeof(uint16), 1, file);
+		fwrite(&uv->uv3x, sizeof(uint16), 1, file);
+		fwrite(&uv->uv3y, sizeof(uint16), 1, file);
 		fwrite(zeroPad, sizeof(char), 4, file); // 4-byte pad after UV block
 	}
 	fclose(file);
+	return Error_Ok();
 };
