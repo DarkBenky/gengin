@@ -200,7 +200,9 @@ Every PR carries exactly one category label (`create_pr(label=...)`,
 `prompts/optimize.md` (PR CATEGORIES AND LABELS). With 4+ open PRs of one
 category (all `Render Improvements*` label variants count together) a session
 verifies them and folds survivors into one consolidation PR —
-never across categories. Requires GITHUB_TOKEN with `Issues: write` for labels.
+never across categories. `General Improvements` is soft-locked to one system
+per PR (and per consolidation batch). Requires GITHUB_TOKEN with `Issues: write`
+for labels.
 
 `create_pr` appends an `## Environment` section to every body: a
 `gengin-machine` marker (the host its numbers were measured on) plus the
@@ -211,6 +213,11 @@ pinned SHA, re-run the category gate, and record the result with
 `comment_pull_request`; a factually broken claim (gate fails locally) is
 closed with the same evidence, a host-specific non-transfer just gets the
 comment. See VERIFY in `prompts/optimize.md`.
+
+A PR that no longer merges is triaged by REPAIR: if the change is already at
+HEAD or the patched code is gone, the PR is closed with the evidence that
+covers it; if the change is still needed, its conflicts are ported onto the
+existing branch and its gate re-run. See REPAIR in `prompts/optimize.md`.
 
 ## Files
 

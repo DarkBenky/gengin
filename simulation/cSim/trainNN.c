@@ -78,7 +78,7 @@ int main() {
 
 	float globalBestLoss = MAX_FLOAT;
 	float globalBestBackpropLoss = MAX_FLOAT;
-	float MaxDivergenceDegrees = 30.0f;   // start narrow; grows as models succeed
+	float MaxDivergenceDegrees = 30.0f; // start narrow; grows as models succeed
 	const float MaxDivergenceDegreesLimit = 270.0f;
 	const float DivergenceStepDegrees = 0.1f;
 	const float TargetReachThreshold = 0.05f; // fraction of total models that must reach target to advance

@@ -1,6 +1,9 @@
 #ifndef SCENE_H
 #define SCENE_H
 
+#include "format.h"
+#include "shape.h"
+
 typedef struct Object Object;
 typedef struct MaterialLib MaterialLib;
 
@@ -32,6 +35,20 @@ int ObjectList_CountTriangles(const ObjectList *list);
 // path => [file path](if build in skip)
 // suffix => _random16letters
 
+typedef enum ObjectType {
+	CUSTOM_OBJ,
+	BUILDIN_OBJ,
+	MERGED_OBJECT,
+} ObjectType;
+
+typedef struct ObjectRecord {
+	ObjectType type;
+	ShapeKind shapeKind;
+	char ObjectPathOrType[128];
+} ObjectRecord;
+
+Error SaveScene(const ObjectList *list, const MaterialLib *lib, const char *savePath);
+
 // TODO: create load functions that will load the objects from the one file config
 
 // Merge all objects in src into a single world-space mesh added to dst.
@@ -41,7 +58,5 @@ void ObjectList_Merge(ObjectList *src, ObjectList *dst);
 // Builds the demo scene into the list: tile grid, material grid, cube/sphere
 // samples, and one instance of every shape in shapeTable order.
 void Scene_BuildShowcase(ObjectList *list, MaterialLib *lib);
-
-#include "object.h"
 
 #endif // SCENE_H

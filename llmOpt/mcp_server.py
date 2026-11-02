@@ -307,7 +307,10 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
     Render Improvements, Render Improvements [Visual change / Performance],
     Render Improvements Visual [No/Minimal Cost], Flight Controller, Missile
     Controller, General Improvements, ML Improvements. One PR = one category;
-    never fold two categories into one PR. An unknown name is rejected.
+    never fold two categories into one PR. General Improvements are
+    additionally soft-locked to ONE system: such a PR never spans two
+    module/directory families, and GI PRs from different systems are never
+    folded together. An unknown name is rejected.
 
     imageOutputChange is required: False for exact-match optimizations
     (screenshots/ is never staged); True for a deliberate visual change —
@@ -340,10 +343,11 @@ def fetch_pull_request(number: int) -> str:
     edits for individual make_bench / flight_bench runs while HEAD stays at the
     prepared SHA. `labels` shows the category (empty = unlabeled, backfill it
     with label_pull_request); `mergeable: false` flags a PR that needs the
-    repair task. `body` carries the claimed numbers and the auto-appended
-    `## Environment` section; `machine` is its marker — when it differs from
-    `machine_info`, the PR was measured on another host and is a VERIFY
-    candidate."""
+    REPAIR triage (close it when the change is already at HEAD or no longer
+    needed, port the conflicts when it still is). `body` carries the claimed
+    numbers and the auto-appended `## Environment` section; `machine` is its
+    marker — when it differs from `machine_info`, the PR was measured on
+    another host and is a VERIFY candidate."""
     return json.dumps(_main.fetchPullRequest(number), indent=2)
 
 
@@ -364,9 +368,10 @@ def close_pull_request(number: int, comment: str) -> str:
     """Close ONE open pull request with a mandatory evidence comment, e.g.
     "Consolidated into <PR-URL> after individual verification on <sha>: ...".
 
-    Refuses merged or already-closed PRs.  Use only for PRs folded into a
-    consolidation PR, with this session's measured numbers in the comment —
-    never for review feedback."""
+    Refuses merged or already-closed PRs.  Never for review feedback: the
+    comment carries the evidence, and the PR must be folded into a
+    consolidation PR, split out by untangle, broken under a local VERIFY gate,
+    or diagnosed by REPAIR as already at HEAD / no longer needed."""
     return json.dumps(_main.closePullRequest(number, comment), indent=2)
 
 

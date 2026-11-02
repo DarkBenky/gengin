@@ -1,6 +1,13 @@
 # Tasks
 
-- [ ] fix objects jittering (network - server code) idea : have bigger position rotation scale buffers so it is not line interpolation but more complex functions 
+- [ ] add more tasks if some PR can't be merged correct it
+
+- [ ] Align all allocations to 64 (malloc, calloc)
+  - [ ] test if this improve preformance
+  - [ ] try to align only hot staff
+    - [ ] compare with current / align all / smart align 
+
+- [X] add to prompt that the general improvement prs should not be merged if they are change different systems ( soft lock )
 
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
@@ -353,6 +360,8 @@
   - [x] Crete test and different version to find best method for compute heavy methods
 
 - [X] Add support for open ai API in llmOpt
+
+- [X] fix objects jittering (network - server code) idea : have bigger position rotation scale buffers so it is not line interpolation but more complex functions
 
 ## Current Render
 

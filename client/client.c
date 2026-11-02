@@ -12,6 +12,8 @@
 //   send: uint32 total_size (type byte + data), uint8 type, data
 //   recv: uint32 size, data
 
+#define CLIENT_MAX_RESPONSE_SIZE (16u * 1024u * 1024u)
+
 static ClientResponse sendRequest(const Client *c, uint8 type, const char *data, uint32 size) {
 	ClientResponse res = {NULL, 0};
 
@@ -44,7 +46,7 @@ static ClientResponse sendRequest(const Client *c, uint8 type, const char *data,
 
 	uint32 rsize = 0;
 	ssize_t nr = recv(fd, &rsize, sizeof(rsize), MSG_WAITALL);
-	if (nr == (ssize_t)sizeof(rsize) && rsize > 0) {
+	if (nr == (ssize_t)sizeof(rsize) && rsize > 0 && rsize <= CLIENT_MAX_RESPONSE_SIZE) {
 		res.data = malloc(rsize);
 		if (res.data) {
 			nr = recv(fd, res.data, rsize, MSG_WAITALL);

@@ -8,8 +8,14 @@ static inline Color sampleFace(const uint32 *face, int w, int h, float u, float 
 	if (!face) return 0xFF101010u;
 	int x = (int)(u * (float)(w - 1) + 0.5f);
 	int y = (int)(v * (float)(h - 1) + 0.5f);
-	if (x < 0) x = 0; else if (x >= w) x = w - 1;
-	if (y < 0) y = 0; else if (y >= h) y = h - 1;
+	if (x < 0)
+		x = 0;
+	else if (x >= w)
+		x = w - 1;
+	if (y < 0)
+		y = 0;
+	else if (y >= h)
+		y = h - 1;
 	return face[y * w + x];
 }
 
@@ -67,30 +73,32 @@ static inline Color SampleSkyboxOld(const Skybox *skybox, const float3 dir) {
 	}
 }
 
-
 static inline Color SampleSkyboxAVX(const Skybox *skybox, const float3 dir) {
 	if (!skybox) return 0xFF000000u;
 
 	float ax = fabsf(dir.x), ay = fabsf(dir.y), az = fabsf(dir.z);
 
 	int face_idx;
-	if (ax >= ay && ax >= az)  face_idx = dir.x > 0.0f ? 0 : 1;
-	else if (ay >= az)         face_idx = dir.y > 0.0f ? 2 : 3;
-	else                       face_idx = dir.z > 0.0f ? 4 : 5;
+	if (ax >= ay && ax >= az)
+		face_idx = dir.x > 0.0f ? 0 : 1;
+	else if (ay >= az)
+		face_idx = dir.y > 0.0f ? 2 : 3;
+	else
+		face_idx = dir.z > 0.0f ? 4 : 5;
 
 	float inv_ax = 0.5f / ax, inv_ay = 0.5f / ay, inv_az = 0.5f / az;
 	float x = dir.x, y = dir.y, z = dir.z;
 
-	__m256 half   = _mm256_set1_ps(0.5f);
+	__m256 half = _mm256_set1_ps(0.5f);
 	// u numerators  [right, left, top, bot,  front, back, -, -]
-	__m256 u_comp = _mm256_set_ps(0, 0, -x,  x,    x,     x,  z, -z);
+	__m256 u_comp = _mm256_set_ps(0, 0, -x, x, x, x, z, -z);
 	// denominators  [inv_ax, inv_ax, inv_ay, inv_ay, inv_az, inv_az, 0, 0]
-	__m256 denom  = _mm256_set_ps(0, 0, inv_az, inv_az, inv_ay, inv_ay, inv_ax, inv_ax);
-	__m256 u_all  = _mm256_fmadd_ps(u_comp, denom, half);
+	__m256 denom = _mm256_set_ps(0, 0, inv_az, inv_az, inv_ay, inv_ay, inv_ax, inv_ax);
+	__m256 u_all = _mm256_fmadd_ps(u_comp, denom, half);
 
 	// v numerators  [right, left, top,  bot,  front, back, -, -]
-	__m256 v_comp = _mm256_set_ps(0, 0, -y,  -y,   -z,    z,  -y, -y);
-	__m256 v_all  = _mm256_fmadd_ps(v_comp, denom, half);
+	__m256 v_comp = _mm256_set_ps(0, 0, -y, -y, -z, z, -y, -y);
+	__m256 v_all = _mm256_fmadd_ps(v_comp, denom, half);
 
 	__m256i sel = _mm256_set1_epi32(face_idx);
 	float u = _mm256_cvtss_f32(_mm256_permutevar8x32_ps(u_all, sel));
@@ -98,27 +106,25 @@ static inline Color SampleSkyboxAVX(const Skybox *skybox, const float3 dir) {
 
 	const uint32 *faces[6] = {
 		skybox->right, skybox->left, skybox->top,
-		skybox->bottom, skybox->front, skybox->back
-	};
+		skybox->bottom, skybox->front, skybox->back};
 	return sampleFace(faces[face_idx], skybox->imageWidth, skybox->imageHeight, u, v);
 }
 
 // Processes 8 rays per call using AVX2. dirs_x/y/z are SoA arrays of 8 floats each.
 static inline void SampleSkybox8(
-    const Skybox *skybox,                               
-    const float *dirs_x, // 8 float
-    const float *dirs_y, // 8 float
-    const float *dirs_z, // 8 float
-    Color *out // 8 uint32
-)
-{
+	const Skybox *skybox,
+	const float *dirs_x, // 8 float
+	const float *dirs_y, // 8 float
+	const float *dirs_z, // 8 float
+	Color *out			 // 8 uint32
+) {
 	__m256 vx = _mm256_loadu_ps(dirs_x);
 	__m256 vy = _mm256_loadu_ps(dirs_y);
 	__m256 vz = _mm256_loadu_ps(dirs_z);
 
 	__m256 sign_mask = _mm256_set1_ps(-0.0f);
-	__m256 half      = _mm256_set1_ps(0.5f);
-	__m256 one       = _mm256_set1_ps(1.0f);
+	__m256 half = _mm256_set1_ps(0.5f);
+	__m256 one = _mm256_set1_ps(1.0f);
 
 	__m256 ax = _mm256_andnot_ps(sign_mask, vx);
 	__m256 ay = _mm256_andnot_ps(sign_mask, vy);
@@ -145,21 +151,21 @@ static inline void SampleSkybox8(
 	__m256 v_z = _mm256_fnmadd_ps(vy, inv_az, half);
 
 	__m256 x_dom = _mm256_and_ps(_mm256_cmp_ps(ax, ay, _CMP_GE_OQ),
-	                              _mm256_cmp_ps(ax, az, _CMP_GE_OQ));
+								 _mm256_cmp_ps(ax, az, _CMP_GE_OQ));
 	__m256 y_dom = _mm256_and_ps(_mm256_cmp_ps(ay, ax, _CMP_GE_OQ),
-	                              _mm256_cmp_ps(ay, az, _CMP_GE_OQ));
+								 _mm256_cmp_ps(ay, az, _CMP_GE_OQ));
 
 	// Blend: z default, y overrides, x overrides last (preserves if/else priority)
 	__m256 u = _mm256_blendv_ps(_mm256_blendv_ps(u_z, u_y, y_dom), u_x, x_dom);
 	__m256 v = _mm256_blendv_ps(_mm256_blendv_ps(v_z, v_y, y_dom), v_x, x_dom);
 
-	__m256 wf = _mm256_set1_ps((float)(skybox->imageWidth  - 1));
+	__m256 wf = _mm256_set1_ps((float)(skybox->imageWidth - 1));
 	__m256 hf = _mm256_set1_ps((float)(skybox->imageHeight - 1));
 	__m256i px = _mm256_cvttps_epi32(_mm256_fmadd_ps(u, wf, half));
 	__m256i py = _mm256_cvttps_epi32(_mm256_fmadd_ps(v, hf, half));
 
 	__m256i zero_i = _mm256_setzero_si256();
-	px = _mm256_min_epi32(_mm256_max_epi32(px, zero_i), _mm256_set1_epi32(skybox->imageWidth  - 1));
+	px = _mm256_min_epi32(_mm256_max_epi32(px, zero_i), _mm256_set1_epi32(skybox->imageWidth - 1));
 	py = _mm256_min_epi32(_mm256_max_epi32(py, zero_i), _mm256_set1_epi32(skybox->imageHeight - 1));
 
 	__m256i idx = _mm256_add_epi32(_mm256_mullo_epi32(py, _mm256_set1_epi32(skybox->imageWidth)), px);
@@ -176,17 +182,15 @@ static inline void SampleSkybox8(
 
 	const uint32 *faces[6] = {
 		skybox->right, skybox->left,
-		skybox->top,   skybox->bottom,
-		skybox->front, skybox->back
-	};
+		skybox->top, skybox->bottom,
+		skybox->front, skybox->back};
 
 	for (int i = 0; i < 8; i++) {
-		int b  = 1 << i;
-		int fi = (xd & b) ? ((xp & b) ? 0 : 1)
-		       : (yd & b) ? ((yp & b) ? 2 : 3)
-		       :             ((zp & b) ? 4 : 5);
+		int b = 1 << i;
+		int fi = (xd & b)	? ((xp & b) ? 0 : 1)
+				 : (yd & b) ? ((yp & b) ? 2 : 3)
+							: ((zp & b) ? 4 : 5);
 		const uint32 *face = faces[fi];
 		out[i] = face ? face[indices[i]] : 0xFF101010u;
 	}
 }
-

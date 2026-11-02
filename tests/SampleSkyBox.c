@@ -7,7 +7,7 @@
 
 int main() {
 	Skybox skybox;
-	LoadSkybox(&skybox, "../skybox");
+	LoadSkybox(&skybox, "skybox");
 
 	float *timeTookOld = (float *)malloc(SAMPLES * sizeof(float));
 	float *timeTookAVX = (float *)malloc(SAMPLES * sizeof(float));
@@ -94,7 +94,7 @@ int main() {
 	for (int i = 0; i < SAMPLES; i++) {
 		Color Old = resultsOld[i];
 		Color AVX = resultsAVX[i];
-		Color AVX8 = resultsAVX8[i / 8];
+		Color AVX8 = resultsAVX8[i];
 
 		float3 oldF = UnpackColor(Old);
 		float3 avxF = UnpackColor(AVX);

@@ -69,9 +69,9 @@ int main() {
 		for (int k = 0; k < 4; k++)
 			hitsV4 += (resultsV4[i].tMin[k] != FLT_MAX);
 	printf("Hit rate -- old: %.2f%%  V2: %.2f%%  V4: %.2f%%\n",
-		100.0 * hitsOld / SAMPLES,
-		100.0 * hitsV2  / SAMPLES,
-		100.0 * hitsV4  / SAMPLES);
+		   100.0 * hitsOld / SAMPLES,
+		   100.0 * hitsV2 / SAMPLES,
+		   100.0 * hitsV4 / SAMPLES);
 
 	free(objects);
 	free(results);

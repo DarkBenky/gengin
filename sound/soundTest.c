@@ -51,15 +51,15 @@ int main() {
 		usleep(10000);
 	}
 
-    // Fade out over 3 seconds
-    printf("Fading out over 3 seconds...\n");
-    cs_sound_set_pan(snd, 0.5f);
-    for (int i = 0; i < 300; i++) {
-        float volume = 0.75f * (1.0f - (float)i / 300.0f);
-        cs_sound_set_volume(snd, volume);
-        cs_update(0.01f);
-        usleep(10000);
-    }
+	// Fade out over 3 seconds
+	printf("Fading out over 3 seconds...\n");
+	cs_sound_set_pan(snd, 0.5f);
+	for (int i = 0; i < 300; i++) {
+		float volume = 0.75f * (1.0f - (float)i / 300.0f);
+		cs_sound_set_volume(snd, volume);
+		cs_update(0.01f);
+		usleep(10000);
+	}
 
 	cs_sound_stop(snd);
 	printf("Stopped.\n");

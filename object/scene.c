@@ -227,7 +227,7 @@ static void AddMaterialGrid(ObjectList *list, MaterialLib *lib) {
 		for (int iz = 0; iz < 4; iz++) {
 			ShapeKind shape = (ShapeKind)(ix * 4 + iz);
 			for (int iy = 0; iy < 4; iy++) {
-				ObjectRecord rec = {0};
+				ShapeSpawnRecord rec = {0};
 				rec.type = OBJ_SHAPE;
 				rec.shape = shape;
 				rec.position = (float3){22.0f + ix * 3.0f, 0.8f + iy * 3.0f, 11.0f + iz * 3.0f};
@@ -259,7 +259,7 @@ static void AddReflectiveSpheres(ObjectList *list, MaterialLib *lib) {
 	Object_UpdateWorldBounds(sphere4);
 }
 
-// One of every primitive in SHAPE enum order, spawned through the ObjectRecord
+// One of every primitive in SHAPE enum order, spawned through the ShapeSpawnRecord
 // path (loadObjects.h) so the future scene-file loader gets exercised.
 static void AddShapeParade(ObjectList *list, MaterialLib *lib) {
 	static const struct {
@@ -270,22 +270,22 @@ static void AddShapeParade(ObjectList *list, MaterialLib *lib) {
 		float roughness;
 		float metallic;
 	} parade[SHAPE_COUNT] = {
-		[SHAPE_CUBE]        = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.35f, 0.10f}, 0.75f, 0.00f},
-		[SHAPE_SPHERE]      = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.90f, 0.20f, 0.20f}, 0.80f, 0.00f},
+		[SHAPE_CUBE] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.35f, 0.10f}, 0.75f, 0.00f},
+		[SHAPE_SPHERE] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.90f, 0.20f, 0.20f}, 0.80f, 0.00f},
 		[SHAPE_SPHERE_HIGH] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.95f, 0.55f, 0.15f}, 0.80f, 0.00f},
-		[SHAPE_PLANE]       = {0.05f, {0.0f, 0.0f, 0.0f}, {2.4f, 2.4f, 2.4f}, {0.65f, 0.70f, 0.75f}, 0.90f, 0.00f},
-		[SHAPE_CONE]        = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.90f, 0.75f, 0.10f}, 0.80f, 0.00f},
-		[SHAPE_CAPSULE]     = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.35f, 0.75f, 0.25f}, 0.80f, 0.00f},
-		[SHAPE_TORUS]       = {0.41f, {0.0f, 0.0f, 0.0f}, {2.4f, 2.4f, 2.4f}, {0.20f, 0.65f, 0.85f}, 0.80f, 0.00f},
-		[SHAPE_DISK]        = {0.05f, {0.0f, 0.0f, 0.0f}, {1.9f, 1.9f, 1.9f}, {0.80f, 0.80f, 0.85f}, 0.80f, 0.00f},
-		[SHAPE_PYRAMID]     = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.65f, 0.20f}, 0.80f, 0.00f},
-		[SHAPE_PRISM]       = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.55f, 0.30f, 0.80f}, 0.80f, 0.00f},
-		[SHAPE_HEMISPHERE]  = {0.02f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.25f, 0.45f, 0.85f}, 0.85f, 0.00f},
-		[SHAPE_TUBE]        = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.75f, 0.30f, 0.60f}, 0.80f, 0.00f},
-		[SHAPE_QUAD]        = {0.85f, {0.0f, 180.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.85f, 0.85f}, 0.85f, 0.00f},
-		[SHAPE_UV_SPHERE]   = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.30f, 0.70f, 0.60f}, 0.80f, 0.00f},
-		[SHAPE_ICOSPHERE]   = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.95f, 0.85f, 0.55f}, 0.80f, 0.00f},
-		[SHAPE_CYLINDER]    = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.55f, 0.55f, 0.60f}, 0.80f, 0.00f},
+		[SHAPE_PLANE] = {0.05f, {0.0f, 0.0f, 0.0f}, {2.4f, 2.4f, 2.4f}, {0.65f, 0.70f, 0.75f}, 0.90f, 0.00f},
+		[SHAPE_CONE] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.90f, 0.75f, 0.10f}, 0.80f, 0.00f},
+		[SHAPE_CAPSULE] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.35f, 0.75f, 0.25f}, 0.80f, 0.00f},
+		[SHAPE_TORUS] = {0.41f, {0.0f, 0.0f, 0.0f}, {2.4f, 2.4f, 2.4f}, {0.20f, 0.65f, 0.85f}, 0.80f, 0.00f},
+		[SHAPE_DISK] = {0.05f, {0.0f, 0.0f, 0.0f}, {1.9f, 1.9f, 1.9f}, {0.80f, 0.80f, 0.85f}, 0.80f, 0.00f},
+		[SHAPE_PYRAMID] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.65f, 0.20f}, 0.80f, 0.00f},
+		[SHAPE_PRISM] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.55f, 0.30f, 0.80f}, 0.80f, 0.00f},
+		[SHAPE_HEMISPHERE] = {0.02f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.25f, 0.45f, 0.85f}, 0.85f, 0.00f},
+		[SHAPE_TUBE] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.75f, 0.30f, 0.60f}, 0.80f, 0.00f},
+		[SHAPE_QUAD] = {0.85f, {0.0f, 180.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.85f, 0.85f, 0.85f}, 0.85f, 0.00f},
+		[SHAPE_UV_SPHERE] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.30f, 0.70f, 0.60f}, 0.80f, 0.00f},
+		[SHAPE_ICOSPHERE] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.95f, 0.85f, 0.55f}, 0.80f, 0.00f},
+		[SHAPE_CYLINDER] = {0.85f, {0.0f, 0.0f, 0.0f}, {1.6f, 1.6f, 1.6f}, {0.55f, 0.55f, 0.60f}, 0.80f, 0.00f},
 	};
 
 	// front tile row, centered on the spawn camera axis (x = 5 in main.c), so the
@@ -294,7 +294,7 @@ static void AddShapeParade(ObjectList *list, MaterialLib *lib) {
 	const float spacing = 3.0f;
 	const float centerX = 5.0f;
 	for (int i = 0; i < SHAPE_COUNT; i++) {
-		ObjectRecord rec = {0};
+		ShapeSpawnRecord rec = {0};
 		rec.type = OBJ_SHAPE;
 		rec.shape = i;
 		rec.position = (float3){centerX + (i - (SHAPE_COUNT - 1) * 0.5f) * spacing, parade[i].y, kParadeZ};

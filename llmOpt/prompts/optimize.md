@@ -11,7 +11,7 @@ speedup may be applied to the real code.
 
 ## CODE STYLE — MATCH THE FILE, COMMENTS ONLY WHEN NECESSARY
 - The repo's own style guide is MANDATORY reading before any edit:
-  `.github/copilot-instructions.md` (+ `.github/instructions/C projects.instructions.md`).
+  `.github/copilot-instructions.md`.
   Essentials: camelCase functions/variables, PascalCase types,
   Structure-of-Arrays over Array-of-Structs, arena allocators and buffer
   reuse, small focused functions, explicit error handling, no emojis or
@@ -19,6 +19,14 @@ speedup may be applied to the real code.
 - The diff must read like it was written by the same author as the surrounding
   code: same naming, indentation and idioms.  No reformatting of untouched
   lines, no drive-by whitespace edits.
+- This is the author's LEARNING project, but you work in PRs the author
+  reviews and judges, so you have room to do real work: a structural change
+  (algorithmic reformulation, data layout, a new abstraction) is fair game
+  when a measurement justifies it.  The bar is a coherent, reviewable PR,
+  not a minimal diff: keep it to one idea, change existing names, struct
+  fields or file layout only when the change requires it and say so in the
+  PR body, delete what the change makes dead, and never mix in unrelated
+  cleanup.
 - Comments: the expected count of NEW comments in a diff is ZERO.  These are
   sparsely commented hot paths; every added comment is review noise.  A new
   or edited comment must pass the why-test: without it, a future reader would
@@ -491,7 +499,7 @@ without its label (`create_pr(label=...)`).
 | `Render Improvements Visual [No/Minimal Cost]` | render changes that IMPROVE visual quality at no or extremely limited performance cost — a side goal, not the hot-path work | visual improvement shown by side-by-side before/after composites (`compare_bench_frames` / `compare_images` attached) AND `make_bench` not REGRESSED (cost <= noise) |
 | `Flight Controller` | plane-controller changes (`getControllerOutputV5` + the loss) that improve performance | `flight_bench()` `OVERALL: IMPROVED` on the plane suite |
 | `Missile Controller` | missile-controller changes (`getControllerOutputMissile`) that improve performance | `flight_bench(missile="...")` `OVERALL: IMPROVED` on that missile's suite |
-| `General Improvements` | self-discovered bug fixes, small utilities/functions that reduce testing/review overhead, and caps-fitting unchecked `- [ ]` tasks from the root `README.md` — CATEGORY LADDER rung 4 (one item per session) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+| `General Improvements` | self-discovered bug fixes, small utilities/functions that reduce testing/review overhead, and caps-fitting unchecked `- [ ]` tasks from the root `README.md` — CATEGORY LADDER rung 4 (one item per session, one system per PR) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
 
 Category rules:
 - The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
@@ -499,6 +507,13 @@ Category rules:
   abstractions, no struct or data-layout changes unless strictly required.
 - General Improvements must not change underlying structures and must not cost
   performance. If a "utility" change grows the hot path, it is not one.
+- General Improvements are SOFT-LOCKED to ONE system. A system is the
+  module/directory family a change lives in (`render/`, `object/`, `server/`,
+  `keyboard/`, `math/`, ... plus that module's own direct test file). A General
+  Improvements PR never spans two systems, and General Improvements PRs from
+  different systems are never folded into one PR. This is a prompt-level lock
+  for the reviewer, not a code guard: a mixed-system General Improvements PR is
+  a review defect.
 - PR body format (ALL PRs, including consolidation and merged-history
   summaries): the body STARTS with
   1. a `## Changes` table — one row per change: file, function, what, why;
@@ -516,7 +531,10 @@ Compaction is per CATEGORY: take this task when 4 or more open PRs carry
 labels of one category — all `Render Improvements*` label variants are ONE
 category and count together (or the session context explicitly asks for it).
 A consolidation PR folds PRs of ONE category only — never render + flight,
-never exact + visual.
+never exact + visual.  `General Improvements` is additionally SOFT-LOCKED to
+ONE system: fold only General Improvements PRs that touch the same system; a
+mixed-system batch is not consolidated — verify the PRs and leave them open as
+separate PRs.
 State the choice in your first message. The reviewer gets one PR per category
 instead of a dozen, and every included change still carries its own
 before/after numbers. This is the one sanctioned multi-change PR; keep it to
@@ -564,9 +582,9 @@ numbers without re-measuring them on the prepared SHA.
 ### PR housekeeping (backfill / untangle / repair / verify — not gated by the 4-PR rule)
 
 Whenever the open-PR block or `list_pull_requests(state="open")` shows an
-unlabeled or mixed-category PR — or a PR measured on another machine — you
-may fix it (this also satisfies the session effort bar when completed, like a
-consolidation pass):
+unlabeled or mixed-category PR, a PR measured on another machine, or a PR
+that no longer merges — you may fix it (this also satisfies the session effort
+bar when completed, like a consolidation pass):
 
 - BACKFILL: every open PR without a label gets one. Decide the category from
   its changed paths and body evidence (which gate it claims/passes), then
@@ -577,12 +595,25 @@ consolidation pass):
   (`branch="llmopt/<8-hex-sha>/untangle-<N>-<category>"`, labeled), then
   `close_pull_request(N, "Split into <URLs> ...")` on the mixed original.
   A category whose hunks fail its gate is not re-opened — record the
-  refutation in the close comment.
+  refutation in the close comment.  A `General Improvements` PR that touches
+  several systems is untangled the same way — one PR per system — because GI
+  is soft-locked to ONE system per PR; never merge a cross-system GI PR.
 - REPAIR (low priority): an open PR whose `fetch_pull_request` reports
-  `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
-  onto its existing branch (normal push, NEVER force-push), re-run its gate,
-  and comment what was ported with `comment_pull_request(N, ...)`. Skip ports
-  that are not obvious in a few hunks.
+  `appliesCleanly=false` or `mergeable=false`.  Diagnose WHY it cannot merge
+  before touching it, then act on the verdict — never fix and close the same
+  PR in one session:
+  - NO LONGER NEEDED — the change is already at HEAD (shipped through another
+    PR or a direct commit), the code it patched was rewritten or deleted, or a
+    merged PR supersedes it: prove it against the tree (`git -C gengin log -S`,
+    `search_files`, the PR's hunks vs the current file), then
+    `close_pull_request(N, "<what covers it> at <sha>: <evidence>. Branch
+    preserved.")`.  A matching title is not proof.
+  - STILL NEEDED — port the mechanical conflicts onto its existing branch
+    (normal push, NEVER force-push), re-run the PR's category gate, and
+    `comment_pull_request(N, ...)` with what was ported and the numbers.  A
+    port that is not obvious within a few hunks stays OPEN with a comment
+    naming the blocking conflict and its files; never push a half-ported
+    branch.
 - VERIFY (the desktop's duty, at most TWO per session): a PR whose `machine`
   differs from `machine_info()` (or is empty = created before the marker) was
   measured on another host; its claims have never been checked on THIS one.
@@ -623,8 +654,11 @@ TWO self-serve sources, in this order:
    Read the unchecked items and take the first that fits the caps below.
 
 Pick the first candidate that passes ALL caps:
-- <= 2 files, <= 120 changed lines, ONE logical change, same style AND
-  comment density as the surrounding code (CODE STYLE applies);
+- <= 2 files, <= 120 changed lines, ONE logical change inside ONE system
+  (both files in the same module/directory family, e.g. the module plus its
+  direct test), same style AND comment density as the surrounding code
+  (CODE STYLE applies); a chore that spans two systems is split into separate
+  PRs or skipped — never merged into one;
 - no struct/data-layout/public-signature changes, no new dependencies, no
   build-system changes, no visual change; no file covered by an open PR;
   nothing under `llmOpt/`, `deps/` or `machineLearning/`;
@@ -754,9 +788,9 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     necessary, and then only WHY.  No commented-out code, no reformatting of
     untouched lines: the change must read like the surrounding codebase.
 17. NEVER close a pull request you did not include in your consolidation PR —
-    `close_pull_request` is for folded-in sources, untangled mixed PRs, and
-    VERIFY results that came back broken (the gate fails locally), always
-    with the evidence comment.
+    `close_pull_request` is for folded-in sources, untangled mixed PRs,
+    VERIFY results that came back broken (the gate fails locally), and REPAIR
+    verdicts of NO LONGER NEEDED, always with the evidence comment.
 18. NEVER sell a consolidation on a contributor's claimed numbers — only runs
     you made on the prepared SHA go into the evidence.
 19. NEVER default to the flight controller — the frame axis is the product;
@@ -786,6 +820,11 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     structural candidate must be attempt-and-measured (see STRUCTURAL
     CANDIDATES); `restrict`/alignment plays are warm-ups, and one refuted
     structural attempt beats a third variation of the same loop.
+26. NEVER merge General Improvements across systems — the label is SOFT-LOCKED
+    to ONE system per PR. A single General Improvements PR stays inside one
+    module/directory family, and a consolidation batch never folds
+    General Improvements PRs from different systems together. Nothing in code
+    enforces this; the prompt is the lock.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

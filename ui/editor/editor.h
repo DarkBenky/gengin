@@ -12,7 +12,7 @@
 #include "MiniFB_enums.h"
 #include <MiniFB.h>
 
-#define ROWS_PER_TASK 8
+#define EDITOR_ROWS_PER_TASK 8
 #define DEG2RAD 0.017453292519943295f // engine stores rotations in radians
 #define RAD2DEG 57.29577951308232f
 const float3 highlightColor = {1.75f, 0.75f, 1.81f}; // Multipliers for each color channel
@@ -53,11 +53,8 @@ typedef struct editorUi {
 } editorUi;
 
 Error createEditorUi(ObjectList *objectList, editorUi *ui, Camera *cam, Input *input, struct Alphabet *alphabet) {
-	Error err;
 	if (ui == NULL || objectList == NULL || cam == NULL || input == NULL || alphabet == NULL) {
-		err.err = E_INVALID_ARG;
-		strcpy(err.msg, "Invalid arguments");
-		return err;
+		return Error_Make(E_INVALID_ARG, "Invalid arguments");
 	}
 	ui->scene = objectList;
 	ui->cam = cam;
@@ -71,9 +68,7 @@ Error createEditorUi(ObjectList *objectList, editorUi *ui, Camera *cam, Input *i
 	ui->scaleSpeed = 0.1f;
 	ui->snapToGrid = false;
 	ui->uniformScale = false;
-	err.err = nil;
-	strcpy(err.msg, "OK");
-	return err;
+	return Error_Ok();
 }
 
 void destroyEditorUi(editorUi *ui) {
@@ -81,31 +76,21 @@ void destroyEditorUi(editorUi *ui) {
 }
 
 Error activateEditorUi(editorUi *ui) {
-	Error err;
 	if (ui == NULL) {
-		err.err = E_INVALID_ARG;
-		strcpy(err.msg, "Invalid arguments");
-		return err;
+		return Error_Make(E_INVALID_ARG, "Invalid arguments");
 	}
 	ui->editorActive = true;
-	err.err = nil;
-	strcpy(err.msg, "OK");
-	return err;
+	return Error_Ok();
 }
 
 Error deactivateEditorUi(editorUi *ui) {
-	Error err;
 	if (ui == NULL) {
-		err.err = E_INVALID_ARG;
-		strcpy(err.msg, "Invalid arguments");
-		return err;
+		return Error_Make(E_INVALID_ARG, "Invalid arguments");
 	}
 	ui->selectedObject = NULL;
 	ui->mode = MOVE_MODE;
 	ui->editorActive = false;
-	err.err = nil;
-	strcpy(err.msg, "OK");
-	return err;
+	return Error_Ok();
 }
 
 void selectObject(editorUi *ui, int px, int py) {
@@ -195,6 +180,27 @@ void highlightTaskFunctionV2(void *arg) {
 	}
 }
 
+static inline void highlightEdgePixel(float3 *restrict framebuffer, const int *restrict objectIdBuffer,
+                                      int idx, int row, int col, int imageWidth, int imageHeight, int targetId) {
+	// out-of-image counts as "not target", so the object gets
+	// outlined at screen edges too
+	bool edge =
+		col == 0 || objectIdBuffer[idx - 1] != targetId ||
+		col == imageWidth - 1 || objectIdBuffer[idx + 1] != targetId ||
+		row == 0 || objectIdBuffer[idx - imageWidth] != targetId ||
+		row == imageHeight - 1 || objectIdBuffer[idx + imageWidth] != targetId;
+
+	if (edge) {
+		framebuffer[idx] = (float3){1.0f, 1.0f, 1.0f};
+	} else {
+		float3 color = framebuffer[idx];
+		color.x *= highlightColor.x;
+		color.y *= highlightColor.y;
+		color.z *= highlightColor.z;
+		framebuffer[idx] = color;
+	}
+}
+
 void highlightTaskFunctionEdge(void *arg) {
 	highlightTask *task = (highlightTask *)arg;
 	int rowStart = task->rowStart;
@@ -205,30 +211,27 @@ void highlightTaskFunctionEdge(void *arg) {
 	float3 *restrict framebuffer = task->framebufferHdr;
 	int *restrict objectIdBuffer = task->objectIdBuffer;
 
-	const float3 white = {1.0f, 1.0f, 1.0f};
+	__m256i vTarget = _mm256_set1_epi32(targetId);
 
 	for (int row = rowStart; row < rowEnd; row++) {
-		for (int col = 0; col < imageWidth; col++) {
-			int idx = row * imageWidth + col;
-			if (objectIdBuffer[idx] != targetId) continue;
+		int base = row * imageWidth;
+		int col = 0;
+		for (; col + 8 <= imageWidth; col += 8) {
+			__m256i ids = _mm256_loadu_si256((__m256i *)&objectIdBuffer[base + col]);
+			int mask = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(ids, vTarget)));
+			if (!mask) continue; // no pixel of this group belongs to the selected object
 
-			// out-of-image counts as "not target", so the object gets
-			// outlined at screen edges too
-			bool edge =
-				col == 0 || objectIdBuffer[idx - 1] != targetId ||
-				col == imageWidth - 1 || objectIdBuffer[idx + 1] != targetId ||
-				row == 0 || objectIdBuffer[idx - imageWidth] != targetId ||
-				row == imageHeight - 1 || objectIdBuffer[idx + imageWidth] != targetId;
-
-			if (edge) {
-				framebuffer[idx] = white;
-			} else {
-				float3 color = framebuffer[idx];
-				color.x *= highlightColor.x;
-				color.y *= highlightColor.y;
-				color.z *= highlightColor.z;
-				framebuffer[idx] = color;
+			while (mask) {
+				int i = __builtin_ctz(mask);
+				mask &= mask - 1;
+				int c = col + i;
+				highlightEdgePixel(framebuffer, objectIdBuffer, base + c, row, c, imageWidth, imageHeight, targetId);
 			}
+		}
+		for (; col < imageWidth; col++) {
+			int idx = base + col;
+			if (objectIdBuffer[idx] != targetId) continue;
+			highlightEdgePixel(framebuffer, objectIdBuffer, idx, row, col, imageWidth, imageHeight, targetId);
 		}
 	}
 }
@@ -244,10 +247,10 @@ void applyHighlight(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 	if (ui->selectedObject != NULL && cam->objectIdBuffer != NULL) {
 		int targetId = (int)(ui->selectedObject - ui->scene->objects);
 		if (targetId >= 0 && targetId < ui->scene->count) {
-			highlightTask tasks[(HEIGHT + ROWS_PER_TASK - 1) / ROWS_PER_TASK];
+			highlightTask tasks[(HEIGHT + EDITOR_ROWS_PER_TASK - 1) / EDITOR_ROWS_PER_TASK];
 			int taskCount = 0;
-			for (int rowStart = 0; rowStart < height; rowStart += ROWS_PER_TASK) {
-				int rowEnd = rowStart + ROWS_PER_TASK;
+			for (int rowStart = 0; rowStart < height; rowStart += EDITOR_ROWS_PER_TASK) {
+				int rowEnd = rowStart + EDITOR_ROWS_PER_TASK;
 				if (rowEnd > height) rowEnd = height;
 				highlightTask *task = &tasks[taskCount++];
 				*task = (highlightTask){rowStart, rowEnd, width, height, targetId, cam->framebufferHdr, cam->objectIdBuffer};
@@ -278,10 +281,10 @@ void applyHighlightV2(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 	if (ui->selectedObject != NULL && cam->objectIdBuffer != NULL) {
 		int targetId = (int)(ui->selectedObject - ui->scene->objects);
 		if (targetId >= 0 && targetId < ui->scene->count) {
-			highlightTask tasks[(HEIGHT + ROWS_PER_TASK - 1) / ROWS_PER_TASK];
+			highlightTask tasks[(HEIGHT + EDITOR_ROWS_PER_TASK - 1) / EDITOR_ROWS_PER_TASK];
 			int taskCount = 0;
-			for (int rowStart = 0; rowStart < height; rowStart += ROWS_PER_TASK) {
-				int rowEnd = rowStart + ROWS_PER_TASK;
+			for (int rowStart = 0; rowStart < height; rowStart += EDITOR_ROWS_PER_TASK) {
+				int rowEnd = rowStart + EDITOR_ROWS_PER_TASK;
 				if (rowEnd > height) rowEnd = height;
 				highlightTask *task = &tasks[taskCount++];
 				*task = (highlightTask){rowStart, rowEnd, width, height, targetId, cam->framebufferHdr, cam->objectIdBuffer};
@@ -312,10 +315,10 @@ void applyHighlightEdge(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 	if (ui->selectedObject != NULL && cam->objectIdBuffer != NULL) {
 		int targetId = (int)(ui->selectedObject - ui->scene->objects);
 		if (targetId >= 0 && targetId < ui->scene->count) {
-			highlightTask tasks[(HEIGHT + ROWS_PER_TASK - 1) / ROWS_PER_TASK];
+			highlightTask tasks[(HEIGHT + EDITOR_ROWS_PER_TASK - 1) / EDITOR_ROWS_PER_TASK];
 			int taskCount = 0;
-			for (int rowStart = 0; rowStart < height; rowStart += ROWS_PER_TASK) {
-				int rowEnd = rowStart + ROWS_PER_TASK;
+			for (int rowStart = 0; rowStart < height; rowStart += EDITOR_ROWS_PER_TASK) {
+				int rowEnd = rowStart + EDITOR_ROWS_PER_TASK;
 				if (rowEnd > height) rowEnd = height;
 				highlightTask *task = &tasks[taskCount++];
 				*task = (highlightTask){rowStart, rowEnd, width, height, targetId, cam->framebufferHdr, cam->objectIdBuffer};
@@ -429,7 +432,8 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 	int typeRow = -1;
 	if (selected != NULL) {
 		int typeLen = 0;
-		while (typeLen < (int)sizeof(selected->ObjectPathOrType) && selected->ObjectPathOrType[typeLen] != '\0') typeLen++;
+		while (typeLen < (int)sizeof(selected->ObjectPathOrType) && selected->ObjectPathOrType[typeLen] != '\0')
+			typeLen++;
 		memcpy(typeText, selected->ObjectPathOrType, typeLen);
 		typeText[typeLen] = '\0';
 		typeRow = n;
@@ -538,7 +542,7 @@ void drawStats(editorUi *ui, int x, int y, int width, int height) {
 }
 
 void editorStep(editorUi *ui, struct mfb_window *window, float dt, int x, int y, int width, int height) {
-	(void)window; // input is polled once per frame by the caller
+	(void)window;			  // input is polled once per frame by the caller
 	if (dt < 0.0f) dt = 0.0f; // speeds are per second: 1.0 = one unit per second
 
 	drawStats(ui, x, y, width, height);
@@ -572,124 +576,124 @@ void editorStep(editorUi *ui, struct mfb_window *window, float dt, int x, int y,
 		if (ui->selectedObject == NULL) return;
 
 		switch (ui->mode) {
-			case MOVE_MODE: {
-				float step = ui->moveSpeed * dt;
-				bool moving = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
-				// Y is up in this engine: arrows move on the X/Z ground plane, Shift/Ctrl move on Y
-				float yaw = ui->selectedObject->rotation.y;
-				float sy = sinf(yaw), cy = cosf(yaw);
-				if (input->keys[ForwardKey]) { // local +Z
-					ui->selectedObject->position.x += step * sy;
-					ui->selectedObject->position.z += step * cy;
-				} else if (input->keys[BackwardKey]) {
-					ui->selectedObject->position.x -= step * sy;
-					ui->selectedObject->position.z -= step * cy;
-				} else if (input->keys[LeftKey]) { // local -X
-					ui->selectedObject->position.x -= step * cy;
-					ui->selectedObject->position.z += step * sy;
-				} else if (input->keys[RightKey]) { // local +X
-					ui->selectedObject->position.x += step * cy;
-					ui->selectedObject->position.z -= step * sy;
-				} else if (input->keys[UpKey]) {
-					ui->selectedObject->position.y += step;
-				} else if (input->keys[DownKey]) {
-					ui->selectedObject->position.y -= step;
-				}
-
-				if (ui->snapToGrid && !moving) {
-					ui->selectedObject->position.x = roundf(ui->selectedObject->position.x / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->position.y = roundf(ui->selectedObject->position.y / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->position.z = roundf(ui->selectedObject->position.z / snapToGridSize) * snapToGridSize;
-				}
-
-				Object_UpdateWorldBounds(ui->selectedObject);
-
-				break;
+		case MOVE_MODE: {
+			float step = ui->moveSpeed * dt;
+			bool moving = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+			// Y is up in this engine: arrows move on the X/Z ground plane, Shift/Ctrl move on Y
+			float yaw = ui->selectedObject->rotation.y;
+			float sy = sinf(yaw), cy = cosf(yaw);
+			if (input->keys[ForwardKey]) { // local +Z
+				ui->selectedObject->position.x += step * sy;
+				ui->selectedObject->position.z += step * cy;
+			} else if (input->keys[BackwardKey]) {
+				ui->selectedObject->position.x -= step * sy;
+				ui->selectedObject->position.z -= step * cy;
+			} else if (input->keys[LeftKey]) { // local -X
+				ui->selectedObject->position.x -= step * cy;
+				ui->selectedObject->position.z += step * sy;
+			} else if (input->keys[RightKey]) { // local +X
+				ui->selectedObject->position.x += step * cy;
+				ui->selectedObject->position.z -= step * sy;
+			} else if (input->keys[UpKey]) {
+				ui->selectedObject->position.y += step;
+			} else if (input->keys[DownKey]) {
+				ui->selectedObject->position.y -= step;
 			}
-			case ROTATE_MODE: {
-				float step = ui->rotationSpeed * dt * DEG2RAD; // deg/s -> rad/s
-				bool rotating = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
 
-				// spin around the local bbox center instead of the model origin
-				float3 localCenter = {
-					0.5f * (ui->selectedObject->BBmin.x + ui->selectedObject->BBmax.x),
-					0.5f * (ui->selectedObject->BBmin.y + ui->selectedObject->BBmax.y),
-					0.5f * (ui->selectedObject->BBmin.z + ui->selectedObject->BBmax.z)};
-				float3 centerOffset = Float3_Mul(localCenter, ui->selectedObject->scale);
-				float3 oldCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+			if (ui->snapToGrid && !moving) {
+				ui->selectedObject->position.x = roundf(ui->selectedObject->position.x / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->position.y = roundf(ui->selectedObject->position.y / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->position.z = roundf(ui->selectedObject->position.z / snapToGridSize) * snapToGridSize;
+			}
 
+			Object_UpdateWorldBounds(ui->selectedObject);
+
+			break;
+		}
+		case ROTATE_MODE: {
+			float step = ui->rotationSpeed * dt * DEG2RAD; // deg/s -> rad/s
+			bool rotating = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+
+			// spin around the local bbox center instead of the model origin
+			float3 localCenter = {
+				0.5f * (ui->selectedObject->BBmin.x + ui->selectedObject->BBmax.x),
+				0.5f * (ui->selectedObject->BBmin.y + ui->selectedObject->BBmax.y),
+				0.5f * (ui->selectedObject->BBmin.z + ui->selectedObject->BBmax.z)};
+			float3 centerOffset = Float3_Mul(localCenter, ui->selectedObject->scale);
+			float3 oldCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+
+			if (input->keys[ForwardKey]) {
+				ui->selectedObject->rotation.y += step;
+			} else if (input->keys[BackwardKey]) {
+				ui->selectedObject->rotation.y -= step;
+			} else if (input->keys[LeftKey]) {
+				ui->selectedObject->rotation.x += step;
+			} else if (input->keys[RightKey]) {
+				ui->selectedObject->rotation.x -= step;
+			} else if (input->keys[UpKey]) {
+				ui->selectedObject->rotation.z += step;
+			} else if (input->keys[DownKey]) {
+				ui->selectedObject->rotation.z -= step;
+			}
+
+			if (ui->snapToGrid && !rotating) {
+				const float snapRad = snapToAngleSize * DEG2RAD;
+				ui->selectedObject->rotation.x = roundf(ui->selectedObject->rotation.x / snapRad) * snapRad;
+				ui->selectedObject->rotation.y = roundf(ui->selectedObject->rotation.y / snapRad) * snapRad;
+				ui->selectedObject->rotation.z = roundf(ui->selectedObject->rotation.z / snapRad) * snapRad;
+			}
+
+			// keep the bbox center where it was so the object spins in place
+			float3 newCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
+			ui->selectedObject->position = Float3_Add(ui->selectedObject->position, Float3_Sub(oldCenter, newCenter));
+
+			Object_UpdateWorldBounds(ui->selectedObject);
+
+			break;
+		}
+		case SCALE_MODE: {
+			float step = ui->scaleSpeed * dt;
+			bool scaling = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
+			if (ui->uniformScale) {
+				if (input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey]) {
+					float scaleAmount = input->keys[ForwardKey] || input->keys[BackwardKey] ? step : input->keys[LeftKey] || input->keys[RightKey] ? -step
+																								 : input->keys[UpKey] || input->keys[DownKey]	   ? -step
+																																				   : step;
+					ui->selectedObject->scale.x += scaleAmount;
+					ui->selectedObject->scale.y += scaleAmount;
+					ui->selectedObject->scale.z += scaleAmount;
+				}
+			} else {
 				if (input->keys[ForwardKey]) {
-					ui->selectedObject->rotation.y += step;
+					ui->selectedObject->scale.x += step;
 				} else if (input->keys[BackwardKey]) {
-					ui->selectedObject->rotation.y -= step;
+					ui->selectedObject->scale.x -= step;
 				} else if (input->keys[LeftKey]) {
-					ui->selectedObject->rotation.x += step;
+					ui->selectedObject->scale.y -= step;
 				} else if (input->keys[RightKey]) {
-					ui->selectedObject->rotation.x -= step;
+					ui->selectedObject->scale.y += step;
 				} else if (input->keys[UpKey]) {
-					ui->selectedObject->rotation.z += step;
+					ui->selectedObject->scale.z += step;
 				} else if (input->keys[DownKey]) {
-					ui->selectedObject->rotation.z -= step;
+					ui->selectedObject->scale.z -= step;
 				}
-
-				if (ui->snapToGrid && !rotating) {
-					const float snapRad = snapToAngleSize * DEG2RAD;
-					ui->selectedObject->rotation.x = roundf(ui->selectedObject->rotation.x / snapRad) * snapRad;
-					ui->selectedObject->rotation.y = roundf(ui->selectedObject->rotation.y / snapRad) * snapRad;
-					ui->selectedObject->rotation.z = roundf(ui->selectedObject->rotation.z / snapRad) * snapRad;
-				}
-
-				// keep the bbox center where it was so the object spins in place
-				float3 newCenter = RotateXYZ(centerOffset, ui->selectedObject->rotation);
-				ui->selectedObject->position = Float3_Add(ui->selectedObject->position, Float3_Sub(oldCenter, newCenter));
-
-				Object_UpdateWorldBounds(ui->selectedObject);
-
-				break;
 			}
-			case SCALE_MODE: {
-				float step = ui->scaleSpeed * dt;
-				bool scaling = input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey];
-				if (ui->uniformScale) {
-					if (input->keys[ForwardKey] || input->keys[BackwardKey] || input->keys[LeftKey] || input->keys[RightKey] || input->keys[UpKey] || input->keys[DownKey]) {
-						float scaleAmount = input->keys[ForwardKey] || input->keys[BackwardKey] ? step : input->keys[LeftKey] || input->keys[RightKey] ? -step
-																								  : input->keys[UpKey] || input->keys[DownKey] ? -step
-																																	: step;
-						ui->selectedObject->scale.x += scaleAmount;
-						ui->selectedObject->scale.y += scaleAmount;
-						ui->selectedObject->scale.z += scaleAmount;
-					}
-				} else {
-					if (input->keys[ForwardKey]) {
-						ui->selectedObject->scale.x += step;
-					} else if (input->keys[BackwardKey]) {
-						ui->selectedObject->scale.x -= step;
-					} else if (input->keys[LeftKey]) {
-						ui->selectedObject->scale.y -= step;
-					} else if (input->keys[RightKey]) {
-						ui->selectedObject->scale.y += step;
-					} else if (input->keys[UpKey]) {
-						ui->selectedObject->scale.z += step;
-					} else if (input->keys[DownKey]) {
-						ui->selectedObject->scale.z -= step;
-					}
-				}
 
-				if (ui->snapToGrid && !scaling) {
-					ui->selectedObject->scale.x = roundf(ui->selectedObject->scale.x / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->scale.y = roundf(ui->selectedObject->scale.y / snapToGridSize) * snapToGridSize;
-					ui->selectedObject->scale.z = roundf(ui->selectedObject->scale.z / snapToGridSize) * snapToGridSize;
-				}
-
-				Object_UpdateWorldBounds(ui->selectedObject);
-
-				break;
+			if (ui->snapToGrid && !scaling) {
+				ui->selectedObject->scale.x = roundf(ui->selectedObject->scale.x / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->scale.y = roundf(ui->selectedObject->scale.y / snapToGridSize) * snapToGridSize;
+				ui->selectedObject->scale.z = roundf(ui->selectedObject->scale.z / snapToGridSize) * snapToGridSize;
 			}
-			default: {
-				printf("Unknown editor mode\n");
-				ui->mode = MOVE_MODE;
-				break;
-			}
+
+			Object_UpdateWorldBounds(ui->selectedObject);
+
+			break;
+		}
+		default: {
+			printf("Unknown editor mode\n");
+			ui->mode = MOVE_MODE;
+			break;
+		}
 		}
 	}
 }

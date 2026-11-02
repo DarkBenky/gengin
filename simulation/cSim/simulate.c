@@ -93,8 +93,7 @@ static float3 f3Norm(float3 v) {
 // gravity-derived frame has no continuous choice near the vertical: the old
 // code switched its reference vector at |fwd.y| = 0.99, which rotated the
 // whole frame 180 deg in one step and broke loops and vertical flight.
-static float3 seedBodyRight(float3 fwd)
-{
+static float3 seedBodyRight(float3 fwd) {
 	float3 ref = (fabsf(fwd.y) < 0.9f) ? (float3){0.0f, 1.0f, 0.0f, 0.0f} : (float3){1.0f, 0.0f, 0.0f, 0.0f};
 	float3 right = f3Cross(ref, fwd);
 	if (f3Len(right) < 1e-3f) {
@@ -107,8 +106,7 @@ static float3 seedBodyRight(float3 fwd)
 // Bank rotation: positive bank = right wing down (D-key convention).
 // outUp  = up0*cos + right0*sin  -> tilts right at positive bank (lift curves right)
 // outRight = right0*cos - up0*sin -> tilts down-right at positive bank
-static void buildFrame(const Plane *plane, float3 *outRight, float3 *outUp)
-{
+static void buildFrame(const Plane *plane, float3 *outRight, float3 *outUp) {
 	float3 fwd = f3Norm(plane->forward);
 	// Re-orthonormalize the carried frame against forward; it lags by at most
 	// the rotation of one step, so this only removes float drift.

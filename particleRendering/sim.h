@@ -8,79 +8,77 @@ typedef float (*ParticleOpacityFn)(const ParticleContainer *pc, int index);
 typedef float3 (*ParticleUpdateFn)(ParticleContainer *pc, int index); // returns the new velocity vector
 
 typedef struct Cell {
-    float3 BBoxMin;
-    float3 BBoxMax;
+	float3 BBoxMin;
+	float3 BBoxMax;
 
-    int particleCount;
-    int particleCapacity; // does not support resizing when the container is full try to respawn particles
+	int particleCount;
+	int particleCapacity; // does not support resizing when the container is full try to respawn particles
 
-    int *particleIndices;
+	int *particleIndices;
 } Cell;
 
 typedef struct ParticleSubVolumes {
-    int xCellCount;
-    int yCellCount;
-    int zCellCount;
+	int xCellCount;
+	int yCellCount;
+	int zCellCount;
 
-    Cell *cells;
+	Cell *cells;
 } ParticleSubVolumes;
 
 typedef struct ParticleContainer {
-    int particleCount;
+	int particleCount;
 
-    // SOA - layout
-    float *xPos;
-    float *yPos;
-    float *zPos;
+	// SOA - layout
+	float *xPos;
+	float *yPos;
+	float *zPos;
 
-    float *xVel;
-    float *yVel;
-    float *zVel;
+	float *xVel;
+	float *yVel;
+	float *zVel;
 
-    int3 *particleCellIndex;
+	int3 *particleCellIndex;
 
-    float ParticleLifeTime;
-    float *lifetime;
+	float ParticleLifeTime;
+	float *lifetime;
 
-    // Volume where particles can live when they move out of bounds they respawn
-    float3 BBmin;
-    float3 BBmax;
-    float3 SpawnPoint;
-    float3 DefaultVelocityVector;
+	// Volume where particles can live when they move out of bounds they respawn
+	float3 BBmin;
+	float3 BBmax;
+	float3 SpawnPoint;
+	float3 DefaultVelocityVector;
 
-    ParticleColorFn ColorFn;
-    ParticleOpacityFn OpacityFn;
-    ParticleUpdateFn UpdateFn;
+	ParticleColorFn ColorFn;
+	ParticleOpacityFn OpacityFn;
+	ParticleUpdateFn UpdateFn;
 
-    ParticleSubVolumes SubVolumes;
+	ParticleSubVolumes SubVolumes;
 } ParticleContainer;
 
 static void InitParticleContainer(
-    ParticleContainer *particles,
-    int particleCount,
-    float3 spawnPosition,
-    float3 BBmin,
-    float3 BBmax,
-    float3 ParticleLifeTime,
-    ParticleColorFn colorFn,
-    ParticleOpacityFn opacityFn,
-    ParticleUpdateFn updateFn)
-{
-    particles->particleCount = particleCount;
-    particles->BBmin = BBmin;
-    particles->BBmax = BBmax;
-    particles->SpawnPoint = spawnPosition;
+	ParticleContainer *particles,
+	int particleCount,
+	float3 spawnPosition,
+	float3 BBmin,
+	float3 BBmax,
+	float3 ParticleLifeTime,
+	ParticleColorFn colorFn,
+	ParticleOpacityFn opacityFn,
+	ParticleUpdateFn updateFn) {
+	particles->particleCount = particleCount;
+	particles->BBmin = BBmin;
+	particles->BBmax = BBmax;
+	particles->SpawnPoint = spawnPosition;
 
-    particles->ColorFn = colorFn;
-    particles->OpacityFn = opacityFn;
-    particles->UpdateFn = updateFn;
+	particles->ColorFn = colorFn;
+	particles->OpacityFn = opacityFn;
+	particles->UpdateFn = updateFn;
 
-    // TODO: Finish
+	// TODO: Finish
 }
 
 // TODO:
 static void UpdateParticles(
-    ParticleContainer *particles,
-    float deltaTime
-) {
+	ParticleContainer *particles,
+	float deltaTime) {
 }

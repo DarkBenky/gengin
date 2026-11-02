@@ -220,10 +220,14 @@ void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, f
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -281,10 +285,14 @@ void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, f
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -330,8 +338,14 @@ void CreatePlane(Object *obj, float3 position, float3 rotation, float3 scale, fl
 	// XZ plane facing +Y
 	const float3 v0 = {-0.5f, 0.0f, -0.5f}, v1 = {0.5f, 0.0f, -0.5f}, v2 = {0.5f, 0.0f, 0.5f}, v3 = {-0.5f, 0.0f, 0.5f};
 	const float3 n = {0.0f, 1.0f, 0.0f};
-	obj->v1[0] = v0; obj->v2[0] = v3; obj->v3[0] = v1; obj->normals[0] = n;
-	obj->v1[1] = v1; obj->v2[1] = v3; obj->v3[1] = v2; obj->normals[1] = n;
+	obj->v1[0] = v0;
+	obj->v2[0] = v3;
+	obj->v3[0] = v1;
+	obj->normals[0] = n;
+	obj->v1[1] = v1;
+	obj->v2[1] = v3;
+	obj->v3[1] = v2;
+	obj->normals[1] = n;
 
 	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
 	for (int i = 0; i < triCount; i++)
@@ -373,8 +387,14 @@ void CreateQuad(Object *obj, float3 position, float3 rotation, float3 scale, flo
 	// XY quad facing +Z
 	const float3 v0 = {-0.5f, -0.5f, 0.0f}, v1 = {0.5f, -0.5f, 0.0f}, v2 = {0.5f, 0.5f, 0.0f}, v3 = {-0.5f, 0.5f, 0.0f};
 	const float3 n = {0.0f, 0.0f, 1.0f};
-	obj->v1[0] = v0; obj->v2[0] = v1; obj->v3[0] = v2; obj->normals[0] = n;
-	obj->v1[1] = v0; obj->v2[1] = v2; obj->v3[1] = v3; obj->normals[1] = n;
+	obj->v1[0] = v0;
+	obj->v2[0] = v1;
+	obj->v3[0] = v2;
+	obj->normals[0] = n;
+	obj->v1[1] = v0;
+	obj->v2[1] = v2;
+	obj->v3[1] = v3;
+	obj->normals[1] = n;
 
 	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
 	for (int i = 0; i < triCount; i++)
@@ -425,7 +445,10 @@ void CreateDisk(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		float a1 = twoPi * (i + 1) / DISK_SEGMENTS;
 		float3 p0 = {cosf(a0) * radius, 0.0f, sinf(a0) * radius};
 		float3 p1 = {cosf(a1) * radius, 0.0f, sinf(a1) * radius};
-		obj->v1[i] = center; obj->v2[i] = p1; obj->v3[i] = p0; obj->normals[i] = n;
+		obj->v1[i] = center;
+		obj->v2[i] = p1;
+		obj->v3[i] = p0;
+		obj->normals[i] = n;
 	}
 
 	int matIdx = MaterialLib_Add(lib, Material_Make(color, roughness, metallic, emission, NULL));
@@ -477,10 +500,14 @@ void CreateCone(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		float a1 = twoPi * (i + 1) / CONE_SEGMENTS;
 		float3 p0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 p1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = apex; obj->v2[t] = p1; obj->v3[t] = p0;
+		obj->v1[t] = apex;
+		obj->v2[t] = p1;
+		obj->v3[t] = p0;
 		obj->normals[t] = SphereFaceNormal(apex, p1, p0);
 		t++;
-		obj->v1[t] = baseCenter; obj->v2[t] = p0; obj->v3[t] = p1;
+		obj->v1[t] = baseCenter;
+		obj->v2[t] = p0;
+		obj->v3[t] = p1;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -536,16 +563,24 @@ void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale,
 		float3 top1 = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 bot0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 bot1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->v1[t] = top0;
+		obj->v2[t] = bot1;
+		obj->v3[t] = bot0;
 		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
 		t++;
-		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->v1[t] = top0;
+		obj->v2[t] = top1;
+		obj->v3[t] = bot1;
 		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
 		t++;
-		obj->v1[t] = topCenter; obj->v2[t] = top1; obj->v3[t] = top0;
+		obj->v1[t] = topCenter;
+		obj->v2[t] = top1;
+		obj->v3[t] = top0;
 		obj->normals[t] = (float3){0.0f, 1.0f, 0.0f};
 		t++;
-		obj->v1[t] = bottomCenter; obj->v2[t] = bot0; obj->v3[t] = bot1;
+		obj->v1[t] = bottomCenter;
+		obj->v2[t] = bot0;
+		obj->v3[t] = bot1;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -566,7 +601,7 @@ void CreateCylinder(Object *obj, float3 position, float3 rotation, float3 scale,
 
 void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
 	Object_SetGeneratedName(obj, "__buildin_tube_", NULL);
-	
+
 	obj->cullBackfaces = false;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -600,10 +635,14 @@ void CreateTube(Object *obj, float3 position, float3 rotation, float3 scale, flo
 		float3 top1 = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 bot0 = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 bot1 = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->v1[t] = top0;
+		obj->v2[t] = bot1;
+		obj->v3[t] = bot0;
 		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
 		t++;
-		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->v1[t] = top0;
+		obj->v2[t] = top1;
+		obj->v3[t] = bot1;
 		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
 		t++;
 	}
@@ -659,10 +698,14 @@ void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, 
 		float3 top1 = {cosf(a1) * radius, halfHeight, sinf(a1) * radius};
 		float3 bot0 = {cosf(a0) * radius, -halfHeight, sinf(a0) * radius};
 		float3 bot1 = {cosf(a1) * radius, -halfHeight, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = bot1; obj->v3[t] = bot0;
+		obj->v1[t] = top0;
+		obj->v2[t] = bot1;
+		obj->v3[t] = bot0;
 		obj->normals[t] = SphereFaceNormal(top0, bot1, bot0);
 		t++;
-		obj->v1[t] = top0; obj->v2[t] = top1; obj->v3[t] = bot1;
+		obj->v1[t] = top0;
+		obj->v2[t] = top1;
+		obj->v3[t] = bot1;
 		obj->normals[t] = SphereFaceNormal(top0, top1, bot1);
 		t++;
 	}
@@ -679,10 +722,14 @@ void CreateCapsule(Object *obj, float3 position, float3 rotation, float3 scale, 
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -744,10 +791,14 @@ void CreateHemisphere(Object *obj, float3 position, float3 rotation, float3 scal
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			t++;
 		}
@@ -758,7 +809,9 @@ void CreateHemisphere(Object *obj, float3 position, float3 rotation, float3 scal
 		float a1 = twoPi * (seg + 1) / HEMISPHERE_SEGMENTS;
 		float3 p0 = {cosf(a0) * radius, 0.0f, sinf(a0) * radius};
 		float3 p1 = {cosf(a1) * radius, 0.0f, sinf(a1) * radius};
-		obj->v1[t] = baseCenter; obj->v2[t] = p0; obj->v3[t] = p1;
+		obj->v1[t] = baseCenter;
+		obj->v2[t] = p0;
+		obj->v3[t] = p1;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -822,10 +875,14 @@ void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, fl
 			float3 b = TorusPoint(u1, v0, major, minor);
 			float3 c = TorusPoint(u0, v1, major, minor);
 			float3 d = TorusPoint(u1, v1, major, minor);
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			t++;
-			obj->v1[t] = c; obj->v2[t] = d; obj->v3[t] = b;
+			obj->v1[t] = c;
+			obj->v2[t] = d;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(c, d, b);
 			t++;
 		}
@@ -845,7 +902,7 @@ void CreateTorus(Object *obj, float3 position, float3 rotation, float3 scale, fl
 
 void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
 	Object_SetGeneratedName(obj, "__buildin_pyramid_", NULL);
-	
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -874,14 +931,20 @@ void CreatePyramid(Object *obj, float3 position, float3 rotation, float3 scale, 
 	int t = 0;
 	for (int i = 0; i < 4; i++) {
 		float3 p = base[i], q = base[(i + 1) & 3];
-		obj->v1[t] = q; obj->v2[t] = p; obj->v3[t] = apex;
+		obj->v1[t] = q;
+		obj->v2[t] = p;
+		obj->v3[t] = apex;
 		obj->normals[t] = SphereFaceNormal(q, p, apex);
 		t++;
 	}
-	obj->v1[t] = base[0]; obj->v2[t] = base[1]; obj->v3[t] = base[2];
+	obj->v1[t] = base[0];
+	obj->v2[t] = base[1];
+	obj->v3[t] = base[2];
 	obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 	t++;
-	obj->v1[t] = base[0]; obj->v2[t] = base[2]; obj->v3[t] = base[3];
+	obj->v1[t] = base[0];
+	obj->v2[t] = base[2];
+	obj->v3[t] = base[3];
 	obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 	t++;
 
@@ -936,10 +999,14 @@ void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, fl
 		float3 topB = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 botA = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 botB = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = topA; obj->v2[t] = botB; obj->v3[t] = botA;
+		obj->v1[t] = topA;
+		obj->v2[t] = botB;
+		obj->v3[t] = botA;
 		obj->normals[t] = SphereFaceNormal(topA, botB, botA);
 		t++;
-		obj->v1[t] = topA; obj->v2[t] = topB; obj->v3[t] = botB;
+		obj->v1[t] = topA;
+		obj->v2[t] = topB;
+		obj->v3[t] = botB;
 		obj->normals[t] = SphereFaceNormal(topA, topB, botB);
 		t++;
 	}
@@ -950,10 +1017,14 @@ void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, fl
 		float3 topB = {cosf(a1) * radius, 0.5f, sinf(a1) * radius};
 		float3 botA = {cosf(a0) * radius, -0.5f, sinf(a0) * radius};
 		float3 botB = {cosf(a1) * radius, -0.5f, sinf(a1) * radius};
-		obj->v1[t] = top0; obj->v2[t] = topB; obj->v3[t] = topA;
+		obj->v1[t] = top0;
+		obj->v2[t] = topB;
+		obj->v3[t] = topA;
 		obj->normals[t] = (float3){0.0f, 1.0f, 0.0f};
 		t++;
-		obj->v1[t] = bot0; obj->v2[t] = botA; obj->v3[t] = botB;
+		obj->v1[t] = bot0;
+		obj->v2[t] = botA;
+		obj->v3[t] = botB;
 		obj->normals[t] = (float3){0.0f, -1.0f, 0.0f};
 		t++;
 	}
@@ -1016,11 +1087,15 @@ void CreateUVSphere(Object *obj, float3 position, float3 rotation, float3 scale,
 			float3 b = {r1 * cosf(th0), y1, r1 * sinf(th0)};
 			float3 c = {r1 * cosf(th1), y1, r1 * sinf(th1)};
 			float3 d = {r0 * cosf(th1), y0, r0 * sinf(th1)};
-			obj->v1[t] = a; obj->v2[t] = c; obj->v3[t] = b;
+			obj->v1[t] = a;
+			obj->v2[t] = c;
+			obj->v3[t] = b;
 			obj->normals[t] = SphereFaceNormal(a, c, b);
 			obj->uvs[t] = (UvCords){(uint16)(u0 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v1 * 65535.0f), (uint16)(u0 * 65535.0f), (uint16)(v1 * 65535.0f)};
 			t++;
-			obj->v1[t] = a; obj->v2[t] = d; obj->v3[t] = c;
+			obj->v1[t] = a;
+			obj->v2[t] = d;
+			obj->v3[t] = c;
 			obj->normals[t] = SphereFaceNormal(a, d, c);
 			obj->uvs[t] = (UvCords){(uint16)(u0 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v0 * 65535.0f), (uint16)(u1 * 65535.0f), (uint16)(v1 * 65535.0f)};
 			t++;
@@ -1047,7 +1122,9 @@ static float3 IcoMidpoint(float3 a, float3 b) {
 
 static int IcoSubdivide(Object *obj, float3 a, float3 b, float3 c, int level, int idx) {
 	if (level == 0) {
-		obj->v1[idx] = a; obj->v2[idx] = b; obj->v3[idx] = c;
+		obj->v1[idx] = a;
+		obj->v2[idx] = b;
+		obj->v3[idx] = c;
 		obj->normals[idx] = SphereFaceNormal(a, b, c);
 		return idx + 1;
 	}
@@ -1060,7 +1137,7 @@ static int IcoSubdivide(Object *obj, float3 a, float3 b, float3 c, int level, in
 
 void CreateIcosphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
 	Object_SetGeneratedName(obj, "__buildin_icosphere_", NULL);
-	
+
 	obj->cullBackfaces = true;
 	obj->position = position;
 	obj->rotation = rotation;
@@ -1087,14 +1164,9 @@ void CreateIcosphere(Object *obj, float3 position, float3 rotation, float3 scale
 
 	const float t = (1.0f + sqrtf(5.0f)) * 0.5f;
 	const float3 icoVerts[12] = {
-		{-1.0f, t, 0.0f}, {1.0f, t, 0.0f}, {-1.0f, -t, 0.0f}, {1.0f, -t, 0.0f},
-		{0.0f, -1.0f, t}, {0.0f, 1.0f, t}, {0.0f, -1.0f, -t}, {0.0f, 1.0f, -t},
-		{t, 0.0f, -1.0f}, {t, 0.0f, 1.0f}, {-t, 0.0f, -1.0f}, {-t, 0.0f, 1.0f}};
+		{-1.0f, t, 0.0f}, {1.0f, t, 0.0f}, {-1.0f, -t, 0.0f}, {1.0f, -t, 0.0f}, {0.0f, -1.0f, t}, {0.0f, 1.0f, t}, {0.0f, -1.0f, -t}, {0.0f, 1.0f, -t}, {t, 0.0f, -1.0f}, {t, 0.0f, 1.0f}, {-t, 0.0f, -1.0f}, {-t, 0.0f, 1.0f}};
 	const int icoFaces[20][3] = {
-		{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11},
-		{1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
-		{3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9},
-		{4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
+		{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8}, {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9}, {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
 	float3 verts[12];
 	for (int i = 0; i < 12; i++)
 		verts[i] = Float3_Scale(Float3_Normalize(icoVerts[i]), 0.5f);
@@ -1410,11 +1482,17 @@ typedef struct {
 static inline float BVHTriCentroidAxis(const Object *obj, int t, int axis) {
 	float a, b, c;
 	if (axis == 0) {
-		a = obj->v1[t].x; b = obj->v2[t].x; c = obj->v3[t].x;
+		a = obj->v1[t].x;
+		b = obj->v2[t].x;
+		c = obj->v3[t].x;
 	} else if (axis == 1) {
-		a = obj->v1[t].y; b = obj->v2[t].y; c = obj->v3[t].y;
+		a = obj->v1[t].y;
+		b = obj->v2[t].y;
+		c = obj->v3[t].y;
 	} else {
-		a = obj->v1[t].z; b = obj->v2[t].z; c = obj->v3[t].z;
+		a = obj->v1[t].z;
+		b = obj->v2[t].z;
+		c = obj->v3[t].z;
 	}
 	return (a + b + c) * 0.333333f;
 }
@@ -1458,14 +1536,20 @@ static int BVHSplitTriangles(const Object *obj, int *idx, int count, float3 mn, 
 			for (int i = 0; i < count; i++) {
 				int t = idx[i];
 				int b = (int)((BVHTriCentroidAxis(obj, t, ax) - mnv[ax]) * scale);
-				if (b < 0) b = 0; else if (b >= BVH_SAH_BINS) b = BVH_SAH_BINS - 1;
+				if (b < 0)
+					b = 0;
+				else if (b >= BVH_SAH_BINS)
+					b = BVH_SAH_BINS - 1;
 				float3 a = obj->v1[t], c1 = obj->v2[t], c2 = obj->v3[t];
 				float vmnx = MinF32(MinF32(a.x, c1.x), c2.x), vmxx = MaxF32(MaxF32(a.x, c1.x), c2.x);
 				float vmny = MinF32(MinF32(a.y, c1.y), c2.y), vmxy = MaxF32(MaxF32(a.y, c1.y), c2.y);
 				float vmnz = MinF32(MinF32(a.z, c1.z), c2.z), vmxz = MaxF32(MaxF32(a.z, c1.z), c2.z);
-				bins[b].mnx = MinF32(bins[b].mnx, vmnx); bins[b].mxx = MaxF32(bins[b].mxx, vmxx);
-				bins[b].mny = MinF32(bins[b].mny, vmny); bins[b].mxy = MaxF32(bins[b].mxy, vmxy);
-				bins[b].mnz = MinF32(bins[b].mnz, vmnz); bins[b].mxz = MaxF32(bins[b].mxz, vmxz);
+				bins[b].mnx = MinF32(bins[b].mnx, vmnx);
+				bins[b].mxx = MaxF32(bins[b].mxx, vmxx);
+				bins[b].mny = MinF32(bins[b].mny, vmny);
+				bins[b].mxy = MaxF32(bins[b].mxy, vmxy);
+				bins[b].mnz = MinF32(bins[b].mnz, vmnz);
+				bins[b].mxz = MaxF32(bins[b].mxz, vmxz);
 				bins[b].count++;
 			}
 			// left-to-right prefix sweep
@@ -1477,9 +1561,12 @@ static int BVHSplitTriangles(const Object *obj, int *idx, int count, float3 mn, 
 			lArea[0] = 0.0f;
 			for (int b = 0; b < BVH_SAH_BINS; b++) {
 				acc.count += bins[b].count;
-				acc.mnx = MinF32(acc.mnx, bins[b].mnx); acc.mxx = MaxF32(acc.mxx, bins[b].mxx);
-				acc.mny = MinF32(acc.mny, bins[b].mny); acc.mxy = MaxF32(acc.mxy, bins[b].mxy);
-				acc.mnz = MinF32(acc.mnz, bins[b].mnz); acc.mxz = MaxF32(acc.mxz, bins[b].mxz);
+				acc.mnx = MinF32(acc.mnx, bins[b].mnx);
+				acc.mxx = MaxF32(acc.mxx, bins[b].mxx);
+				acc.mny = MinF32(acc.mny, bins[b].mny);
+				acc.mxy = MaxF32(acc.mxy, bins[b].mxy);
+				acc.mnz = MinF32(acc.mnz, bins[b].mnz);
+				acc.mxz = MaxF32(acc.mxz, bins[b].mxz);
 				lCount[b + 1] = acc.count;
 				lArea[b + 1] = acc.count > 0 ? BVHSahArea(&acc) : 0.0f;
 			}
@@ -1490,9 +1577,12 @@ static int BVHSplitTriangles(const Object *obj, int *idx, int count, float3 mn, 
 			accR.count = 0;
 			for (int b = BVH_SAH_BINS - 1; b >= 1; b--) {
 				accR.count += bins[b].count;
-				accR.mnx = MinF32(accR.mnx, bins[b].mnx); accR.mxx = MaxF32(accR.mxx, bins[b].mxx);
-				accR.mny = MinF32(accR.mny, bins[b].mny); accR.mxy = MaxF32(accR.mxy, bins[b].mxy);
-				accR.mnz = MinF32(accR.mnz, bins[b].mnz); accR.mxz = MaxF32(accR.mxz, bins[b].mxz);
+				accR.mnx = MinF32(accR.mnx, bins[b].mnx);
+				accR.mxx = MaxF32(accR.mxx, bins[b].mxx);
+				accR.mny = MinF32(accR.mny, bins[b].mny);
+				accR.mxy = MaxF32(accR.mxy, bins[b].mxy);
+				accR.mnz = MinF32(accR.mnz, bins[b].mnz);
+				accR.mxz = MaxF32(accR.mxz, bins[b].mxz);
 				int nL = lCount[b], nR = accR.count;
 				if (nL == 0 || nR == 0) continue;
 				float cost = lArea[b] * (float)nL + BVHSahArea(&accR) * (float)nR;
@@ -1683,8 +1773,10 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 	// hot traversal never recomputes them and reads one contiguous 384 B block.
 	int leafCount = 0;
 	for (int i = 0; i < bvh->nodeCount; i++) {
-		if (bvh->nodes[i].triCount > 0) bvh->nodes[i]._pad[0] = leafCount++;
-		else bvh->nodes[i]._pad[0] = -1;
+		if (bvh->nodes[i].triCount > 0)
+			bvh->nodes[i]._pad[0] = leafCount++;
+		else
+			bvh->nodes[i]._pad[0] = -1;
 	}
 	bvh->leafCount = leafCount;
 	bvh->leafSoa = NULL;
@@ -1702,9 +1794,15 @@ void CreateObjectBVH(Object *obj, BVH *bvh) {
 					float3 v0 = obj->v1[t];
 					float3 e1 = {obj->v2[t].x - v0.x, obj->v2[t].y - v0.y, obj->v2[t].z - v0.z};
 					float3 e2 = {obj->v3[t].x - v0.x, obj->v3[t].y - v0.y, obj->v3[t].z - v0.z};
-					ls[0 + l] = v0.x;  ls[8 + l] = v0.y;  ls[16 + l] = v0.z;
-					ls[32 + l] = e1.x; ls[40 + l] = e1.y; ls[48 + l] = e1.z;
-					ls[64 + l] = e2.x; ls[72 + l] = e2.y; ls[80 + l] = e2.z;
+					ls[0 + l] = v0.x;
+					ls[8 + l] = v0.y;
+					ls[16 + l] = v0.z;
+					ls[32 + l] = e1.x;
+					ls[40 + l] = e1.y;
+					ls[48 + l] = e1.z;
+					ls[64 + l] = e2.x;
+					ls[72 + l] = e2.y;
+					ls[80 + l] = e2.z;
 				}
 			}
 		}
@@ -1776,7 +1874,7 @@ static inline __m256 rayTriLeaf8Mask(const float *ls, float3 ro, float3 rd, __m2
 	const __m256 rdx = _mm256_set1_ps(rd.x), rdy = _mm256_set1_ps(rd.y), rdz = _mm256_set1_ps(rd.z);
 	const __m256 rox = _mm256_set1_ps(ro.x), roy = _mm256_set1_ps(ro.y), roz = _mm256_set1_ps(ro.z);
 
-	const __m256 v0x = _mm256_load_ps(ls + 0),  v0y = _mm256_load_ps(ls + 8),  v0z = _mm256_load_ps(ls + 16);
+	const __m256 v0x = _mm256_load_ps(ls + 0), v0y = _mm256_load_ps(ls + 8), v0z = _mm256_load_ps(ls + 16);
 	const __m256 e1x = _mm256_load_ps(ls + 32), e1y = _mm256_load_ps(ls + 40), e1z = _mm256_load_ps(ls + 48);
 	const __m256 e2x = _mm256_load_ps(ls + 64), e2y = _mm256_load_ps(ls + 72), e2z = _mm256_load_ps(ls + 80);
 
@@ -1922,10 +2020,16 @@ void IntersectBVH(const Object *obj, const BVH *bvh, float3 rayOrigin, float3 ra
 			int li = node->leftFirst, ri = li + 1;
 			if (tl <= tr) {
 				if (tr < FLT_MAX) stack[top++] = ri;
-				if (tl < FLT_MAX) { cur = li; continue; }
+				if (tl < FLT_MAX) {
+					cur = li;
+					continue;
+				}
 			} else {
 				if (tl < FLT_MAX) stack[top++] = li;
-				if (tr < FLT_MAX) { cur = ri; continue; }
+				if (tr < FLT_MAX) {
+					cur = ri;
+					continue;
+				}
 			}
 			if (top == 0) break;
 			cur = stack[--top];
@@ -1983,9 +2087,19 @@ bool IntersectBVH_Shadow(const Object *obj, const BVH *bvh, float3 rayOrigin, fl
 			// child0 liveness in bit 0, child1 in bit 2
 			const int live = _mm_movemask_ps(_mm_cmplt_ps(rayAABB_inv_x2_soa_packed(bias, invDir, node->soa), farv));
 			int li = node->leftFirst;
-			if ((live & 5) == 5) { stack[top++] = li; cur = li + 1; continue; }
-			if (live & 4) { cur = li + 1; continue; }
-			if (live & 1) { cur = li; continue; }
+			if ((live & 5) == 5) {
+				stack[top++] = li;
+				cur = li + 1;
+				continue;
+			}
+			if (live & 4) {
+				cur = li + 1;
+				continue;
+			}
+			if (live & 1) {
+				cur = li;
+				continue;
+			}
 		}
 		if (top == 0) break;
 		cur = stack[--top];

@@ -1,10 +1,25 @@
 #include "format.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <math.h>
 #include "../math/vector3.h"
 
 #define ALIGN64(n) (((n) + 63) & ~(size_t)63)
+
+Error Error_Make(int code, const char *msg) {
+	Error err;
+	err.err = code;
+	if (msg)
+		snprintf(err.msg, sizeof(err.msg), "%s", msg);
+	else
+		err.msg[0] = '\0';
+	return err;
+}
+
+Error Error_Ok(void) {
+	return Error_Make(nil, "OK");
+}
 
 void clearBuffers(Camera *camera) {
 	if (!camera) return;
@@ -55,7 +70,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 }
 
 void destroyCamera(Camera *camera) {
-	if (!camera) return;
+	if (!camera || !camera->framebufferLdr) return;
 	free(camera->framebufferLdr);
 	free(camera->framebufferHdr);
 	free(camera->tempFramebufferHdr);
@@ -82,6 +97,7 @@ void destroyCamera(Camera *camera) {
 	camera->positionBuffer = NULL;
 	camera->reflectBuffer = NULL;
 	camera->depthBuffer = NULL;
+	camera->ambientOcclusionBuffer = NULL;
 	camera->reflectCache = NULL;
 	camera->tempBuffer_1 = NULL;
 	camera->tempBuffer_2 = NULL;
