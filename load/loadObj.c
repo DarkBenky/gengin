@@ -216,17 +216,17 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		const float2 satBrightBoost = boostFactor(boost);
 		Material mat = lib->entries[obj->materialIds[0]];
 		for (int i = 0; i < textureSize * textureSize; i++) {
-			Color col = mat.textures->colorMap[i];
+			Color col = mat.textures->texels[i].color;
 			col = BoostColor(col, satBrightBoost.x, satBrightBoost.y);
 			fwrite(&col, sizeof(Color), 1, file);
 		}
 		for (int i = 0; i < textureSize * textureSize; i++) {
-			Color col = mat.textures->normalMap[i];
+			Color col = mat.textures->texels[i].normal;
 			uint8 *px = (uint8 *)&col;
 			fwrite(px, 3, 1, file); // file stores RGB only, alpha is dropped
 		}
 		for (int i = 0; i < textureSize * textureSize; i++) {
-			uint16 matProps = mat.textures->MaterialMap[i];
+			uint16 matProps = mat.textures->texels[i].mat;
 			fwrite(&matProps, sizeof(uint16), 1, file);
 		}
 	}
