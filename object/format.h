@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <string.h>
 
 #define WIDTH 1080
 #define HEIGHT 720
@@ -156,5 +157,9 @@ enum ErrorTypes {
 	E_FILE_OPEN_FAILED
 	// NOTE: add more error types here if needed
 };
+
+inline bool HasPrefix(const char *str, const char *prefix) {
+    return strncmp(str, prefix, strlen(prefix)) == 0;
+}
 
 #endif // FORMAT_H

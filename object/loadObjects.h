@@ -53,7 +53,7 @@ typedef struct {
 } ObjectMaterial;
 
 typedef struct {
-	ObjType type;
+	ObjType type; // custom object needed loading form file or build in shape
 	float3 position;
 	float3 rotation; // degrees, XYZ order
 	float3 scale;
@@ -103,6 +103,8 @@ static inline void spawnShape(Object *obj, const ShapeSpawnRecord *r, MaterialLi
 }
 
 // TODO: **Important** implement parsing of the json input
+
 // TODO: **Important** implement saving of the scene to json file
+Error SaveSceneToJson(const ObjectList *scene, const char *filename);
 
 #endif

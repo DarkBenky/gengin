@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "../util/bbox.h"
 #include "../render/color/color.h"
+#include "../util/json.h"
 
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	if (filename == NULL || obj == NULL) {
@@ -257,3 +258,21 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	fclose(file);
 	return Error_Ok();
 };
+
+
+// TODO: **Important** Implement the function to save a scene to a JSON file
+Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
+	for (int i = 0; i < scene->count; i++) {
+		// TODO: **Important** Process each object in the scene
+		Object *obj = &scene->objects[i];
+		jsonObject *objJson = newJsonObject();
+
+		if (HasPrefix(obj->ObjectPathOrType, "__buildin")) {
+			addJsonField(objJson, "type", "shape", JSON_TYPE_STRING);
+		} else {
+			addJsonField(objJson, "type", "object", JSON_TYPE_STRING);
+		}
+			
+
+	}
+}
