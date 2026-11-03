@@ -7,8 +7,6 @@
   - [ ] try to align only hot staff
     - [ ] compare with current / align all / smart align 
 
-- [X] add to prompt that the general improvement prs should not be merged if they are change different systems ( soft lock )
-
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
 - [ ] New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
@@ -362,6 +360,8 @@
 - [X] Add support for open ai API in llmOpt
 
 - [X] fix objects jittering (network - server code) idea : have bigger position rotation scale buffers so it is not line interpolation but more complex functions
+
+- [X] add to prompt that the general improvement prs should not be merged if they are change different systems ( soft lock )
 
 ## Current Render
 
