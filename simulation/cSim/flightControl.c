@@ -50,6 +50,8 @@
 // effort moves less than any single tier.
 #define SEARCH_STEP_DECAY 0.91f
 #define SEARCH_MIN_TAIL_WALK 0.14f
+#define POLISH_START_STEP 0.1f
+#define POLISH_MIN_STEP 0.00625f
 #define TARGET_MANOEUVER_ACCEL 20.0f
 
 // Partial lead: trusting the full target velocity over-commits the pass when a
@@ -519,15 +521,15 @@ static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, f
 	}
 
 	// The walk's probes are anchored to the iterate, which drifts away from the
-	// best point it passed, so descend from that point on the same probe grid.
-	for (int polish = 0; polish < 8; polish++) {
+	// best point it passed, so descend from that point on a shrinking probe grid.
+	for (float polishStep = POLISH_START_STEP; polishStep >= POLISH_MIN_STEP; polishStep *= 0.5f) {
 		int improved = 0;
 		for (int axis = 0; axis < 3; axis++) {
 			float probe[3] = {bestProbe[0], bestProbe[1], bestProbe[2]};
-			probe[axis] = fminf(1.0f, bestProbe[axis] + epsilon);
+			probe[axis] = fminf(1.0f, bestProbe[axis] + polishStep);
 			float loss = lossFn(ctrl, probe, target, targetVel, deltaTime);
 			if (loss >= bestProbeLoss) {
-				probe[axis] = fmaxf(0.0f, bestProbe[axis] - epsilon);
+				probe[axis] = fmaxf(0.0f, bestProbe[axis] - polishStep);
 				loss = lossFn(ctrl, probe, target, targetVel, deltaTime);
 			}
 			if (loss < bestProbeLoss) {
