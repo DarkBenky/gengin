@@ -56,6 +56,13 @@
 // jinking or reversing target turns out of the predicted point.
 #define TARGET_LEAD_GAIN 0.3f
 
+#define TERMINAL_MISS_WEIGHT 1.2f
+#define TERMINAL_MISS_RANGE_FRACTION 0.25f
+// A strong terminal demand puts the walk's optimum against the surface stops;
+// charging deflection past a quarter of the stick travel keeps authority margin.
+#define SURFACE_MARGIN_FRACTION 0.25f
+#define SURFACE_MARGIN_WEIGHT 400.0f
+
 static const float3 PLANE_TARGET_OFFSET = {1000.0f, 1000.0f, 1000.0f, 0.0f};
 
 // Missile sweep geometries.  Main is the long lead shot (at 1.7 km a Mach 2+
@@ -201,6 +208,20 @@ float yawLoss(const Plane *plane, float3 target) {
 	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect yaw alignment
 }
 
+static inline float flightPathMissDistance(float3 velocity, float3 toTarget) {
+	float3 path = Float3_Normalize(velocity);
+	float along = Float3_Dot(toTarget, path);
+	if (along <= 0.0f) {
+		return Float3_Length(toTarget);
+	}
+	return Float3_Length(Float3_Sub(toTarget, Float3_Scale(path, along)));
+}
+
+static inline float surfaceMarginCharge(float value01) {
+	float over = fabsf(value01 - 0.5f) - SURFACE_MARGIN_FRACTION;
+	return over > 0.0f ? SURFACE_MARGIN_WEIGHT * over * over : 0.0f;
+}
+
 // Deployed plane loss: 2.25x horizon in the same 16 steps (measured better
 // than fine steps at equal cost) plus a control-effort term; the alignment
 // gain and the effort term only work as a pair. The rudder is charged 2:1 -
@@ -239,6 +260,8 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	// unit gradient at zero.  On its own the chord over-commits the pass, so
 	// it ships together with the command damping below.
 	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
+	float terminalMiss = flightPathMissDistance(simPlane.velocity, Float3_Sub(predictedTarget, simPlane.position));
+	terminalMiss = fminf(terminalMiss, TERMINAL_MISS_RANGE_FRACTION * currentDist);
 
 	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 1.10f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
@@ -247,8 +270,9 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord;
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + surfaceMargin;
 
 	return loss;
 }
@@ -288,6 +312,8 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 	const float finalBank = rollMisalignment(&simPlane, predictedTarget);
 	float finalDist = distanceToTarget(&simPlane, predictedTarget);
 	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
+	float terminalMiss = flightPathMissDistance(simPlane.velocity, Float3_Sub(predictedTarget, simPlane.position));
+	terminalMiss = fminf(terminalMiss, TERMINAL_MISS_RANGE_FRACTION * currentDist);
 
 	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 1.10f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
@@ -296,8 +322,9 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
 
-	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord;
+	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + surfaceMargin;
 
 	return loss;
 }
