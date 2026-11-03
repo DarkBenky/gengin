@@ -35,9 +35,9 @@
 // 0.91 -> 0.56 of the box, closer to the loss minimum.
 // SEARCH_MIN_TAIL_WALK stops the walk once the *remaining* travel budget
 // learningRate/(1-SEARCH_STEP_DECAY) is below this value.  The pre-warm-start
-// walk used 0.004 (53 iterations); with the walk starting at the plane's own
-// surfaces the miss/cost trade is far flatter, so the threshold sits at its
-// measured knee (replica sweep 0.06-0.20: miss +0.07..+0.63%, cost -56..-79%).
+// walk used 0.004 (53 iterations); with a warm-started walk the miss/cost trade
+// is far flatter, so the threshold sits at its measured knee (replica sweep
+// 0.06-0.20: miss +0.07..+0.63%, cost -56..-79%).
 // The pinned suite at 0.06: miss 340.1 -> 341.4 m, effort 20.6 -> 17.9,
 // controller cost 1872 -> 880 us/step.
 // 0.06 -> 0.14 takes the walk from 24 to 15 iterations: pinned suite miss
@@ -62,6 +62,13 @@
 // charging deflection past a quarter of the stick travel keeps authority margin.
 #define SURFACE_MARGIN_FRACTION 0.25f
 #define SURFACE_MARGIN_WEIGHT 400.0f
+
+#define BANK_TURN_LEAD 0.7f
+#define BANK_TURN_TURN_T 0.5f
+#define BANK_TURN_MAX_RATE 0.5f
+#define BANK_TURN_PULL 0.3f
+#define BANK_TURN_ROLL 0.6f
+#define BANK_TURN_ROLL_MIN_SIN 0.02f
 
 static const float3 PLANE_TARGET_OFFSET = {1000.0f, 1000.0f, 1000.0f, 0.0f};
 
@@ -222,6 +229,46 @@ static inline float surfaceMarginCharge(float value01) {
 	return over > 0.0f ? SURFACE_MARGIN_WEIGHT * over * over : 0.0f;
 }
 
+// The rollout sees 0.6 s ahead, too short for a banked turn to pay off, so the
+// walk never banks; this is the analytic bank-to-turn solution it starts from.
+static void bankToTurnSeed(const Controller *ctrl, float3 target, float3 targetVel, float values[3]) {
+	values[0] = 0.5f;
+	values[1] = 0.5f;
+	values[2] = 0.5f;
+	float3 v = ctrl->plane.velocity;
+	float speed = Float3_Length(v);
+	if (speed < 1e-3f) {
+		return;
+	}
+	float3 vhat = Float3_Scale(v, 1.0f / speed);
+	float3 rel = Float3_Sub(target, ctrl->plane.position);
+	float range = Float3_Length(rel);
+	if (range < 1e-3f) {
+		return;
+	}
+	float3 los = Float3_Scale(rel, 1.0f / range);
+	float closing = fmaxf(-Float3_Dot(Float3_Sub(targetVel, v), los), 0.25f * speed);
+	float tgo = fminf(fmaxf(range / closing, 0.1f), 8.0f);
+	float3 aim = Float3_Add(target, Float3_Scale(targetVel, tgo * BANK_TURN_LEAD));
+	float3 dvec = Float3_Sub(aim, ctrl->plane.position);
+	float dlen = fmaxf(Float3_Length(dvec), 1e-4f);
+	float along = Float3_Dot(dvec, vhat);
+	float theta = acosf(fminf(fmaxf(along / dlen, -1.0f), 1.0f));
+	float3 aperp = Float3_Sub(dvec, Float3_Scale(vhat, along));
+	float alen = Float3_Length(aperp);
+	float3 up = planeGetUpVector(&ctrl->plane);
+	float3 liftDir = Float3_Sub(up, Float3_Scale(vhat, Float3_Dot(up, vhat)));
+	float liftLen = Float3_Length(liftDir);
+	liftDir = (liftLen > 1e-4f) ? Float3_Scale(liftDir, 1.0f / liftLen) : up;
+	if (alen > BANK_TURN_ROLL_MIN_SIN * dlen) {
+		float3 adat = Float3_Scale(aperp, 1.0f / alen);
+		float bankErr = atan2f(Float3_Dot(Float3_Cross(liftDir, adat), vhat), Float3_Dot(liftDir, adat));
+		values[2] = fminf(fmaxf(0.5f - BANK_TURN_ROLL * bankErr, 0.0f), 1.0f);
+	}
+	float omega = fminf(theta / (tgo * BANK_TURN_TURN_T), BANK_TURN_MAX_RATE);
+	values[1] = fminf(fmaxf(0.5f - BANK_TURN_PULL * omega, 0.0f), 1.0f);
+}
+
 // Deployed plane loss: 2.25x horizon in the same 16 steps (measured better
 // than fine steps at equal cost) plus a control-effort term; the alignment
 // gain and the effort term only work as a pair. The rudder is charged 2:1 -
@@ -352,9 +399,8 @@ static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, f
 	float3 targetVel = Float3_Scale(ctrl->targetVelocity, TARGET_LEAD_GAIN);
 	ControllerLossFn lossFn = Float3_Length(ctrl->targetAccel) > TARGET_MANOEUVER_ACCEL ? evaluateLossV2PlusTuned2Manoeuver : evaluateLossV2PlusTuned2;
 
-	// Start from the surfaces the plane actually has; a neutral start re-plans
-	// the whole approach from scratch on every frame.
-	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
+	float values[3]; // yaw, pitch, roll
+	bankToTurnSeed(ctrl, target, ctrl->targetVelocity, values);
 	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
 	float learningRate = 0.05f;
 	// Finite-difference probe span: below this the two probes differ by less
