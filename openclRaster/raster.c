@@ -11,6 +11,10 @@
 // given, so the launch is rounded up here and the kernels bounds-check against the real
 // width/height they receive as arguments.
 #define RASTER_TILE 16
+// 1 = map/memcpy/unmap, 0 = blocking clEnqueueReadBuffer. Measured on this driver: map is
+// 12.8 ms/frame, read is 6.1 ms, so the read stays the default even though the buffers are
+// pinned (a map here costs more than the DMA it replaces).
+#define RASTER_READBACK_MAP 0
 
 static void rasterDisable(RasterRenderer *rr, const char *why) {
 	if (rr->enabled)
@@ -45,7 +49,12 @@ void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int heig
 	rr->width = width;
 	rr->height = height;
 	rr->enabled = 1;
-	rr->aoStrength = 0.55f; // RayTraceScene applies AO at this strength
+	// Every transfer is a PCIe copy, so the frame path only takes what a frame needs.
+	rr->readbackMask = RASTER_OUT_FRAME;
+	// AO.h applies 0.55 to a term it then blurs over a 4x downsample. The reach here is
+	// shorter (one object width, 24 px of screen), so a higher strength keeps the contact
+	// darkening visible. Past ~1.2 the grazing-floor bias starts to show.
+	rr->aoStrength = 1.0f;
 
 	rr->ctx = CL_Context_Create();
 	rr->depthPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeDepth", NULL);
@@ -54,12 +63,18 @@ void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int heig
 	rr->aoPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeAo", NULL);
 	rr->aoBlurPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeAoBlur", NULL);
 	rr->aoApplyPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeAoApply", NULL);
+	rr->shadowPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeShadow", NULL);
 
 	size_t pixels = (size_t)width * height;
 	rr->objectBuf = CL_Buffer_CreatePinned(&rr->ctx, sizeof(RasterObject), CL_MEM_READ_ONLY);
-	rr->depthUBuf = CL_Buffer_Create(&rr->ctx, pixels * sizeof(uint), CL_MEM_READ_WRITE);
+	rr->depthUBuf = CL_Buffer_Create(&rr->ctx, pixels * sizeof(cl_ulong), CL_MEM_READ_WRITE);
 	rr->aoBufA = CL_Buffer_Create(&rr->ctx, pixels * sizeof(float), CL_MEM_READ_WRITE);
 	rr->aoBufB = CL_Buffer_Create(&rr->ctx, pixels * sizeof(float), CL_MEM_READ_WRITE);
+
+	// A disabled shadow map still needs a valid buffer (the shade kernel always binds it;
+	// shadow.params.z is what turns the lookup off).
+	rr->shadowMapSize = 2048;
+	rr->shadowBuf = CL_Buffer_Create(&rr->ctx, (size_t)rr->shadowMapSize * rr->shadowMapSize * sizeof(uint), CL_MEM_READ_WRITE);
 	rr->framebufferBuf = CL_Buffer_CreatePinned(&rr->ctx, pixels * sizeof(float4), CL_MEM_READ_WRITE);
 	rr->depthBuf = CL_Buffer_CreatePinned(&rr->ctx, pixels * sizeof(float), CL_MEM_READ_WRITE);
 	rr->normalBuf = CL_Buffer_CreatePinned(&rr->ctx, pixels * sizeof(float4), CL_MEM_READ_WRITE);
@@ -71,7 +86,9 @@ void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int heig
 		rr->depthPipeline.kernel == NULL || rr->shadePipeline.kernel == NULL ||
 		rr->skyPipeline.kernel == NULL || rr->aoPipeline.kernel == NULL ||
 		rr->aoBlurPipeline.kernel == NULL || rr->aoApplyPipeline.kernel == NULL ||
+		rr->shadowPipeline.kernel == NULL ||
 		rr->depthUBuf.buf == NULL || rr->aoBufA.buf == NULL || rr->aoBufB.buf == NULL ||
+		rr->shadowBuf.buf == NULL ||
 		rr->framebufferBuf.buf == NULL ||
 		rr->depthBuf.buf == NULL || rr->normalBuf.buf == NULL ||
 		rr->positionBuf.buf == NULL || rr->objectIdBuf.buf == NULL ||
@@ -137,8 +154,13 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		triStarts[o] = t;
 		for (int k = 0; k < obj->triangleCount; k++, t++) {
 			tris[t] = (RasterTri){
-				f4(obj->v1[k]), f4(obj->v2[k]), f4(obj->v3[k]), f4(obj->normals[k]),
-				0, 0, 0,
+				f4(obj->v1[k]),
+				f4(obj->v2[k]),
+				f4(obj->v3[k]),
+				f4(obj->normals[k]),
+				0,
+				0,
+				0,
 				obj->materialIds ? obj->materialIds[k] : -1,
 			};
 			// The bin format stores UVs per triangle; primitives built in code may have none.
@@ -212,7 +234,10 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 					   : -1;
 		matTable[i] = (RasterMaterial){
 			(float4){m->color.x, m->color.y, m->color.z, 0.0f},
-			m->roughness, m->metallic, m->emission, slot,
+			m->roughness,
+			m->metallic,
+			m->emission,
+			slot,
 		};
 	}
 
@@ -313,7 +338,10 @@ static void uploadObjects(RasterRenderer *rr, const ObjectList *scene) {
 			(float4){obj->_fwdRot0.x, obj->_fwdRot0.y, obj->_fwdRot0.z, 0.0f},
 			(float4){obj->_fwdRot1.x, obj->_fwdRot1.y, obj->_fwdRot1.z, 0.0f},
 			(float4){obj->_fwdRot2.x, obj->_fwdRot2.y, obj->_fwdRot2.z, 0.0f},
-			rr->triStarts[o], obj->triangleCount, flags, i,
+			rr->triStarts[o],
+			obj->triangleCount,
+			flags,
+			i,
 		};
 		o++;
 	}
@@ -322,6 +350,9 @@ static void uploadObjects(RasterRenderer *rr, const ObjectList *scene) {
 }
 
 static void readbackPinned(RasterRenderer *rr, CL_Buffer *buf, void *dst, size_t bytes) {
+	// The buffers are host-visible (CL_MEM_ALLOC_HOST_PTR), so a blocking read gives the
+	// driver one DMA instead of a map the caller then copies out of itself.
+#if RASTER_READBACK_MAP
 	void *ptr = CL_Buffer_Map(&rr->ctx, buf, CL_MAP_READ);
 	if (!ptr) {
 		rasterDisable(rr, "G-buffer read-back map failed");
@@ -329,12 +360,71 @@ static void readbackPinned(RasterRenderer *rr, CL_Buffer *buf, void *dst, size_t
 	}
 	memcpy(dst, ptr, bytes);
 	CL_Buffer_Unmap(&rr->ctx, buf, ptr);
+#else
+	CL_Buffer_Read(&rr->ctx, buf, dst, bytes);
+#endif
 }
 
 static void dispatchScreenTiled(RasterRenderer *rr, CL_Pipeline *pip, int width, int height) {
 	size_t tilesW = ((size_t)width + RASTER_TILE - 1) / RASTER_TILE;
 	size_t tilesH = ((size_t)height + RASTER_TILE - 1) / RASTER_TILE;
 	CL_Dispatch2D(&rr->ctx, pip, tilesW * RASTER_TILE, tilesH * RASTER_TILE, RASTER_TILE, RASTER_TILE);
+}
+
+// Fits an orthographic light frame around the scene bounds. cam->lightDir points from the
+// surface toward the light, so the map is rasterized looking the other way. Returns 0 when
+// the bounds are unusable, which leaves the shadow pass disabled for that frame.
+static int buildShadowFrame(RasterRenderer *rr, const ObjectList *scene, const Camera *cam) {
+	float3 bmin = {FLT_MAX, FLT_MAX, FLT_MAX};
+	float3 bmax = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+	int counted = 0;
+
+	for (int i = 0; i < scene->count; i++) {
+		const Object *obj = &scene->objects[i];
+		if (!obj->v1 || obj->triangleCount <= 0) continue;
+		bmin = (float3){fminf(bmin.x, obj->worldBBmin.x), fminf(bmin.y, obj->worldBBmin.y), fminf(bmin.z, obj->worldBBmin.z)};
+		bmax = (float3){fmaxf(bmax.x, obj->worldBBmax.x), fmaxf(bmax.y, obj->worldBBmax.y), fmaxf(bmax.z, obj->worldBBmax.z)};
+		counted++;
+	}
+	if (!counted || !(bmin.x <= bmax.x) || !(bmin.y <= bmax.y) || !(bmin.z <= bmax.z))
+		return 0;
+
+	float3 center = {(bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f, (bmin.z + bmax.z) * 0.5f};
+	float3 fwd = Float3_Scale(Float3_Normalize(cam->lightDir), -1.0f);
+	// Any up hint that is not parallel to the light works; Y only fails for a light
+	// pointing straight down, so fall back to Z in that case.
+	float3 hint = fabsf(fwd.y) > 0.95f ? (float3){0.0f, 0.0f, 1.0f} : (float3){0.0f, 1.0f, 0.0f};
+	float3 right = Float3_Normalize(Float3_Cross(hint, fwd));
+	float3 up = Float3_Cross(fwd, right);
+
+	// Fit the 8 corners of the world bounds so the whole scene lands inside the map.
+	float minX = FLT_MAX, maxX = -FLT_MAX, minY = FLT_MAX, maxY = -FLT_MAX, minZ = FLT_MAX;
+	for (int c = 0; c < 8; c++) {
+		float3 corner = {(c & 1) ? bmax.x : bmin.x, (c & 2) ? bmax.y : bmin.y, (c & 4) ? bmax.z : bmin.z};
+		float3 lv = Float3_Sub(corner, center);
+		float x = Float3_Dot(lv, right);
+		float y = Float3_Dot(lv, up);
+		float z = Float3_Dot(lv, fwd);
+		minX = fminf(minX, x);
+		maxX = fmaxf(maxX, x);
+		minY = fminf(minY, y);
+		maxY = fmaxf(maxY, y);
+		minZ = fminf(minZ, z);
+	}
+
+	float halfW = fmaxf(fmaxf(fabsf(minX), fabsf(maxX)), 1e-3f);
+	float halfH = fmaxf(fmaxf(fabsf(minY), fabsf(maxY)), 1e-3f);
+	float size = (float)rr->shadowMapSize;
+
+	rr->shadow = (RasterShadow){
+		(float4){center.x, center.y, center.z, 0.0f},
+		(float4){right.x, right.y, right.z, 1.0f / halfW},
+		(float4){up.x, up.y, up.z, 1.0f / halfH},
+		(float4){fwd.x, fwd.y, fwd.z, minZ},
+		// Bias is one texel in world units on the longer axis, widened at grazing angles.
+		(float4){size, 2.0f * halfW / size, 1.0f, 0.0f},
+	};
+	return 1;
 }
 
 void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLib *lib, Camera *cam) {
@@ -367,9 +457,16 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	float3 camRight = Float3_Normalize(cam->right);
 	float3 camUp = Float3_Normalize(cam->up);
 
+	// Shadow map first: the shade pass reads it. A cleared texel must hold a large finite
+	// depth (not 0xFFFFFFFF, which decodes as NaN and would shadow everything).
+	int shadowsOn = rr->shadowMapSize > 0 && buildShadowFrame(rr, scene, cam);
+	if (!shadowsOn)
+		rr->shadow.params.z = 0.0f;
+
 	// clearBuffers() is a no-op in this engine, so every scratch and output buffer is cleared
 	// here. The read-back copies whole buffers, so an uncovered pixel must come back as a
 	// defined value (far depth / no object / black) rather than last frame's GPU contents.
+	// The depth word is all ones: every real entry has smaller depth bits, so it always wins.
 	uint far = 0xFFFFFFFFu;
 	CL_Buffer_Fill(&rr->ctx, &rr->depthUBuf, &far, sizeof(far));
 
@@ -385,6 +482,23 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 
 	size_t global = ((size_t)rr->triCount + RASTER_LOCAL_SIZE - 1) / RASTER_LOCAL_SIZE * RASTER_LOCAL_SIZE;
 	int width = cam->screenWidth, height = cam->screenHeight;
+
+	if (shadowsOn) {
+		float bigDepth = 1e30f;
+		uint bigDepthBits;
+		memcpy(&bigDepthBits, &bigDepth, sizeof(bigDepthBits));
+		CL_Buffer_Fill(&rr->ctx, &rr->shadowBuf, &bigDepthBits, sizeof(bigDepthBits));
+
+		cl_kernel shadowKernel = rr->shadowPipeline.kernel;
+		int sa = 0;
+		clSetKernelArg(shadowKernel, sa++, sizeof(cl_mem), &rr->triBuf.buf);
+		clSetKernelArg(shadowKernel, sa++, sizeof(cl_mem), &rr->triObjectBuf.buf);
+		clSetKernelArg(shadowKernel, sa++, sizeof(cl_mem), &rr->objectBuf.buf);
+		clSetKernelArg(shadowKernel, sa++, sizeof(int), &rr->triCount);
+		clSetKernelArg(shadowKernel, sa++, sizeof(RasterShadow), &rr->shadow);
+		clSetKernelArg(shadowKernel, sa++, sizeof(cl_mem), &rr->shadowBuf.buf);
+		CL_Dispatch1D(&rr->ctx, &rr->shadowPipeline, global, RASTER_LOCAL_SIZE);
+	}
 
 	cl_kernel k = rr->depthPipeline.kernel;
 	int a = 0;
@@ -417,7 +531,8 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->skyBuf.buf);
 	clSetKernelArg(k, a++, sizeof(int), &rr->skyWidth);
 	clSetKernelArg(k, a++, sizeof(int), &rr->skyHeight);
-	clSetKernelArg(k, a++, sizeof(int), &rr->triCount);
+	clSetKernelArg(k, a++, sizeof(RasterShadow), &rr->shadow);
+	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->shadowBuf.buf);
 	clSetKernelArg(k, a++, sizeof(float3), &cam->position);
 	clSetKernelArg(k, a++, sizeof(float3), &camRight);
 	clSetKernelArg(k, a++, sizeof(float3), &camUp);
@@ -435,7 +550,7 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->positionBuf.buf);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->objectIdBuf.buf);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->triangleIdBuf.buf);
-	CL_Dispatch1D(&rr->ctx, &rr->shadePipeline, global, RASTER_LOCAL_SIZE);
+	dispatchScreenTiled(rr, &rr->shadePipeline, width, height);
 
 	size_t pixels = (size_t)width * height;
 
@@ -480,9 +595,12 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 			int alongX;
 			int gated;
 		} passes[6] = {
-			{1, 1, 1}, {1, 0, 1}, // edge-preserving blur
-			{4, 1, 0}, {4, 0, 0}, // wide smooth, round 1
-			{4, 1, 0}, {4, 0, 0}, // wide smooth, round 2
+			{1, 1, 1},
+			{1, 0, 1}, // edge-preserving blur
+			{4, 1, 0},
+			{4, 0, 0}, // wide smooth, round 1
+			{4, 1, 0},
+			{4, 0, 0}, // wide smooth, round 2
 		};
 		for (int p = 0; p < 6; p++) {
 			CL_Buffer *src = (p % 2 == 0) ? &rr->aoBufA : &rr->aoBufB;
@@ -511,11 +629,16 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	}
 
 	readbackPinned(rr, &rr->framebufferBuf, cam->framebufferHdr, pixels * sizeof(float3));
-	readbackPinned(rr, &rr->depthBuf, cam->depthBuffer, pixels * sizeof(float));
-	readbackPinned(rr, &rr->normalBuf, cam->normalBuffer, pixels * sizeof(float3));
-	readbackPinned(rr, &rr->positionBuf, cam->positionBuffer, pixels * sizeof(float3));
-	readbackPinned(rr, &rr->objectIdBuf, cam->objectIdBuffer, pixels * sizeof(int));
-	readbackPinned(rr, &rr->triangleIdBuf, cam->triangleIdBuffer, pixels * sizeof(int));
+	if (rr->readbackMask & RASTER_OUT_DEPTH)
+		readbackPinned(rr, &rr->depthBuf, cam->depthBuffer, pixels * sizeof(float));
+	if (rr->readbackMask & RASTER_OUT_NORMAL)
+		readbackPinned(rr, &rr->normalBuf, cam->normalBuffer, pixels * sizeof(float3));
+	if (rr->readbackMask & RASTER_OUT_POSITION)
+		readbackPinned(rr, &rr->positionBuf, cam->positionBuffer, pixels * sizeof(float3));
+	if (rr->readbackMask & RASTER_OUT_OBJECT_ID)
+		readbackPinned(rr, &rr->objectIdBuf, cam->objectIdBuffer, pixels * sizeof(int));
+	if (rr->readbackMask & RASTER_OUT_TRIANGLE_ID)
+		readbackPinned(rr, &rr->triangleIdBuf, cam->triangleIdBuffer, pixels * sizeof(int));
 }
 
 void Raster_Destroy(RasterRenderer *rr) {
@@ -532,6 +655,7 @@ void Raster_Destroy(RasterRenderer *rr) {
 	freeBuffer(&rr->depthUBuf);
 	freeBuffer(&rr->aoBufA);
 	freeBuffer(&rr->aoBufB);
+	freeBuffer(&rr->shadowBuf);
 	freeBuffer(&rr->framebufferBuf);
 	freeBuffer(&rr->depthBuf);
 	freeBuffer(&rr->normalBuf);
@@ -544,6 +668,7 @@ void Raster_Destroy(RasterRenderer *rr) {
 	freePipeline(&rr->aoPipeline);
 	freePipeline(&rr->aoBlurPipeline);
 	freePipeline(&rr->aoApplyPipeline);
+	freePipeline(&rr->shadowPipeline);
 	if (rr->ctx.queue) CL_Context_Destroy(&rr->ctx);
 	free(rr->triStarts);
 	rr->triStarts = NULL;

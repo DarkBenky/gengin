@@ -45,8 +45,30 @@ typedef struct {
 	int size;
 } RasterTexture; // 8 bytes
 
+// Must match RasterShadow in raster.cl. Built from the scene bounds and the light
+// direction each frame; the reciprocals ride in .w to keep it a single kernel argument.
+typedef struct {
+	float4 center;
+	float4 right;
+	float4 up;
+	float4 fwd;
+	float4 params; // x = map size, y = world units per texel, z = 1 when enabled
+} RasterShadow;
+
 #define RASTER_FLAG_TEXTURE 1
 #define RASTER_FLAG_CULL 2
+
+// Which Camera buffers Raster_Render copies back to the host. Every transfer crosses PCIe
+// (60 bytes per pixel for the full set), so the default is the pair a frame actually needs
+// and the rest is opt-in for consumers like the parity harness.
+#define RASTER_OUT_FRAMEBUFFER 1
+#define RASTER_OUT_DEPTH 2
+#define RASTER_OUT_NORMAL 4
+#define RASTER_OUT_POSITION 8
+#define RASTER_OUT_OBJECT_ID 16
+#define RASTER_OUT_TRIANGLE_ID 32
+#define RASTER_OUT_ALL 63
+#define RASTER_OUT_FRAME (RASTER_OUT_FRAMEBUFFER | RASTER_OUT_DEPTH)
 
 // Self-contained OpenCL rasterizer: renders the scene into a Camera's G-buffers with a
 // two-pass triangle raster (depth scatter, then shade scatter). Independent of the CPU
@@ -63,6 +85,7 @@ typedef struct {
 	CL_Pipeline aoPipeline;
 	CL_Pipeline aoBlurPipeline;
 	CL_Pipeline aoApplyPipeline;
+	CL_Pipeline shadowPipeline;
 
 	// static scene (uploaded once per scene rebuild)
 	CL_Buffer triBuf;
@@ -83,7 +106,11 @@ typedef struct {
 	CL_Buffer depthUBuf; // packed view-Z, cleared to 0xFFFFFFFF each frame
 	CL_Buffer aoBufA;    // ambient occlusion, ping-ponged by the blur passes
 	CL_Buffer aoBufB;
-	float aoStrength; // 0 disables the AO passes; 0.55 matches RayTraceScene
+	CL_Buffer shadowBuf; // light-space depth (uint, monotonic float bits)
+	float aoStrength; // 0 disables the AO passes; the default keeps contact darkening visible
+	int shadowMapSize; // 0 disables the shadow pass; 2048 is plenty for this scene
+	RasterShadow shadow; // rebuilt every frame by Raster_Render
+	unsigned readbackMask; // RASTER_OUT_* bits; defaults to framebuffer + depth
 
 	// pinned G-buffer readback, one buffer per Camera output it writes
 	CL_Buffer framebufferBuf;
@@ -119,8 +146,11 @@ void Raster_SetSkybox(RasterRenderer *rr, const Skybox *skybox);
 
 // Rasterizes the scene into cam->{framebufferHdr, depthBuffer, normalBuffer,
 // positionBuffer, objectIdBuffer, triangleIdBuffer}. Synchronous (CL_Finish inside).
-// Without a skybox, pixels the rasterizer does not cover keep whatever the Camera
-// already held — the caller owns the sky/clear policy.
+// Only the buffers selected by readbackMask are transferred back to the host; the rest are
+// still computed on the GPU and simply not copied. Object world bounds must be current
+// (Object_UpdateWorldBounds) — they size the shadow map. Without a skybox, pixels the
+// rasterizer does not cover keep whatever the Camera already held — the caller owns the
+// sky/clear policy.
 void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLib *lib, Camera *cam);
 
 void Raster_Destroy(RasterRenderer *rr);

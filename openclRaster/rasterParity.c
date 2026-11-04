@@ -36,11 +36,15 @@ typedef struct {
 	int maxColorDiff;
 	int colorDiffHist[9]; // mismatched pixels bucketed by channel diff (32 LDR steps)
 	int colorMismatchObj[32];
-	int rasterCloser; // raster surface in front of the ray surface (ray missed geometry?)
-	int rayCloser;	  // ray surface in front of the raster surface (raster overdraws?)
+	int rasterCloser;	// raster surface in front of the ray surface (ray missed geometry?)
+	int rayCloser;		// ray surface in front of the raster surface (raster overdraws?)
 	int normalMismatch; // shared pixels where the geometric normal differs by more than NORMAL_TOLERANCE
 	float maxNormalDiff;
 	int normalMismatchObj[32]; // which objects the normal diffs land on (textured = expected)
+	int objectIdMismatch;	   // shared pixels whose objectIdBuffer disagrees
+	int triangleIdMismatch;	   // shared pixels whose triangleIdBuffer disagrees
+	int positionMismatch;	   // shared pixels whose positionBuffer is further apart than the tolerance
+	float maxPositionDiff;
 	// Where the depth disagrees most: same object/triangle means a math bug, different
 	// object means the two paths picked different surfaces at that pixel.
 	int worstCount;
@@ -50,7 +54,10 @@ typedef struct {
 
 #define DEPTH_TOLERANCE 0.01f
 #define COLOR_TOLERANCE 8
-#define NORMAL_TOLERANCE 0.05f // radians between shading normal and face normal
+#define NORMAL_TOLERANCE 0.05f	 // radians between shading normal and face normal
+#define POSITION_TOLERANCE 0.01f // world units between the two reconstructed surface points
+// Raster_Render dispatches this many separable AO blur passes (must match raster.c).
+#define AO_BLUR_PASSES 6
 
 static float nowSeconds(void) {
 	struct timespec ts;
@@ -60,7 +67,8 @@ static float nowSeconds(void) {
 
 static int compareFloats(const void *a, const void *b) {
 	float fa = *(const float *)a, fb = *(const float *)b;
-	return fa < fb ? -1 : fa > fb ? 1 : 0;
+	return fa < fb ? -1 : fa > fb ? 1
+								  : 0;
 }
 
 static float medianOf(float *values, int count) {
@@ -92,9 +100,12 @@ static void packLdr(const float3 *hdr, uint32 *ldr, int pixels) {
 			c.y = fminf(c.y + e, 1.0f);
 			c.z = fminf(c.z + e, 1.0f);
 		}
-		uint8 r = (uint8)(c.x > 1.0f ? 255 : c.x < 0.0f ? 0 : (int)(c.x * 255.0f));
-		uint8 g = (uint8)(c.y > 1.0f ? 255 : c.y < 0.0f ? 0 : (int)(c.y * 255.0f));
-		uint8 b = (uint8)(c.z > 1.0f ? 255 : c.z < 0.0f ? 0 : (int)(c.z * 255.0f));
+		uint8 r = (uint8)(c.x > 1.0f ? 255 : c.x < 0.0f ? 0
+														: (int)(c.x * 255.0f));
+		uint8 g = (uint8)(c.y > 1.0f ? 255 : c.y < 0.0f ? 0
+														: (int)(c.y * 255.0f));
+		uint8 b = (uint8)(c.z > 1.0f ? 255 : c.z < 0.0f ? 0
+														: (int)(c.z * 255.0f));
 		ldr[i] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | b;
 	}
 }
@@ -116,14 +127,19 @@ static void diffFrames(const Camera *cam, const float *rtDepth, const uint32 *rt
 		if (ddiff > stats->maxDepthDiff) stats->maxDepthDiff = ddiff;
 		if (ddiff > DEPTH_TOLERANCE) {
 			stats->depthMismatch++;
-			if (rasterDepth[i] < rtDepth[i]) stats->rasterCloser++;
-			else stats->rayCloser++;
+			if (rasterDepth[i] < rtDepth[i])
+				stats->rasterCloser++;
+			else
+				stats->rayCloser++;
 			// Keep the eight largest, insertion-sorted — enough to characterise the failure.
 			int slot = stats->worstCount < 8 ? stats->worstCount++ : -1;
 			if (slot < 0) {
 				slot = 7;
 				for (int k = 6; k >= 0; k--)
-					if (ddiff > stats->worstDepth[k]) { slot = k; break; }
+					if (ddiff > stats->worstDepth[k]) {
+						slot = k;
+						break;
+					}
 			}
 			if (ddiff > stats->worstDepth[slot]) {
 				for (int k = slot + 1; k < 8 && k < stats->worstCount; k++) {
@@ -158,7 +174,8 @@ static void diffFrames(const Camera *cam, const float *rtDepth, const uint32 *rt
 		float nlen = sqrtf(nr.x * nr.x + nr.y * nr.y + nr.z * nr.z);
 		if (nlen > 1e-4f) {
 			float dot = (nr.x * nn.x + nr.y * nn.y + nr.z * nn.z) / nlen;
-			float ndiff = acosf(dot < -1.0f ? -1.0f : dot > 1.0f ? 1.0f : dot);
+			float ndiff = acosf(dot < -1.0f ? -1.0f : dot > 1.0f ? 1.0f
+																 : dot);
 			if (ndiff > stats->maxNormalDiff) stats->maxNormalDiff = ndiff;
 			if (ndiff > NORMAL_TOLERANCE) {
 				stats->normalMismatch++;
@@ -168,6 +185,38 @@ static void diffFrames(const Camera *cam, const float *rtDepth, const uint32 *rt
 	}
 }
 
+// The id buffers are part of the parity contract: consumers read objectIdBuffer as the
+// scene object index and triangleIdBuffer as the index within that object's triangle
+// array, so a mismatch here breaks callers even when the pixels look identical.
+static void diffIds(const Camera *cam, const int *rtObjectId, const int *rtTriangleId,
+					const float *rtDepth, const float *rasterDepth, DiffStats *stats) {
+	const int pixels = cam->screenWidth * cam->screenHeight;
+	int rayTriangleIdsWritten = 0;
+
+	for (int i = 0; i < pixels; i++) {
+		if (rtTriangleId[i] >= 0) rayTriangleIdsWritten++;
+		if (rtDepth[i] >= DEPTH_FAR || rasterDepth[i] >= DEPTH_FAR) continue;
+		if (rtObjectId[i] != cam->objectIdBuffer[i]) stats->objectIdMismatch++;
+		if (rtTriangleId[i] != cam->triangleIdBuffer[i]) stats->triangleIdMismatch++;
+	}
+	// RayTraceScene uses the row kernel, which leaves triangleIdBuffer untouched (only the
+	// unused column kernel fills it), so that comparison has no reference to compare to.
+	if (rayTriangleIdsWritten == 0) stats->triangleIdMismatch = -1;
+}
+
+// The reconstructed surface point should agree to well under a pixel: both paths interpolate
+// the same vertices with the same perspective-correct weights, so any gap here is a bug.
+static void diffPositions(const Camera *cam, const float3 *rtPos, const float *rtDepth,
+						  const float *rasterDepth, DiffStats *stats) {
+	const int pixels = cam->screenWidth * cam->screenHeight;
+	for (int i = 0; i < pixels; i++) {
+		if (rtDepth[i] >= DEPTH_FAR || rasterDepth[i] >= DEPTH_FAR) continue;
+		float3 d = Float3_Sub(rtPos[i], cam->positionBuffer[i]);
+		float dist = sqrtf(Float3_Dot(d, d));
+		if (dist > stats->maxPositionDiff) stats->maxPositionDiff = dist;
+		if (dist > POSITION_TOLERANCE) stats->positionMismatch++;
+	}
+}
 static void printWorstPixels(const Camera *cam, const float *rtDepth, const float *rasterDepth,
 							 const int *rtObjectId, const DiffStats *stats) {
 	printf("Worst depth mismatches (x, y, ray Z, raster Z, ray obj, raster obj/tri):\n");
@@ -212,6 +261,15 @@ static void printSummary(const DiffStats *stats, float rasterMs) {
 	for (int i = 0; i < 32; i++)
 		if (stats->normalMismatchObj[i]) printf(" obj%d=%d", i, stats->normalMismatchObj[i]);
 	printf("\n");
+	printf("Ids (shared pixels)\n");
+	printf("  objectId mismatched:     %d\n", stats->objectIdMismatch);
+	if (stats->triangleIdMismatch < 0)
+		printf("  triangleId:              no reference (RayTraceScene's row kernel does not write it)\n");
+	else
+		printf("  triangleId mismatched:   %d\n", stats->triangleIdMismatch);
+	printf("Position (world units, tolerance %.3f)\n", POSITION_TOLERANCE);
+	printf("  mismatched pixels:       %d\n", stats->positionMismatch);
+	printf("  max distance:            %.6f\n", stats->maxPositionDiff);
 	printf("Raster pass time (median): %.3f ms\n", rasterMs);
 	printf("=====================================================\n");
 	printf("Expected diffs (raster is the 'not fancy' subset of the ray tracer):\n");
@@ -236,13 +294,13 @@ static void saveCoverageMask(const char *path, const float *depth, int width, in
 	fclose(f);
 }
 
-// Non-circular check of the base lighting path: the shape-parade objects (indices 5..N of
-// the parade block) are untextured with metallic=0 and emission=0, so their shaded color is
-// fully determined by the scene's own material color and the normal the parity already
-// proved exact. This validates the lighting formula, tonemap and packing without comparing
-// against the ray tracer's extra terms.
+// Non-circular check of the shading chain: the shape-parade objects are untextured with
+// metallic=0 and emission=0, so their color is a pure function of the material color, the
+// normal (parity-proved exact), the camera position and the skybox. Reimplemented here to
+// validate base lighting, GGX, the sky reflection, the tonemap and the packing without
+// leaning on the ray tracer. Runs with AO and shadows off, which are separate terms.
 static void checkAnalyticLighting(const ObjectList *scene, const MaterialLib *lib,
-								  const Camera *cam, const float *rasterDepth) {
+								  const Camera *cam, const Skybox *skybox, const float *rasterDepth) {
 	const int pixels = cam->screenWidth * cam->screenHeight;
 	const float3 light = Float3_Normalize(cam->lightDir);
 	int checked = 0, bad = 0;
@@ -265,6 +323,45 @@ static void checkAnalyticLighting(const ObjectList *scene, const MaterialLib *li
 		float ndl = fmaxf(0.0f, (n.x * light.x + n.y * light.y + n.z * light.z) / nlen);
 		float lit = 0.02f + 0.98f * ndl;
 		float3 hdr = {mat->color.x * lit, mat->color.y * lit, mat->color.z * lit};
+
+		float3 viewDir = Float3_Sub(cam->positionBuffer[i], cam->position);
+		float viewLen = sqrtf(Float3_Dot(viewDir, viewDir));
+		if (viewLen > 1e-6f) {
+			viewDir = Float3_Scale(viewDir, 1.0f / viewLen);
+			float ndv = fmaxf(1e-4f, -Float3_Dot(n, viewDir));
+			float invNdv = 1.0f - ndv;
+			float inv2 = invNdv * invNdv;
+			float fresnel = 0.04f + 0.96f * (inv2 * inv2 * invNdv);
+
+			float3 halfVec = Float3_Sub(light, viewDir);
+			float halfLen = sqrtf(Float3_Dot(halfVec, halfVec));
+			if (halfLen > 1e-6f) {
+				halfVec = Float3_Scale(halfVec, 1.0f / halfLen);
+				float ndh = fmaxf(0.0f, Float3_Dot(n, halfVec));
+				float alpha = mat->roughness * mat->roughness;
+				float alpha2 = alpha * alpha;
+				float dg = ndh * ndh * (alpha2 - 1.0f) + 1.0f;
+				float D = alpha2 / fmaxf(dg * dg, 1e-5f);
+				float k = alpha * 0.5f;
+				float gv = ndv / fmaxf(ndv * (1.0f - k) + k, 1e-5f);
+				float gl = ndl / fmaxf(ndl * (1.0f - k) + k, 1e-5f);
+				float spec = ndl > 0.0f ? (D * gv * gl * fresnel / fmaxf(4.0f * ndl * ndv, 1e-5f)) : 0.0f;
+				hdr.x += spec;
+				hdr.y += spec;
+				hdr.z += spec;
+			}
+
+			float st = fminf(fresnel * (1.0f - mat->roughness) * 0.18f * (0.15f + 0.85f * ndl), 1.0f);
+			if (st > 0.0f) {
+				float dot2 = 2.0f * Float3_Dot(n, viewDir);
+				float3 reflDir = {viewDir.x - n.x * dot2, viewDir.y - n.y * dot2, viewDir.z - n.z * dot2};
+				float3 sky = UnpackColor(SampleSkybox(skybox, reflDir));
+				hdr.x = hdr.x * (1.0f - st) + sky.x * st;
+				hdr.y = hdr.y * (1.0f - st) + sky.y * st;
+				hdr.z = hdr.z * (1.0f - st) + sky.z * st;
+			}
+		}
+
 		uint32 expect;
 		packLdr(&hdr, &expect, 1);
 
@@ -292,6 +389,13 @@ int main(int argc, char **argv) {
 	// screenHeight <= HEIGHT), so a larger frame A/B-tests that path without touching it.
 	int renderWidth = argc > 1 ? atoi(argv[1]) : WIDTH;
 	int renderHeight = argc > 2 ? atoi(argv[2]) : HEIGHT;
+	// Third argument overrides the AO strength (0 = no AO passes), fourth the shadow map
+	// size (0 = no shadows). Both default to whatever the renderer was initialised with.
+	int hasAoOverride = argc > 3;
+	float aoOverride = hasAoOverride ? (float)atof(argv[3]) : 0.0f;
+	int shadowSize = argc > 4 ? atoi(argv[4]) : 2048;
+	// Fifth argument overrides the read-back set (RASTER_OUT_* bits, default framebuffer+depth).
+	unsigned readbackMask = argc > 5 ? (unsigned)strtoul(argv[5], NULL, 0) : RASTER_OUT_FRAME;
 	printf("Rendering %dx%d\n", renderWidth, renderHeight);
 
 	MaterialLib matLib;
@@ -333,8 +437,10 @@ int main(int argc, char **argv) {
 	uint32 *rtLdr = malloc(pixels * sizeof(uint32));
 	uint32 *rasterLdr = malloc(pixels * sizeof(uint32));
 	int *rtObjectId = malloc(pixels * sizeof(int));
+	int *rtTriangleId = malloc(pixels * sizeof(int));
 	float3 *rtNormal = malloc(pixels * sizeof(float3));
-	if (!rtDepth || !rasterDepth || !rtLdr || !rasterLdr || !rtObjectId || !rtNormal) {
+	float3 *rtPos = malloc(pixels * sizeof(float3));
+	if (!rtDepth || !rasterDepth || !rtLdr || !rasterLdr || !rtObjectId || !rtTriangleId || !rtNormal || !rtPos) {
 		fprintf(stderr, "Failed to allocate comparison buffers\n");
 		return 1;
 	}
@@ -344,10 +450,16 @@ int main(int argc, char **argv) {
 	// caller's own subpixel policy.
 	camera.jitter = (float2){0.0f, 0.0f};
 
+	// Reset first so every G-buffer starts from a known value: the ray row kernel does not
+	// write triangleIdBuffer, and a defined baseline makes that visible instead of reading
+	// whatever the allocation happened to contain.
+	resetGbuffers(&camera);
 	RenderSetup(scene.objects, scene.count, &camera);
 	RayTraceScene(scene.objects, scene.count, &camera, &matLib, &taskQueue, threadPool, &skybox);
 	memcpy(rtDepth, camera.depthBuffer, pixels * sizeof(float));
 	memcpy(rtObjectId, camera.objectIdBuffer, pixels * sizeof(int));
+	memcpy(rtTriangleId, camera.triangleIdBuffer, pixels * sizeof(int));
+	memcpy(rtPos, camera.positionBuffer, pixels * sizeof(float3));
 	memcpy(rtNormal, camera.normalBuffer, pixels * sizeof(float3));
 	saveFrame(&camera, camera.framebufferHdr, OUT_DIR "/parity_ray.bmp");
 	memcpy(rtLdr, camera.framebufferLdr, pixels * sizeof(uint32));
@@ -360,6 +472,12 @@ int main(int argc, char **argv) {
 	}
 	Raster_UploadScene(&raster, &scene, &matLib);
 	Raster_SetSkybox(&raster, &skybox);
+	if (hasAoOverride) raster.aoStrength = aoOverride;
+	raster.shadowMapSize = shadowSize;
+	// The harness compares every G-buffer, so it asks for all of them; the frame path
+	// default is framebuffer + depth only.
+	raster.readbackMask = RASTER_OUT_ALL;
+	printf("AO strength %.2f, shadow map %d\n", raster.aoStrength, raster.shadowMapSize);
 
 	resetGbuffers(&camera);
 	Raster_Render(&raster, &scene, &matLib, &camera);
@@ -370,20 +488,99 @@ int main(int argc, char **argv) {
 
 	DiffStats stats;
 	diffFrames(&camera, rtDepth, rtLdr, rtNormal, rasterDepth, rasterLdr, &stats);
+	diffIds(&camera, rtObjectId, rtTriangleId, rtDepth, rasterDepth, &stats);
+	diffPositions(&camera, rtPos, rtDepth, rasterDepth, &stats);
 
-	// Timing only — the image above is already captured.
+	// The analytic check expects the AO- and shadow-free shading value, so it runs on a
+	// separate frame with both extra terms disabled (geometry and normals are unchanged).
+	float savedAo = raster.aoStrength;
+	int savedShadow = raster.shadowMapSize;
+	raster.aoStrength = 0.0f;
+	raster.shadowMapSize = 0;
+	Raster_Render(&raster, &scene, &matLib, &camera);
+	packLdr(camera.framebufferHdr, camera.framebufferLdr, pixels);
+	checkAnalyticLighting(&scene, &matLib, &camera, &skybox, rasterDepth);
+	raster.aoStrength = savedAo;
+	raster.shadowMapSize = savedShadow;
+
+	// Timing only — the images above are already captured. Everything is measured from the
+	// same camera and scene, so the three numbers are directly comparable.
 	enum { PARITY_SAMPLES = 10 };
 	float samples[PARITY_SAMPLES];
+	unsigned savedMask = raster.readbackMask;
+	raster.readbackMask = RASTER_OUT_FRAME; // what a real frame transfers
 	for (int i = 0; i < PARITY_SAMPLES; i++) {
 		float t0 = nowSeconds();
 		Raster_Render(&raster, &scene, &matLib, &camera);
 		samples[i] = (nowSeconds() - t0) * 1000.0f;
 	}
-	printf("Raster kernel times: depth %.3f ms + shade %.3f ms\n",
-		   raster.depthPipeline.timeTook, raster.shadePipeline.timeTook);
+	float colorOnlySamples[PARITY_SAMPLES];
+	raster.readbackMask = RASTER_OUT_FRAMEBUFFER; // colour only: the minimum a frame needs
+	for (int i = 0; i < PARITY_SAMPLES; i++) {
+		float t0 = nowSeconds();
+		Raster_Render(&raster, &scene, &matLib, &camera);
+		colorOnlySamples[i] = (nowSeconds() - t0) * 1000.0f;
+	}
+	raster.readbackMask = readbackMask; // whatever the caller asked for
+	float customSamples[PARITY_SAMPLES];
+	for (int i = 0; i < PARITY_SAMPLES; i++) {
+		float t0 = nowSeconds();
+		Raster_Render(&raster, &scene, &matLib, &camera);
+		customSamples[i] = (nowSeconds() - t0) * 1000.0f;
+	}
+	float fullSamples[10];
+	raster.readbackMask = savedMask; // what the parity check needs
+	for (int i = 0; i < 10; i++) {
+		float t0 = nowSeconds();
+		Raster_Render(&raster, &scene, &matLib, &camera);
+		fullSamples[i] = (nowSeconds() - t0) * 1000.0f;
+	}
+
+	enum { CPU_SAMPLES = 3 };
+	float raySamples[CPU_SAMPLES];
+	for (int i = 0; i < CPU_SAMPLES; i++) {
+		float t0 = nowSeconds();
+		RenderSetup(scene.objects, scene.count, &camera);
+		RayTraceScene(scene.objects, scene.count, &camera, &matLib, &taskQueue, threadPool, &skybox);
+		raySamples[i] = (nowSeconds() - t0) * 1000.0f;
+	}
+
+	float legacySamples[CPU_SAMPLES];
+	for (int i = 0; i < CPU_SAMPLES; i++) {
+		float t0 = nowSeconds();
+		RenderObjects(scene.objects, scene.count, &camera, &matLib);
+		legacySamples[i] = (nowSeconds() - t0) * 1000.0f;
+	}
+
+	printf("=====================================================\n");
+	printf("Frame time, %dx%d, %d triangles\n", renderWidth, renderHeight, raster.triCount);
+	float rayMedian = medianOf(raySamples, CPU_SAMPLES);
+	float rasterMedian = medianOf(samples, PARITY_SAMPLES);
+	// Each pipeline records the time of its last dispatch, so the six blur passes have to
+	// be accounted for explicitly.
+	float blurTotal = raster.aoBlurPipeline.timeTook * AO_BLUR_PASSES;
+	float kernelTotal = raster.shadowPipeline.timeTook + raster.depthPipeline.timeTook +
+						raster.shadePipeline.timeTook + raster.skyPipeline.timeTook +
+						raster.aoPipeline.timeTook + blurTotal + raster.aoApplyPipeline.timeTook;
+	printf("  ray tracer    (CPU, RayTraceScene)   : %7.2f ms\n", rayMedian);
+	printf("  CPU raster    (render.c RenderObjects): %7.2f ms\n", medianOf(legacySamples, CPU_SAMPLES));
+	printf("  OpenCL raster (Raster_Render, all in) : %7.2f ms\n", rasterMedian);
+	printf("  OpenCL raster (frame path, fb+depth)  : %7.2f ms   (colour only: %.2f, all 6 buffers: %.2f)\n",
+		   rasterMedian, medianOf(colorOnlySamples, PARITY_SAMPLES), medianOf(fullSamples, 10));
+	printf("  OpenCL kernel breakdown:\n");
+	printf("      shadow %5.2f | depth %5.2f | shade %6.2f | sky %5.2f | ao %5.2f | blur x%d %5.2f | apply %5.2f\n",
+		   raster.shadowPipeline.timeTook, raster.depthPipeline.timeTook, raster.shadePipeline.timeTook,
+		   raster.skyPipeline.timeTook, raster.aoPipeline.timeTook, AO_BLUR_PASSES, blurTotal,
+		   raster.aoApplyPipeline.timeTook);
+	printf("      kernels total %.2f ms, read-back + dispatch overhead %.2f ms\n",
+		   kernelTotal, rasterMedian - kernelTotal);
+	printf("  vs ray tracer : %+.1f%% (%.2fx)   vs CPU raster: %+.1f%% (%.2fx)\n",
+		   (rasterMedian / rayMedian - 1.0f) * 100.0f, rayMedian / rasterMedian,
+		   (rasterMedian / medianOf(legacySamples, CPU_SAMPLES) - 1.0f) * 100.0f,
+		   medianOf(legacySamples, CPU_SAMPLES) / rasterMedian);
+	printf("  with kernels only: %.2fx faster than the ray tracer\n", rayMedian / kernelTotal);
 
 	printSummary(&stats, medianOf(samples, PARITY_SAMPLES));
-	checkAnalyticLighting(&scene, &matLib, &camera, rasterDepth);
 	printWorstPixels(&camera, rtDepth, rasterDepth, rtObjectId, &stats);
 
 	free(rtDepth);
@@ -391,6 +588,8 @@ int main(int argc, char **argv) {
 	free(rtLdr);
 	free(rasterLdr);
 	free(rtObjectId);
+	free(rtTriangleId);
+	free(rtPos);
 	free(rtNormal);
 	Raster_Destroy(&raster);
 	poolDestroy(threadPool);
