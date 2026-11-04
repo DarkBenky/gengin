@@ -40,6 +40,26 @@ static inline jsonObject *newJsonObject(void) {
     return calloc(1, sizeof(jsonObject));
 }
 
+static inline char *newJsonNumberArray(const float *values, int count) {
+    size_t cap = (size_t)(count > 0 ? count : 0) * 24 + 3;
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
+    size_t len = 0;
+    buf[len++] = '[';
+    for (int i = 0; i < count; i++) {
+        if (i > 0) {
+            buf[len++] = ',';
+            buf[len++] = ' ';
+        }
+        int written = snprintf(buf + len, cap - len, "%.9g", values[i]);
+        if (written < 0) break;
+        len += (size_t)written;
+    }
+    buf[len++] = ']';
+    buf[len] = '\0';
+    return buf;
+}
+
 static inline void freeJsonObject(jsonObject *obj) {
     if (!obj) return;
     for (int i = 0; i < obj->len; i++) {

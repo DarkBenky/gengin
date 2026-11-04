@@ -1,3 +1,4 @@
+// TODO: **Important** needs to be restructured
 /* Example input
 {
   "version": 1,
@@ -9,7 +10,7 @@
 	  "rotation": [0, 45, 0],
 	  "scale": [1, 1, 1],
 	  "color": [1.0, 0.2, 0.2],
-	  "emission": 0.0,
+	  "emission": 0.0, // TODO: **Important** Save emission maps needs to be implemented insted
 	  "roughness": 0.5,
 	  "metallic": 0.0
 	},

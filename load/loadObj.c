@@ -267,12 +267,43 @@ Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
 		Object *obj = &scene->objects[i];
 		jsonObject *objJson = newJsonObject();
 
+		bool isShape = false;
 		if (HasPrefix(obj->ObjectPathOrType, "__buildin")) {
 			addJsonField(objJson, "type", "shape", JSON_TYPE_STRING);
+			isShape = true;
 		} else {
 			addJsonField(objJson, "type", "object", JSON_TYPE_STRING);
 		}
-			
+		
+		if (isShape) {
+			// extract the shape type from the ObjectPathOrType string
+			char shapeType[64] = {0};
+			int index = 0;
+			int offset = strlen("__buildin_");
+			for (int j = offset; j < strlen(obj->ObjectPathOrType); j++) {
+				if (obj->ObjectPathOrType[j] == '_') {
+					shapeType[index] = '\0';
+					break;
+				}
+				shapeType[index++] = obj->ObjectPathOrType[j];
+			}
+			addJsonField(objJson, "shapeType", shapeType, JSON_TYPE_STRING);
+		}
 
+		// Save position, rotation, scale, color as arrays
+		char *posArray = newJsonNumberArray((float *)&obj->position, 3); 
+		char *rotArray = newJsonNumberArray((float *)&obj->rotation, 3);
+		char *scaleArray = newJsonNumberArray((float *)&obj->scale, 3);
+		float3 color = UnpackColor(obj->_temp); 
+		char *colorArray = newJsonNumberArray(&color.x, 3);
+
+		addJsonField(objJson, "position", posArray, JSON_TYPE_ARRAY);
+		addJsonField(objJson, "rotation", rotArray, JSON_TYPE_ARRAY);
+		addJsonField(objJson, "scale", scaleArray, JSON_TYPE_ARRAY);
+		addJsonField(objJson, "color", colorArray, JSON_TYPE_ARRAY);
+
+		// TODO: **Important** Save emission maps needs to be implemented it needs to be designed
+
+		// Free all allocations
 	}
 }
