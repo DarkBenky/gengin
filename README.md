@@ -14,6 +14,7 @@
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
 
 - [ ] Map loading files
+  - [ ] Fix / Design the file format for saving the model
   - [X] Object struct needs new field PathObjectType this can be used for saving scene and loading scene the object loading method needs to be updated to save the path to the struct of loaded object if object is created my merging multiple object on scene saving we need to create the file for that object
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
