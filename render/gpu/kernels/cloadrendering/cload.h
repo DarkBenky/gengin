@@ -7,6 +7,7 @@
 
 typedef struct {
 	CL_Context ctx;
+	int ownsCtx; // 1 if ctx was created here, 0 if it belongs to the window (CL/GL sharing)
 	CL_Pipeline pipeline;
 	CL_Buffer outputBuf;
 	CL_Buffer depthBuf; // scene depth buffer uploaded each frame
@@ -15,16 +16,19 @@ typedef struct {
 	CL_Buffer godRayBuf;
 	CL_Buffer godRaySrcBuf; // fused transmittance*isSky, one float per pixel
 	CL_Pipeline compositePipeline;
-	CL_Buffer framebufferBuf; // pinned float4 HDR framebuffer — upload framebufferHdr, composite on GPU, read back
+	CL_Buffer framebufferBuf; // pinned float4 HDR framebuffer — upload framebufferHdr, composite on GPU
 	CL_Pipeline blurPipeline;
 	CL_Buffer outputBlurBuf;
+	CL_Pipeline tonemapPipeline; // HDR -> 8-bit BGRA, output goes to ldrBuf
+	CL_Buffer ldrBuf; // device-side 8-bit BGRA frame, passed to mfb_update_gpu
 	int width;
 	int height;
 	int enabled; // 0 = OpenCL init failed or GENGIN_NO_CLOUDS set; every entry point no-ops
 } CloudRenderer;
 
 // One-time init: compiles kernel from kernelPath, allocates output buffers.
-void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *kernelPath);
+// sharedCtx: CL context created from the display window (CL/GL sharing) so the tonemapped frame can be presented without a read back. NULL = create a private context.
+void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *kernelPath, CL_Context *sharedCtx);
 
 typedef struct {
 	float3 baseColor;
@@ -44,8 +48,13 @@ typedef struct {
 // Render clouds for one frame. vol->gpuDensity must already be uploaded via UploadVolumeToGpu.
 void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, CloudParams params);
 
-// Blend clouds + god rays into cam->framebufferHdr via GPU composite kernel (call after CloudRenderer_Render).
-void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam);
+// Blend clouds + god rays onto the GPU copy of cam->framebufferHdr (call after CloudRenderer_Render).
+// keepOnGpu: skip the HDR read back, the frame stays on device for CloudRenderer_Tonemap.
+void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam, bool keepOnGpu);
+
+// Tonemap the GPU framebuffer into cr->ldrBuf (8-bit BGRA). Uploads cam->framebufferHdr itself when
+// the composite pass is disabled. Returns 0 when the GPU path is unavailable.
+int CloudRenderer_Tonemap(CloudRenderer *cr, Camera *cam);
 
 void CloudRenderer_Destroy(CloudRenderer *cr);
 

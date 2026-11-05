@@ -9,8 +9,6 @@
 #include "../../util/threadPool.h"
 #include "../../keyboard/keyboard.h"
 #include "../../render/cpu/font.h"
-#include "MiniFB_enums.h"
-#include <MiniFB.h>
 
 #define EDITOR_ROWS_PER_TASK 8
 #define DEG2RAD 0.017453292519943295f // engine stores rotations in radians
