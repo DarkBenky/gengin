@@ -1,4 +1,4 @@
-#include <MiniFB.h>
+#include "util/glWin/glWin.h"
 #include <immintrin.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -166,8 +166,13 @@ int main() {
 			   VOLUME_CLOUD);
 
 	CloudRenderer cloudRenderer;
+	CL_Context *clWindowCtx = mfb_get_cl_context(window);
+	int useGpuPresent = clWindowCtx != NULL;
+#ifdef BENCH_MODE
+	useGpuPresent = 0; // frame hashes read camera.framebufferLdr
+#endif
 	CloudRenderer_Init(&cloudRenderer, WIDTH, HEIGHT,
-					   "render/gpu/kernels/cloadrendering/render.cl");
+					   "render/gpu/kernels/cloadrendering/render.cl", clWindowCtx);
 	UploadVolumeToGpu(&cloudVol, &cloudRenderer.ctx);
 	int frame = 0;
 	int shadowResolution = 4;
@@ -283,6 +288,19 @@ int main() {
 		WNOW(wB);
 		accumShadowTime += WDIFF(wA, wB);
 
+#ifndef BENCH_MODE
+		// CPU post passes run before the composite upload so their pixels land in the GPU frame
+		if (editor.editorActive) {
+			applyHighlightEdge(&editor, threadPool, mouseX, mouseY);
+		}
+		editorStep(&editor, window, dt, 20, 40, 320, 220);
+
+		char text[64];
+		double avgFrameTime = (frameTimes[0] + frameTimes[1] + frameTimes[2] + frameTimes[3]) * 0.25;
+		snprintf(text, sizeof(text), "FPS: %.1f", avgFrameTime > 0.0 ? 1.0 / avgFrameTime : 0.0);
+		RenderTextHdr(camera.framebufferHdr, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.0f, (float3){1.0f, 0.5f, 0.2f, 0.0f});
+#endif
+
 		WNOW(wA);
 		// SSRPostProcess(&camera, threadPool, ssrTasks, 4);
 		CloudRenderer_Render(&cloudRenderer, &cloudVol, &camera, (CloudParams){
@@ -302,24 +320,15 @@ int main() {
 		accumSSRTime += WDIFF(wA, wB);
 
 		WNOW(wA);
-		CloudRenderer_Composite(&cloudRenderer, &camera);
+		CloudRenderer_Composite(&cloudRenderer, &camera, useGpuPresent);
+		int gpuFrame = useGpuPresent ? CloudRenderer_Tonemap(&cloudRenderer, &camera) : 0;
 		WNOW(wB);
 		accumCompositeTime += WDIFF(wA, wB);
 
-#ifndef BENCH_MODE
-		if (editor.editorActive) {
-			applyHighlightEdge(&editor, threadPool, mouseX, mouseY);
-		}
-		editorStep(&editor, window, dt, 20, 40, 320, 220);
-
-		char text[64];
-		double avgFrameTime = (frameTimes[0] + frameTimes[1] + frameTimes[2] + frameTimes[3]) * 0.25;
-		snprintf(text, sizeof(text), "FPS: %.1f", avgFrameTime > 0.0 ? 1.0 / avgFrameTime : 0.0);
-		RenderTextHdr(camera.framebufferHdr, WIDTH, HEIGHT, &alphabet, text, 20, 20, 1.0f, (float3){1.0f, 0.5f, 0.2f, 0.0f});
-#endif
-
 		WNOW(wA);
-		ConvertToLdrMp(camera.framebufferHdr, camera.framebufferLdr, WIDTH, HEIGHT, threadPool);
+		if (!gpuFrame) {
+			ConvertToLdrMp(camera.framebufferHdr, camera.framebufferLdr, WIDTH, HEIGHT, threadPool);
+		}
 		WNOW(wB);
 		accumConvertTime += WDIFF(wA, wB);
 
@@ -334,7 +343,10 @@ int main() {
 		// }
 		// if (mfb_update(window, camera.framebufferLdr) != STATE_OK) break;
 
-		if (mfb_update(window, camera.framebufferLdr) != STATE_OK) break;
+		mfb_update_state presentState = gpuFrame
+			? mfb_update_gpu(window, &cloudRenderer.ldrBuf)
+			: mfb_update(window, camera.framebufferLdr);
+		if (presentState != STATE_OK) break;
 		WNOW(wB);
 		accumPresentTime += WDIFF(wA, wB);
 

@@ -186,7 +186,7 @@
   - [ ] integrate the model
   - [ ] add the more advanced version of simulation to main
   - [ ] fix plane sim it feels wrong
-- [ ] render directly wia open gl not c => open gl => minifb
+- [X] render directly wia open gl not c => open gl => glWin (mfb_update_gpu presents the CL buffer through a GL PBO, no read back)
 
 - [ ] textures as post proces step on gpu we need to add uv mapping we shoulde use per triangle texture (normal, albedo ...)
   - [ ] input
