@@ -1,7 +1,7 @@
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
-#include <MiniFB.h>
+#include "../util/glWin/glWin.h"
 #include <stdbool.h>
 
 typedef struct {
@@ -10,7 +10,7 @@ typedef struct {
 	bool keysDown[512]; // pressed this frame (rising edge)
 	bool keysUp[512];	// released this frame (falling edge)
 
-	// mouse buttons — use MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE from MiniFB
+	// mouse buttons — use MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE from glWin
 	bool mouse[8];
 	bool mouseDown[8];
 	bool mouseUp[8];
