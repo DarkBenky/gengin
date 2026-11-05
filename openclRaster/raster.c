@@ -11,6 +11,9 @@
 // given, so the launch is rounded up here and the kernels bounds-check against the real
 // width/height they receive as arguments.
 #define RASTER_TILE 16
+// Emissive objects are uploaded as point lights for the indirect term. The shade kernel
+// loops them per pixel, so this stays small on purpose.
+#define RASTER_MAX_EMITTERS 8
 // 1 = map/memcpy/unmap, 0 = blocking clEnqueueReadBuffer. Measured on this driver: map is
 // 12.8 ms/frame, read is 6.1 ms, so the read stays the default even though the buffers are
 // pinned (a map here costs more than the DMA it replaces).
@@ -241,6 +244,32 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		};
 	}
 
+	// Emissive objects become point lights for the indirect term. The engine flags them on
+	// the Object, so this is read straight off the scene rather than the material table.
+	RasterEmitter emitterTable[RASTER_MAX_EMITTERS];
+	int emitterCount = 0;
+	for (int i = 0; i < scene->count && emitterCount < RASTER_MAX_EMITTERS; i++) {
+		const Object *obj = &scene->objects[i];
+		if (!obj->hasEmission || !obj->v1 || obj->triangleCount <= 0) continue;
+		// Take the strongest material on the object; merged emitters share one material each.
+		float3 color = {0.0f, 0.0f, 0.0f};
+		float emission = 0.0f;
+		for (int k = 0; k < obj->triangleCount; k++) {
+			int matId = obj->materialIds ? obj->materialIds[k] : -1;
+			if (matId < 0 || matId >= lib->count) continue;
+			if (lib->entries[matId].emission > emission) {
+				emission = lib->entries[matId].emission;
+				color = lib->entries[matId].color;
+			}
+		}
+		if (emission <= 0.0f) continue;
+		emitterTable[emitterCount] = (RasterEmitter){
+			(float4){obj->position.x, obj->position.y, obj->position.z, 0.0f},
+			(float4){color.x * emission, color.y * emission, color.z * emission, 0.0f},
+		};
+		emitterCount++;
+	}
+
 	// Replace the previous static buffers (re-upload after a scene rebuild frees the old ones).
 	freeBuffer(&rr->triBuf);
 	freeBuffer(&rr->triObjectBuf);
@@ -257,6 +286,9 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 	rr->colorMapBuf = createStaticBuffer(rr, texelTotal * sizeof(uint), colorMaps);
 	rr->normalMapBuf = createStaticBuffer(rr, texelTotal * sizeof(uint), normalMaps);
 	rr->materialMapBuf = createStaticBuffer(rr, texelTotal * sizeof(uint16), materialMaps);
+	freeBuffer(&rr->emitterBuf);
+	rr->emitterBuf = createStaticBuffer(rr, sizeof(RasterEmitter) * emitterCount, emitterTable);
+	rr->emitterCount = emitterCount;
 
 	free(tris);
 	free(triObjectIdx);
@@ -271,8 +303,8 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 	rr->triCount = totalTris;
 	rr->objectCount = objectCount;
 
-	printf("[raster] uploaded %d triangles, %d objects, %d materials, %d texture maps (%zu texels)\n",
-		   totalTris, objectCount, lib->count, textureCount, texelTotal);
+	printf("[raster] uploaded %d triangles, %d objects, %d materials, %d texture maps (%zu texels), %d emitters\n",
+		   totalTris, objectCount, lib->count, textureCount, texelTotal, emitterCount);
 }
 
 // The six faces are the same size, so one buffer holding them back to back plus the face
@@ -533,6 +565,8 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	clSetKernelArg(k, a++, sizeof(int), &rr->skyHeight);
 	clSetKernelArg(k, a++, sizeof(RasterShadow), &rr->shadow);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->shadowBuf.buf);
+	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->emitterBuf.buf);
+	clSetKernelArg(k, a++, sizeof(int), &rr->emitterCount);
 	clSetKernelArg(k, a++, sizeof(float3), &cam->position);
 	clSetKernelArg(k, a++, sizeof(float3), &camRight);
 	clSetKernelArg(k, a++, sizeof(float3), &camUp);
@@ -650,6 +684,7 @@ void Raster_Destroy(RasterRenderer *rr) {
 	freeBuffer(&rr->colorMapBuf);
 	freeBuffer(&rr->normalMapBuf);
 	freeBuffer(&rr->materialMapBuf);
+	freeBuffer(&rr->emitterBuf);
 	freeBuffer(&rr->skyBuf);
 	freeBuffer(&rr->objectBuf);
 	freeBuffer(&rr->depthUBuf);

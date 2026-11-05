@@ -294,17 +294,65 @@ static void saveCoverageMask(const char *path, const float *depth, int width, in
 	fclose(f);
 }
 
+// Same point-light reduction the raster uploads: one entry per emissive object, carrying
+// color*emission of its strongest material. Used by the analytic check to predict the
+// additive indirect term without asking the GPU for it.
+typedef struct {
+	float3 position;
+	float3 colorEmission;
+} CheckEmitter;
+
+static int gatherEmitters(const ObjectList *scene, const MaterialLib *lib, CheckEmitter *out, int cap) {
+	int count = 0;
+	for (int i = 0; i < scene->count && count < cap; i++) {
+		const Object *obj = &scene->objects[i];
+		if (!obj->hasEmission || !obj->v1 || obj->triangleCount <= 0) continue;
+		float3 color = {0.0f, 0.0f, 0.0f};
+		float emission = 0.0f;
+		for (int k = 0; k < obj->triangleCount; k++) {
+			int matId = obj->materialIds ? obj->materialIds[k] : -1;
+			if (matId < 0 || matId >= lib->count) continue;
+			if (lib->entries[matId].emission > emission) {
+				emission = lib->entries[matId].emission;
+				color = lib->entries[matId].color;
+			}
+		}
+		if (emission <= 0.0f) continue;
+		out[count++] = (CheckEmitter){obj->position,
+									  {color.x * emission, color.y * emission, color.z * emission}};
+	}
+	return count;
+}
+
+static float3 emissiveIndirect(const CheckEmitter *emitters, int count, float3 pos, float3 n) {
+	float3 sum = {0.0f, 0.0f, 0.0f};
+	for (int e = 0; e < count; e++) {
+		float3 toEmitter = Float3_Sub(emitters[e].position, pos);
+		float dist2 = Float3_Dot(toEmitter, toEmitter) + 1e-6f;
+		float3 toN = Float3_Scale(toEmitter, 1.0f / sqrtf(dist2));
+		float nd = fabsf(Float3_Dot(n, toN));
+		if (nd <= 0.0f) continue;
+		float falloff = nd / dist2;
+		sum.x += emitters[e].colorEmission.x * falloff;
+		sum.y += emitters[e].colorEmission.y * falloff;
+		sum.z += emitters[e].colorEmission.z * falloff;
+	}
+	return sum;
+}
+
 // Non-circular check of the shading chain: the shape-parade objects are untextured with
 // metallic=0 and emission=0, so their color is a pure function of the material color, the
-// normal (parity-proved exact), the camera position and the skybox. Reimplemented here to
-// validate base lighting, GGX, the sky reflection, the tonemap and the packing without
-// leaning on the ray tracer. Runs with AO and shadows off, which are separate terms.
+// normal (parity-proved exact), the camera position, the skybox and the emitters.
+// Runs with AO and shadows off, which are separate terms.
 static void checkAnalyticLighting(const ObjectList *scene, const MaterialLib *lib,
 								  const Camera *cam, const Skybox *skybox, const float *rasterDepth) {
 	const int pixels = cam->screenWidth * cam->screenHeight;
 	const float3 light = Float3_Normalize(cam->lightDir);
 	int checked = 0, bad = 0;
 	float worstDiff = 0.0f;
+
+	CheckEmitter emitters[8];
+	int emitterCount = gatherEmitters(scene, lib, emitters, 8);
 
 	for (int i = 0; i < pixels && checked < 4000; i++) {
 		if (rasterDepth[i] >= DEPTH_FAR) continue;
@@ -360,6 +408,14 @@ static void checkAnalyticLighting(const ObjectList *scene, const MaterialLib *li
 				hdr.y = hdr.y * (1.0f - st) + sky.y * st;
 				hdr.z = hdr.z * (1.0f - st) + sky.z * st;
 			}
+		}
+
+		// Emissive indirect is additive after the shadow term (shadows are off for this check).
+		if (emitterCount > 0) {
+			float3 emitted = emissiveIndirect(emitters, emitterCount, cam->positionBuffer[i], n);
+			hdr.x += emitted.x;
+			hdr.y += emitted.y;
+			hdr.z += emitted.z;
 		}
 
 		uint32 expect;

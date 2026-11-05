@@ -61,6 +61,14 @@
   - [ ] Phase 2 — textures + material table + base lighting match
   - [ ] Phase 3 — (caller-owned) integration: toggle, near/far split, compositing
   - [ ] Phase 4 — extras (normal maps, specular, culling, tile binning, GPU AO/skybox, async overlap)
+  - [ ] Phase 5 — Integrate with main.c
+    - [ ] Option A: make it as option as alternative rendering API
+    - [ ] Option B: **real / fake frames** — CPU ray tracer renders the "real" frame every N, GPU raster the "fake" ones in between, ML model pushes each fake frame toward the real one
+      - [ ] fake frames must match geometry exactly (they already do) — the model may only fix shading
+      - [ ] close the analytic gap first so the residual is small: emissive indirect, scene reflections
+      - [ ] train offline on `real - fake`, feed the G-buffer not just color
+      - [ ] budget `(15.8 + N*6.0)/(N+1)` ms — this buys quality, not speed
+      - notes: [todo/opencl-raster-hybrid-plan.md](todo/opencl-raster-hybrid-plan.md#11-option-b--real--fake-frames)
 
 - [ ] Add debug build that enables to check the output of each buffer
 - [X] Add to agent prompt specific part that model should focus mainly on c part not open cl

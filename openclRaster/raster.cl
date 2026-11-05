@@ -94,6 +94,15 @@ typedef struct {
 	int size;   // edge length
 } RasterTexture;
 
+// One emissive object reduced to a point light. ray.c samples the emitter's per-face
+// EmissionMap and rejects the contribution with a shadow ray; a point light with no
+// occlusion is the cheap stand-in - it keeps the inverse-square pool of light the emitters
+// throw on the floor, and only leaks through geometry that sits between the two.
+typedef struct {
+	float4 position;
+	float4 colorEmission; // xyz = material color * material emission
+} RasterEmitter;
+
 // Orthographic light-space frame used by the shadow map. The reciprocals and the box
 // minimum are packed into .w so the shade kernel needs one argument instead of five.
 typedef struct {
@@ -387,6 +396,8 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 							 int skyWidth, int skyHeight,
 							 RasterShadow shadow,
 							 __global const uint *restrict shadowMap,
+							 __global const RasterEmitter *restrict emitters,
+							 int emitterCount,
 							 float3 camPos, float3 right, float3 up, float3 fwd,
 							 float fovScale, float aspect, float2 jitter,
 							 float3 lightDir, int screenWidth, int screenHeight,
@@ -567,10 +578,28 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 
 	// Shadows last, over the reflection blend, exactly where ray.c multiplies its
 	// blurred shadow term into the framebuffer.
+	float3 emitted = (float3)(0.0f, 0.0f, 0.0f);
+	if (emitterCount > 0) {
+		// Sum the emission over the nearest emitters, same inverse-square falloff and
+		// |N.L| that ray.c uses in its accumulatedEmission term.
+		for (int e = 0; e < emitterCount; e++) {
+			float3 toEmitter = emitters[e].position.xyz - worldPos;
+			float dist2 = dot(toEmitter, toEmitter) + 1e-6f;
+			float3 toEmitterN = toEmitter * rsqrt(dist2);
+			float nd = fabs(dot(n, toEmitterN));
+			if (nd <= 0.0f)
+				continue;
+			emitted += emitters[e].colorEmission.xyz * (nd / dist2);
+		}
+	}
+
 	if (shadow.params.z > 0.0f) {
 		float litFraction = sampleShadow(shadowMap, shadow, worldPos, n, ndl);
 		shaded = shaded * (SHADOW_AMBIENT + (1.0f - SHADOW_AMBIENT) * litFraction);
 	}
+
+	// Emissive indirect is additive, after the shadow term, matching ray.c's composite.
+	shaded += emitted;
 
 	framebuffer[idx] = (float4)(shaded.x, shaded.y, shaded.z, 0.0f);
 	depthOut[idx] = depth;

@@ -45,6 +45,12 @@ typedef struct {
 	int size;
 } RasterTexture; // 8 bytes
 
+// Must match RasterEmitter in raster.cl. One emissive object reduced to a point light.
+typedef struct {
+	float4 position;
+	float4 colorEmission; // xyz = material color * material emission
+} RasterEmitter;
+
 // Must match RasterShadow in raster.cl. Built from the scene bounds and the light
 // direction each frame; the reciprocals ride in .w to keep it a single kernel argument.
 typedef struct {
@@ -95,6 +101,8 @@ typedef struct {
 	CL_Buffer colorMapBuf;
 	CL_Buffer normalMapBuf;
 	CL_Buffer materialMapBuf;
+	CL_Buffer emitterBuf; // up to RASTER_MAX_EMITTERS point lights, uploaded with the scene
+	int emitterCount;
 
 	// skybox faces, back to back (see Raster_SetSkybox); skyWidth 0 = no sky
 	CL_Buffer skyBuf;
