@@ -158,7 +158,7 @@ enum ErrorTypes {
 	// NOTE: add more error types here if needed
 };
 
-inline bool HasPrefix(const char *str, const char *prefix) {
+static inline bool HasPrefix(const char *str, const char *prefix) {
     return strncmp(str, prefix, strlen(prefix)) == 0;
 }
 
