@@ -60,6 +60,9 @@
 
 #define TERMINAL_MISS_WEIGHT 1.2f
 #define TERMINAL_MISS_RANGE_FRACTION 0.25f
+#define EXT_MISS_HORIZON 3.5f
+#define EXT_MISS_STEPS 8
+#define EXT_MISS_WEIGHT 0.02f
 // A strong terminal demand puts the walk's optimum against the surface stops;
 // charging deflection past a quarter of the stick travel keeps authority margin.
 #define SURFACE_MARGIN_FRACTION 0.25f
@@ -226,6 +229,44 @@ static inline float flightPathMissDistance(float3 velocity, float3 toTarget) {
 	return Float3_Length(Float3_Sub(toTarget, Float3_Scale(path, along)));
 }
 
+// The rollout window is far shorter than the time a banked turn takes to pay
+// off, so the arc it is already on is carried on at its own turn rate and scored.
+static inline float extendedFlightPathMiss(const Plane *start, const Plane *simPlane, float3 predictedTarget, float3 targetVel, float simDeltaTime, int steps) {
+	float3 v0 = start->velocity;
+	float3 v1 = simPlane->velocity;
+	float speed0 = Float3_Length(v0);
+	float speed1 = Float3_Length(v1);
+	float rollTime = simDeltaTime * (float)steps;
+	if (speed0 < 1e-3f || speed1 < 1e-3f || rollTime <= 0.0f) {
+		return 0.0f;
+	}
+	float3 dir = Float3_Scale(v1, 1.0f / speed1);
+	float3 dir0 = Float3_Scale(v0, 1.0f / speed0);
+	float3 axis = Float3_Cross(dir0, dir);
+	float axisLen = Float3_Length(axis);
+	float omega = axisLen > 1e-5f ? acosf(fminf(fmaxf(Float3_Dot(dir0, dir), -1.0f), 1.0f)) / rollTime : 0.0f;
+	axis = axisLen > 1e-5f ? Float3_Scale(axis, 1.0f / axisLen) : (float3){0.0f, 1.0f, 0.0f, 0.0f};
+
+	const float stepDt = EXT_MISS_HORIZON / (float)EXT_MISS_STEPS;
+	const float dTheta = omega * stepDt;
+	const float rotCos = cosf(dTheta);
+	const float rotSin = sinf(dTheta);
+
+	float3 pos = simPlane->position;
+	float3 tgt = predictedTarget;
+	float best = Float3_Length(Float3_Sub(tgt, pos));
+	for (int i = 0; i < EXT_MISS_STEPS; i++) {
+		float3 rotated = Float3_Add(Float3_Add(Float3_Scale(dir, rotCos), Float3_Scale(Float3_Cross(axis, dir), rotSin)),
+									Float3_Scale(axis, Float3_Dot(axis, dir) * (1.0f - rotCos)));
+		dir = Float3_Normalize(rotated);
+		pos = Float3_Add(pos, Float3_Scale(dir, speed1 * stepDt));
+		tgt = Float3_Add(tgt, Float3_Scale(targetVel, stepDt));
+		float d = Float3_Length(Float3_Sub(tgt, pos));
+		if (d < best) best = d;
+	}
+	return best;
+}
+
 static inline float surfaceMarginCharge(float value01) {
 	float over = fabsf(value01 - 0.5f) - SURFACE_MARGIN_FRACTION;
 	return over > 0.0f ? SURFACE_MARGIN_WEIGHT * over * over : 0.0f;
@@ -311,6 +352,7 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
 	float terminalMiss = flightPathMissDistance(simPlane.velocity, Float3_Sub(predictedTarget, simPlane.position));
 	terminalMiss = fminf(terminalMiss, TERMINAL_MISS_RANGE_FRACTION * currentDist);
+	float extendedMiss = extendedFlightPathMiss(&ctrl->plane, &simPlane, predictedTarget, targetVel, simDeltaTime, ctrl->LookaheadSteps);
 
 	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 1.10f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
@@ -321,7 +363,7 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + surfaceMargin;
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + EXT_MISS_WEIGHT * extendedMiss + surfaceMargin;
 
 	return loss;
 }
@@ -363,6 +405,7 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
 	float terminalMiss = flightPathMissDistance(simPlane.velocity, Float3_Sub(predictedTarget, simPlane.position));
 	terminalMiss = fminf(terminalMiss, TERMINAL_MISS_RANGE_FRACTION * currentDist);
+	float extendedMiss = extendedFlightPathMiss(&ctrl->plane, &simPlane, predictedTarget, targetVel, simDeltaTime, ctrl->LookaheadSteps);
 
 	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 1.10f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
@@ -373,7 +416,7 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
 	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
 
-	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + surfaceMargin;
+	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + EXT_MISS_WEIGHT * extendedMiss + surfaceMargin;
 
 	return loss;
 }
