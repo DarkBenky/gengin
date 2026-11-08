@@ -612,8 +612,9 @@ bar when completed, like a consolidation pass):
     (normal push, NEVER force-push), re-run the PR's category gate, and
     `comment_pull_request(N, ...)` with what was ported and the numbers.  A
     port that is not obvious within a few hunks stays OPEN with a comment
-    naming the blocking conflict and its files; never push a half-ported
-    branch.
+    naming the blocking conflict and its files, and an unchecked
+    `- [ ] REPAIR #N (<category>, <files>): <blocking conflict>` task in the
+    root `README.md`; never push a half-ported branch.
 - VERIFY (the desktop's duty, at most TWO per session): a PR whose `machine`
   differs from `machine_info()` (or is empty = created before the marker) was
   measured on another host; its claims have never been checked on THIS one.

@@ -45,14 +45,11 @@ typedef struct {
 	int size;
 } RasterTexture; // 8 bytes
 
-// Must match RasterEmitter in raster.cl. One emissive object reduced to a point light.
 typedef struct {
 	float4 position;
 	float4 colorEmission; // xyz = material color * material emission
 } RasterEmitter;
 
-// Must match RasterShadow in raster.cl. Built from the scene bounds and the light
-// direction each frame; the reciprocals ride in .w to keep it a single kernel argument.
 typedef struct {
 	float4 center;
 	float4 right;
@@ -64,9 +61,8 @@ typedef struct {
 #define RASTER_FLAG_TEXTURE 1
 #define RASTER_FLAG_CULL 2
 
-// Which Camera buffers Raster_Render copies back to the host. Every transfer crosses PCIe
-// (60 bytes per pixel for the full set), so the default is the pair a frame actually needs
-// and the rest is opt-in for consumers like the parity harness.
+// Which Camera buffers Raster_Render copies back: every transfer crosses PCIe (60 bytes
+// per pixel for the full set), so the default is only what a frame needs.
 #define RASTER_OUT_FRAMEBUFFER 1
 #define RASTER_OUT_DEPTH 2
 #define RASTER_OUT_NORMAL 4
@@ -76,13 +72,9 @@ typedef struct {
 #define RASTER_OUT_ALL 63
 #define RASTER_OUT_FRAME (RASTER_OUT_FRAMEBUFFER | RASTER_OUT_DEPTH)
 
-// Self-contained OpenCL rasterizer: renders the scene into a Camera's G-buffers with a
-// two-pass triangle raster (depth scatter, then shade scatter). Independent of the CPU
-// ray tracer — it owns its CL context and buffers, and does no per-frame allocation.
-//
-// Call order per frame: RenderSetup(...) first (it fills right/up/aspect/fovScale), then
-// Raster_Render. Raster_UploadScene must run again after anything that rebuilds or merges
-// geometry (ObjectList_Merge bakes transforms into the vertex arrays).
+// Self-contained OpenCL rasterizer into a Camera's G-buffers; owns its context and buffers.
+// Call RenderSetup(...) before Raster_Render, and Raster_UploadScene again after anything
+// that rebuilds or merges geometry (ObjectList_Merge bakes transforms into the vertices).
 typedef struct {
 	CL_Context ctx;
 	CL_Pipeline depthPipeline;
@@ -93,7 +85,6 @@ typedef struct {
 	CL_Pipeline aoApplyPipeline;
 	CL_Pipeline shadowPipeline;
 
-	// static scene (uploaded once per scene rebuild)
 	CL_Buffer triBuf;
 	CL_Buffer triObjectBuf;
 	CL_Buffer materialBuf;
@@ -104,12 +95,10 @@ typedef struct {
 	CL_Buffer emitterBuf; // up to RASTER_MAX_EMITTERS point lights, uploaded with the scene
 	int emitterCount;
 
-	// skybox faces, back to back (see Raster_SetSkybox); skyWidth 0 = no sky
 	CL_Buffer skyBuf;
 	int skyWidth;
 	int skyHeight;
 
-	// per-frame / scratch
 	CL_Buffer objectBuf; // pinned — TRS + rotation rows, rewritten every frame
 	CL_Buffer depthUBuf; // packed view-Z, cleared to 0xFFFFFFFF each frame
 	CL_Buffer aoBufA;    // ambient occlusion, ping-ponged by the blur passes
@@ -120,7 +109,6 @@ typedef struct {
 	RasterShadow shadow; // rebuilt every frame by Raster_Render
 	unsigned readbackMask; // RASTER_OUT_* bits; defaults to framebuffer + depth
 
-	// pinned G-buffer readback, one buffer per Camera output it writes
 	CL_Buffer framebufferBuf;
 	CL_Buffer depthBuf;
 	CL_Buffer normalBuf;
@@ -139,26 +127,18 @@ typedef struct {
 	int enabled; // 0 = OpenCL init failed; every entry point no-ops
 } RasterRenderer;
 
-// Compiles raster.cl from kernelPath and allocates the frame buffers. On failure the
-// renderer disables itself and prints why, so a caller can keep running on the CPU path.
+// On failure the renderer disables itself, so a caller can stay on the CPU path.
 void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int height);
 
-// Rebuilds every static GPU buffer from the scene: triangles, per-triangle object index,
-// material table, concatenated texture maps. Safe to call again after a scene rebuild.
+// Safe to call again after a scene rebuild.
 void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const MaterialLib *lib);
 
-// Uploads the six skybox faces. With a skybox set the renderer fills the pixels no
-// geometry covers (and the reflection term samples it); without one those pixels stay
-// untouched and Raster_Render leaves the sky to the caller.
+// With a skybox set the renderer fills uncovered pixels and the reflection samples it.
 void Raster_SetSkybox(RasterRenderer *rr, const Skybox *skybox);
 
-// Rasterizes the scene into cam->{framebufferHdr, depthBuffer, normalBuffer,
-// positionBuffer, objectIdBuffer, triangleIdBuffer}. Synchronous (CL_Finish inside).
-// Only the buffers selected by readbackMask are transferred back to the host; the rest are
-// still computed on the GPU and simply not copied. Object world bounds must be current
-// (Object_UpdateWorldBounds) — they size the shadow map. Without a skybox, pixels the
-// rasterizer does not cover keep whatever the Camera already held — the caller owns the
-// sky/clear policy.
+// Synchronous. Only readbackMask's buffers are transferred back. World bounds must be
+// current (Object_UpdateWorldBounds); they size the shadow map. Uncovered pixels keep what
+// the Camera already held, so the caller owns the sky/clear policy.
 void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLib *lib, Camera *cam);
 
 void Raster_Destroy(RasterRenderer *rr);

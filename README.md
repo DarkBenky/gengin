@@ -2,7 +2,7 @@
 
 - [ ] when running on local model option for the main model to delegate to small Qwen2.5 Cider 
 
-- [ ] add more tasks if some PR can't be merged correct it
+- [X] add more tasks if some PR can't be merged correct it
 
 - [ ] Align all allocations to 64 (malloc, calloc)
   - [ ] test if this improve preformance

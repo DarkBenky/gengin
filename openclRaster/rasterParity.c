@@ -1,11 +1,5 @@
-// Offscreen parity harness for the OpenCL rasterizer: renders the same scene and camera
-// with the CPU ray tracer and the GPU rasterizer, then reports how far apart they are and
-// dumps both to BMP. Run from the repo root (it loads assets/models and the skybox).
-//
-//	make -C openclRaster run
-//
-// Expected differences are listed at the bottom of printSummary: the raster path is the
-// "not fancy" subset (no specular, sky reflection, shadows, emission indirect, AO).
+// Parity harness: same scene and camera through the CPU ray tracer and the OpenCL raster,
+// reporting per-G-buffer differences. Run from the repo root: make -C openclRaster run
 #include "raster.h"
 
 #include "../object/scene.h"
@@ -272,11 +266,10 @@ static void printSummary(const DiffStats *stats, float rasterMs) {
 	printf("  max distance:            %.6f\n", stats->maxPositionDiff);
 	printf("Raster pass time (median): %.3f ms\n", rasterMs);
 	printf("=====================================================\n");
-	printf("Expected diffs (raster is the 'not fancy' subset of the ray tracer):\n");
-	printf("  - no GGX specular, no sky reflection, no shadows, no emission indirect light\n");
-	printf("  - no ambient occlusion (RayTraceScene applies it, the raster path does not)\n");
+	printf("Expected diffs:\n");
 	printf("  - triangles with a vertex nearer than the near plane are skipped, not clipped\n");
 	printf("  - sky pixels are the caller's: cleared to black here, sky-colored in the ray pass\n");
+	printf("  - normals are face normals here, normal-mapped shading normals in the ray pass\n");
 	printf("=====================================================\n");
 }
 

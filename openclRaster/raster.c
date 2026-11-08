@@ -4,15 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Work-group size for the two scatter passes. The triangle count is the global size,
-// rounded up so every launched item maps to a triangle (or exits on the bounds check).
+// Work-group size; the triangle count is the global size, rounded up and bounds-checked.
 #define RASTER_LOCAL_SIZE 64
-// Screen-space passes (sky, AO) use square tiles; CL_Dispatch2D takes the global size as
-// given, so the launch is rounded up here and the kernels bounds-check against the real
-// width/height they receive as arguments.
+// Screen-space passes use square tiles, rounded up here and bounds-checked by the kernel.
 #define RASTER_TILE 16
-// Emissive objects are uploaded as point lights for the indirect term. The shade kernel
-// loops them per pixel, so this stays small on purpose.
+// The shade kernel loops these per pixel, so the count stays small on purpose.
 #define RASTER_MAX_EMITTERS 8
 // 1 = map/memcpy/unmap, 0 = blocking clEnqueueReadBuffer. Measured on this driver: map is
 // 12.8 ms/frame, read is 6.1 ms, so the read stays the default even though the buffers are
@@ -33,8 +29,6 @@ static CL_Buffer createStaticBuffer(RasterRenderer *rr, size_t size, const void 
 				: CL_Buffer_Create(&rr->ctx, size, CL_MEM_READ_ONLY);
 }
 
-// The CL helpers in render/gpu/format.c release handles unconditionally; a renderer that
-// failed its init has NULL handles, so releases go through these guards.
 static void freeBuffer(CL_Buffer *buf) {
 	if (buf->buf) CL_Buffer_Destroy(buf);
 	buf->buf = NULL;
@@ -54,9 +48,8 @@ void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int heig
 	rr->enabled = 1;
 	// Every transfer is a PCIe copy, so the frame path only takes what a frame needs.
 	rr->readbackMask = RASTER_OUT_FRAME;
-	// AO.h applies 0.55 to a term it then blurs over a 4x downsample. The reach here is
-	// shorter (one object width, 24 px of screen), so a higher strength keeps the contact
-	// darkening visible. Past ~1.2 the grazing-floor bias starts to show.
+	// Shorter reach than AO.h's (one object width, 24 px), so a higher strength keeps contact
+	// darkening visible; past ~1.2 the grazing-floor bias starts to show.
 	rr->aoStrength = 1.0f;
 
 	rr->ctx = CL_Context_Create();
@@ -101,8 +94,7 @@ void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int heig
 	}
 }
 
-// One Textures block per unique pointer — several materials in a loaded model share the
-// same map, and uploading it twice would double the (already large) texture traffic.
+// Dedup by pointer: several materials share one map, and a second copy doubles texture traffic.
 typedef struct {
 	Textures *tex;
 	int slot;
@@ -123,8 +115,6 @@ static inline float4 f4(float3 v) {
 void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const MaterialLib *lib) {
 	if (!rr->enabled || !scene || !lib) return;
 
-	// Count what the scene actually contributes: objects without geometry are skipped, so
-	// the triangle packing and the per-object triStart table stay in sync.
 	int totalTris = 0;
 	int objectCount = 0;
 	for (int i = 0; i < scene->count; i++) {
@@ -178,9 +168,7 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		o++;
 	}
 
-	// Texture table: unique Textures blocks, concatenated into flat map buffers. colorMap
-	// and normalMap are RGBA8 (one uint per texel), MaterialMap is [rough, metal] pairs.
-	// All three share the same texel offsets, so one RasterTexture entry addresses them.
+	// One flat buffer per map; all three share texel offsets, so one RasterTexture addresses them.
 	int textureCount = 0;
 	size_t texelTotal = 0;
 	TextureSlot *slots = malloc(sizeof(TextureSlot) * (lib->count > 0 ? lib->count : 1));
@@ -227,8 +215,7 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		cursor += texels;
 	}
 
-	// Material table indexed exactly like Object.materialIds, with textureSlot resolved
-	// through the dedup table (-1 when the material has no maps).
+	// Indexed like Object.materialIds; textureSlot resolved through the dedup table (-1 = none).
 	RasterMaterial *matTable = malloc(sizeof(RasterMaterial) * (lib->count > 0 ? lib->count : 1));
 	for (int i = 0; i < lib->count; i++) {
 		const Material *m = &lib->entries[i];
@@ -244,14 +231,11 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		};
 	}
 
-	// Emissive objects become point lights for the indirect term. The engine flags them on
-	// the Object, so this is read straight off the scene rather than the material table.
 	RasterEmitter emitterTable[RASTER_MAX_EMITTERS];
 	int emitterCount = 0;
 	for (int i = 0; i < scene->count && emitterCount < RASTER_MAX_EMITTERS; i++) {
 		const Object *obj = &scene->objects[i];
 		if (!obj->hasEmission || !obj->v1 || obj->triangleCount <= 0) continue;
-		// Take the strongest material on the object; merged emitters share one material each.
 		float3 color = {0.0f, 0.0f, 0.0f};
 		float emission = 0.0f;
 		for (int k = 0; k < obj->triangleCount; k++) {
@@ -270,7 +254,6 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		emitterCount++;
 	}
 
-	// Replace the previous static buffers (re-upload after a scene rebuild frees the old ones).
 	freeBuffer(&rr->triBuf);
 	freeBuffer(&rr->triObjectBuf);
 	freeBuffer(&rr->materialBuf);
@@ -307,8 +290,7 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		   totalTris, objectCount, lib->count, textureCount, texelTotal, emitterCount);
 }
 
-// The six faces are the same size, so one buffer holding them back to back plus the face
-// dimensions is all the kernel needs to reproduce SampleSkybox.
+// One buffer, six equal faces back to back; that is all sampleSkybox needs.
 void Raster_SetSkybox(RasterRenderer *rr, const Skybox *skybox) {
 	if (!rr->enabled) return;
 
@@ -342,8 +324,7 @@ void Raster_SetSkybox(RasterRenderer *rr, const Skybox *skybox) {
 	printf("[raster] uploaded skybox (%dx%d x6)\n", rr->skyWidth, rr->skyHeight);
 }
 
-// The per-frame object table is tiny, so it is rebuilt from scratch every frame instead of
-// diffing — the rotation rows are already cached by Object_UpdateWorldBounds (no trig on GPU).
+// Rebuilt every frame: the table is tiny and the rotation rows are already cached.
 static void uploadObjects(RasterRenderer *rr, const ObjectList *scene) {
 	int capacity = scene->capacity > rr->objectCount ? scene->capacity : rr->objectCount;
 	if (rr->objectBuf.size < (size_t)capacity * sizeof(RasterObject)) {
@@ -403,9 +384,8 @@ static void dispatchScreenTiled(RasterRenderer *rr, CL_Pipeline *pip, int width,
 	CL_Dispatch2D(&rr->ctx, pip, tilesW * RASTER_TILE, tilesH * RASTER_TILE, RASTER_TILE, RASTER_TILE);
 }
 
-// Fits an orthographic light frame around the scene bounds. cam->lightDir points from the
-// surface toward the light, so the map is rasterized looking the other way. Returns 0 when
-// the bounds are unusable, which leaves the shadow pass disabled for that frame.
+// Orthographic light frame around the scene bounds; lightDir points at the light, so the map
+// is rasterized looking the other way. Returns 0 (shadow pass off) when bounds are unusable.
 static int buildShadowFrame(RasterRenderer *rr, const ObjectList *scene, const Camera *cam) {
 	float3 bmin = {FLT_MAX, FLT_MAX, FLT_MAX};
 	float3 bmax = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
@@ -429,7 +409,6 @@ static int buildShadowFrame(RasterRenderer *rr, const ObjectList *scene, const C
 	float3 right = Float3_Normalize(Float3_Cross(hint, fwd));
 	float3 up = Float3_Cross(fwd, right);
 
-	// Fit the 8 corners of the world bounds so the whole scene lands inside the map.
 	float minX = FLT_MAX, maxX = -FLT_MAX, minY = FLT_MAX, maxY = -FLT_MAX, minZ = FLT_MAX;
 	for (int c = 0; c < 8; c++) {
 		float3 corner = {(c & 1) ? bmax.x : bmin.x, (c & 2) ? bmax.y : bmin.y, (c & 4) ? bmax.z : bmin.z};
@@ -464,10 +443,8 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	if (!rr->enabled || !scene || !cam) return;
 	if (rr->triCount == 0) return;
 
-	// The static batch is indexed by this exact packing; a geometry change without a
-	// re-upload would rasterize the wrong triangles, so refuse instead of guessing.
-	// (Same counts with different vertices still need a re-upload — the caller knows when
-	// it merged or rebuilt geometry and must call Raster_UploadScene again.)
+	// The static batch is indexed by this exact packing, so a count change without a re-upload
+	// would rasterize the wrong triangles. Same counts with new vertices still need one too.
 	int objects = 0, tris = 0;
 	for (int i = 0; i < scene->count; i++) {
 		const Object *obj = &scene->objects[i];
@@ -495,10 +472,8 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	if (!shadowsOn)
 		rr->shadow.params.z = 0.0f;
 
-	// clearBuffers() is a no-op in this engine, so every scratch and output buffer is cleared
-	// here. The read-back copies whole buffers, so an uncovered pixel must come back as a
-	// defined value (far depth / no object / black) rather than last frame's GPU contents.
-	// The depth word is all ones: every real entry has smaller depth bits, so it always wins.
+	// clearBuffers() is a no-op here, so every buffer is cleared: an uncovered pixel must come
+	// back defined, not as last frame's GPU contents. All-ones depth always loses to a real one.
 	uint far = 0xFFFFFFFFu;
 	CL_Buffer_Fill(&rr->ctx, &rr->depthUBuf, &far, sizeof(far));
 
@@ -588,7 +563,6 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 
 	size_t pixels = (size_t)width * height;
 
-	// Sky fill: every pixel still holding the cleared depth word was missed by the scene.
 	if (rr->skyWidth > 0) {
 		k = rr->skyPipeline.kernel;
 		a = 0;

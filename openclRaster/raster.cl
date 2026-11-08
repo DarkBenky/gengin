@@ -1,13 +1,5 @@
-// OpenCL rasterizer — two-pass (depth scatter, then shade scatter) triangle raster.
-// Pixel math is a 1:1 port of the CPU reference in render/render.c (RenderObject) with the
-// ray tracer's transform order world = R*(S*v)+T, and the shading terms of
-// render/cpu/ray.c that need no extra geometry: base lighting, normal maps, the GGX
-// specular and the sky reflection. Shadows come from a light-space depth map (the cheap
-// stand-in for ray.c's shadow rays) and screen-space ambient occlusion from AO.h.
-//
-// The record layouts below must match RasterTri / RasterObject / RasterMaterial /
-// RasterTexture / RasterShadow in raster.h — the kernel is compiled from this source
-// string, so the structs are duplicated instead of shared.
+// Port of render.c / render/cpu/ray.c inside an OpenCL kernel. Record layouts must match
+// raster.h — the kernel is compiled from source, so the structs are duplicated.
 
 #define RASTER_FLAG_TEXTURE 1
 #define RASTER_FLAG_CULL 2
@@ -23,17 +15,13 @@
 // ray.c darkens a shadowed pixel with 0.5 + 0.5*shadow, i.e. 50% at full shadow.
 #define SHADOW_AMBIENT 0.5f
 
-// The depth pass packs (depth bits, triangle id) into one 64-bit word and resolves it with
-// a single atomic_min, so the shade pass can read the winning triangle per pixel instead of
-// re-rasterizing every triangle.
+// The depth pass packs (depth bits, triangle id) into one 64-bit word resolved by a single
+// atomic_min, so the shade pass reads the winning triangle instead of re-rasterizing.
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 #define NO_HIT 0xFFFFFFFFFFFFFFFFul
 
-// render/cpu/AO.h: sample count, world radius and the depth-reject scale of the blur.
-// The CPU reaches out to 20.5 world units, which on this scene is wider than the objects:
-// at grazing angles a screen-space sample that far away lands on unrelated geometry and
-// the estimate turns into a flat dim over the whole floor. Keeping the reach to roughly
-// one object size confines the term to the contact points, which is what reads as a shadow.
+// Reach is ~one object size, not AO.h's 20.5 units: wider reaches land on unrelated
+// geometry at grazing angles and the term flattens into a uniform dim over the floor.
 #define AO_SAMPLES 8
 #define AO_WORLD_RADIUS 6.0f
 #define AO_DEPTH_REJECT_SCALE 0.02f
@@ -41,8 +29,7 @@
 #define AO_BIAS2 0.0144f							  // (worldRadius * 0.02)^2
 #define AO_RADIUS2 36.0f							  // worldRadius^2
 #define AO_INV_RADIUS 0.16666667f					  // 1 / worldRadius
-// Cap on the screen-space sample spread. Without it a grazing surface pulls samples from
-// far across the frame and the estimate collapses; 24 px still covers a contact shadow.
+// Without this cap a grazing surface pulls samples across the frame and the estimate collapses.
 #define AO_MAX_PIXEL_RADIUS 24.0f
 static constant float AO_KERNEL[5] = {				  // lineKernelvaluse
 	0.054488685f, 0.244201342f, 0.402619947f, 0.244201342f, 0.054488685f};
@@ -50,7 +37,6 @@ static constant float AO_KERNEL[5] = {				  // lineKernelvaluse
 // object/format.h: the value the host fills the depth buffer with before the pass.
 #define DEPTH_FAR 1e30f
 
-// Skybox faces in the order Raster_SetSkybox uploads them.
 #define SKY_RIGHT 0
 #define SKY_LEFT 1
 #define SKY_TOP 2
@@ -94,17 +80,14 @@ typedef struct {
 	int size;   // edge length
 } RasterTexture;
 
-// One emissive object reduced to a point light. ray.c samples the emitter's per-face
-// EmissionMap and rejects the contribution with a shadow ray; a point light with no
-// occlusion is the cheap stand-in - it keeps the inverse-square pool of light the emitters
-// throw on the floor, and only leaks through geometry that sits between the two.
+// Emissive objects become unoccluded point lights: keeps the inverse-square pool of light
+// on the floor, leaks only through geometry that sits between.
 typedef struct {
 	float4 position;
 	float4 colorEmission; // xyz = material color * material emission
 } RasterEmitter;
 
-// Orthographic light-space frame used by the shadow map. The reciprocals and the box
-// minimum are packed into .w so the shade kernel needs one argument instead of five.
+// Reciprocals and the box minimum are packed into .w to keep this one kernel argument.
 typedef struct {
 	float4 center; // xyz = centre of the scene bounds
 	float4 right;  // xyz = basis right,   w = 1/halfWidth
@@ -127,16 +110,12 @@ static float3 toWorld(float3 vertex, float3 scl, float3 position,
 		dot(rot2.xyz, s) + position.z);
 }
 
-// Per-triangle setup shared by both passes: world verts, screen verts, incremental
-// edge-function deltas and the screen bounding box. Returns 0 when the triangle
-// contributes no pixel (behind the near plane, degenerate, culled, off screen).
 typedef struct {
 	float3 w1, w2, w3; // world-space verts
 	float3 nrm;		   // world-space face normal
 	float sx0, sy0, sx1, sy1, sx2, sy2;
 	float invZ0, invZ1, invZ2;
 	float areaSign, invArea;
-	// edge-function deltas: e0 = edge(v2,v3), e1 = edge(v3,v1), e2 = edge(v1,v2)
 	float e0dx, e0dy, e1dx, e1dy, e2dx, e2dy;
 	int minX, minY, maxX, maxY;
 } TriScan;
@@ -182,14 +161,11 @@ static int setupTriangle(__global const RasterTri *tri, __global const RasterObj
 	float area = edgeFunction(scan->sx0, scan->sy0, scan->sx1, scan->sy1, scan->sx2, scan->sy2);
 	if (fabs(area) <= MIN_AREA)
 		return 0;
-	// Screen area < 0 is the winding the ray tracer keeps when an object culls backfaces:
-	// its Möller-Trumbore test requires dot(rayDir, cross(e1, e2)) < 0, and the flipped
-	// screen Y makes that exactly area < 0 (checked against the cube's near and far faces).
+	// Culled objects use the ray tracer's winding: flipped screen Y makes its Möller-Trumbore
+	// reject test exactly area < 0.
 	if ((obj->flags & RASTER_FLAG_CULL) && area > 0.0f)
 		return 0;
 
-	// Bounding box is only a superset of the covered pixels — coverage itself is
-	// decided by the edge functions, so floor/ceil here is enough.
 	float minXf = fmin(fmin(scan->sx0, scan->sx1), scan->sx2);
 	float maxXf = fmax(fmax(scan->sx0, scan->sx1), scan->sx2);
 	float minYf = fmin(fmin(scan->sy0, scan->sy1), scan->sy2);
@@ -215,9 +191,8 @@ static int setupTriangle(__global const RasterTri *tri, __global const RasterObj
 	return 1;
 }
 
-// Pass 1: scatter the closest view-Z per pixel. CL 1.2 has no float atomic_min, so a
-// positive float's bits are monotonic in unsigned order; putting them in the high word of a
-// 64-bit value also lets the low word carry the winning triangle id.
+// Pass 1: scatter the closest view-Z per pixel. CL 1.2 has no float atomic_min, but a
+// positive float's bits sort as unsigned, so depth goes in the high word of the 64-bit value.
 __kernel void rasterizeDepth(__global const RasterTri *restrict tris,
 							 __global const int *restrict triObjectIdx,
 							 __global const RasterObject *restrict objects,
@@ -267,8 +242,7 @@ __kernel void rasterizeDepth(__global const RasterTri *restrict tris,
 	}
 }
 
-// Nearest texel of the concatenated color maps, unpacked the way ray.c does
-// (R in bits 0..7, G 8..15, B 16..23).
+// Nearest texel; R in bits 0..7, G 8..15, B 16..23, like ray.c.
 static float3 sampleColorMap(__global const uint *restrict colorMaps, RasterTexture tex,
 							 uint u, uint v) {
 	uint tx = u * (uint)(tex.size - 1) / 65535u;
@@ -290,8 +264,7 @@ static float2 sampleMaterialMap(__global const ushort *restrict materialMaps, Ra
 	return (float2)(roughness, metallic);
 }
 
-// Tangent-space normal map. Textures_LoadFromFile stores it in the same R=bits0..7
-// layout as the color map, so the unpack is shared.
+// Same R=bits0..7 layout as the color map, so the unpack is shared.
 static float3 sampleNormalMap(__global const uint *restrict normalMaps, RasterTexture tex,
 							  uint u, uint v) {
 	uint tx = u * (uint)(tex.size - 1) / 65535u;
@@ -309,9 +282,8 @@ static uint skyFaceIndex(float3 dir) {
 	return dir.z > 0.0f ? SKY_FRONT : SKY_BACK;
 }
 
-// Port of SampleSkybox (skybox/skybox.c) over the six faces Raster_SetSkybox uploaded
-// back to back. The skybox pixels hold R in bits 16..23 (UnpackColor's order), unlike the
-// material color maps, so the channels are read from the top byte down.
+// Port of SampleSkybox over the six faces Raster_SetSkybox uploaded back to back. Skybox
+// pixels hold R in bits 16..23 (UnpackColor's order), unlike the material color maps.
 static float3 sampleSkybox(__global const uint *restrict sky, int faceWidth, int faceHeight,
 						   float3 dir) {
 	float ax = fabs(dir.x), ay = fabs(dir.y), az = fabs(dir.z);
@@ -342,14 +314,11 @@ static float3 sampleSkybox(__global const uint *restrict sky, int faceWidth, int
 	return (float3)(((c >> 16) & 0xFFu) / 255.0f, ((c >> 8) & 0xFFu) / 255.0f, (c & 0xFFu) / 255.0f);
 }
 
-// Fraction of the 3x3 taps that see the light. ray.c does this with one shadow ray per
-// pixel (sampled on a grid and blurred afterwards); a depth-map compare is a single
-// texture fetch, which is what makes shadows affordable on the raster path.
+// Fraction of the 3x3 taps that see the light; a depth-map compare instead of ray.c's shadow ray.
 static float sampleShadow(__global const uint *restrict shadowMap, RasterShadow sh,
 						  float3 worldPos, float3 n, float ndl) {
-	// Normal offset: push the sample off the surface by a couple of texels before
-	// projecting. A scalar bias alone cannot cover the depth spread a curved surface has
-	// inside one texel, and that spread is what makes an object shadow itself.
+	// Normal offset by two texels: a scalar bias cannot cover the depth spread a curved
+	// surface has inside one texel, and that spread is what makes an object shadow itself.
 	float3 pos = worldPos + n * (sh.params.y * 2.0f);
 	float3 lv = pos - sh.center.xyz;
 	float x = dot(lv, sh.right.xyz) * sh.right.w;
@@ -380,10 +349,8 @@ static float sampleShadow(__global const uint *restrict shadowMap, RasterShadow 
 	return (float)litTaps * (1.0f / 9.0f);
 }
 
-// Pass 2: one thread per pixel. The depth pass already resolved which triangle owns each
-// pixel, so this pass only reads that id and shades - it never walks a bounding box. Running
-// the shading per pixel (rather than per triangle) keeps a large triangle from being shaded
-// serially by a single thread, which was the whole cost of the previous two-scatter design.
+// Pass 2: one thread per pixel, reading the id the depth pass resolved. Per-pixel shading
+// keeps a large triangle from being shaded serially by one thread.
 __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 							 __global const int *restrict triObjectIdx,
 							 __global const RasterObject *restrict objects,
@@ -440,8 +407,7 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 	if (matId >= 0)
 		mat = materials[matId];
 
-	// Textures are an object flag: a merged object can point at a material that still
-	// carries a texture block while its own UV array is gone.
+	// Object flag, not the material: a merged object can lose its UVs but keep a textured material.
 	int textureSlot = (obj->flags & RASTER_FLAG_TEXTURE) ? mat.textureSlot : -1;
 	RasterTexture tex = (RasterTexture){0, 0};
 	if (textureSlot >= 0)
@@ -453,7 +419,6 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 	uint uv2x = tri->uv23 & 0xFFFFu, uv2y = tri->uv23 >> 16;
 	uint uv3x = tri->uv45 & 0xFFFFu, uv3y = tri->uv45 >> 16;
 
-	// Coverage and depth straight at this pixel; no bounding-box walk needed.
 	float px = (float)x + 0.5f;
 	float py = (float)y + 0.5f;
 	float e0 = edgeFunction(scan.sx1, scan.sy1, scan.sx2, scan.sy2, px, py);
@@ -478,8 +443,7 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 	float metallic = mat.metallic;
 	float3 n = nrm;
 	if (textureSlot >= 0) {
-		// Interpolate the stored [0..65535] UVs, then truncate to 16 bits exactly
-		// like calculateUvCoordinatesForTriangle (the wrap past 65535 included).
+		// Truncate to 16 bits exactly like calculateUvCoordinatesForTriangle, wrap included.
 		float u = (p1 * (float)uv1x + p2 * (float)uv2x + p3 * (float)uv3x) * invPSum;
 		float v = (p1 * (float)uv1y + p2 * (float)uv2y + p3 * (float)uv3y) * invPSum;
 		uint ui = (uint)(ushort)u;
@@ -489,9 +453,7 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 		roughness = rm.x;
 		metallic = rm.y;
 
-		// Tangent-space normal map. The decode, the Y flip that matches the V
-		// direction of the loaded maps, the tangent frame from the UV derivatives
-		// and the strength are all lifted from ray.c.
+		// Decode, Y flip, tangent frame and strength are lifted from ray.c.
 		float3 nTex = sampleNormalMap(normalMaps, tex, ui, vi) * 2.0f - 1.0f;
 		nTex.y = -nTex.y;
 		float nTexLen = length(nTex);
@@ -517,7 +479,6 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 				T = tLen > 1e-6f ? tWorld / tLen : tWorld;
 				B = cross(n, T);
 			} else {
-				// Degenerate UVs: build an arbitrary frame from the face normal.
 				float3 upAxis = fabs(n.y) < 0.9f ? (float3)(0.0f, 1.0f, 0.0f) : (float3)(1.0f, 0.0f, 0.0f);
 				T = normalize(cross(upAxis, n));
 				B = cross(n, T);
@@ -543,7 +504,6 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 	float f0 = 0.04f + 0.96f * metallic;
 	float fresnel = f0 + (1.0f - f0) * (inv2 * inv2 * invNdv);
 
-	// GGX specular against the single scene light, as ray.c evaluates it.
 	float3 halfVec = light - viewDir;
 	float halfLen = length(halfVec);
 	halfVec = halfLen > 1e-6f ? halfVec / halfLen : n;
@@ -560,8 +520,7 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 
 	float3 shaded = color * lit + specularColor + color * emission;
 
-	// Sky reflection: the same Fresnel term, damped by roughness and by how much
-	// the surface faces the light, tinted by the albedo for metals.
+	// Sky reflection: same Fresnel term, damped by roughness and N.L, tinted by metal albedo.
 	if (skyWidth > 0) {
 		float reflectStrength = fresnel * (1.0f - roughness) * 0.18f *
 								(0.15f + 0.85f * ndl) * (1.0f - fmin(emission, 1.0f));
@@ -576,12 +535,10 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 		}
 	}
 
-	// Shadows last, over the reflection blend, exactly where ray.c multiplies its
-	// blurred shadow term into the framebuffer.
+	// Over the reflection blend, where ray.c multiplies its blurred shadow term in.
 	float3 emitted = (float3)(0.0f, 0.0f, 0.0f);
 	if (emitterCount > 0) {
-		// Sum the emission over the nearest emitters, same inverse-square falloff and
-		// |N.L| that ray.c uses in its accumulatedEmission term.
+		// Same inverse-square falloff and |N.L| as ray.c's accumulatedEmission.
 		for (int e = 0; e < emitterCount; e++) {
 			float3 toEmitter = emitters[e].position.xyz - worldPos;
 			float dist2 = dot(toEmitter, toEmitter) + 1e-6f;
@@ -598,7 +555,6 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 		shaded = shaded * (SHADOW_AMBIENT + (1.0f - SHADOW_AMBIENT) * litFraction);
 	}
 
-	// Emissive indirect is additive, after the shadow term, matching ray.c's composite.
 	shaded += emitted;
 
 	framebuffer[idx] = (float4)(shaded.x, shaded.y, shaded.z, 0.0f);
@@ -609,8 +565,7 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 	triangleIdOut[idx] = tid - obj->triStart;
 }
 
-// Fills the pixels the scene did not cover with the skybox, sampled along the primary
-// ray of that pixel. Matches what the row kernel of ray.c writes for a miss.
+// Skybox along the primary ray, matching what ray.c's row kernel writes for a miss.
 __kernel void rasterizeSky(__global const uint *restrict sky,
 						   int skyWidth, int skyHeight,
 						   __global const ulong *restrict depthU,
@@ -628,7 +583,6 @@ __kernel void rasterizeSky(__global const uint *restrict sky,
 	if (depthU[idx] != NO_HIT)
 		return;
 
-	// Invert the projection used by setupTriangle so the ray lands on the pixel centre.
 	float ndcX = ((float)x + 0.5f - jitter.x) * 2.0f / (float)screenWidth - 1.0f;
 	float ndcY = 1.0f - ((float)y + 0.5f - jitter.y) * 2.0f / (float)screenHeight;
 	float3 dir = normalize(fwd + right * (ndcX * aspect * fovScale) + up * (ndcY * fovScale));
@@ -647,10 +601,8 @@ static uint aoHash(int x, int y) {
 	return h;
 }
 
-// Screen-space ambient occlusion, ported from render/cpu/AO.h. The world radius, bias,
-// sample count, occlusion formula and the per-pixel rotation are the CPU ones; the 8
-// sample directions are a golden-angle spiral instead of the CPU's baked Poisson table,
-// which the wide smoothing below removes the visual difference of.
+// Port of render/cpu/AO.h. Sample directions are a golden-angle spiral instead of the CPU's
+// Poisson table; the wide smoothing below removes the difference.
 __kernel void rasterizeAo(__global const float *restrict depthBuf,
 						  __global const float4 *restrict normalBuf,
 						  __global const float4 *restrict positionBuf,
@@ -671,7 +623,6 @@ __kernel void rasterizeAo(__global const float *restrict depthBuf,
 	float3 normal = normalBuf[idx].xyz;
 	float3 position = positionBuf[idx].xyz;
 
-	// Sample spread in pixels follows the projected world radius, clamped like the CPU.
 	float focalLengthPixels = ((float)screenHeight * 0.5f) / fovScale;
 	float pixelRadius = clamp(focalLengthPixels * AO_WORLD_RADIUS / viewDepth, 2.0f, AO_MAX_PIXEL_RADIUS);
 
@@ -710,10 +661,8 @@ __kernel void rasterizeAo(__global const float *restrict depthBuf,
 	aoOut[idx] = clamp(ao, 0.0f, 1.0f);
 }
 
-// One axis of the separable 5-tap gaussian. depthGated reproduces the edge-preserving
-// weighting of AO.h (a tap fades out as its depth difference grows); the wide smoothing
-// rounds run it ungated with a stride matching the CPU's 4x downsample, so the blur gets
-// the same support without a separate pyramid.
+// One axis of the separable 5-tap gaussian. depthGated reproduces AO.h's edge-preserving
+// weight; wide rounds run ungated with stride 4 to match its downsample support.
 __kernel void rasterizeAoBlur(__global const float *restrict aoIn,
 							  __global const float *restrict depthBuf,
 							  __global float *restrict aoOut,
@@ -751,8 +700,7 @@ __kernel void rasterizeAoBlur(__global const float *restrict aoIn,
 	aoOut[idx] = weightSum > 1e-5f ? sum / weightSum : center;
 }
 
-// Darkens the shaded frame by the AO term. Same remap and strength as
-// applyAmbientOcclusion in AO.h, which the ray pass runs at the end of RayTraceScene.
+// Same remap and strength as applyAmbientOcclusion in AO.h.
 __kernel void rasterizeAoApply(__global float4 *restrict framebuffer,
 							   __global const float *restrict aoIn,
 							   float strength, int pixelCount) {
@@ -765,10 +713,8 @@ __kernel void rasterizeAoApply(__global float4 *restrict framebuffer,
 								framebuffer[idx].z * ao, 0.0f);
 }
 
-// Shadow map: the scene rasterized from the light in an orthographic frame, keeping the
-// nearest light-space depth per texel. Depth is affine under an orthographic projection,
-// so the barycentric weights need no perspective divide. Nothing is culled - a depth map
-// only needs the closest surface, and culling would leak light through single-sided faces.
+// Light-space orthographic depth. Depth is affine here, so no perspective divide; nothing
+// is culled, which would leak light through single-sided faces.
 typedef struct {
 	float z0, z1, z2;
 	float sx0, sy0, sx1, sy1, sx2, sy2;
