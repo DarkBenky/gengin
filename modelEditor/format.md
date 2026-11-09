@@ -1,33 +1,22 @@
-# Face map file
+# Face map
 
-Little endian. One file per face, or all six faces in one file.
+Little endian. One face per file, or six in one.
 
-```
-u32   magic        0x32464D46 "FMF2" one face   0x324D4546 "FEM2" six faces
-u32   version      2
-u32   fileSize     total bytes, header included
-u32   size         grid edge, cells
-u32   components   3 (r, g, b, each f32)
-u32   faceCount    1 or 6
-f32   bbMin[3]     model bounds the sweeps used
-f32   bbMax[3]
-48
-
-f32   face[faceCount][size][size][3]    cells, rows top first
-                                        order front back right left top bottom
-```
-
-```
-fileSize = 48 + faceCount * size * size * 3 * 4
+```go
+type FaceMap struct {
+	Magic      uint32    // "FMF2" one face, "FEM2" six
+	Version    uint32    // 2
+	FileSize   uint32    // bytes, header included
+	Size       uint32    // grid edge
+	Components uint32    // 3: r, g, b
+	FaceCount  uint32    // 1 or 6
+	BbMin      [3]float32
+	BbMax      [3]float32
+	Face       []float32 // FaceCount*Size*Size*3, rows top first,
+	                     // front back right left top bottom
+}
 ```
 
-| size  | one face  | six faces |
-|  ---  |    ---    |    ---    |
-| 16    | 3,120     | 18,480    |
-| 32    | 12,336    | 73,776    |
-| 96    | 110,640   | 663,600   |
+`fileSize = 48 + faceCount*size*size*12` — size 16: 3,120 one face, 18,480 six; size 32: 12,336 / 73,776.
 
-`face[f][y][x]` is `EmissionMap.emissionMap[y][x]` from `object/object.h`, so the payload copies
-straight into `frontFaceEmission`, `backFaceEmission`, and so on.
-
-Version 1 files (`FEM1`/`FMF1`, 20 or 16 byte header, no bounds, no version) still load.
+`Face[f][y][x]` is `EmissionMap.emissionMap[y][x]`. v1 files (`FEM1`/`FMF1`) still load.
