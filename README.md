@@ -1,5 +1,7 @@
 # Tasks
 
+- [ ] maybe splitting emission map is kinda stupid we can reuse same logic for uv maping as is used for textures normals ...
+
 - [ ] when running on local model option for the main model to delegate to small Qwen2.5 Cider 
 
 - [X] add more tasks if some PR can't be merged correct it
