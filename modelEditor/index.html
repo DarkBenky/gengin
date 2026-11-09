@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gengin model editor</title>
+<style>
+:root {
+	--bg: #16181c;
+	--panel: #1e2126;
+	--panel-2: #23272d;
+	--line: #2f343b;
+	--text: #d7dbe0;
+	--muted: #8b9199;
+	--accent: #6ea8fe;
+	--error: #ff7b72;
+	--busy: #d7b45b;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+	background: var(--bg);
+	color: var(--text);
+	font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+body.dropping::after {
+	content: "drop .bin, .obj, .mtl, images or a _emission.bmp";
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(20, 24, 30, 0.86);
+	border: 2px dashed var(--accent);
+	color: var(--accent);
+	font-size: 17px;
+	pointer-events: none;
+	z-index: 20;
+}
+header {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 8px 10px;
+	background: var(--panel);
+	border-bottom: 1px solid var(--line);
+}
+header h1 { font-size: 13px; margin: 0 12px 0 2px; font-weight: 600; letter-spacing: 0.02em; }
+button, select, input[type=file] {
+	background: var(--panel-2);
+	color: var(--text);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	padding: 5px 9px;
+	font: inherit;
+	cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+#stats { color: var(--muted); margin-left: auto; }
+main { flex: 1; display: grid; grid-template-columns: 250px 1fr; min-height: 0; }
+aside {
+	background: var(--panel);
+	border-right: 1px solid var(--line);
+	padding: 10px;
+	overflow-y: auto;
+}
+aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 14px 0 6px; }
+aside h2:first-child { margin-top: 0; }
+#materialList { display: flex; flex-direction: column; gap: 3px; max-height: 34vh; overflow-y: auto; }
+.materialRow {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	text-align: left;
+	padding: 4px 7px;
+}
+.materialRow.selected { border-color: var(--accent); background: #262c36; }
+.materialRow .count { margin-left: auto; color: var(--muted); }
+.swatch { width: 11px; height: 11px; border-radius: 2px; border: 1px solid var(--line); flex: none; }
+.field { display: flex; align-items: center; gap: 7px; margin: 6px 0; }
+.field label { color: var(--muted); min-width: 62px; }
+.field input[type=range] { flex: 1; }
+.field input[type=color] { width: 40px; height: 26px; padding: 1px; }
+.note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+#selectedMaterial { color: var(--accent); font-size: 12px; margin-top: 6px; min-height: 16px; }
+section.center { display: grid; grid-template-rows: 1fr 42%; min-height: 0; }
+.viewport { position: relative; min-height: 0; }
+#preview { width: 100%; height: 100%; display: block; touch-action: none; }
+#uvMarker {
+	position: absolute;
+	width: 14px;
+	height: 14px;
+	margin: -7px 0 0 -7px;
+	border-radius: 50%;
+	border: 2px solid #ffd166;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+	pointer-events: none;
+}
+#emissionCanvas { width: 100%; height: 100%; display: block; border-top: 1px solid var(--line); touch-action: none; }
+footer {
+	padding: 6px 10px;
+	background: var(--panel);
+	border-top: 1px solid var(--line);
+	min-height: 20px;
+}
+.status { color: var(--muted); white-space: pre-wrap; }
+.status.error { color: var(--error); }
+.status.busy { color: var(--busy); }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+	<h1>gengin model editor</h1>
+	<button id="loadBinButton" type="button">Load .bin</button>
+	<select id="atlasSize" title="atlas size used when importing an .obj"></select>
+	<button id="importObjButton" type="button">Import .obj</button>
+	<button id="addFilesButton" type="button">Add .mtl / images</button>
+	<button id="saveBinButton" type="button">Save .bin</button>
+	<button id="exportEmissionButton" type="button" disabled>Export emission BMP</button>
+	<button id="exportFacesButton" type="button" disabled title="six EmissionMap style face grids; one file per face when a folder is linked, otherwise one bundled download">Export face maps</button>
+	<select id="faceResolution" title="face map resolution">
+		<option value="8">8</option>
+		<option value="16" selected>16</option>
+		<option value="32">32</option>
+		<option value="64">64</option>
+		<option value="96">96</option>
+		<option value="128">128</option>
+		<option value="256">256</option>
+	</select>
+	<button id="loadEmissionButton" type="button" disabled>Load emission BMP</button>
+	<button id="linkFolderButton" type="button">Link folder</button>
+	<span id="stats"></span>
+</header>
+
+<main>
+	<aside>
+		<h2>Preview</h2>
+		<div class="field"><label for="wireframe">wireframe</label><input id="wireframe" type="checkbox"></div>
+		<div class="field"><label for="cull">cull back</label><input id="cull" type="checkbox"></div>
+		<div class="field"><label for="textures">textures</label><input id="textures" type="checkbox" checked></div>
+		<div class="field"><label for="emissionView">emission view</label><input id="emissionView" type="checkbox"></div>
+		<div class="field"><label for="paintOnModel">paint on model</label><input id="paintOnModel" type="checkbox"></div>
+		<div class="field"><button id="frameButton" type="button">Frame model</button></div>
+
+		<h2>Materials</h2>
+		<div id="materialList"></div>
+		<div id="selectedMaterial"></div>
+
+		<h2>Atlas brush</h2>
+		<div class="field"><label for="paintLayer">layer</label><select id="paintLayer">
+			<option value="emission" selected>emission</option>
+			<option value="color">color</option>
+			<option value="roughness">roughness</option>
+			<option value="metallic">metallic</option>
+			<option value="normal">normal</option>
+		</select></div>
+		<div class="field"><label for="brushSize">size</label><input id="brushSize" type="range" min="1" max="1024" value="32"><span id="brushSizeValue">32 px</span></div>
+		<div class="field"><label for="brushOpacity">opacity</label><input id="brushOpacity" type="range" min="1" max="100" value="60"><span id="brushOpacityValue">60%</span></div>
+		<div class="field" id="strengthRow"><label for="brushStrength">strength</label><input id="brushStrength" type="range" min="-100" max="100" value="50"><span id="brushStrengthValue">50%</span></div>
+		<div class="field" id="colorRow"><label for="brushColor">color</label><input id="brushColor" type="color" value="#ffc85a"><label for="eraser">eraser</label><input id="eraser" type="checkbox"></div>
+		<div class="field">
+			<button id="fillCellButton" type="button" disabled>Fill material</button>
+			<button id="clearEmissionButton" type="button" disabled>Clear map</button>
+		</div>
+		<div class="field"><button id="bakeButton" type="button" disabled>Bake average into scalar</button></div>
+		<div class="field"><label for="emissionScalar">emit scalar</label><input id="emissionScalar" type="number" min="0" step="0.1" value="1"><button id="applyEmissionButton" type="button" disabled>Apply to material</button></div>
+		<p id="materialNote" class="note"></p>
+	</aside>
+
+	<section class="center">
+		<div class="viewport">
+			<canvas id="preview"></canvas>
+			<div id="uvMarker" class="hidden"></div>
+		</div>
+		<canvas id="emissionCanvas"></canvas>
+	</section>
+</main>
+
+<footer><div id="status" class="status"></div></footer>
+
+<input id="binInput" class="hidden" type="file" accept=".bin">
+<input id="objInput" class="hidden" type="file" accept=".obj">
+<input id="imageInput" class="hidden" type="file" multiple accept=".mtl,.png,.jpg,.jpeg,.bmp,.obj">
+
+<script src="js/util.js"></script>
+<script src="js/binio.js"></script>
+<script src="js/atlas.js"></script>
+<script src="js/bmp.js"></script>
+<script src="js/objimport.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/emission.js"></script>
+<script src="js/facemaps.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
