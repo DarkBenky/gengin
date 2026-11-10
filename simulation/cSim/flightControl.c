@@ -609,6 +609,10 @@ static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, f
 	return output;
 }
 
+#define MISSILE_TVC_TURN_MIN_ANGLE 0.3f
+#define MISSILE_TVC_TURN_FADE_ANGLE 0.35f
+#define MISSILE_TVC_TURN_TIME 0.3f
+
 // PN accel command mapped to fin deflections via the plant's per-deflection authority.
 MissileControllerOutput getControllerOutputMissile(const Missile *missile, float3 targetPosition, float3 targetVelocity, float deltaTime) {
 	float3 accelCmd = missileGuidanceAccel(missile->position, missile->velocity, targetPosition, targetVelocity, missile->spec.pnGain);
@@ -619,6 +623,28 @@ MissileControllerOutput getControllerOutputMissile(const Missile *missile, float
 	float3 up = Float3_Normalize(Float3_Cross(right, fwd));
 
 	float authority = missileFinAccelPerDeflection(missile);
+	float tvcAuthority = 0.0f;
+	if (missile->fuelLeft > 0.0f && missile->stage < missile->spec.stageCount) {
+		float thrust = missile->spec.stages[missile->stage].thrust;
+		tvcAuthority = thrust * missile->spec.tvcMaxDeg * 0.01745f / (missile->spec.emptyMass + missile->fuelLeft);
+	}
+
+	// Thrust vectoring swings the nose onto the line of sight while the fins are still slow,
+	// with the angle taken from an asin series so the boost path adds no libm call.
+	float3 turnCmd = {0.0f, 0.0f, 0.0f, 0.0f};
+	if (tvcAuthority > 1e-3f) {
+		float3 rel = Float3_Sub(targetPosition, missile->position);
+		float3 los = Float3_Scale(rel, 1.0f / fmaxf(Float3_Length(rel), 1e-3f));
+		float3 perp = Float3_Sub(los, Float3_Scale(fwd, Float3_Dot(fwd, los)));
+		float perpLen = Float3_Length(perp);
+		float offBoresight = perpLen + perpLen * perpLen * perpLen * (0.1666667f + 0.075f * perpLen * perpLen);
+		if (perpLen > 1e-4f && offBoresight > MISSILE_TVC_TURN_MIN_ANGLE) {
+			float turnWeight = fminf(1.0f, (offBoresight - MISSILE_TVC_TURN_MIN_ANGLE) / MISSILE_TVC_TURN_FADE_ANGLE);
+			float turnAccel = turnWeight * Float3_Length(missile->velocity) * offBoresight / MISSILE_TVC_TURN_TIME;
+			turnCmd = Float3_Scale(perp, turnAccel / perpLen);
+		}
+	}
+
 	float pitch = 0.0f;
 	float yaw = 0.0f;
 	if (authority > 1e-3f) {
@@ -626,13 +652,20 @@ MissileControllerOutput getControllerOutputMissile(const Missile *missile, float
 		yaw = fminf(1.0f, fmaxf(-1.0f, Float3_Dot(accelCmd, right) / authority));
 	}
 
+	float tvcPitch = 0.0f;
+	float tvcYaw = 0.0f;
+	if (tvcAuthority > 1e-3f) {
+		tvcPitch = fminf(1.0f, fmaxf(-1.0f, Float3_Dot(turnCmd, up) / tvcAuthority));
+		tvcYaw = fminf(1.0f, fmaxf(-1.0f, Float3_Dot(turnCmd, right) / tvcAuthority));
+	}
+
 	MissileControllerOutput output = {
 		.FrontPitch = 0.5f + 0.5f * pitch,
 		.FrontYaw = 0.5f + 0.5f * yaw,
 		.BackPitch = 0.5f + 0.5f * pitch,
 		.BackYaw = 0.5f + 0.5f * yaw,
-		.ThrustPitch = 0.5f,
-		.ThrustYaw = 0.5f,
+		.ThrustPitch = 0.5f + 0.5f * tvcPitch,
+		.ThrustYaw = 0.5f + 0.5f * tvcYaw,
 	};
 	return output;
 }
