@@ -53,6 +53,10 @@
 #define POLISH_START_STEP 0.1f
 #define POLISH_MIN_STEP 0.00625f
 #define TARGET_MANOEUVER_ACCEL 20.0f
+// A target slower than this has no lead to fly, so a hard pull only loops the
+// plane off the aim point: the search charges the elevator extra to fly flat.
+#define STATIONARY_TARGET_SPEED 5.0f
+#define STATIONARY_PULL_SURCHARGE 1.2f
 
 // Partial lead: trusting the full target velocity over-commits the pass when a
 // jinking or reversing target turns out of the predicted point.
@@ -361,6 +365,8 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+	if (!ctrl->targetMoved)
+		effort += STATIONARY_PULL_SURCHARGE * fabsf(values[1] - 0.5f);
 	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
 
 	float loss = (finalAlignment + finalAlignVel) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + EXT_MISS_WEIGHT * extendedMiss + surfaceMargin;
@@ -414,6 +420,8 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+	if (!ctrl->targetMoved)
+		effort += STATIONARY_PULL_SURCHARGE * fabsf(values[1] - 0.5f);
 	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
 
 	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + EXT_MISS_WEIGHT * extendedMiss + surfaceMargin;
@@ -431,8 +439,13 @@ static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, f
 
 	if (ctrl->hasPrevTarget && deltaTime > 1e-6f) {
 		float3 velocity = Float3_Scale(Float3_Sub(target, ctrl->prevTarget), 1.0f / deltaTime);
-		if (ctrl->hasPrevTarget > 1)
+		float targetSpeed = Float3_Length(velocity);
+		if (ctrl->hasPrevTarget > 1) {
 			ctrl->targetAccel = Float3_Scale(Float3_Sub(velocity, ctrl->targetVelocity), 1.0f / deltaTime);
+			ctrl->targetMoved = ctrl->targetMoved || targetSpeed > STATIONARY_TARGET_SPEED;
+		} else {
+			ctrl->targetMoved = targetSpeed > STATIONARY_TARGET_SPEED;
+		}
 		ctrl->targetVelocity = velocity;
 		ctrl->hasPrevTarget = 2;
 	} else {
