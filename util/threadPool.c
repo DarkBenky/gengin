@@ -97,6 +97,10 @@ freeBuffers:
 }
 
 void poolAdd(ThreadPool *p, task_fn fn, void *arg) {
+	// A region larger than the ring would overwrite slots the workers have not
+	// claimed yet, so drain it before the wrap instead.
+	if (p->queued - atomic_load_explicit(&p->published, memory_order_relaxed) >= p->capacity)
+		poolWait(p);
 	pthread_mutex_lock(&p->lock);
 	p->queue[p->queued & p->mask] = (Task){fn, arg};
 	p->queued++;
