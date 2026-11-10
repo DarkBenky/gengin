@@ -17,10 +17,9 @@ const FaceMaps = {
 	defaultResolution: 16,
 	minResolution: 2,
 	maxResolution: 256,
-	headerSize: 48,
-	version: 2,
-	magicSingle: 0x32464D46, // 'FMF2'
-	magicBundle: 0x324D4546, // 'FEM2'
+	headerSize: 16,
+	version: 3,
+	magic: 0x334D4546, // 'FEM3'
 };
 
 function modelBounds(model) {
@@ -134,7 +133,6 @@ function buildFaceGrids(model, emissionRgb, resolution, onProgress) {
 		return {
 			resolution: resolution,
 			usedTriangleScalar: useScalar,
-			bounds: bounds,
 			faces: state.map(function (planes) {
 				const rows = [];
 				for (let v = 0; v < resolution; v++) {
@@ -150,28 +148,23 @@ function buildFaceGrids(model, emissionRgb, resolution, onProgress) {
 	});
 }
 
-// writeFaceHeader fills the 48 byte header: magic, version, fileSize, resolution, components,
-// faceCount and the model bounds the sweeps were built from, so the file explains itself
-function writeFaceHeader(view, magic, fileSize, resolution, faceCount, bounds) {
-	view.setUint32(0, magic, true);
+// writeFaceHeader fills the 16 byte header: magic, version, fileSize, resolution
+function writeFaceHeader(view, fileSize, resolution) {
+	view.setUint32(0, FaceMaps.magic, true);
 	view.setUint32(4, FaceMaps.version, true);
 	view.setUint32(8, fileSize, true);
 	view.setUint32(12, resolution, true);
-	view.setUint32(16, 3, true);
-	view.setUint32(20, faceCount, true);
-	for (let axis = 0; axis < 3; axis++) view.setFloat32(24 + axis * 4, bounds.lo[axis], true);
-	for (let axis = 0; axis < 3; axis++) view.setFloat32(36 + axis * 4, bounds.hi[axis], true);
 }
 
-// writeFaceBundle puts all six faces in one file, so a browser without folder access only has to
-// download a single file instead of six
-function writeFaceBundle(grids, bounds) {
+// writeFaceMap writes the six faces into one file: header, then face, row (top first), cell RGB
+// as float32, so a loader copies each face straight into an EmissionMap
+function writeFaceMap(grids) {
 	const resolution = grids.resolution;
 	const floatsPerFace = resolution * resolution * 3;
 	const total = FaceMaps.headerSize + grids.faces.length * floatsPerFace * 4;
 	const bytes = new Uint8Array(total);
 	const view = new DataView(bytes.buffer);
-	writeFaceHeader(view, FaceMaps.magicBundle, total, resolution, grids.faces.length, bounds);
+	writeFaceHeader(view, total, resolution);
 	let offset = FaceMaps.headerSize;
 	grids.faces.forEach(function (face) {
 		face.cells.forEach(function (row) {
@@ -181,26 +174,6 @@ function writeFaceBundle(grids, bounds) {
 				view.setFloat32(offset + 8, cell[2], true);
 				offset += 12;
 			});
-		});
-	});
-	return new Blob([bytes], { type: "application/octet-stream" });
-}
-
-// writeFaceBin lays one face out exactly like EmissionMap.emissionMap: resolution*resolution
-// float3 values after the same header
-function writeFaceBin(face, resolution, bounds) {
-	const values = resolution * resolution * 3;
-	const total = FaceMaps.headerSize + values * 4;
-	const bytes = new Uint8Array(total);
-	const view = new DataView(bytes.buffer);
-	writeFaceHeader(view, FaceMaps.magicSingle, total, resolution, 1, bounds);
-	let offset = FaceMaps.headerSize;
-	face.cells.forEach(function (row) {
-		row.forEach(function (cell) {
-			view.setFloat32(offset, cell[0], true);
-			view.setFloat32(offset + 4, cell[1], true);
-			view.setFloat32(offset + 8, cell[2], true);
-			offset += 12;
 		});
 	});
 	return new Blob([bytes], { type: "application/octet-stream" });

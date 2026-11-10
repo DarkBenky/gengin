@@ -12,16 +12,11 @@ import struct
 
 import binlib
 
-# v2 header: magic, version, fileSize, resolution, components, faceCount, bbMin[3], bbMax[3]
-# v1 files (no version or bounds) are still readable
-FACE_MAGIC = 0x324D4546
-FACE_ONE_MAGIC = 0x32464D46
-FACE_MAGIC_V1 = 0x314D4546
-FACE_ONE_MAGIC_V1 = 0x31464D46
-FACE_VERSION = 2
-FACE_HEADER = 48
-FACE_HEADER_V1 = 20
-FACE_ONE_HEADER_V1 = 16
+# v3 header: magic, version, fileSize, resolution; the payload is always six faces
+FACE_MAGIC = 0x334D4546
+FACE_VERSION = 3
+FACE_HEADER = 16
+FACE_COUNT = 6
 
 # (name, uAxis, vAxis, wAxis, side) matching the faces table in CalculateFaceEmissions
 FACES = (
@@ -52,7 +47,7 @@ def modelBounds(info, data=None):
 
 
 def faceGrids(data, info, bmp, resolution, onProgress=None):
-    """Return ({faceName: [[[r,g,b] * resolution] * resolution]}, usedScalar)."""
+    """Return ({faceName: [[[r,g,b] * resolution] * resolution]}, usedScalar, coverage)."""
     lo, hi = modelBounds(info, data)
     size = info["textureSize"]
     # the spec's semantics are texelEmission * perTriangleEmissionScalar; a model whose scalars
@@ -141,7 +136,7 @@ def faceGrids(data, info, bmp, resolution, onProgress=None):
         coverage[name] = sum(1 for flag in covered if flag)
         if onProgress:
             onProgress(name)
-    return grids, useScalar, coverage, (lo, hi)
+    return grids, useScalar, coverage
 
 def summarise(grids, resolution, useScalar=True, coverage=None):
     lit = 0
@@ -169,15 +164,12 @@ def writeGrids(path, grids):
     return os.path.getsize(path)
 
 
-def faceHeader(magic, fileSize, resolution, faceCount, bounds):
-    lo, hi = bounds
-    return struct.pack("<6I6f", magic, FACE_VERSION, fileSize, resolution, 3, faceCount,
-                       lo[0], lo[1], lo[2], hi[0], hi[1], hi[2])
+def faceHeader(fileSize, resolution):
+    return struct.pack("<4I", FACE_MAGIC, FACE_VERSION, fileSize, resolution)
 
 
-def writeFaceBin(path, grids, resolution, bounds):
+def writeFaceBin(path, grids, resolution):
     """All six faces in one file: header, then face, row (top first), cell RGB as float32."""
-    faceCount = len(grids)
     body = bytearray()
     for cells in grids.values():
         for row in cells:
@@ -185,63 +177,28 @@ def writeFaceBin(path, grids, resolution, bounds):
                 body += struct.pack("<3f", cell[0], cell[1], cell[2])
     total = FACE_HEADER + len(body)
     with open(path, "wb") as handle:
-        handle.write(faceHeader(FACE_MAGIC, total, resolution, faceCount, bounds))
+        handle.write(faceHeader(total, resolution))
         handle.write(body)
     return total
 
 
-def writeFaceBins(outDir, grids, resolution, bounds):
-    """One binary per face; the payload is exactly EmissionMap.emissionMap."""
-    os.makedirs(outDir, exist_ok=True)
-    paths = []
-    for name, cells in grids.items():
-        body = bytearray()
-        for row in cells:
-            for cell in row:
-                body += struct.pack("<3f", cell[0], cell[1], cell[2])
-        total = FACE_HEADER + len(body)
-        path = os.path.join(outDir, name + ".bin")
-        with open(path, "wb") as handle:
-            handle.write(faceHeader(FACE_ONE_MAGIC, total, resolution, 1, bounds))
-            handle.write(body)
-        paths.append(path)
-    return paths
-
-
 def readFaceBin(path):
-    """Read a face map file, single face or bundle, v1 or v2, and return (header, floats)."""
+    """Read a face map file and return (header, floats)."""
     data = binlib.readFile(path)
-    if len(data) < FACE_ONE_HEADER_V1:
+    if len(data) < FACE_HEADER:
         raise binlib.BinError("not a face map file: only {} bytes".format(len(data)))
-    magic = struct.unpack_from("<I", data, 0)[0]
-    bounds = None
-    if magic in (FACE_ONE_MAGIC, FACE_MAGIC):
-        _, version, total, resolution, components, faceCount = struct.unpack_from("<6I", data, 0)
-        lo = struct.unpack_from("<3f", data, 24)
-        hi = struct.unpack_from("<3f", data, 36)
-        bounds = (list(lo), list(hi))
-        headerSize = FACE_HEADER
-        if version != FACE_VERSION:
-            raise binlib.BinError("unsupported face map version {}".format(version))
-    elif magic == FACE_ONE_MAGIC_V1:
-        _, total, resolution, components = struct.unpack_from("<4I", data, 0)
-        faceCount = 1
-        headerSize = FACE_ONE_HEADER_V1
-    elif magic == FACE_MAGIC_V1:
-        _, total, resolution, faceCount, components = struct.unpack_from("<5I", data, 0)
-        headerSize = FACE_HEADER_V1
-    else:
+    magic, version, total, resolution = struct.unpack_from("<4I", data, 0)
+    if magic != FACE_MAGIC:
         raise binlib.BinError("not a face map file: bad magic 0x{:08x}".format(magic))
-    if components != 3:
-        raise binlib.BinError("unsupported component count {}".format(components))
-    expected = headerSize + faceCount * resolution * resolution * components * 4
+    if version != FACE_VERSION:
+        raise binlib.BinError("unsupported face map version {}".format(version))
+    components = 3
+    expected = FACE_HEADER + FACE_COUNT * resolution * resolution * components * 4
     if total != expected or len(data) != expected:
         raise binlib.BinError("truncated or corrupt face map: header says {} bytes, expected {}".format(
             total, expected))
-    count = faceCount * resolution * resolution * components
-    values = struct.unpack_from("<{}f".format(count), data, headerSize)
-    header = {"resolution": resolution, "faceCount": faceCount, "components": components,
-              "fileSize": total, "singleFace": magic in (FACE_ONE_MAGIC, FACE_ONE_MAGIC_V1),
-              "version": FACE_VERSION if bounds is not None else 1,
-              "bounds": {"min": bounds[0], "max": bounds[1]} if bounds else None}
+    count = FACE_COUNT * resolution * resolution * components
+    values = struct.unpack_from("<{}f".format(count), data, FACE_HEADER)
+    header = {"resolution": resolution, "faceCount": FACE_COUNT, "components": components,
+              "fileSize": total, "version": version}
     return header, values

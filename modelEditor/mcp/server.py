@@ -285,13 +285,12 @@ def bin_emission_check(bin_path: str, bmp_path: str) -> dict:
 
 @mcp.tool()
 def emission_face_maps(bin_path: str, bmp_path: str = "", resolution: int = 16, out_path: str = "",
-                       out_dir: str = "", out_bin: str = "") -> dict:
+                       out_bin: str = "") -> dict:
     """Bake the per-texel emission side file into the six face grids the engine keeps in
     EmissionMap (object.h): front/back/right/left/top/bottom, each resolution x resolution float3
     values, same orthographic sweep as CalculateFaceEmissions. Each cell samples the emission BMP
     at the hit UV times the per-triangle emission scalar; a zero cell means nothing was hit.
-    out_dir writes one binary per face (front.bin, back.bin, ...) whose payload is exactly
-    EmissionMap.emissionMap; out_bin writes all six in one file; out_path writes JSON."""
+    out_bin writes the six faces in one file, out_path writes JSON."""
     try:
         data, info = binlib.loadBin(bin_path)
     except (binlib.BinError, OSError) as error:
@@ -307,23 +306,18 @@ def emission_face_maps(bin_path: str, bmp_path: str = "", resolution: int = 16, 
     elif info["textured"]:
         return fail("pass bmp_path to sample a per-texel emission map, this model has an atlas")
     try:
-        grids, useScalar, coverage, bounds = emissionfaces.faceGrids(data, info, bmp, resolution)
+        grids, useScalar, coverage = emissionfaces.faceGrids(data, info, bmp, resolution)
     except binlib.BinError as error:
         return fail(error)
     summary = emissionfaces.summarise(grids, resolution, useScalar, coverage)
     summary.update({"ok": True, "path": bin_path, "bmpPath": bmp_path or None,
-                    "bytes": 6 * resolution * resolution * 12,
-                    "bounds": {"min": bounds[0], "max": bounds[1]}})
-    if out_dir:
-        paths = emissionfaces.writeFaceBins(out_dir, grids, resolution, bounds)
-        summary["binFiles"] = paths
-        summary["binBytesEach"] = emissionfaces.FACE_HEADER + resolution * resolution * 12
+                    "bytes": 6 * resolution * resolution * 12})
     if out_path:
         summary["outPath"] = out_path
         summary["outBytes"] = emissionfaces.writeGrids(out_path, grids)
     if out_bin:
         summary["outBin"] = out_bin
-        summary["outBinBytes"] = emissionfaces.writeFaceBin(out_bin, grids, resolution, bounds)
+        summary["outBinBytes"] = emissionfaces.writeFaceBin(out_bin, grids, resolution)
         try:
             header, values = emissionfaces.readFaceBin(out_bin)
             summary["outBinVerified"] = (header["fileSize"] == summary["outBinBytes"] and
@@ -360,8 +354,7 @@ def emission_faces_info(path: str) -> dict:
     return {"ok": True, "path": path, "resolution": resolution,
             "faceCount": header["faceCount"], "components": header["components"],
             "fileSize": header["fileSize"], "version": header["version"],
-            "bounds": header["bounds"], "litPerFace": litPerFace,
-            "peak": round(peak, 4)}
+            "litPerFace": litPerFace, "peak": round(peak, 4)}
 
 
 if __name__ == "__main__":

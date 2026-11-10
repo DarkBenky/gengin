@@ -36,8 +36,8 @@ Register it with any MCP client, for example in `.vscode/mcp.json`:
 | `bmp_compare(a, b)` | differing pixel count and the first few differences |
 | `emission_blank(size, out)` | all black emission BMP template |
 | `bin_emission_check(bin, bmp)` | atlas/BMP size match plus the non black fraction |
-| `emission_face_maps(bin, bmp, resolution, out)` | bake the emission side file into the engine's six `EmissionMap` grids, same orthographic sweep as `CalculateFaceEmissions`; `out_dir` writes one binary per face, `out_bin` all six in one file, `out_path` JSON |
-| `emission_faces_info(path)` | read a face map back (single face or bundle): header, non zero cells per face, peak value |
+| `emission_face_maps(bin, bmp, resolution, out)` | bake the emission side file into the engine's six `EmissionMap` grids, same orthographic sweep as `CalculateFaceEmissions`; `out_bin` writes the six faces in one file, `out_path` JSON |
+| `emission_faces_info(path)` | read a face map back: header, non zero cells per face, peak value |
 
 ## Face map binary
 

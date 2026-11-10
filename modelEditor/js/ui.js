@@ -661,9 +661,8 @@ App.prototype.exportEmission = function () {
 	});
 };
 
-// exportFaceMaps bakes the painted emission into the six EmissionMap style grids. A linked folder
-// gets one file per face; without folder access a single bundled file is downloaded instead, so
-// the feature still works in browsers that have no File System Access API
+// exportFaceMaps bakes the painted emission into the six EmissionMap style grids and saves them as
+// one face map file: into the linked folder when there is one, otherwise as a download
 App.prototype.exportFaceMaps = function () {
 	if (!this.surface) { setStatus("paint some emission first: there is no emission map to export", "error"); return; }
 	const resolution = Number(this.elements.faceResolution.value);
@@ -677,18 +676,9 @@ App.prototype.exportFaceMaps = function () {
 	buildFaceGrids(this.model, this.surface.emission, resolution, function (done, total) {
 		setStatus("Baking face maps: " + formatCount(done) + " / " + formatCount(total) + " triangles", "busy");
 	}).then(function (grids) {
-		if (folder) {
-			const writes = grids.faces.map(function (face) {
-				return saveBlob(writeFaceBin(face, resolution, grids.bounds), face.name + ".bin", folder);
-			});
-			return Promise.all(writes).then(function () {
-				self.endBusy("Exported 6 face maps (" + resolution + "x" + resolution + ") into the linked folder");
-			});
-		}
 		const name = baseNameOf(self.model.fileName) + "_faces.bin";
-		return saveBlob(writeFaceBundle(grids, grids.bounds), name).then(function () {
-			self.endBusy("Exported " + name + ": six " + resolution + "x" + resolution +
-				" face maps in one file (magic FEM2)");
+		return saveBlob(writeFaceMap(grids), name, folder || undefined).then(function (savedName) {
+			self.endBusy("Exported " + savedName + ": six " + resolution + "x" + resolution + " face maps");
 		});
 	}).catch(function (err) {
 		self.endBusy("face export failed: " + err.message, "error");
