@@ -73,10 +73,18 @@ void packMaterials(int *materialIds, int count, MaterialLib *lib) {
 
 void Textures_Destroy(Textures *tex) {
 	if (!tex) return;
-	free(tex->colorMap);
-	free(tex->normalMap);
-	free(tex->MaterialMap);
+	free(tex->texels);
 	free(tex);
+}
+
+// Staged a block at a time so the load peak stays one Textures.
+#define TEXTURE_STAGE_TEXELS 4096
+
+static void texturesLoadFail(Textures *tex, Color *stageColor, uint8 *stageNormal, uint16 *stageMaterial) {
+	free(stageColor);
+	free(stageNormal);
+	free(stageMaterial);
+	Textures_Destroy(tex);
 }
 
 Textures *Textures_LoadFromFile(FILE *file, uint32 textureSize) {
@@ -87,45 +95,69 @@ Textures *Textures_LoadFromFile(FILE *file, uint32 textureSize) {
 		return NULL;
 	}
 	tex->size = textureSize;
-	tex->colorMap = (Color *)malloc(texelCount * sizeof(Color));
-	tex->normalMap = (Color *)malloc(texelCount * sizeof(Color));
-	tex->MaterialMap = (uint16 *)malloc(texelCount * sizeof(uint16));
-	if (!tex->colorMap || !tex->normalMap || !tex->MaterialMap) {
+	tex->texels = (Texel *)malloc(texelCount * sizeof(Texel));
+	if (!tex->texels) {
 		fprintf(stderr, "Error: Could not allocate textures.\n");
-		Textures_Destroy(tex);
+		free(tex);
 		return NULL;
 	}
 
-	// ColorMap: RGBA uint8 packed as uint32, read directly.
-	if (fread(tex->colorMap, sizeof(Color), texelCount, file) != texelCount) {
-		fprintf(stderr, "Error: Failed to read colorMap.\n");
-		Textures_Destroy(tex);
+	const size_t stageCount = TEXTURE_STAGE_TEXELS;
+	Color *stageColor = (Color *)malloc(stageCount * sizeof(Color));
+	uint8 *stageNormal = (uint8 *)malloc(stageCount * 3);
+	uint16 *stageMaterial = (uint16 *)malloc(stageCount * sizeof(uint16));
+	if (!stageColor || !stageNormal || !stageMaterial) {
+		fprintf(stderr, "Error: Could not allocate texture staging.\n");
+		texturesLoadFail(tex, stageColor, stageNormal, stageMaterial);
 		return NULL;
+	}
+
+	for (size_t base = 0; base < texelCount; base += stageCount) {
+		size_t n = texelCount - base < stageCount ? texelCount - base : stageCount;
+
+		// ColorMap: RGBA uint8 packed as uint32, read directly.
+		if (fread(stageColor, sizeof(Color), n, file) != n) {
+			fprintf(stderr, "Error: Failed to read colorMap.\n");
+			texturesLoadFail(tex, stageColor, stageNormal, stageMaterial);
+			return NULL;
+		}
+		for (size_t i = 0; i < n; i++)
+			tex->texels[base + i].color = stageColor[i];
 	}
 
 	// NormalMap: stored as RGB (3 bytes/pixel), unpack to RGBA with full alpha.
-	uint8 *normalPlane = (uint8 *)malloc(texelCount * 3);
-	if (!normalPlane || fread(normalPlane, 1, texelCount * 3, file) != texelCount * 3) {
-		fprintf(stderr, "Error: Failed to read normalMap.\n");
-		free(normalPlane);
-		Textures_Destroy(tex);
-		return NULL;
+	for (size_t base = 0; base < texelCount; base += stageCount) {
+		size_t n = texelCount - base < stageCount ? texelCount - base : stageCount;
+
+		if (fread(stageNormal, 1, n * 3, file) != n * 3) {
+			fprintf(stderr, "Error: Failed to read normalMap.\n");
+			texturesLoadFail(tex, stageColor, stageNormal, stageMaterial);
+			return NULL;
+		}
+		for (size_t i = 0; i < n; i++) {
+			uint8 *px = (uint8 *)&tex->texels[base + i].normal;
+			px[0] = stageNormal[i * 3];
+			px[1] = stageNormal[i * 3 + 1];
+			px[2] = stageNormal[i * 3 + 2];
+			px[3] = 0xFF;
+		}
 	}
-	for (size_t i = 0; i < texelCount; i++) {
-		uint8 *px = (uint8 *)&tex->normalMap[i];
-		px[0] = normalPlane[i * 3];
-		px[1] = normalPlane[i * 3 + 1];
-		px[2] = normalPlane[i * 3 + 2];
-		px[3] = 0xFF;
-	}
-	free(normalPlane);
 
 	// MaterialMap: [roughness, metallic] as uint16, read directly.
-	if (fread(tex->MaterialMap, sizeof(uint16), texelCount, file) != texelCount) {
-		fprintf(stderr, "Error: Failed to read MaterialMap.\n");
-		Textures_Destroy(tex);
-		return NULL;
+	for (size_t base = 0; base < texelCount; base += stageCount) {
+		size_t n = texelCount - base < stageCount ? texelCount - base : stageCount;
+
+		if (fread(stageMaterial, sizeof(uint16), n, file) != n) {
+			fprintf(stderr, "Error: Failed to read MaterialMap.\n");
+			texturesLoadFail(tex, stageColor, stageNormal, stageMaterial);
+			return NULL;
+		}
+		for (size_t i = 0; i < n; i++)
+			tex->texels[base + i].mat = stageMaterial[i];
 	}
 
+	free(stageColor);
+	free(stageNormal);
+	free(stageMaterial);
 	return tex;
 }
