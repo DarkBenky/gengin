@@ -53,6 +53,7 @@
 #define POLISH_START_STEP 0.1f
 #define POLISH_MIN_STEP 0.00625f
 #define TARGET_MANOEUVER_ACCEL 20.0f
+#define TARGET_ACCEL_MAX 250.0f
 // A target slower than this has no lead to fly, so a hard pull only loops the
 // plane off the aim point: the search charges the elevator extra to fly flat.
 #define STATIONARY_TARGET_SPEED 5.0f
@@ -276,6 +277,14 @@ static inline float surfaceMarginCharge(float value01) {
 	return over > 0.0f ? SURFACE_MARGIN_WEIGHT * over * over : 0.0f;
 }
 
+// Selected on the measured target acceleration, so the extrapolation has to
+// carry it too; the clip keeps a one-frame impulse from spanning the window.
+static inline float3 manoeuvreTargetAccel(const Controller *ctrl) {
+	float3 a = ctrl->targetAccel;
+	float mag = Float3_Length(a);
+	return mag > TARGET_ACCEL_MAX ? Float3_Scale(a, TARGET_ACCEL_MAX / mag) : a;
+}
+
 // The rollout sees 0.6 s ahead, too short for a banked turn to pay off, so the
 // walk never banks; this is the analytic bank-to-turn solution it starts from.
 static void bankToTurnSeed(const Controller *ctrl, float3 target, float3 targetVel, float values[3]) {
@@ -392,10 +401,13 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 	float runningAlignVel = 0.0f;
 	float runningBank = 0.0f;
 	float3 predictedTarget = target;
+	float3 predictedTargetVel = targetVel;
+	float3 targetAccel = manoeuvreTargetAccel(ctrl);
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetVel, simDeltaTime));
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(predictedTargetVel, simDeltaTime));
+		predictedTargetVel = Float3_Add(predictedTargetVel, Float3_Scale(targetAccel, simDeltaTime));
 		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
 		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
 		const float bank = rollMisalignment(&simPlane, predictedTarget);
