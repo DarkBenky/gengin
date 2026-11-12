@@ -52,25 +52,36 @@ static uint32 *loadJpeg(const char *path, int *outWidth, int *outHeight) {
 	return pixels;
 }
 
+// Every face is sampled through one shared width and height, so a face that
+// does not match the first one loaded is dropped rather than read past its end.
 static uint32 *loadFace(const char *dir, const char *name, int *w, int *h) {
 	char path[512];
 	snprintf(path, sizeof(path), "%s/%s.jpg", dir, name);
-	return loadJpeg(path, w, h);
+	int faceWidth = 0, faceHeight = 0;
+	uint32 *pixels = loadJpeg(path, &faceWidth, &faceHeight);
+	if (!pixels) return NULL;
+	if (*w > 0 && (faceWidth != *w || faceHeight != *h)) {
+		free(pixels);
+		return NULL;
+	}
+	*w = faceWidth;
+	*h = faceHeight;
+	return pixels;
 }
 
 void LoadSkybox(Skybox *skybox, const char *directory) {
 	if (!skybox || !directory) return;
 	memset(skybox, 0, sizeof(*skybox));
 
-	int w, h;
+	int w = 0, h = 0;
 	skybox->front = loadFace(directory, "front", &w, &h);
-	skybox->imageWidth = w;
-	skybox->imageHeight = h;
 	skybox->back = loadFace(directory, "back", &w, &h);
 	skybox->left = loadFace(directory, "left", &w, &h);
 	skybox->right = loadFace(directory, "right", &w, &h);
 	skybox->top = loadFace(directory, "top", &w, &h);
 	skybox->bottom = loadFace(directory, "bottom", &w, &h);
+	skybox->imageWidth = w;
+	skybox->imageHeight = h;
 }
 
 void DestroySkybox(Skybox *skybox) {
