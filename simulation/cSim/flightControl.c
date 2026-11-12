@@ -307,13 +307,17 @@ static void bankToTurnSeed(const Controller *ctrl, float3 target, float3 targetV
 	float3 liftDir = Float3_Sub(up, Float3_Scale(vhat, Float3_Dot(up, vhat)));
 	float liftLen = Float3_Length(liftDir);
 	liftDir = (liftLen > 1e-4f) ? Float3_Scale(liftDir, 1.0f / liftLen) : up;
+	float liftAlign = 1.0f;
 	if (alen > BANK_TURN_ROLL_MIN_SIN * dlen) {
 		float3 adat = Float3_Scale(aperp, 1.0f / alen);
 		float bankErr = atan2f(Float3_Dot(Float3_Cross(liftDir, adat), vhat), Float3_Dot(liftDir, adat));
 		values[2] = fminf(fmaxf(0.5f - BANK_TURN_ROLL * bankErr, 0.0f), 1.0f);
+		liftAlign = fmaxf(0.0f, Float3_Dot(liftDir, adat));
 	}
+	// A pull only turns when the lift vector already points where the turn is
+	// needed; with the wings still misaligned it just trades altitude.
 	float omega = fminf(theta / (tgo * BANK_TURN_TURN_T), BANK_TURN_MAX_RATE);
-	values[1] = fminf(fmaxf(0.5f - BANK_TURN_PULL * omega, 0.0f), 1.0f);
+	values[1] = fminf(fmaxf(0.5f - BANK_TURN_PULL * liftAlign * omega, 0.0f), 1.0f);
 }
 
 // Deployed plane loss: 2.25x horizon in the same 16 steps (measured better
