@@ -246,7 +246,7 @@ void CreateSphere(Object *obj, float3 position, float3 rotation, float3 scale, f
 }
 
 void CreateSphereHighResolution(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
-	Object_SetGeneratedName(obj, "__buildin_sphere_high_res_", NULL);
+	Object_SetGeneratedName(obj, "__buildin_sphereHigh_", NULL);
 
 	obj->cullBackfaces = true;
 	obj->position = position;
@@ -1045,7 +1045,7 @@ void CreatePrism(Object *obj, float3 position, float3 rotation, float3 scale, fl
 #define UVSPHERE_RINGS 16
 
 void CreateUVSphere(Object *obj, float3 position, float3 rotation, float3 scale, float3 color, MaterialLib *lib, float emission, float roughness, float metallic) {
-	Object_SetGeneratedName(obj, "__buildin_uvsphere_", NULL);
+	Object_SetGeneratedName(obj, "__buildin_uvSphere_", NULL);
 
 	obj->cullBackfaces = true;
 	obj->position = position;

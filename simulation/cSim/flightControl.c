@@ -35,9 +35,9 @@
 // 0.91 -> 0.56 of the box, closer to the loss minimum.
 // SEARCH_MIN_TAIL_WALK stops the walk once the *remaining* travel budget
 // learningRate/(1-SEARCH_STEP_DECAY) is below this value.  The pre-warm-start
-// walk used 0.004 (53 iterations); with the walk starting at the plane's own
-// surfaces the miss/cost trade is far flatter, so the threshold sits at its
-// measured knee (replica sweep 0.06-0.20: miss +0.07..+0.63%, cost -56..-79%).
+// walk used 0.004 (53 iterations); with a warm-started walk the miss/cost trade
+// is far flatter, so the threshold sits at its measured knee (replica sweep
+// 0.06-0.20: miss +0.07..+0.63%, cost -56..-79%).
 // The pinned suite at 0.06: miss 340.1 -> 341.4 m, effort 20.6 -> 17.9,
 // controller cost 1872 -> 880 us/step.
 // 0.06 -> 0.14 takes the walk from 24 to 15 iterations: pinned suite miss
@@ -50,6 +50,34 @@
 // effort moves less than any single tier.
 #define SEARCH_STEP_DECAY 0.91f
 #define SEARCH_MIN_TAIL_WALK 0.14f
+#define POLISH_START_STEP 0.1f
+#define POLISH_MIN_STEP 0.00625f
+#define TARGET_MANOEUVER_ACCEL 20.0f
+// A target slower than this has no lead to fly, so a hard pull only loops the
+// plane off the aim point: the search charges the elevator extra to fly flat.
+#define STATIONARY_TARGET_SPEED 5.0f
+#define STATIONARY_PULL_SURCHARGE 1.2f
+
+// Partial lead: trusting the full target velocity over-commits the pass when a
+// jinking or reversing target turns out of the predicted point.
+#define TARGET_LEAD_GAIN 0.3f
+
+#define TERMINAL_MISS_WEIGHT 1.2f
+#define TERMINAL_MISS_RANGE_FRACTION 0.25f
+#define EXT_MISS_HORIZON 3.5f
+#define EXT_MISS_STEPS 8
+#define EXT_MISS_WEIGHT 0.02f
+// A strong terminal demand puts the walk's optimum against the surface stops;
+// charging deflection past a quarter of the stick travel keeps authority margin.
+#define SURFACE_MARGIN_FRACTION 0.25f
+#define SURFACE_MARGIN_WEIGHT 400.0f
+
+#define BANK_TURN_LEAD 0.7f
+#define BANK_TURN_TURN_T 0.5f
+#define BANK_TURN_MAX_RATE 0.5f
+#define BANK_TURN_PULL 0.3f
+#define BANK_TURN_ROLL 0.6f
+#define BANK_TURN_ROLL_MIN_SIN 0.02f
 
 static const float3 PLANE_TARGET_OFFSET = {1000.0f, 1000.0f, 1000.0f, 0.0f};
 
@@ -147,6 +175,14 @@ static void writeLogRows(FILE *file, const char *label, const Logs *logs) {
 	}
 }
 
+static inline float rollMisalignment(const Plane *plane, float3 target) {
+	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
+	float3 forward = planeGetForwardVector(plane);
+	float3 up = planeGetUpVector(plane);
+	float3 idealUp = Float3_Sub(toTarget, Float3_Scale(forward, Float3_Dot(toTarget, forward)));
+	return Float3_Dot(Float3_Cross(up, idealUp), forward);
+}
+
 float rollLoss(const Plane *plane, float3 target) {
 	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
 	float3 forward = planeGetForwardVector(plane);
@@ -188,11 +224,103 @@ float yawLoss(const Plane *plane, float3 target) {
 	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect yaw alignment
 }
 
+static inline float flightPathMissDistance(float3 velocity, float3 toTarget) {
+	float3 path = Float3_Normalize(velocity);
+	float along = Float3_Dot(toTarget, path);
+	if (along <= 0.0f) {
+		return Float3_Length(toTarget);
+	}
+	return Float3_Length(Float3_Sub(toTarget, Float3_Scale(path, along)));
+}
+
+// The rollout window is far shorter than the time a banked turn takes to pay
+// off, so the arc it is already on is carried on at its own turn rate and scored.
+static inline float extendedFlightPathMiss(const Plane *start, const Plane *simPlane, float3 predictedTarget, float3 targetVel, float simDeltaTime, int steps) {
+	float3 v0 = start->velocity;
+	float3 v1 = simPlane->velocity;
+	float speed0 = Float3_Length(v0);
+	float speed1 = Float3_Length(v1);
+	float rollTime = simDeltaTime * (float)steps;
+	if (speed0 < 1e-3f || speed1 < 1e-3f || rollTime <= 0.0f) {
+		return 0.0f;
+	}
+	float3 dir = Float3_Scale(v1, 1.0f / speed1);
+	float3 dir0 = Float3_Scale(v0, 1.0f / speed0);
+	float3 axis = Float3_Cross(dir0, dir);
+	float axisLen = Float3_Length(axis);
+	float omega = axisLen > 1e-5f ? acosf(fminf(fmaxf(Float3_Dot(dir0, dir), -1.0f), 1.0f)) / rollTime : 0.0f;
+	axis = axisLen > 1e-5f ? Float3_Scale(axis, 1.0f / axisLen) : (float3){0.0f, 1.0f, 0.0f, 0.0f};
+
+	const float stepDt = EXT_MISS_HORIZON / (float)EXT_MISS_STEPS;
+	const float dTheta = omega * stepDt;
+	const float rotCos = cosf(dTheta);
+	const float rotSin = sinf(dTheta);
+
+	float3 pos = simPlane->position;
+	float3 tgt = predictedTarget;
+	float best = Float3_Length(Float3_Sub(tgt, pos));
+	for (int i = 0; i < EXT_MISS_STEPS; i++) {
+		float3 rotated = Float3_Add(Float3_Add(Float3_Scale(dir, rotCos), Float3_Scale(Float3_Cross(axis, dir), rotSin)),
+									Float3_Scale(axis, Float3_Dot(axis, dir) * (1.0f - rotCos)));
+		dir = Float3_Normalize(rotated);
+		pos = Float3_Add(pos, Float3_Scale(dir, speed1 * stepDt));
+		tgt = Float3_Add(tgt, Float3_Scale(targetVel, stepDt));
+		float d = Float3_Length(Float3_Sub(tgt, pos));
+		if (d < best) best = d;
+	}
+	return best;
+}
+
+static inline float surfaceMarginCharge(float value01) {
+	float over = fabsf(value01 - 0.5f) - SURFACE_MARGIN_FRACTION;
+	return over > 0.0f ? SURFACE_MARGIN_WEIGHT * over * over : 0.0f;
+}
+
+// The rollout sees 0.6 s ahead, too short for a banked turn to pay off, so the
+// walk never banks; this is the analytic bank-to-turn solution it starts from.
+static void bankToTurnSeed(const Controller *ctrl, float3 target, float3 targetVel, float values[3]) {
+	values[0] = 0.5f;
+	values[1] = 0.5f;
+	values[2] = 0.5f;
+	float3 v = ctrl->plane.velocity;
+	float speed = Float3_Length(v);
+	if (speed < 1e-3f) {
+		return;
+	}
+	float3 vhat = Float3_Scale(v, 1.0f / speed);
+	float3 rel = Float3_Sub(target, ctrl->plane.position);
+	float range = Float3_Length(rel);
+	if (range < 1e-3f) {
+		return;
+	}
+	float3 los = Float3_Scale(rel, 1.0f / range);
+	float closing = fmaxf(-Float3_Dot(Float3_Sub(targetVel, v), los), 0.25f * speed);
+	float tgo = fminf(fmaxf(range / closing, 0.1f), 8.0f);
+	float3 aim = Float3_Add(target, Float3_Scale(targetVel, tgo * BANK_TURN_LEAD));
+	float3 dvec = Float3_Sub(aim, ctrl->plane.position);
+	float dlen = fmaxf(Float3_Length(dvec), 1e-4f);
+	float along = Float3_Dot(dvec, vhat);
+	float theta = acosf(fminf(fmaxf(along / dlen, -1.0f), 1.0f));
+	float3 aperp = Float3_Sub(dvec, Float3_Scale(vhat, along));
+	float alen = Float3_Length(aperp);
+	float3 up = planeGetUpVector(&ctrl->plane);
+	float3 liftDir = Float3_Sub(up, Float3_Scale(vhat, Float3_Dot(up, vhat)));
+	float liftLen = Float3_Length(liftDir);
+	liftDir = (liftLen > 1e-4f) ? Float3_Scale(liftDir, 1.0f / liftLen) : up;
+	if (alen > BANK_TURN_ROLL_MIN_SIN * dlen) {
+		float3 adat = Float3_Scale(aperp, 1.0f / alen);
+		float bankErr = atan2f(Float3_Dot(Float3_Cross(liftDir, adat), vhat), Float3_Dot(liftDir, adat));
+		values[2] = fminf(fmaxf(0.5f - BANK_TURN_ROLL * bankErr, 0.0f), 1.0f);
+	}
+	float omega = fminf(theta / (tgo * BANK_TURN_TURN_T), BANK_TURN_MAX_RATE);
+	values[1] = fminf(fmaxf(0.5f - BANK_TURN_PULL * omega, 0.0f), 1.0f);
+}
+
 // Deployed plane loss: 2.25x horizon in the same 16 steps (measured better
 // than fine steps at equal cost) plus a control-effort term; the alignment
 // gain and the effort term only work as a pair. The rudder is charged 2:1 -
 // it is the yaw axis, so deflection buys no turn, only sideslip and drag.
-static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], float3 target, float deltaTime) {
+static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], float3 target, float3 targetVel, float deltaTime) {
 	Plane simPlane = ctrl->plane;
 
 	planeSetRudder01(&simPlane, values[0]);
@@ -205,47 +333,137 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float minDist = currentDist;
 	float runningAlignment = 0.0f;
 	float runningAlignVel = 0.0f;
+	float3 predictedTarget = target;
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		runningAlignment += alignmentLoss(&simPlane, target);
-		runningAlignVel += alignmentLossVelocity(&simPlane, target);
-		float d = distanceToTarget(&simPlane, target);
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetVel, simDeltaTime));
+		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
+		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
+		float d = distanceToTarget(&simPlane, predictedTarget);
 		if (d < minDist) minDist = d;
 	}
 
-	float finalAlignment = alignmentLoss(&simPlane, target);
-	float finalAlignVel = alignmentLossVelocity(&simPlane, target);
-	float finalDist = distanceToTarget(&simPlane, target);
+	float finalAlignment = alignmentLoss(&simPlane, predictedTarget);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, predictedTarget);
+	float finalDist = distanceToTarget(&simPlane, predictedTarget);
 
-	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 0.55f;
+	// The velocity misalignment is scored twice: -(v_hat . LOS) is flat at
+	// perfect alignment, so the walk sees no gradient there, while the chord
+	// |v_hat - LOS| = 2*sin(theta/2) is monotone in the misalignment with a
+	// unit gradient at zero.  On its own the chord over-commits the pass, so
+	// it ships together with the command damping below.
+	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
+	float terminalMiss = flightPathMissDistance(simPlane.velocity, Float3_Sub(predictedTarget, simPlane.position));
+	terminalMiss = fminf(terminalMiss, TERMINAL_MISS_RANGE_FRACTION * currentDist);
+	float extendedMiss = extendedFlightPathMiss(&ctrl->plane, &simPlane, predictedTarget, targetVel, simDeltaTime, ctrl->LookaheadSteps);
+
+	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 1.10f;
 	float overshootTerm = (finalDist - minDist) * 1.0f;
 
 	float alignWeight = 1.0f + 1.5f / (1.0f + currentDist * 0.0065f);
 
 	const float effortWeight = 1.0f;
 	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+	if (!ctrl->targetMoved)
+		effort += STATIONARY_PULL_SURCHARGE * fabsf(values[1] - 0.5f);
+	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
 
-	float loss = (finalAlignment + finalAlignVel) * alignWeight + (runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + distImprovement + overshootTerm + effortWeight * effort;
+	float loss = (finalAlignment + finalAlignVel) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + EXT_MISS_WEIGHT * extendedMiss + surfaceMargin;
 
 	return loss;
 }
 
+// The deployed loss plus a bank-error term (banking is the only fast heading
+// change).  Kept separate from the deployed loss because the term only belongs
+// on the manoeuvre rollout, which is where a moving target keeps the search.
+static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float values[3], float3 target, float3 targetVel, float deltaTime) {
+	Plane simPlane = ctrl->plane;
+
+	planeSetRudder01(&simPlane, values[0]);
+	planeSetElevator01(&simPlane, values[1]);
+	planeSetAileron01(&simPlane, values[2]);
+
+	const float simDeltaTime = deltaTime * 2.25f;
+
+	float currentDist = distanceToTarget(&ctrl->plane, target);
+	float minDist = currentDist;
+	float runningAlignment = 0.0f;
+	float runningAlignVel = 0.0f;
+	float runningBank = 0.0f;
+	float3 predictedTarget = target;
+
+	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
+		updatePlane(&simPlane, simDeltaTime, NULL);
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetVel, simDeltaTime));
+		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
+		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
+		const float bank = rollMisalignment(&simPlane, predictedTarget);
+		runningBank += bank * bank;
+		float d = distanceToTarget(&simPlane, predictedTarget);
+		if (d < minDist) minDist = d;
+	}
+
+	float finalAlignment = alignmentLoss(&simPlane, predictedTarget);
+	float finalAlignVel = alignmentLossVelocity(&simPlane, predictedTarget);
+	const float finalBank = rollMisalignment(&simPlane, predictedTarget);
+	float finalDist = distanceToTarget(&simPlane, predictedTarget);
+	float alignVelChord = Float3_Length(Float3_Sub(Float3_Normalize(simPlane.velocity), Float3_Normalize(Float3_Sub(target, simPlane.position))));
+	float terminalMiss = flightPathMissDistance(simPlane.velocity, Float3_Sub(predictedTarget, simPlane.position));
+	terminalMiss = fminf(terminalMiss, TERMINAL_MISS_RANGE_FRACTION * currentDist);
+	float extendedMiss = extendedFlightPathMiss(&ctrl->plane, &simPlane, predictedTarget, targetVel, simDeltaTime, ctrl->LookaheadSteps);
+
+	float distImprovement = (finalDist - currentDist) * 0.45f + (minDist - currentDist) * 1.10f;
+	float overshootTerm = (finalDist - minDist) * 1.0f;
+
+	float alignWeight = 1.0f + 1.5f / (1.0f + currentDist * 0.0065f);
+
+	const float effortWeight = 1.0f;
+	float effort = 3.0f * fabsf(values[0] - 0.5f) + 1.5f * fabsf(values[1] - 0.5f) + 1.5f * fabsf(values[2] - 0.5f);
+	if (!ctrl->targetMoved)
+		effort += STATIONARY_PULL_SURCHARGE * fabsf(values[1] - 0.5f);
+	float surfaceMargin = surfaceMarginCharge(values[0]) + surfaceMarginCharge(values[1]) + surfaceMarginCharge(values[2]);
+
+	float loss = (finalAlignment + finalAlignVel + finalBank * finalBank) * alignWeight + 0.5f * ((runningAlignment / (float)ctrl->LookaheadSteps) * alignWeight + (runningAlignVel / (float)ctrl->LookaheadSteps) * alignWeight + (runningBank / (float)ctrl->LookaheadSteps) * alignWeight) + distImprovement + overshootTerm + effortWeight * effort + alignVelChord + TERMINAL_MISS_WEIGHT * terminalMiss + EXT_MISS_WEIGHT * extendedMiss + surfaceMargin;
+
+	return loss;
+}
+
+typedef float (*ControllerLossFn)(const Controller *ctrl, float values[3], float3 target, float3 targetVel, float deltaTime);
+
 // TODO: test idea to change look ahead based on change of angle of loss
 // TODO: test idea to use multiple look ahead periods for example 16 with 60 FPS, 8 with 30 FPS, 4 with 15 FPS, and 2 with 7.5 FPS, and then combine the losses from each of these look ahead periods to get a more robust loss evaluation
 
-static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
+static ControllerOutput getControllerOutputV5(Controller *ctrl, float3 target, float deltaTime, float *momentum, float *prevLoss, int maxIterations) {
 	ControllerOutput output = {0};
 
-	// Start from the surfaces the plane actually has; a neutral start re-plans
-	// the whole approach from scratch on every frame.
-	float values[3] = {planeGetRudder01(&ctrl->plane), planeGetElevator01(&ctrl->plane), planeGetAileron01(&ctrl->plane)}; // yaw, pitch, roll
-	float momentumCoefficient = 0.9f;																					   // how much of the previous momentum to keep
+	if (ctrl->hasPrevTarget && deltaTime > 1e-6f) {
+		float3 velocity = Float3_Scale(Float3_Sub(target, ctrl->prevTarget), 1.0f / deltaTime);
+		float targetSpeed = Float3_Length(velocity);
+		if (ctrl->hasPrevTarget > 1) {
+			ctrl->targetAccel = Float3_Scale(Float3_Sub(velocity, ctrl->targetVelocity), 1.0f / deltaTime);
+			ctrl->targetMoved = ctrl->targetMoved || targetSpeed > STATIONARY_TARGET_SPEED;
+		} else {
+			ctrl->targetMoved = targetSpeed > STATIONARY_TARGET_SPEED;
+		}
+		ctrl->targetVelocity = velocity;
+		ctrl->hasPrevTarget = 2;
+	} else {
+		ctrl->targetAccel = (float3){0.0f, 0.0f, 0.0f, 0.0f};
+		ctrl->hasPrevTarget = 1;
+	}
+	ctrl->prevTarget = target;
+
+	float3 targetVel = Float3_Scale(ctrl->targetVelocity, TARGET_LEAD_GAIN);
+	ControllerLossFn lossFn = Float3_Length(ctrl->targetAccel) > TARGET_MANOEUVER_ACCEL ? evaluateLossV2PlusTuned2Manoeuver : evaluateLossV2PlusTuned2;
+
+	float values[3]; // yaw, pitch, roll
+	bankToTurnSeed(ctrl, target, ctrl->targetVelocity, values);
+	float momentumCoefficient = 0.9f;	  // how much of the previous momentum to keep
 	float learningRate = 0.05f;
-	// Finite-difference probe span. At 0.025 the two probes differ by less than
-	// the loss's step-to-step noise, so the gradient direction is noise-driven;
-	// 0.05 (the flat 0.04-0.075 region) steers the same miss with ~22% less
-	// actuator travel measured on the 20-scenario suite.
+	// Finite-difference probe span: below this the two probes differ by less
+	// than the loss's step-to-step noise, so the gradient direction is
+	// noise-driven.
 	float epsilon = 0.05f;
 
 	float bestAxisLoss[3] = {FLT_MAX, FLT_MAX, FLT_MAX}; // best loss for yaw, pitch, roll
@@ -257,17 +475,14 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	// Command the best-scoring candidate the search already evaluated instead:
 	// each iteration scores six single-axis perturbations anyway, so tracking
 	// them costs no extra loss evaluations, no extra state and no extra passes
-	// over the loss.  Measured on the 20-scenario suite (pinned baseline,
-	// flightBench), aggregate miss 342.26 -> 340.46 m, integrated control
-	// effort 20.49 -> 15.13 (-26.2%) and saturation steps 2365 -> 1625, with
-	// every tier within 0.4% of baseline except jink (-2.1%, 566.4 -> 554.6 m).
-	// Each candidate is clamped into [0,1] on the axis it perturbs, so the
-	// commanded vector is always a legal surface setting.  Neutral is scored
-	// once up front so it stays a candidate: a flat or tie-heavy loss then
-	// returns the un-deflected command rather than a probe picked by loop
-	// order (one shared loss evaluation per controller call, ~0.1% of cost).
+	// over the loss.  Each candidate is clamped into [0,1] on the axis it
+	// perturbs, so the commanded vector is always a legal surface setting.
+	// Neutral is scored once up front so it stays a candidate: a flat or
+	// tie-heavy loss then returns the un-deflected command rather than a probe
+	// picked by loop order (one shared loss evaluation per controller call,
+	// ~0.1% of cost).
 	float bestProbe[3] = {0.5f, 0.5f, 0.5f};
-	float bestProbeLoss = evaluateLossV2PlusTuned2(ctrl, bestProbe, target, deltaTime);
+	float bestProbeLoss = lossFn(ctrl, bestProbe, target, targetVel, deltaTime);
 
 	for (int iter = 0; iter < maxIterations; iter++) {
 		// Compute gradient for ALL axes simultaneously
@@ -282,8 +497,8 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 			float perturbedNegative[3] = {values[0], values[1], values[2]};
 			perturbedNegative[axis] = fmaxf(0.0f, perturbedNegative[axis] - epsilon);
 
-			float lossPos = evaluateLossV2PlusTuned2(ctrl, perturbedPositive, target, deltaTime);
-			float lossNeg = evaluateLossV2PlusTuned2(ctrl, perturbedNegative, target, deltaTime);
+			float lossPos = lossFn(ctrl, perturbedPositive, target, targetVel, deltaTime);
+			float lossNeg = lossFn(ctrl, perturbedNegative, target, targetVel, deltaTime);
 
 			if (lossPos < bestAxisLoss[axis]) {
 				bestAxisLoss[axis] = lossPos;
@@ -317,6 +532,18 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 							  gradient[1] * gradient[1] +
 							  gradient[2] * gradient[2]);
 		if (gradMag > 1e-6f) {
+			// The three surfaces do not have comparable authority, so a plain
+			// 3-vector normalization hands nearly the whole step to whichever
+			// axis has the largest slope and leaves the other two at ~0: the
+			// walk then descends along one axis only.  Floor every non-flat
+			// axis at a quarter of the strongest before normalizing so all
+			// three keep steering.
+			const float floorShare = 0.25f * fmaxf(fabsf(gradient[0]), fmaxf(fabsf(gradient[1]), fabsf(gradient[2])));
+			for (int axis = 0; axis < 3; axis++) {
+				float g = gradient[axis];
+				if (g != 0.0f && fabsf(g) < floorShare)
+					gradient[axis] = g < 0.0f ? -floorShare : floorShare;
+			}
 			gradient[0] /= gradMag;
 			gradient[1] /= gradMag;
 			gradient[2] /= gradMag;
@@ -338,11 +565,49 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 		if (learningRate < SEARCH_MIN_TAIL_WALK * (1.0f - SEARCH_STEP_DECAY)) break;
 	}
 
+	// The probes only ever see points within epsilon of the walk's iterates;
+	// if the loss keeps falling along the momentum direction, the final
+	// iterate beats every probe.  Score it once so it can be commanded too.
+	float finalIterateLoss = lossFn(ctrl, values, target, targetVel, deltaTime);
+	if (finalIterateLoss < bestProbeLoss) {
+		bestProbeLoss = finalIterateLoss;
+		bestProbe[0] = values[0];
+		bestProbe[1] = values[1];
+		bestProbe[2] = values[2];
+	}
+
+	// The walk's probes are anchored to the iterate, which drifts away from the
+	// best point it passed, so descend from that point on a shrinking probe grid.
+	for (float polishStep = POLISH_START_STEP; polishStep >= POLISH_MIN_STEP; polishStep *= 0.5f) {
+		int improved = 0;
+		for (int axis = 0; axis < 3; axis++) {
+			float probe[3] = {bestProbe[0], bestProbe[1], bestProbe[2]};
+			probe[axis] = fminf(1.0f, bestProbe[axis] + polishStep);
+			float loss = lossFn(ctrl, probe, target, targetVel, deltaTime);
+			if (loss >= bestProbeLoss) {
+				probe[axis] = fmaxf(0.0f, bestProbe[axis] - polishStep);
+				loss = lossFn(ctrl, probe, target, targetVel, deltaTime);
+			}
+			if (loss < bestProbeLoss) {
+				bestProbeLoss = loss;
+				bestProbe[0] = probe[0];
+				bestProbe[1] = probe[1];
+				bestProbe[2] = probe[2];
+				improved = 1;
+			}
+		}
+		if (!improved) break;
+	}
+
 	// Command the best control the search actually scored, not the iterate the
-	// momentum walk happened to stop on.
-	output.Rudder = bestProbe[0];
-	output.Elevator = bestProbe[1];
-	output.Aileron = bestProbe[2];
+	// momentum walk happened to stop on -- and only half the gap from where the
+	// surfaces already are.  The rollout already slews the plant, so this is not
+	// a reachability question: taking the probe outright tracks marginally
+	// tighter but parks the surfaces against their stops far more often, and the
+	// half-gap keeps the command away from them.
+	output.Rudder = 0.5f * (bestProbe[0] + planeGetRudder01(&ctrl->plane));
+	output.Elevator = 0.5f * (bestProbe[1] + planeGetElevator01(&ctrl->plane));
+	output.Aileron = 0.5f * (bestProbe[2] + planeGetAileron01(&ctrl->plane));
 
 	output.RudderLoss = bestAxisLoss[0];
 	output.ElevatorLoss = bestAxisLoss[1];
@@ -357,6 +622,10 @@ static ControllerOutput getControllerOutputV5(const Controller *ctrl, float3 tar
 	return output;
 }
 
+#define MISSILE_TVC_TURN_MIN_ANGLE 0.3f
+#define MISSILE_TVC_TURN_FADE_ANGLE 0.35f
+#define MISSILE_TVC_TURN_TIME 0.3f
+
 // PN accel command mapped to fin deflections via the plant's per-deflection authority.
 MissileControllerOutput getControllerOutputMissile(const Missile *missile, float3 targetPosition, float3 targetVelocity, float deltaTime) {
 	float3 accelCmd = missileGuidanceAccel(missile->position, missile->velocity, targetPosition, targetVelocity, missile->spec.pnGain);
@@ -367,6 +636,28 @@ MissileControllerOutput getControllerOutputMissile(const Missile *missile, float
 	float3 up = Float3_Normalize(Float3_Cross(right, fwd));
 
 	float authority = missileFinAccelPerDeflection(missile);
+	float tvcAuthority = 0.0f;
+	if (missile->fuelLeft > 0.0f && missile->stage < missile->spec.stageCount) {
+		float thrust = missile->spec.stages[missile->stage].thrust;
+		tvcAuthority = thrust * missile->spec.tvcMaxDeg * 0.01745f / (missile->spec.emptyMass + missile->fuelLeft);
+	}
+
+	// Thrust vectoring swings the nose onto the line of sight while the fins are still slow,
+	// with the angle taken from an asin series so the boost path adds no libm call.
+	float3 turnCmd = {0.0f, 0.0f, 0.0f, 0.0f};
+	if (tvcAuthority > 1e-3f) {
+		float3 rel = Float3_Sub(targetPosition, missile->position);
+		float3 los = Float3_Scale(rel, 1.0f / fmaxf(Float3_Length(rel), 1e-3f));
+		float3 perp = Float3_Sub(los, Float3_Scale(fwd, Float3_Dot(fwd, los)));
+		float perpLen = Float3_Length(perp);
+		float offBoresight = perpLen + perpLen * perpLen * perpLen * (0.1666667f + 0.075f * perpLen * perpLen);
+		if (perpLen > 1e-4f && offBoresight > MISSILE_TVC_TURN_MIN_ANGLE) {
+			float turnWeight = fminf(1.0f, (offBoresight - MISSILE_TVC_TURN_MIN_ANGLE) / MISSILE_TVC_TURN_FADE_ANGLE);
+			float turnAccel = turnWeight * Float3_Length(missile->velocity) * offBoresight / MISSILE_TVC_TURN_TIME;
+			turnCmd = Float3_Scale(perp, turnAccel / perpLen);
+		}
+	}
+
 	float pitch = 0.0f;
 	float yaw = 0.0f;
 	if (authority > 1e-3f) {
@@ -374,13 +665,20 @@ MissileControllerOutput getControllerOutputMissile(const Missile *missile, float
 		yaw = fminf(1.0f, fmaxf(-1.0f, Float3_Dot(accelCmd, right) / authority));
 	}
 
+	float tvcPitch = 0.0f;
+	float tvcYaw = 0.0f;
+	if (tvcAuthority > 1e-3f) {
+		tvcPitch = fminf(1.0f, fmaxf(-1.0f, Float3_Dot(turnCmd, up) / tvcAuthority));
+		tvcYaw = fminf(1.0f, fmaxf(-1.0f, Float3_Dot(turnCmd, right) / tvcAuthority));
+	}
+
 	MissileControllerOutput output = {
 		.FrontPitch = 0.5f + 0.5f * pitch,
 		.FrontYaw = 0.5f + 0.5f * yaw,
 		.BackPitch = 0.5f + 0.5f * pitch,
 		.BackYaw = 0.5f + 0.5f * yaw,
-		.ThrustPitch = 0.5f,
-		.ThrustYaw = 0.5f,
+		.ThrustPitch = 0.5f + 0.5f * tvcPitch,
+		.ThrustYaw = 0.5f + 0.5f * tvcYaw,
 	};
 	return output;
 }

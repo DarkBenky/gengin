@@ -1,3 +1,5 @@
+***AI generated code not sure if 100% correct***
+
 # llmOpt — MCP tool server for the gengin optimizer
 
 Build / bench / profile / PR tools for the `gengin` CPU ray tracer, exposed over
@@ -213,6 +215,13 @@ pinned SHA, re-run the category gate, and record the result with
 `comment_pull_request`; a factually broken claim (gate fails locally) is
 closed with the same evidence, a host-specific non-transfer just gets the
 comment. See VERIFY in `prompts/optimize.md`.
+
+A PR that no longer merges is triaged by REPAIR: if the change is already at
+HEAD or the patched code is gone, the PR is closed with the evidence that
+covers it; if the change is still needed, its conflicts are ported onto the
+existing branch and its gate re-run, and a port that is not obvious is left
+open with an unchecked `- [ ]` REPAIR task in the root `README.md`. See REPAIR
+in `prompts/optimize.md`.
 
 ## Files
 

@@ -1,19 +1,22 @@
 # Tasks
 
+- [ ] when running on local model option for the main model to delegate to small Qwen2.5 Cider 
+
+- [X] add more tasks if some PR can't be merged correct it
+
 - [ ] Align all allocations to 64 (malloc, calloc)
   - [ ] test if this improve preformance
   - [ ] try to align only hot staff
     - [ ] compare with current / align all / smart align 
 
-- [X] add to prompt that the general improvement prs should not be merged if they are change different systems ( soft lock )
-
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
-- [X] New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
+- [X] ( Done probably ? ) New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
 
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
 
 - [ ] Map loading files
+  - [ ] Fix / Design the file format for saving the model
   - [X] Object struct needs new field PathObjectType this can be used for saving scene and loading scene the object loading method needs to be updated to save the path to the struct of loaded object if object is created my merging multiple object on scene saving we need to create the file for that object
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
@@ -58,6 +61,14 @@
   - [ ] Phase 2 — textures + material table + base lighting match
   - [ ] Phase 3 — (caller-owned) integration: toggle, near/far split, compositing
   - [ ] Phase 4 — extras (normal maps, specular, culling, tile binning, GPU AO/skybox, async overlap)
+  - [ ] Phase 5 — Integrate with main.c
+    - [ ] Option A: make it as option as alternative rendering API
+    - [ ] Option B: **real / fake frames** — CPU ray tracer renders the "real" frame every N, GPU raster the "fake" ones in between, ML model pushes each fake frame toward the real one
+      - [ ] fake frames must match geometry exactly (they already do) — the model may only fix shading
+      - [ ] close the analytic gap first so the residual is small: emissive indirect, scene reflections
+      - [ ] train offline on `real - fake`, feed the G-buffer not just color
+      - [ ] budget `(15.8 + N*6.0)/(N+1)` ms — this buys quality, not speed
+      - notes: [todo/opencl-raster-hybrid-plan.md](todo/opencl-raster-hybrid-plan.md#11-option-b--real--fake-frames)
 
 - [ ] Add debug build that enables to check the output of each buffer
 - [X] Add to agent prompt specific part that model should focus mainly on c part not open cl
@@ -185,7 +196,7 @@
   - [ ] integrate the model
   - [ ] add the more advanced version of simulation to main
   - [ ] fix plane sim it feels wrong
-- [ ] render directly wia open gl not c => open gl => minifb
+- [X] render directly wia open gl not c => open gl => glWin (mfb_update_gpu presents the CL buffer through a GL PBO, no read back)
 
 - [ ] textures as post proces step on gpu we need to add uv mapping we shoulde use per triangle texture (normal, albedo ...)
   - [ ] input
@@ -360,6 +371,11 @@
 - [X] Add support for open ai API in llmOpt
 
 - [X] fix objects jittering (network - server code) idea : have bigger position rotation scale buffers so it is not line interpolation but more complex functions
+
+- [X] add to prompt that the general improvement prs should not be merged if they are change different systems ( soft lock )
+
+- [X] maybe splitting emission map is kinda stupid we can reuse same logic for uv maping as is used for textures normals ...
+  - [X] Note: Doesnt make sense
 
 ## Current Render
 

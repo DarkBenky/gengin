@@ -345,3 +345,35 @@ __kernel void compositeFrame(
 
     framebuffer[idx] = (float4)(fr.xyz, 0.0f);
 }
+
+// Tonemaps the composited HDR framebuffer to 8-bit BGRA for display.
+// Matches the CPU ConvertPixelToLdr: overflow spreads from the max channel into the others, then clamps; no gamma.
+__kernel void tonemapFrame(
+    __global const float4 *framebuffer,
+    __global uint        *output,
+    int screenWidth,
+    int screenHeight
+) {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    if (x >= screenWidth || y >= screenHeight) return;
+
+    int idx = y * screenWidth + x;
+
+    float4 c = framebuffer[idx];
+    float e = fmax(c.x, fmax(c.y, c.z)) - 1.0f;
+    if (e > 0.0f) {
+        c.x = fmin(c.x + e, 1.0f);
+        c.y = fmin(c.y + e, 1.0f);
+        c.z = fmin(c.z + e, 1.0f);
+    }
+
+    float r = clamp(c.x, 0.0f, 1.0f);
+    float g = clamp(c.y, 0.0f, 1.0f);
+    float b = clamp(c.z, 0.0f, 1.0f);
+
+    output[idx] = 0xFF000000u
+                | ((uint)(r * 255.0f) << 16)
+                | ((uint)(g * 255.0f) << 8)
+                |  (uint)(b * 255.0f);
+}

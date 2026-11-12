@@ -21,6 +21,7 @@ build/prof/main_flame
 
 # bench results
 bench/results/bench_results.json
+bench/results/flight_trace_*.csv
 
 # root binaries (legacy, now built under build/)
 main

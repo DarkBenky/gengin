@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "../util/bbox.h"
 #include "../render/color/color.h"
+#include "../util/json.h"
 
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	if (filename == NULL || obj == NULL) {
@@ -21,10 +22,14 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 
 	// read header
 	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures;
-	fread(&fileSize, sizeof(uint32), 1, file);
-	fread(&triangleStructSize, sizeof(uint32), 1, file);
-	fread(&triangleCountRead, sizeof(uint32), 1, file);
-	fread(&hasTextures, sizeof(uint32), 1, file);
+	if (fread(&fileSize, sizeof(uint32), 1, file) != 1 ||
+		fread(&triangleStructSize, sizeof(uint32), 1, file) != 1 ||
+		fread(&triangleCountRead, sizeof(uint32), 1, file) != 1 ||
+		fread(&hasTextures, sizeof(uint32), 1, file) != 1) {
+		fprintf(stderr, "Error: %s is not a model file.\n", filename);
+		fclose(file);
+		return;
+	}
 
 	// hasTextures bit 0 = textures present, bit 1 = cull backfaces
 	obj->cullBackfaces = (hasTextures & 2) != 0;
@@ -45,6 +50,23 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 			fseek(file, 16, SEEK_SET);
 		}
 	}
+
+	// the field reads below assume the writer's single record layout, so a file
+	// that does not match it is corrupt
+	long dataStart = ftell(file);
+	long fileEnd = -1;
+	if (dataStart >= 0 && fseek(file, 0, SEEK_END) == 0) fileEnd = ftell(file);
+	unsigned long long recordSize = 5ull * sizeof(float3) + 3ull * sizeof(float) +
+									6ull * sizeof(uint16) + sizeof(uint32);
+	unsigned long long expectedSize = (unsigned long long)dataStart +
+									  (hasTextures ? (unsigned long long)textureSize * textureSize * 9 : 0) +
+									  (unsigned long long)triangleCount * recordSize;
+	if (triangleStructSize != recordSize || fileEnd < 0 || (unsigned long long)fileEnd != expectedSize) {
+		fprintf(stderr, "Error: %s is truncated or corrupt.\n", filename);
+		fclose(file);
+		return;
+	}
+	fseek(file, dataStart, SEEK_SET);
 
 	// load textures if present
 	Textures *tex = NULL;
@@ -211,6 +233,7 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	}
 
 	char zeroPad[4] = {0, 0, 0, 0};
+	UvCords zeroUv = {0};
 
 	Material mat;
 	for (int i = 0; i < triangleCount; i++) {
@@ -223,13 +246,64 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		fwrite(&mat.metallic, sizeof(float), 1, file);
 		fwrite(&mat.emission, sizeof(float), 1, file);
 		fwrite(&mat.color, sizeof(float3), 1, file);
-		fwrite(&obj->uvs[i].uv1x, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv1y, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv2x, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv2y, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv3x, sizeof(uint16), 1, file);
-		fwrite(&obj->uvs[i].uv3y, sizeof(uint16), 1, file);
+		const UvCords *uv = obj->uvs ? &obj->uvs[i] : &zeroUv;
+		fwrite(&uv->uv1x, sizeof(uint16), 1, file);
+		fwrite(&uv->uv1y, sizeof(uint16), 1, file);
+		fwrite(&uv->uv2x, sizeof(uint16), 1, file);
+		fwrite(&uv->uv2y, sizeof(uint16), 1, file);
+		fwrite(&uv->uv3x, sizeof(uint16), 1, file);
+		fwrite(&uv->uv3y, sizeof(uint16), 1, file);
 		fwrite(zeroPad, sizeof(char), 4, file); // 4-byte pad after UV block
 	}
 	fclose(file);
+	return Error_Ok();
 };
+
+
+// TODO: **Important** Implement the function to save a scene to a JSON file
+Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
+	for (int i = 0; i < scene->count; i++) {
+		// TODO: **Important** Process each object in the scene
+		Object *obj = &scene->objects[i];
+		jsonObject *objJson = newJsonObject();
+
+		bool isShape = false;
+		if (HasPrefix(obj->ObjectPathOrType, "__buildin")) {
+			addJsonField(objJson, "type", "shape", JSON_TYPE_STRING);
+			isShape = true;
+		} else {
+			addJsonField(objJson, "type", "object", JSON_TYPE_STRING);
+		}
+		
+		if (isShape) {
+			// extract the shape type from the ObjectPathOrType string
+			char shapeType[64] = {0};
+			int index = 0;
+			int offset = strlen("__buildin_");
+			for (int j = offset; j < strlen(obj->ObjectPathOrType); j++) {
+				if (obj->ObjectPathOrType[j] == '_') {
+					shapeType[index] = '\0';
+					break;
+				}
+				shapeType[index++] = obj->ObjectPathOrType[j];
+			}
+			addJsonField(objJson, "shapeType", shapeType, JSON_TYPE_STRING);
+		}
+
+		// Save position, rotation, scale, color as arrays
+		char *posArray = newJsonNumberArray((float *)&obj->position, 3); 
+		char *rotArray = newJsonNumberArray((float *)&obj->rotation, 3);
+		char *scaleArray = newJsonNumberArray((float *)&obj->scale, 3);
+		float3 color = UnpackColor(obj->_temp); 
+		char *colorArray = newJsonNumberArray(&color.x, 3);
+
+		addJsonField(objJson, "position", posArray, JSON_TYPE_ARRAY);
+		addJsonField(objJson, "rotation", rotArray, JSON_TYPE_ARRAY);
+		addJsonField(objJson, "scale", scaleArray, JSON_TYPE_ARRAY);
+		addJsonField(objJson, "color", colorArray, JSON_TYPE_ARRAY);
+
+		// TODO: **Important** Save emission maps needs to be implemented it needs to be designed
+
+		// Free all allocations
+	}
+}

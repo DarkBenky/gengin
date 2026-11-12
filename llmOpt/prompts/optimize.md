@@ -582,9 +582,9 @@ numbers without re-measuring them on the prepared SHA.
 ### PR housekeeping (backfill / untangle / repair / verify — not gated by the 4-PR rule)
 
 Whenever the open-PR block or `list_pull_requests(state="open")` shows an
-unlabeled or mixed-category PR — or a PR measured on another machine — you
-may fix it (this also satisfies the session effort bar when completed, like a
-consolidation pass):
+unlabeled or mixed-category PR, a PR measured on another machine, or a PR
+that no longer merges — you may fix it (this also satisfies the session effort
+bar when completed, like a consolidation pass):
 
 - BACKFILL: every open PR without a label gets one. Decide the category from
   its changed paths and body evidence (which gate it claims/passes), then
@@ -599,10 +599,22 @@ consolidation pass):
   several systems is untangled the same way — one PR per system — because GI
   is soft-locked to ONE system per PR; never merge a cross-system GI PR.
 - REPAIR (low priority): an open PR whose `fetch_pull_request` reports
-  `appliesCleanly=false` or `mergeable=false` — port the mechanical conflicts
-  onto its existing branch (normal push, NEVER force-push), re-run its gate,
-  and comment what was ported with `comment_pull_request(N, ...)`. Skip ports
-  that are not obvious in a few hunks.
+  `appliesCleanly=false` or `mergeable=false`.  Diagnose WHY it cannot merge
+  before touching it, then act on the verdict — never fix and close the same
+  PR in one session:
+  - NO LONGER NEEDED — the change is already at HEAD (shipped through another
+    PR or a direct commit), the code it patched was rewritten or deleted, or a
+    merged PR supersedes it: prove it against the tree (`git -C gengin log -S`,
+    `search_files`, the PR's hunks vs the current file), then
+    `close_pull_request(N, "<what covers it> at <sha>: <evidence>. Branch
+    preserved.")`.  A matching title is not proof.
+  - STILL NEEDED — port the mechanical conflicts onto its existing branch
+    (normal push, NEVER force-push), re-run the PR's category gate, and
+    `comment_pull_request(N, ...)` with what was ported and the numbers.  A
+    port that is not obvious within a few hunks stays OPEN with a comment
+    naming the blocking conflict and its files, and an unchecked
+    `- [ ] REPAIR #N (<category>, <files>): <blocking conflict>` task in the
+    root `README.md`; never push a half-ported branch.
 - VERIFY (the desktop's duty, at most TWO per session): a PR whose `machine`
   differs from `machine_info()` (or is empty = created before the marker) was
   measured on another host; its claims have never been checked on THIS one.
@@ -777,9 +789,9 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     necessary, and then only WHY.  No commented-out code, no reformatting of
     untouched lines: the change must read like the surrounding codebase.
 17. NEVER close a pull request you did not include in your consolidation PR —
-    `close_pull_request` is for folded-in sources, untangled mixed PRs, and
-    VERIFY results that came back broken (the gate fails locally), always
-    with the evidence comment.
+    `close_pull_request` is for folded-in sources, untangled mixed PRs,
+    VERIFY results that came back broken (the gate fails locally), and REPAIR
+    verdicts of NO LONGER NEEDED, always with the evidence comment.
 18. NEVER sell a consolidation on a contributor's claimed numbers — only runs
     you made on the prepared SHA go into the evidence.
 19. NEVER default to the flight controller — the frame axis is the product;
