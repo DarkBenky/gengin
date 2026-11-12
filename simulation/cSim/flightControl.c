@@ -277,9 +277,9 @@ static inline float surfaceMarginCharge(float value01) {
 	return over > 0.0f ? SURFACE_MARGIN_WEIGHT * over * over : 0.0f;
 }
 
-// Selected on the measured target acceleration, so the extrapolation has to
-// carry it too; the clip keeps a one-frame impulse from spanning the window.
-static inline float3 manoeuvreTargetAccel(const Controller *ctrl) {
+// A step or jink velocity change reaches the estimator as one frame's delta, so
+// the clip bounds how far the extrapolation may move the aim point off it.
+static inline float3 maneuverTargetAccel(const Controller *ctrl) {
 	float3 a = ctrl->targetAccel;
 	float mag = Float3_Length(a);
 	return mag > TARGET_ACCEL_MAX ? Float3_Scale(a, TARGET_ACCEL_MAX / mag) : a;
@@ -402,7 +402,7 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 	float runningBank = 0.0f;
 	float3 predictedTarget = target;
 	float3 predictedTargetVel = targetVel;
-	float3 targetAccel = manoeuvreTargetAccel(ctrl);
+	float3 targetAccel = maneuverTargetAccel(ctrl);
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
