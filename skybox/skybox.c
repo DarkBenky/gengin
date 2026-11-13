@@ -1,3 +1,4 @@
+#include <setjmp.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,50 +6,81 @@
 #include <jpeglib.h>
 #include "skybox.h"
 
+typedef struct {
+	struct jpeg_error_mgr pub;
+	jmp_buf decodeFailed;
+} JpegErrorHandler;
+
+static void decodeFailedExit(j_common_ptr cinfo) {
+	JpegErrorHandler *handler = (JpegErrorHandler *)cinfo->err;
+	char message[JMSG_LENGTH_MAX];
+	cinfo->err->format_message(cinfo, message);
+	fprintf(stderr, "Skybox: %s\n", message);
+	longjmp(handler->decodeFailed, 1);
+}
+
+static uint32 *decodeJpeg(struct jpeg_decompress_struct *cinfo, FILE *f, const char *path, int *outWidth, int *outHeight) {
+	// libjpeg's default error manager calls exit(), so a face that is not a
+	// decodable JPEG would end the process instead of falling back to no sky.
+	JpegErrorHandler handler;
+	unsigned char *volatile row = NULL;
+	uint32 *volatile pixels = NULL;
+	cinfo->err = jpeg_std_error(&handler.pub);
+	handler.pub.error_exit = decodeFailedExit;
+	if (setjmp(handler.decodeFailed)) {
+		free(row);
+		free(pixels);
+		jpeg_destroy_decompress(cinfo);
+		fprintf(stderr, "Skybox: cannot decode %s\n", path);
+		return NULL;
+	}
+	jpeg_create_decompress(cinfo);
+	jpeg_stdio_src(cinfo, f);
+	jpeg_read_header(cinfo, TRUE);
+	cinfo->out_color_space = JCS_RGB;
+	jpeg_start_decompress(cinfo);
+
+	int w = (int)cinfo->output_width;
+	int h = (int)cinfo->output_height;
+	pixels = malloc((size_t)w * h * sizeof(uint32));
+	if (!pixels) {
+		jpeg_destroy_decompress(cinfo);
+		return NULL;
+	}
+
+	row = malloc((size_t)w * 3);
+	uint32 *out = pixels;
+	unsigned char *scan = row;
+	while ((int)cinfo->output_scanline < h) {
+		JSAMPROW rowPtr = scan;
+		jpeg_read_scanlines(cinfo, &rowPtr, 1);
+		int y = (int)cinfo->output_scanline - 1;
+		for (int x = 0; x < w; x++) {
+			unsigned char r = scan[x * 3 + 0];
+			unsigned char g = scan[x * 3 + 1];
+			unsigned char b = scan[x * 3 + 2];
+			out[y * w + x] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | b;
+		}
+	}
+	free(row);
+	row = NULL;
+	jpeg_finish_decompress(cinfo);
+	jpeg_destroy_decompress(cinfo);
+
+	*outWidth = w;
+	*outHeight = h;
+	return pixels;
+}
+
 static uint32 *loadJpeg(const char *path, int *outWidth, int *outHeight) {
 	FILE *f = fopen(path, "rb");
 	if (!f) {
 		fprintf(stderr, "Skybox: cannot open %s\n", path);
 		return NULL;
 	}
-
 	struct jpeg_decompress_struct cinfo;
-	struct jpeg_error_mgr jerr;
-	cinfo.err = jpeg_std_error(&jerr);
-	jpeg_create_decompress(&cinfo);
-	jpeg_stdio_src(&cinfo, f);
-	jpeg_read_header(&cinfo, TRUE);
-	cinfo.out_color_space = JCS_RGB;
-	jpeg_start_decompress(&cinfo);
-
-	int w = (int)cinfo.output_width;
-	int h = (int)cinfo.output_height;
-	uint32 *pixels = malloc((size_t)w * h * sizeof(uint32));
-	if (!pixels) {
-		jpeg_destroy_decompress(&cinfo);
-		fclose(f);
-		return NULL;
-	}
-
-	unsigned char *row = malloc((size_t)w * 3);
-	while ((int)cinfo.output_scanline < h) {
-		JSAMPROW rowPtr = row;
-		jpeg_read_scanlines(&cinfo, &rowPtr, 1);
-		int y = (int)cinfo.output_scanline - 1;
-		for (int x = 0; x < w; x++) {
-			unsigned char r = row[x * 3 + 0];
-			unsigned char g = row[x * 3 + 1];
-			unsigned char b = row[x * 3 + 2];
-			pixels[y * w + x] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | b;
-		}
-	}
-	free(row);
-	jpeg_finish_decompress(&cinfo);
-	jpeg_destroy_decompress(&cinfo);
+	uint32 *pixels = decodeJpeg(&cinfo, f, path, outWidth, outHeight);
 	fclose(f);
-
-	*outWidth = w;
-	*outHeight = h;
 	return pixels;
 }
 
