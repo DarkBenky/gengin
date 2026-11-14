@@ -61,13 +61,13 @@ kernel at the top, record it in `codebase_context.md` and move to the next CPU
 hotspot.
 
 ## START HERE
-1. `read_file` the knowledge base at `codebase_context.md` — architecture,
-   confirmed wins, failed approaches, and remaining hotspots from prior
-   sessions.  Also read the repo style guide `.github/copilot-instructions.md`
-   before any edit (see CODE STYLE below).
-2. `terminal`: `git -C gengin status --porcelain` and
-   `git -C gengin log --oneline -3` to see the sandbox state (uncommitted
-   edits, current branch).
+1. Read the knowledge base at `codebase_context.md` (`read` on dsh, `read_file`
+   on Hermes) — architecture, confirmed wins, failed approaches, and remaining
+   hotspots from prior sessions.  Also read the repo style guide
+   `.github/copilot-instructions.md` before any edit (see CODE STYLE below).
+2. Shell (`bash` on dsh, `terminal` on Hermes): `git -C gengin status
+   --porcelain` and `git -C gengin log --oneline -3` to see the sandbox state
+   (uncommitted edits, current branch).
 3. The `## Node map` section of that file is your candidate queue: take its
    `untried` rows largest flame percent first.  Do not re-derive hotspots the
    map already lists — re-profile only to check a row is still current.
@@ -177,9 +177,10 @@ PR is NOT a candidate:
    location, every reference, and callers/callees before touching hot code.
 4. For an unfamiliar subsystem, delegate a read-only research pass — quote the
    node-map row so the subagent is scoped, never send it to explore:
-   `delegate_task(goal="Verify the node-map row for IntersectBVH
-   (object/object.c): does the caller's bestT reach the traversal as an
-   initial bound? Report yes/no with file:line. Do not modify anything")`.
+   `subagent` (Hermes: `delegate_task`) with the goal "Verify the node-map row
+   for IntersectBVH (object/object.c): does the caller's bestT reach the
+   traversal as an initial bound? Report yes/no with file:line. Do not modify
+   anything".
 5. Write the node map before moving on — a write-up, not a reading pass (1-2
    tool calls, a few minutes).  After `make_flame` + `hot_annotate_func`,
    refresh one row per top node under `## Node map` in `codebase_context.md`,
@@ -291,20 +292,21 @@ not a smaller nudge of the same idea.
     multi-threaded micro-benchmark is the way to settle blur/VLA questions.
 
 ### Phase 4 — Apply & Validate
-Apply -> measure -> revert is the normal loop, not a failure: `patch` the
-change in, run `make_bench`, keep it when it is IMPROVED, and `patch` it back
-out when it does not clear the bar.  The sandbox only has to be clean at the
-END of the session.
+Apply -> measure -> revert is the normal loop, not a failure: apply the change,
+run `make_bench`, keep it when it is IMPROVED, and revert it when it does not
+clear the bar.  The sandbox only has to be clean at the END of the session.
 
-11. Edit with `patch` (targeted find-and-replace).  Use `write_file` only when
-    replacing a whole file.  Never edit via terminal sed/awk.
+11. Edit with `edit` (Hermes: `patch`) — targeted find-and-replace.  Use
+    `write` (Hermes: `write_file`) only when replacing a whole file.  Never
+    edit via shell sed/awk.
 12. `lsp_diagnostics(rel_path)` — fast check before the ~30 s build.  (Hermes
     also runs clangd automatically after every write.)
 13. `build_project` — full compile; fix errors immediately.
-14. Independent review before committing: `delegate_task` a subagent that reads
-    `git -C gengin diff` and adversarially tries to break the change (assume it
-    is wrong: overflow, null deref, false sharing, VLA blowup, changed
-    semantics).  Address anything it finds.
+14. Independent review before committing: run the `subagent` tool (Hermes:
+    `delegate_task`) with a review prompt to read `git -C gengin diff` and
+    adversarially try to break the change (assume it is wrong: overflow, null
+    deref, false sharing, VLA blowup, changed semantics).  Address anything it
+    finds.
 15. `make_bench` — comparison against the baseline (the noise floor is 1%, so a
     3% bar throws away real wins):
     - `=> OVERALL: PERFORMANCE IMPROVED` with avg/median better and
@@ -322,10 +324,11 @@ END of the session.
 16. `delete_func_bench(func_name)` — clean up the bench files.
 
 ### Phase 5 — Persist & PR
-17. Append a dated entry to `codebase_context.md` (use `patch`): what changed,
-    measured numbers, why it is safe, what failed and why.  Update the node map
-    too: the row you shipped becomes `shipped(PR #n)`, the ones you refuted
-    become `tried-failed(<numbers>, <date>)`.
+17. Append a dated entry to `codebase_context.md` (`edit` on dsh, `patch` on
+    Hermes): what changed, measured numbers, why it is safe, what failed and
+    why.  Update the node map too: the row you shipped becomes
+    `shipped(PR #n)`, the ones you refuted become
+    `tried-failed(<numbers>, <date>)`.
 18. Review the whole diff (`git -C gengin diff`) — the last step before the
     PR, and the last step of every session, even one that ends in `no_change`:
     - comment sweep: list every ADDED comment line in the staged diff
@@ -605,7 +608,7 @@ bar when completed, like a consolidation pass):
   - NO LONGER NEEDED — the change is already at HEAD (shipped through another
     PR or a direct commit), the code it patched was rewritten or deleted, or a
     merged PR supersedes it: prove it against the tree (`git -C gengin log -S`,
-    `search_files`, the PR's hunks vs the current file), then
+    a `grep` over the tree, the PR's hunks vs the current file), then
     `close_pull_request(N, "<what covers it> at <sha>: <evidence>. Branch
     preserved.")`.  A matching title is not proof.
   - STILL NEEDED — port the mechanical conflicts onto its existing branch
@@ -694,14 +697,16 @@ Only when the change:
 Apply directly in those rare cases and validate with `make_bench`.
 
 ## EDITING & NAVIGATION TOOLS
-- `read_file` / `search_files` / `terminal` — read and search anything.
+- Read/search: `read` + `glob` + `grep` + `bash` on dsh; `read_file` +
+  `search_files` + `terminal` on Hermes.  Use the names that are in YOUR tool
+  list — an unknown-tool error just wastes a turn.
 - Prefer the domain tools (`make_flame`, `hot_annotate_*`, `create_func_bench`,
   `run_func_bench`, `run_perf_stat`, `show_asm`, `compare_asm`, `make_bench`,
   `flight_bench`, `flight_scenarios`, `flight_trace`, `create_pr`,
   `report_session_result`) over ad-hoc terminal pipelines — they keep results
   in the run artifacts the supervisor audits.
-- `patch` — targeted edit (fuzzy matcher; returns a unified diff).  Preferred.
-- `write_file` — full-file replacement only.
+- `edit` (Hermes: `patch`) — targeted edit (fuzzy matcher).  Preferred.
+- `write` (Hermes: `write_file`) — full-file replacement only.
 - `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`,
   `lsp_diagnostics_all` — semantic clangd queries.
 - `hot_annotate_func` / `hot_annotate_file` — perf-annotated source.
@@ -711,6 +716,14 @@ Apply directly in those rare cases and validate with `make_bench`.
   text).  Use it for narrow judgments over text you provide.  Advisory: it can
   be wrong — check confidence and decide yourself.  Prefer `yes_no`/`choices`;
   batch independent questions into one `questions` call.
+- `delegate_to_small_model` (local runs only) — hand ONE narrow, mechanical
+  text/code job to the small local Qwen2.5-Coder-7B.  It is a really small,
+  dumb model: no planning, no repo access, no tools, and its output is often
+  subtly wrong — pass the exact input text and diff/compile/test whatever comes
+  back.  Use it for bulk mechanical work only (rename, reformat, extract
+  fields, one small function body); on a cloud model the tool is not
+  registered — do the work yourself.  Never delegate design, review, profiling
+  or judgement calls.
 
 ## VISUAL CORRECTNESS (make_bench output)
 - `image_mse` is the PRIMARY correctness metric in exact mode: < 1.0 visually

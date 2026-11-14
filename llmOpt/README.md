@@ -177,7 +177,7 @@ answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
 `llmOpt/.env` on the VM — the agent could mint unlimited keys.
 
-## Tools (36)
+## Tools (36; 37 on local runs)
 
 | Group              | Tools |
 |--------------------|-------|
@@ -192,6 +192,7 @@ Secrets never live in the checkout. Never put the OpenRouter *management* key in
 | clangd             | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Environment        | `machine_info` |
 | Advisory decisions | `quick_ask` |
+| Small local model  | `delegate_to_small_model` (local runs only; the 7B is weak, verify its output) |
 | Session control    | `report_session_result` (supervised only) |
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate) ->

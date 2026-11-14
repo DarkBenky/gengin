@@ -41,6 +41,9 @@ mcp_servers:
       # The supervisor replaces the marker below with the session variables
       # (GENGIN_TARGET_SHA etc.); the comment is inert for manual runs.
       DISPLAY: "__DISPLAY__" # __SESSION_ENV__
+      # Local preset only (the launcher exports 1): enables the small-model
+      # delegation tool.  Unset stays disabled.
+      GENGIN_SMALL_MODEL_ENABLE: "${GENGIN_SMALL_MODEL_ENABLE}"
     timeout: 600
     connect_timeout: 60
 

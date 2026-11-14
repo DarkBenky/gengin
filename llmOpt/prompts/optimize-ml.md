@@ -130,8 +130,9 @@ better or worse when a config clears its own noise band, so a `same` on a
    `ml_bench(suite="srnet")` — the reference point.  If a suite has no
    baseline, say so and capture it once (`capture_baseline=True`) on the clean
    tree before you change anything.
-3. `read_file("gengin/machineLearning/generateKernel.py")` — the emitter you are
-   tuning: `emitConv`, `emitPool`, `emitDense`, `emitSoftmax`,
+3. Read `gengin/machineLearning/generateKernel.py` (`read` on dsh, `read_file`
+   on Hermes) — the emitter you are tuning: `emitConv`, `emitPool`,
+   `emitDense`, `emitSoftmax`,
    `emitPixelShuffle`, `emitBilinear` and the generation-time shape math around them.
 4. Only then start changing code.
 
@@ -319,7 +320,7 @@ pass):
   - NO LONGER NEEDED — the change is already at HEAD (shipped through another
     PR or a direct commit), the code it patched was rewritten or deleted, or a
     merged PR supersedes it: prove it against the tree (`git -C gengin log -S`,
-    `search_files`, the PR's hunks vs the current file), then
+    a `grep` over the tree, the PR's hunks vs the current file), then
     `close_pull_request(N, "<what covers it> at <sha>: <evidence>. Branch
     preserved.")`.  A matching title is not proof.
   - STILL NEEDED — port the mechanical conflicts onto its existing branch

@@ -1,8 +1,6 @@
 # Tasks
 
-- [ ] when running on local model option for the main model to delegate to small Qwen2.5 Cider 
-
-- [X] add more tasks if some PR can't be merged correct it
+- [X] when running on local model option for the main model to delegate to small Qwen2.5 Coder
 
 - [ ] Align all allocations to 64 (malloc, calloc)
   - [ ] test if this improve preformance
@@ -10,8 +8,6 @@
     - [ ] compare with current / align all / smart align 
 
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
-
-- [X] ( Done probably ? ) New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
 
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
 
@@ -376,6 +372,10 @@
 
 - [X] maybe splitting emission map is kinda stupid we can reuse same logic for uv maping as is used for textures normals ...
   - [X] Note: Doesnt make sense
+
+- [X] ( Done probably ? ) New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
+
+- [X] add more tasks if some PR can't be merged correct it
 
 ## Current Render
 
