@@ -58,15 +58,15 @@
 #define STATIONARY_TARGET_SPEED 5.0f
 #define STATIONARY_PULL_SURCHARGE 1.2f
 
-// Partial lead: trusting the full target velocity over-commits the pass when a
-// jinking or reversing target turns out of the predicted point.
-#define TARGET_LEAD_GAIN 0.3f
+// The bank seed already aims at a 0.7 lead; scoring a shorter aim point than the
+// seed aims at makes the walk undo it, so the loss leads with the full velocity.
+#define TARGET_LEAD_GAIN 1.0f
 
 #define TERMINAL_MISS_WEIGHT 1.2f
 #define TERMINAL_MISS_RANGE_FRACTION 0.25f
 #define EXT_MISS_HORIZON 3.5f
 #define EXT_MISS_STEPS 8
-#define EXT_MISS_WEIGHT 0.02f
+#define EXT_MISS_WEIGHT 0.01f
 // A strong terminal demand puts the walk's optimum against the surface stops;
 // charging deflection past a quarter of the stick travel keeps authority margin.
 #define SURFACE_MARGIN_FRACTION 0.25f
