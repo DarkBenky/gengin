@@ -3,8 +3,7 @@
 // separate a real controller change from the chaos band of a 20-scenario
 // rollout.  Build and run:
 //   make build/bench/FlightSeedProbe && ./build/bench/FlightSeedProbe 96
-// (seeds per tier; the bench rule does not track flightControl.c, so delete
-// build/bench/FlightSeedProbe after editing the controller).
+// (seeds per tier).
 #ifndef FLIGHT_SEED_PROBE_H
 #define FLIGHT_SEED_PROBE_H
 

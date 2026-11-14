@@ -241,7 +241,13 @@ endif
 # Build rule for any micro-benchmark binary under bench/
 $(BENCH_DIR)/%: $(BENCH_FUNC_DIR)/%.c $(TESTS_DIR)/timings.c util/threadPool.c object/format.c
 	@mkdir -p $(BENCH_DIR)
-	$(CC) $(CFLAGS_BASE) -I$(BENCH_FUNC_DIR) -I$(TESTS_DIR) -o $@ $^ $(LDFLAGS) -lm
+	$(CC) $(CFLAGS_BASE) -I$(BENCH_FUNC_DIR) -I$(TESTS_DIR) -o $@ $(BENCH_FUNC_DIR)/$*.c $(TESTS_DIR)/timings.c util/threadPool.c object/format.c $(LDFLAGS) -lm
+
+# FlightSeedProbe.h #includes flightBench.c, which #includes flightControl.c, so
+# the pattern rule cannot see those dependencies and the probe replays a stale
+# controller after an edit; the recipe names its sources instead of $^ so a
+# target can carry such extra prerequisites without compiling them in.
+$(BENCH_DIR)/FlightSeedProbe: bench/FlightSeedProbe.h $(FLIGHT_BENCH_SRC) simulation/cSim/flightControl.c $(FLIGHT_BENCH_HDR)
 
 # make benchFunc <funcName>  →  build & run bench/<funcName>
 benchFunc: $(_RUN_BENCH_FUNCS)
