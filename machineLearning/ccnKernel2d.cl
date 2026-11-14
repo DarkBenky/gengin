@@ -3468,546 +3468,546 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
 
     if (ok)
     {
-        float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[n0 + 0];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[n0 + 0];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[n0 + 1];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[n0 + 2];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[n0 + 3];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 0;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[n0 + 1];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a4.x + a4.y) + (a4.z + a4.w) + bias[n0 + 4];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 1;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[n0 + 2];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a5.x + a5.y) + (a5.z + a5.w) + bias[n0 + 5];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 2;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[n0 + 3];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a6.x + a6.y) + (a6.z + a6.w) + bias[n0 + 6];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 3;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a4.x + a4.y) + (a4.z + a4.w) + bias[n0 + 4];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a7.x + a7.y) + (a7.z + a7.w) + bias[n0 + 7];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 4;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a5.x + a5.y) + (a5.z + a5.w) + bias[n0 + 5];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a8.x + a8.y) + (a8.z + a8.w) + bias[n0 + 8];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 5;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a6.x + a6.y) + (a6.z + a6.w) + bias[n0 + 6];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a9.x + a9.y) + (a9.z + a9.w) + bias[n0 + 9];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 6;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a7.x + a7.y) + (a7.z + a7.w) + bias[n0 + 7];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a10.x + a10.y) + (a10.z + a10.w) + bias[n0 + 10];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 7;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a8.x + a8.y) + (a8.z + a8.w) + bias[n0 + 8];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a11.x + a11.y) + (a11.z + a11.w) + bias[n0 + 11];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 8;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a9.x + a9.y) + (a9.z + a9.w) + bias[n0 + 9];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a12.x + a12.y) + (a12.z + a12.w) + bias[n0 + 12];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 9;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a10.x + a10.y) + (a10.z + a10.w) + bias[n0 + 10];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a13.x + a13.y) + (a13.z + a13.w) + bias[n0 + 13];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 10;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a11.x + a11.y) + (a11.z + a11.w) + bias[n0 + 11];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a14.x + a14.y) + (a14.z + a14.w) + bias[n0 + 14];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 11;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a12.x + a12.y) + (a12.z + a12.w) + bias[n0 + 12];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a15.x + a15.y) + (a15.z + a15.w) + bias[n0 + 15];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 12;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a13.x + a13.y) + (a13.z + a13.w) + bias[n0 + 13];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a16.x + a16.y) + (a16.z + a16.w) + bias[n0 + 16];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 13;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a14.x + a14.y) + (a14.z + a14.w) + bias[n0 + 14];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a17.x + a17.y) + (a17.z + a17.w) + bias[n0 + 17];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 14;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a15.x + a15.y) + (a15.z + a15.w) + bias[n0 + 15];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a18.x + a18.y) + (a18.z + a18.w) + bias[n0 + 18];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 15;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a16.x + a16.y) + (a16.z + a16.w) + bias[n0 + 16];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a19.x + a19.y) + (a19.z + a19.w) + bias[n0 + 19];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 16;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a17.x + a17.y) + (a17.z + a17.w) + bias[n0 + 17];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a20.x + a20.y) + (a20.z + a20.w) + bias[n0 + 20];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 17;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a18.x + a18.y) + (a18.z + a18.w) + bias[n0 + 18];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a21.x + a21.y) + (a21.z + a21.w) + bias[n0 + 21];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 18;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a19.x + a19.y) + (a19.z + a19.w) + bias[n0 + 19];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a22.x + a22.y) + (a22.z + a22.w) + bias[n0 + 22];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 19;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a20.x + a20.y) + (a20.z + a20.w) + bias[n0 + 20];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a23.x + a23.y) + (a23.z + a23.w) + bias[n0 + 23];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 20;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a21.x + a21.y) + (a21.z + a21.w) + bias[n0 + 21];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a24.x + a24.y) + (a24.z + a24.w) + bias[n0 + 24];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 21;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a22.x + a22.y) + (a22.z + a22.w) + bias[n0 + 22];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a25.x + a25.y) + (a25.z + a25.w) + bias[n0 + 25];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 22;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a23.x + a23.y) + (a23.z + a23.w) + bias[n0 + 23];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a26.x + a26.y) + (a26.z + a26.w) + bias[n0 + 26];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 23;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a24.x + a24.y) + (a24.z + a24.w) + bias[n0 + 24];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a27.x + a27.y) + (a27.z + a27.w) + bias[n0 + 27];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 24;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a25.x + a25.y) + (a25.z + a25.w) + bias[n0 + 25];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a28.x + a28.y) + (a28.z + a28.w) + bias[n0 + 28];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 25;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a26.x + a26.y) + (a26.z + a26.w) + bias[n0 + 26];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a29.x + a29.y) + (a29.z + a29.w) + bias[n0 + 29];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 26;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a27.x + a27.y) + (a27.z + a27.w) + bias[n0 + 27];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a30.x + a30.y) + (a30.z + a30.w) + bias[n0 + 30];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + n0 + 27;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a28.x + a28.y) + (a28.z + a28.w) + bias[n0 + 28];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a31.x + a31.y) + (a31.z + a31.w) + bias[n0 + 31];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + n0 + 28;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a29.x + a29.y) + (a29.z + a29.w) + bias[n0 + 29];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x) * 256 + n0 + 29;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a30.x + a30.y) + (a30.z + a30.w) + bias[n0 + 30];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x) * 256 + n0 + 30;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a31.x + a31.y) + (a31.z + a31.w) + bias[n0 + 31];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x) * 256 + n0 + 31;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
@@ -4471,410 +4471,410 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 
     if (ok)
     {
-        float sum = (a0_0.x + a0_0.y) + (a0_0.z + a0_0.w) + bias[n0 + 0];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_0.x + a0_0.y) + (a0_0.z + a0_0.w) + bias[n0 + 0];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = (a0_1.x + a0_1.y) + (a0_1.z + a0_1.w) + bias[n0 + 1];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = (a0_2.x + a0_2.y) + (a0_2.z + a0_2.w) + bias[n0 + 2];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = (a0_3.x + a0_3.y) + (a0_3.z + a0_3.w) + bias[n0 + 3];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 12 + n0 + 0;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a0_1.x + a0_1.y) + (a0_1.z + a0_1.w) + bias[n0 + 1];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_4.x + a0_4.y) + (a0_4.z + a0_4.w) + bias[n0 + 4];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 1;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_2.x + a0_2.y) + (a0_2.z + a0_2.w) + bias[n0 + 2];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_5.x + a0_5.y) + (a0_5.z + a0_5.w) + bias[n0 + 5];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 2;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_3.x + a0_3.y) + (a0_3.z + a0_3.w) + bias[n0 + 3];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_6.x + a0_6.y) + (a0_6.z + a0_6.w) + bias[n0 + 6];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 3;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_4.x + a0_4.y) + (a0_4.z + a0_4.w) + bias[n0 + 4];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_7.x + a0_7.y) + (a0_7.z + a0_7.w) + bias[n0 + 7];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 12 + n0 + 4;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a0_5.x + a0_5.y) + (a0_5.z + a0_5.w) + bias[n0 + 5];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_8.x + a0_8.y) + (a0_8.z + a0_8.w) + bias[n0 + 8];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 5;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_6.x + a0_6.y) + (a0_6.z + a0_6.w) + bias[n0 + 6];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_9.x + a0_9.y) + (a0_9.z + a0_9.w) + bias[n0 + 9];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 6;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_7.x + a0_7.y) + (a0_7.z + a0_7.w) + bias[n0 + 7];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_10.x + a0_10.y) + (a0_10.z + a0_10.w) + bias[n0 + 10];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 7;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_8.x + a0_8.y) + (a0_8.z + a0_8.w) + bias[n0 + 8];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a0_11.x + a0_11.y) + (a0_11.z + a0_11.w) + bias[n0 + 11];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 12 + n0 + 8;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a0_9.x + a0_9.y) + (a0_9.z + a0_9.w) + bias[n0 + 9];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_0.x + a1_0.y) + (a1_0.z + a1_0.w) + bias[n0 + 0];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 9;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_10.x + a0_10.y) + (a0_10.z + a0_10.w) + bias[n0 + 10];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_1.x + a1_1.y) + (a1_1.z + a1_1.w) + bias[n0 + 1];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 10;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a0_11.x + a0_11.y) + (a0_11.z + a0_11.w) + bias[n0 + 11];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_2.x + a1_2.y) + (a1_2.z + a1_2.w) + bias[n0 + 2];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 11;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_0.x + a1_0.y) + (a1_0.z + a1_0.w) + bias[n0 + 0];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_3.x + a1_3.y) + (a1_3.z + a1_3.w) + bias[n0 + 3];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 1) * 12 + n0 + 0;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a1_1.x + a1_1.y) + (a1_1.z + a1_1.w) + bias[n0 + 1];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_4.x + a1_4.y) + (a1_4.z + a1_4.w) + bias[n0 + 4];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 1;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_2.x + a1_2.y) + (a1_2.z + a1_2.w) + bias[n0 + 2];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_5.x + a1_5.y) + (a1_5.z + a1_5.w) + bias[n0 + 5];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 2;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_3.x + a1_3.y) + (a1_3.z + a1_3.w) + bias[n0 + 3];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_6.x + a1_6.y) + (a1_6.z + a1_6.w) + bias[n0 + 6];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 3;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_4.x + a1_4.y) + (a1_4.z + a1_4.w) + bias[n0 + 4];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_7.x + a1_7.y) + (a1_7.z + a1_7.w) + bias[n0 + 7];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 1) * 12 + n0 + 4;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     if (ok)
     {
-        float sum = (a1_5.x + a1_5.y) + (a1_5.z + a1_5.w) + bias[n0 + 5];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_8.x + a1_8.y) + (a1_8.z + a1_8.w) + bias[n0 + 8];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 5;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_6.x + a1_6.y) + (a1_6.z + a1_6.w) + bias[n0 + 6];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_9.x + a1_9.y) + (a1_9.z + a1_9.w) + bias[n0 + 9];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 6;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_7.x + a1_7.y) + (a1_7.z + a1_7.w) + bias[n0 + 7];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_10.x + a1_10.y) + (a1_10.z + a1_10.w) + bias[n0 + 10];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 7;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_8.x + a1_8.y) + (a1_8.z + a1_8.w) + bias[n0 + 8];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = (a1_11.x + a1_11.y) + (a1_11.z + a1_11.w) + bias[n0 + 11];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 1) * 12 + n0 + 8;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_9.x + a1_9.y) + (a1_9.z + a1_9.w) + bias[n0 + 9];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 9;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_10.x + a1_10.y) + (a1_10.z + a1_10.w) + bias[n0 + 10];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 10;
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    if (ok)
-    {
-        float sum = (a1_11.x + a1_11.y) + (a1_11.z + a1_11.w) + bias[n0 + 11];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 128 + x + 1) * 12 + n0 + 11;
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
