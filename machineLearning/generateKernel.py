@@ -211,9 +211,12 @@ def convBlockX(width, channels, filterSize, filters, perItem):
 # its FMA rate.  When one tap's weights fit in __local the work group loads them
 # once and shares them, which turns that stream into a compute-bound kernel.
 CONV_STAGE_QUADS_MIN = 16   # channels >= 64: a thinner tile is not worth a barrier
+CONV_STAGE_QUADS_NARROW = 4  # channels >= 16, only once the weight stream outgrows the caches
+CONV_STAGE_WEIGHT_MIN = 128 << 20  # weight bytes one call re-reads before staging pays
 CONV_STAGE_TILE_MAX = 2048  # float4 of weights staged per tap (32 KB)
 CONV_STAGE_BLOCK_X = 64
 CONV_STAGE_BLOCK_Y = 2
+CONV_STAGE_GROUP_MIN = 32   # a group this small cannot feed a whole tile
 CONV_STAGE_COLUMNS = 2      # output pixels sharing one staged weight load
 CONV_STAGE_ACCUM_MAX = 32   # float4 accumulators per work item, columns included
 CONV_STAGE_COLUMN_MIN = 64  # narrower images leave the halved x-block short of lanes
@@ -222,18 +225,26 @@ CONV_STAGE_COLUMN_MIN = 64  # narrower images leave the halved x-block short of 
 def stagedConvPlan(width, height, channels, filterSize, filters, perItem):
     """(perItem, groups, blockX, blockY, perThread, columns) for the __local body, or None.
 
-    Only k=3 and a float4-aligned channel count are staged: the tile has to be
+    Only a float4-aligned channel count and k >= 3 are staged: the tile has to be
     shared by enough work items to pay for the two barriers per tap, and the
     per-thread staging slice has to divide evenly (see generateKernelStaged).
+    A narrow tile pays only on a map big enough that the direct body's per-output
+    weight re-reads stop hitting L1, so below CONV_STAGE_QUADS_MIN the plan is
+    gated on that re-read volume instead.
     `perItem` stays the direct body's so the two plans put the same number of
     work items in flight.
     """
-    if filterSize != 3 or channels % 4:
+    if filterSize < 3 or channels % 4:
         return None
     quads = channels // 4
-    if quads < CONV_STAGE_QUADS_MIN:
+    if quads < CONV_STAGE_QUADS_NARROW:
         return None
-    if perItem * quads > CONV_STAGE_TILE_MAX:
+    if (quads < CONV_STAGE_QUADS_MIN
+            and (width * height * filters * filterSize * filterSize * channels * 4
+                 < CONV_STAGE_WEIGHT_MIN)):
+        return None
+    tile = perItem * quads
+    if tile > CONV_STAGE_TILE_MAX:
         return None
     columns = 1
     if (quads >= 2 * CONV_STAGE_QUADS_MIN and width >= CONV_STAGE_COLUMN_MIN
@@ -242,11 +253,15 @@ def stagedConvPlan(width, height, channels, filterSize, filters, perItem):
         columns = CONV_STAGE_COLUMNS
     span = width // columns
     blockX = CONV_STAGE_BLOCK_X if span >= CONV_STAGE_BLOCK_X else -(-span // 32) * 32
-    threads = blockX * CONV_STAGE_BLOCK_Y
-    if (perItem * quads) % threads:
+    blockY = CONV_STAGE_BLOCK_Y
+    while blockY > 1 and tile % (blockX * blockY):
+        blockY //= 2
+    while blockX > CONV_STAGE_GROUP_MIN and tile % (blockX * blockY):
+        blockX //= 2
+    threads = blockX * blockY
+    if tile % threads:
         return None
-    return (perItem, -(-filters // perItem), blockX, CONV_STAGE_BLOCK_Y,
-            (perItem * quads) // threads, columns)
+    return (perItem, -(-filters // perItem), blockX, blockY, tile // threads, columns)
 
 
 def convPlan(width, height, channels, filterSize, filters):
