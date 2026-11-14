@@ -255,6 +255,8 @@ CONV_TILE_COLUMNS = 2       # output pixels sharing one staged weight load
 CONV_TILE_SLICE = 4         # channel quads staged per pass
 CONV_TILE_LOCAL_MAX = 3072  # float4 of __local one block may take (48 KB on this driver)
 CONV_TILE_GROUPS_MIN = 32   # below this the tile's halo re-reads outweigh the shared loads
+CONV_TILE_BLOCKS_MIN = 96   # work groups that fill the device: 3 blocks per SM here
+CONV_TILE_SPLIT_PIXELS = 4096  # below this map size a narrower tile costs more halo than it buys
 
 
 def tiledConvPlan(width, height, channels, filterSize, filters, perItem):
@@ -274,14 +276,22 @@ def tiledConvPlan(width, height, channels, filterSize, filters, perItem):
         return None
     perItem = min(perItem, CONV_MAX_PER_ITEM)
     tilePixels = (CONV_TILE_BLOCK_X * CONV_TILE_COLUMNS + 4) * (CONV_TILE_BLOCK_Y + 2)
+    planeBlocks = (-(-width // (CONV_TILE_COLUMNS * CONV_TILE_BLOCK_X))
+                   * -(-height // CONV_TILE_BLOCK_Y))
+    # A thin filter block leaves too few groups to fill the device; a narrower
+    # one buys waves of parallelism the wider register block cannot pay for.
+    if width * height >= CONV_TILE_SPLIT_PIXELS:
+        for candidate in (CONV_MAX_PER_ITEM // 2, CONV_MIN_PER_ITEM):
+            if perItem <= candidate or planeBlocks * -(-filters // perItem) >= CONV_TILE_BLOCKS_MIN:
+                break
+            perItem = candidate
     sliceQuads = min(CONV_TILE_SLICE, quads)
     while sliceQuads and (tilePixels + perItem * filterSize * filterSize) * sliceQuads > CONV_TILE_LOCAL_MAX:
         sliceQuads //= 2
     if not sliceQuads:
         return None
     groups = -(-filters // perItem)                    # ceil
-    blocks = (-(-width // (CONV_TILE_COLUMNS * CONV_TILE_BLOCK_X))
-              * -(-height // CONV_TILE_BLOCK_Y) * groups)
+    blocks = planeBlocks * groups
     if blocks < CONV_TILE_GROUPS_MIN:
         return None
     return (perItem, groups, CONV_TILE_BLOCK_X, CONV_TILE_BLOCK_Y,
