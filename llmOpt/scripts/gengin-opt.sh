@@ -557,6 +557,14 @@ if [[ "$PRESET" == "openai" && ${#MODEL_ARGS[@]} -gt 0 && -z "${MODEL_ARGS[1]}" 
   exit 2
 fi
 
+# The small-model delegation tool exists only on local runs: the small
+# Qwen2.5-Coder lives on this box next to the local main model, so a call is
+# free. dsh passes GENGIN_* through to the MCP child untouched; Hermes filters
+# the child env, so hermes/config.yaml.template names this variable too.
+if [[ "$PRESET" == "local" ]]; then
+  export GENGIN_SMALL_MODEL_ENABLE=1
+fi
+
 # UI selection: `local` (dsh) is interactive by default -> the dsh TUI. The
 # Web UI is opt-in (--web), the one-shot via --headless; --hermes selects the
 # Hermes TUI. Only one interactive surface per run.

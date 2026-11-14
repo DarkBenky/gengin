@@ -5,7 +5,8 @@ File editing, code search, and terminal work are provided by the driving
 harness (dsh, or the legacy Hermes Agent) — this server only exposes what
 the harness cannot do itself: sandbox lifecycle, make/flame/bench
 orchestration, perf annotation, regression bisection, clangd semantic
-queries, and the cheap advisory quick_ask classifier (Jev decisions).
+queries, the cheap advisory quick_ask classifier (Jev decisions), and
+one-shot delegation to the small local code model.
 """
 
 import json
@@ -26,6 +27,7 @@ import asm_tools as _asm
 import getFunc as _gf
 import main as _main
 import quick_ask as _qa
+import small_model as _sm
 
 # All tools operate on llmOpt/gengin/ — a sandboxed copy of the renderer.
 _gengin_dir = os.path.join(_llmOpt_dir, "gengin")
@@ -781,6 +783,37 @@ def quick_ask(question: str = "", context: str = "",
     return json.dumps(_qa.quick_ask(question, context=context, choices=choices,
                                     yes_no=yes_no, questions=questions),
                       indent=2)
+
+
+if _sm.is_enabled():
+    # Local runs only (`gengin-opt.sh local` exports the flag): on cloud
+    # presets the tool is not registered, so the session sees no stray tool.
+    @mcp.tool()
+    def delegate_to_small_model(task: str, context: str = "",
+                                max_tokens: int = 0) -> str:
+        """Hand ONE narrow, mechanical text job to the small local code model
+        (Qwen2.5-Coder-7B, the same llama-server that serves FIM).
+
+        This tool exists only on local runs (the small model shares this
+        machine with the local main model, so a call is free and fast). The
+        job must be bulk/mechanical: rename, reformat, extract fields, rewrite
+        a snippet, or write one small function body from a spec you already
+        have.
+
+        IT IS A REALLY SMALL, DUMB MODEL: no planning, no repo access, no
+        tools, no reasoning about the system - it only sees `task` +
+        `context`. Its output is often subtly wrong, so give it the exact
+        input text and then diff/compile/test whatever comes back. Never
+        delegate design decisions, review, profiling or anything that needs
+        judgement.
+
+        Returns {"output": ...} (plus finish_reason / tokens / ms, and
+        insufficient_context=true if it asked for more input) or
+        {"error": ...}; finish_reason == "length" means the answer was cut
+        off."""
+        return json.dumps(
+            _sm.delegate(task, context=context, max_tokens=max_tokens),
+            indent=2)
 
 
 if __name__ == "__main__":
