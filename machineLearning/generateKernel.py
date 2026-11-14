@@ -178,8 +178,10 @@ CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
 CONV_WIDE_PIXELS = 16384    # from this map size up a doubled filter block still fills the device
 CONV_MAX_WIDE_PER_ITEM = 32
-CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
-CONV_BLOCK_BUDGET = 16      # accumulators per work item (filters x columns)
+CONV_BLOCK_COLUMNS = 8      # output columns a work item may accumulate
+CONV_BLOCK_BUDGET = 32      # accumulators per work item (filters x columns)
+CONV_BLOCK_LOCAL_X = 32     # work-group shape of the column-blocked body
+CONV_BLOCK_LOCAL_Y = 4
 
 
 def convBlockX(width, channels, filterSize, filters, perItem):
@@ -189,8 +191,9 @@ def convBlockX(width, channels, filterSize, filters, perItem):
     every load on one output, so the weight loads per output stay at `k*k *
     channels` however the filters are blocked.  Accumulating `blockX` adjacent
     columns amortizes one weight load (and the input load beside it) over
-    `blockX` outputs, which at a fixed accumulator budget is the even split
-    between the two.
+    `blockX` outputs.  The columns pay before the filters do: 8 columns x 4
+    filters beats the even 4 x 4 split by 27-30% once the work group is widened
+    to match (see generateC), and 32 accumulators still fit without spilling.
 
     Only the scalar body gets the columns: it keeps one register per
     accumulator, where the float4 body already spends four on each of its
@@ -623,10 +626,14 @@ def generateC(width, height, channels, filterSize, filters=1):
     else:
         # One work item per (output column block, filter group): the kernel's
         # global_id(0) carries `x + (width / blockX) * group` (see generateKernel),
-        # so the grid is `groups` times wider than the image.
-        gx = roundUp((width // blockX) * groups, 16)
-        gy = roundUp(height, 16)
-        localX, localY = 16, 16
+        # so the grid is `groups` times wider than the image.  The blocked body
+        # runs a wide, shallow group: 32 lanes over `width / blockX` block
+        # columns put two filter blocks of one pixel in one warp, and 4 rows
+        # bound the group's footprint in an output whose writes are strided by
+        # `filters` floats (27-30% at 8 columns, 7-25% at 4, over 16x16).
+        localX, localY = (CONV_BLOCK_LOCAL_X, CONV_BLOCK_LOCAL_Y) if blockX > 1 else (16, 16)
+        gx = roundUp((width // blockX) * groups, localX)
+        gy = roundUp(height, localY)
     initBound = (6.0 / (filterSize * filterSize * channels)) ** 0.5
 
     out = []
