@@ -178,8 +178,10 @@ CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
 CONV_WIDE_PIXELS = 16384    # from this map size up a doubled filter block still fills the device
 CONV_MAX_WIDE_PER_ITEM = 32
-CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
-CONV_BLOCK_BUDGET = 16      # accumulators per work item (filters x columns)
+CONV_BLOCK_COLUMNS = 8      # output columns a work item may accumulate
+CONV_BLOCK_BUDGET = 32      # accumulators per work item (filters x columns)
+CONV_BLOCK_LOCAL_X = 32     # work-group shape of the column-blocked body
+CONV_BLOCK_LOCAL_Y = 4
 
 
 def convBlockX(width, channels, filterSize, filters, perItem):
@@ -189,8 +191,9 @@ def convBlockX(width, channels, filterSize, filters, perItem):
     every load on one output, so the weight loads per output stay at `k*k *
     channels` however the filters are blocked.  Accumulating `blockX` adjacent
     columns amortizes one weight load (and the input load beside it) over
-    `blockX` outputs, which at a fixed accumulator budget is the even split
-    between the two.
+    `blockX` outputs.  The columns pay before the filters do: 8 columns x 4
+    filters beats the even 4 x 4 split by 27-30% once the work group is widened
+    to match (see generateC), and 32 accumulators still fit without spilling.
 
     Only the scalar body gets the columns: it keeps one register per
     accumulator, where the float4 body already spends four on each of its
@@ -211,9 +214,12 @@ def convBlockX(width, channels, filterSize, filters, perItem):
 # its FMA rate.  When one tap's weights fit in __local the work group loads them
 # once and shares them, which turns that stream into a compute-bound kernel.
 CONV_STAGE_QUADS_MIN = 16   # channels >= 64: a thinner tile is not worth a barrier
+CONV_STAGE_QUADS_NARROW = 4  # channels >= 16, only once the weight stream outgrows the caches
+CONV_STAGE_WEIGHT_MIN = 128 << 20  # weight bytes one call re-reads before staging pays
 CONV_STAGE_TILE_MAX = 2048  # float4 of weights staged per tap (32 KB)
 CONV_STAGE_BLOCK_X = 64
 CONV_STAGE_BLOCK_Y = 2
+CONV_STAGE_GROUP_MIN = 32   # a group this small cannot feed a whole tile
 CONV_STAGE_COLUMNS = 2      # output pixels sharing one staged weight load
 CONV_STAGE_ACCUM_MAX = 32   # float4 accumulators per work item, columns included
 CONV_STAGE_COLUMN_MIN = 64  # narrower images leave the halved x-block short of lanes
@@ -222,18 +228,26 @@ CONV_STAGE_COLUMN_MIN = 64  # narrower images leave the halved x-block short of 
 def stagedConvPlan(width, height, channels, filterSize, filters, perItem):
     """(perItem, groups, blockX, blockY, perThread, columns) for the __local body, or None.
 
-    Only k=3 and a float4-aligned channel count are staged: the tile has to be
+    Only a float4-aligned channel count and k >= 3 are staged: the tile has to be
     shared by enough work items to pay for the two barriers per tap, and the
     per-thread staging slice has to divide evenly (see generateKernelStaged).
+    A narrow tile pays only on a map big enough that the direct body's per-output
+    weight re-reads stop hitting L1, so below CONV_STAGE_QUADS_MIN the plan is
+    gated on that re-read volume instead.
     `perItem` stays the direct body's so the two plans put the same number of
     work items in flight.
     """
-    if filterSize != 3 or channels % 4:
+    if filterSize < 3 or channels % 4:
         return None
     quads = channels // 4
-    if quads < CONV_STAGE_QUADS_MIN:
+    if quads < CONV_STAGE_QUADS_NARROW:
         return None
-    if perItem * quads > CONV_STAGE_TILE_MAX:
+    if (quads < CONV_STAGE_QUADS_MIN
+            and (width * height * filters * filterSize * filterSize * channels * 4
+                 < CONV_STAGE_WEIGHT_MIN)):
+        return None
+    tile = perItem * quads
+    if tile > CONV_STAGE_TILE_MAX:
         return None
     columns = 1
     if (quads >= 2 * CONV_STAGE_QUADS_MIN and width >= CONV_STAGE_COLUMN_MIN
@@ -242,11 +256,64 @@ def stagedConvPlan(width, height, channels, filterSize, filters, perItem):
         columns = CONV_STAGE_COLUMNS
     span = width // columns
     blockX = CONV_STAGE_BLOCK_X if span >= CONV_STAGE_BLOCK_X else -(-span // 32) * 32
-    threads = blockX * CONV_STAGE_BLOCK_Y
-    if (perItem * quads) % threads:
+    blockY = CONV_STAGE_BLOCK_Y
+    while blockY > 1 and tile % (blockX * blockY):
+        blockY //= 2
+    while blockX > CONV_STAGE_GROUP_MIN and tile % (blockX * blockY):
+        blockX //= 2
+    threads = blockX * blockY
+    if tile % threads:
         return None
-    return (perItem, -(-filters // perItem), blockX, CONV_STAGE_BLOCK_Y,
-            (perItem * quads) // threads, columns)
+    return (perItem, -(-filters // perItem), blockX, blockY, tile // threads, columns)
+
+
+CONV_TILE_BLOCK_X = 16
+CONV_TILE_BLOCK_Y = 8       # 16x8 = 128 lanes, the narrowest group that fills an SM
+CONV_TILE_COLUMNS = 2       # output pixels sharing one staged weight load
+CONV_TILE_SLICE = 4         # channel quads staged per pass
+CONV_TILE_LOCAL_MAX = 3072  # float4 of __local one block may take (48 KB on this driver)
+CONV_TILE_GROUPS_MIN = 32   # below this the tile's halo re-reads outweigh the shared loads
+CONV_TILE_BLOCKS_MIN = 96   # work groups that fill the device: 3 blocks per SM here
+CONV_TILE_SPLIT_PIXELS = 4096  # below this map size a narrower tile costs more halo than it buys
+
+
+def tiledConvPlan(width, height, channels, filterSize, filters, perItem):
+    """(perItem, groups, blockX, blockY, columns, sliceQuads, tilePixels) for the tiled body, or None.
+
+    Staging the input quad-major is what makes a warp's input reads run along
+    pixels instead of down a `channels`-float stride; both tiles then have to
+    fit in one block's __local, which caps the slice, and the tile's halo caps
+    how few work groups are still worth having.
+    """
+    if filterSize != 3 or channels % 4:
+        return None
+    quads = channels // 4
+    if quads < CONV_STAGE_QUADS_MIN:
+        return None
+    if width % CONV_TILE_COLUMNS or width < CONV_TILE_COLUMNS * CONV_TILE_BLOCK_X:
+        return None
+    perItem = min(perItem, CONV_MAX_PER_ITEM)
+    tilePixels = (CONV_TILE_BLOCK_X * CONV_TILE_COLUMNS + 4) * (CONV_TILE_BLOCK_Y + 2)
+    planeBlocks = (-(-width // (CONV_TILE_COLUMNS * CONV_TILE_BLOCK_X))
+                   * -(-height // CONV_TILE_BLOCK_Y))
+    # A thin filter block leaves too few groups to fill the device; a narrower
+    # one buys waves of parallelism the wider register block cannot pay for.
+    if width * height >= CONV_TILE_SPLIT_PIXELS:
+        for candidate in (CONV_MAX_PER_ITEM // 2, CONV_MIN_PER_ITEM):
+            if perItem <= candidate or planeBlocks * -(-filters // perItem) >= CONV_TILE_BLOCKS_MIN:
+                break
+            perItem = candidate
+    sliceQuads = min(CONV_TILE_SLICE, quads)
+    while sliceQuads and (tilePixels + perItem * filterSize * filterSize) * sliceQuads > CONV_TILE_LOCAL_MAX:
+        sliceQuads //= 2
+    if not sliceQuads:
+        return None
+    groups = -(-filters // perItem)                    # ceil
+    blocks = planeBlocks * groups
+    if blocks < CONV_TILE_GROUPS_MIN:
+        return None
+    return (perItem, groups, CONV_TILE_BLOCK_X, CONV_TILE_BLOCK_Y,
+            CONV_TILE_COLUMNS, sliceQuads, tilePixels)
 
 
 def convPlan(width, height, channels, filterSize, filters):
@@ -388,6 +455,163 @@ def generateKernelStaged(width, height, channels, filterSize, filters, perItem,
             out.append("    barrier(CLK_LOCAL_MEM_FENCE);")
             out.append("")
 
+    pack = 4 if (filters % 4) == 0 and (perItem % 4) == 0 else 1
+
+    for p in range(columns):
+        storeX = "x" if p == 0 else f"x + {p}"
+        for first in range(0, perItem, pack):
+            cond = "ok" if wholeGroup else f"ok && n0 + {first} < {filters}"
+            out.append(f"    if ({cond})")
+            out.append("    {")
+            inner = "        "
+            if pack > 1:
+                out.append(f"{inner}float4 value4 = (float4)(0.0f);")
+                out.append("")
+            for b in range(first, first + pack):
+                if pack > 1:
+                    out.append(f"{inner}{{")
+                    line = inner + "    "
+                else:
+                    line = inner
+                acc = accName(p, b)
+                out.append(f"{line}float sum = ({acc}.x + {acc}.y) + ({acc}.z + {acc}.w) + bias[n0 + {b}];")
+                out.append("")
+                out.append(f"{line}float value = sum;")
+                out.append(f"{line}switch (activation)")
+                out.append(f"{line}{{")
+                out.append(f"{line}    case ReLU:    value = max(sum, 0.0f); break;")
+                out.append(f"{line}    case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;")
+                out.append(f"{line}    case Tanh:    value = tanh(sum); break;")
+                out.append(f"{line}    case None:    value = sum; break;")
+                out.append(f"{line}}}")
+                out.append("")
+                if pack > 1:
+                    out.append(f"{line}value4.s{b - first} = value;")
+                    out.append(f"{inner}}}")
+                    out.append("")
+                else:
+                    out.append(f"{line}const int idx = (y * {width} + {storeX}) * {filters} + n0 + {b};")
+                    out.append(f"{line}output[idx] = accumulate ? output[idx] + value : value;")
+            if pack > 1:
+                out.append(f"{inner}const int idx = (y * {width} + {storeX}) * {filters} + n0 + {first};")
+                out.append(f"{inner}*(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;")
+            out.append("    }")
+            out.append("")
+
+    out.append("}")
+    return "\n".join(out) + "\n"
+
+
+def generateKernelTiled(width, height, channels, filterSize, filters, perItem, groups,
+                        blockX, blockY, columns, sliceQuads, tilePixels):
+    """Conv body with an input slice and the filter block staged in __local.
+
+    Like the staged body, but the input tile is staged quad-major and read back
+    with the lanes running along pixels, and the weights are staged once per
+    slice instead of once per tap.
+    """
+    pad = filterSize // 2
+    taps = filterSize * filterSize
+    planeStride = filterSize * channels
+    filterStride = filterSize * filterSize * channels
+    quads = channels // 4
+    name = kernelName(width, height, channels, filterSize, filters)
+    tileWidth = blockX * columns + 4
+    blockXCount = -(-width // (blockX * columns))
+    threads = blockX * blockY
+    slices = quads // sliceQuads
+    weightTile = perItem * sliceQuads * taps
+    wholeGroup = perItem * groups == filters
+
+    def accName(p, b):
+        return f"a{b}" if columns == 1 else f"a{p}_{b}"
+
+    out = []
+    out.append("// ---------------------------------------------------------------------------")
+    out.append(f"// {name} -- generated by generateKernel.py (kernelGen v2, do not edit by hand)")
+    out.append(f"// width={width} height={height} channels={channels} filterSize={filterSize} filters={filters}")
+    out.append(f"// dims: in {width}x{height}x{channels} -> out {width}x{height}x{filters} (output channels = {filters}) | weights [{filters}][{filterSize}][{filterSize}][{channels}] | bias [{filters}]")
+    out.append(f"// plan: {perItem} filter(s) in registers, {blockX}x{blockY} work group, "
+               f"{sliceQuads}-quad input + weight slices in __local, {slices} slice(s), "
+               f"{blockXCount} x-block(s) x {groups} filter groups")
+    out.append("// params: input, filterWeights, bias, output, activation, accumulate")
+    out.append("// ---------------------------------------------------------------------------")
+    out.append(f"__kernel void {name}(")
+    out.append("    __global const float* input,")
+    out.append("    __global const float* filterWeights,")
+    out.append("    __global const float* bias,")
+    out.append("    __global float* output,")
+    out.append("    const int activation,")
+    out.append("    const int accumulate)")
+    out.append("{")
+    out.append(f"    const int bx = get_group_id(0) % {blockXCount};")
+    out.append(f"    const int n0 = (get_group_id(0) / {blockXCount}) * {perItem};")
+    out.append(f"    const int y0 = get_group_id(1) * {blockY};")
+    out.append("    const int tx = get_local_id(0);")
+    out.append("    const int ty = get_local_id(1);")
+    out.append(f"    const int tid = ty * {blockX} + tx;")
+    out.append(f"    const int x0 = bx * {blockX * columns};")
+    out.append(f"    const int x = x0 + tx * {columns};")
+    out.append("    const int y = y0 + ty;")
+    out.append(f"    const int ok = (x < {width} && y < {height});")
+    out.append("")
+    out.append(f"    __local float4 inputLocal[{sliceQuads * tilePixels}];")
+    out.append(f"    __local float4 weightsLocal[{weightTile}];")
+    out.append("")
+    for p in range(columns):
+        for b in range(perItem):
+            out.append(f"    float4 {accName(p, b)} = (float4)(0.0f);")
+    out.append("")
+    out.append(f"    for (int s = 0; s < {slices}; s++)")
+    out.append("    {")
+    out.append(f"        for (int i = tid; i < {sliceQuads * tilePixels}; i += {threads})")
+    out.append("        {")
+    out.append(f"            const int q = i / {tilePixels};")
+    out.append(f"            const int p = i - q * {tilePixels};")
+    out.append(f"            const int col = p % {tileWidth};")
+    out.append(f"            const int row = p / {tileWidth};")
+    out.append("            const int gx = x0 - 1 + col;")
+    out.append("            const int gy = y0 - 1 + row;")
+    out.append(f"            inputLocal[i] = (gx >= 0 && gx < {width} && gy >= 0 && gy < {height})")
+    out.append(f"                ? *(__global const float4*)(input + (gy * {width} + gx) * {channels}"
+               f" + 4 * (s * {sliceQuads} + q))")
+    out.append("                : (float4)(0.0f);")
+    out.append("        }")
+    out.append(f"        for (int i = tid; i < {weightTile}; i += {threads})")
+    out.append("        {")
+    out.append(f"            const int tap = i / {perItem * sliceQuads};")
+    out.append(f"            const int r = i - tap * {perItem * sliceQuads};")
+    out.append(f"            const int f = r / {sliceQuads};")
+    out.append(f"            const int q = r - f * {sliceQuads};")
+    load = (f"*(__global const float4*)(filterWeights + (n0 + f) * {filterStride}"
+            f" + (tap / {filterSize}) * {planeStride} + (tap % {filterSize}) * {channels}"
+            f" + 4 * (s * {sliceQuads} + q))")
+    if not wholeGroup:
+        load = f"(n0 + f < {filters}) ? {load} : (float4)(0.0f)"
+    out.append(f"            weightsLocal[i] = {load};")
+    out.append("        }")
+    out.append("        barrier(CLK_LOCAL_MEM_FENCE);")
+    out.append("")
+    for j in range(filterSize):
+        dy = j - pad
+        for i in range(filterSize):
+            dx = i - pad
+            tap = j * filterSize + i
+            out.append(f"        // tap ({j}, {i})")
+            out.append(f"        {{ const int pTap = (ty + {1 + dy}) * {tileWidth} + tx * {columns} + {1 + dx};")
+            out.append(f"        for (int q = 0; q < {sliceQuads}; q++)")
+            out.append("        {")
+            for p in range(columns):
+                out.append(f"            const float4 v{p} = inputLocal[q * {tilePixels} + pTap + {p}];")
+            for b in range(perItem):
+                for p in range(columns):
+                    out.append(f"            {accName(p, b)} += v{p} * weightsLocal[{(tap * perItem + b) * sliceQuads} + q];")
+            out.append("        }")
+            out.append("        }")
+            out.append("")
+    out.append("        barrier(CLK_LOCAL_MEM_FENCE);")
+    out.append("    }")
+    out.append("")
     for p in range(columns):
         storeX = "x" if p == 0 else f"x + {p}"
         for b in range(perItem):
@@ -410,7 +634,6 @@ def generateKernelStaged(width, height, channels, filterSize, filters, perItem,
             out.append(f"{inner}const int idx = (y * {width} + {storeX}) * {filters} + n0 + {b};")
             out.append(f"{inner}output[idx] = accumulate ? output[idx] + value : value;")
             out.append("    }")
-            out.append("")
 
     out.append("}")
     return "\n".join(out) + "\n"
@@ -421,6 +644,9 @@ def generateKernel(width, height, channels, filterSize, filters=1):
         raise ValueError("width, height, channels, filterSize and filters must be >= 1")
 
     perItem = convPlan(width, height, channels, filterSize, filters)[1]
+    tiled = tiledConvPlan(width, height, channels, filterSize, filters, perItem)
+    if tiled:
+        return generateKernelTiled(width, height, channels, filterSize, filters, *tiled)
     staged = stagedConvPlan(width, height, channels, filterSize, filters, perItem)
     if staged:
         return generateKernelStaged(width, height, channels, filterSize, filters, *staged)
@@ -612,7 +838,13 @@ def generateC(width, height, channels, filterSize, filters=1):
     name = kernelName(width, height, channels, filterSize, filters)
     groups, perItem, blockX, _vec, _quads = convPlan(width, height, channels, filterSize, filters)
     staged = stagedConvPlan(width, height, channels, filterSize, filters, perItem)
-    if staged:
+    tiled = tiledConvPlan(width, height, channels, filterSize, filters, perItem)
+    if tiled:
+        groups, blockX, blockY, columns = tiled[1], tiled[2], tiled[3], tiled[4]
+        gx = -(-width // (columns * blockX)) * groups * blockX
+        gy = roundUp(height, blockY)
+        localX, localY = blockX, blockY
+    elif staged:
         groups, blockX, blockY, columns = staged[1], staged[2], staged[3], staged[5]
         # The kernel reads its filter group from get_group_id(0) and covers
         # blockX work items of `columns` x-values each per group, so the grid is
@@ -623,10 +855,14 @@ def generateC(width, height, channels, filterSize, filters=1):
     else:
         # One work item per (output column block, filter group): the kernel's
         # global_id(0) carries `x + (width / blockX) * group` (see generateKernel),
-        # so the grid is `groups` times wider than the image.
-        gx = roundUp((width // blockX) * groups, 16)
-        gy = roundUp(height, 16)
-        localX, localY = 16, 16
+        # so the grid is `groups` times wider than the image.  The blocked body
+        # runs a wide, shallow group: 32 lanes over `width / blockX` block
+        # columns put two filter blocks of one pixel in one warp, and 4 rows
+        # bound the group's footprint in an output whose writes are strided by
+        # `filters` floats (27-30% at 8 columns, 7-25% at 4, over 16x16).
+        localX, localY = (CONV_BLOCK_LOCAL_X, CONV_BLOCK_LOCAL_Y) if blockX > 1 else (16, 16)
+        gx = roundUp((width // blockX) * groups, localX)
+        gy = roundUp(height, localY)
     initBound = (6.0 / (filterSize * filterSize * channels)) ** 0.5
 
     out = []
