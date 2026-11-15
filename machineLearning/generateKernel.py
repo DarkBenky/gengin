@@ -503,25 +503,34 @@ def generateKernel(width, height, channels, filterSize, filters=1):
 
     for j in range(filterSize):
         dy = j - pad
+        # Every tap of a row shares its row guard, so one branch covers the
+        # whole row instead of one per (tap, column).
+        rowGuard = tapGuard(dy, 0, width, height)
+        rowInd = body + "    "
+        if rowGuard:
+            out.append(f"{body}if ({rowGuard})")
+            out.append(f"{body}{{")
+        else:
+            rowInd = body
         for i in range(filterSize):
             dx = i - pad
             yTerm = offsetTerm("y", dy)
             filterBase = j * planeStride + i * channels
 
-            out.append(f"{body}// tap ({j}, {i})")
+            out.append(f"{rowInd}// tap ({j}, {i})")
             for p in range(blockX):
                 # column p owns output x + p, so this tap lands on x + p + dx
                 col = p + dx
                 base = f"base_{j}_{i}" if blockX == 1 else f"base_{j}_{i}_{p}"
-                guard = tapGuard(dy, col, width, height)
+                guard = tapGuard(0, col, width, height)
                 xTerm = offsetTerm("x", col)
-                inner = body
+                inner = rowInd
                 if guard:
-                    out.append(f"{body}if ({guard})")
+                    out.append(f"{rowInd}if ({guard})")
                 if guard or blockX > 1:
                     # sibling column blocks need their own scope for v{q}
-                    out.append(f"{body}{{")
-                    inner = body + "    "
+                    out.append(f"{rowInd}{{")
+                    inner = rowInd + "    "
                 out.append(f"{inner}const int {base} = {yTerm} * {rowStride} + {xTerm} * {channels};")
                 if vec:
                     for q in range(quads):
@@ -536,8 +545,13 @@ def generateKernel(width, height, channels, filterSize, filters=1):
                         for b in range(perItem):
                             out.append(f"{inner}{accName(p, b)} += v{k} * filterWeights[{wIndex(b, filterBase + k)}];")
                 if guard or blockX > 1:
-                    out.append(f"{body}}}")
+                    out.append(f"{rowInd}}}")
                 out.append("")
+        if rowGuard:
+            if out[-1] == "":
+                out.pop()
+            out.append(f"{body}}}")
+            out.append("")
 
     # Lane neighbours own separate pixels, so a scalar store wastes a sector
     # each; the filter block is contiguous, so four values go out as one float4.
