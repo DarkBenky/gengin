@@ -45,6 +45,13 @@ typedef struct float3 {
 	float w; // padding for alignment
 } float3;
 
+typedef struct float3_no_pad {
+	float x;
+	float y;
+	float z;
+	float w; // padding for alignment
+} float3_no_pad;
+
 typedef struct float2 {
 	float x;
 	float y;
