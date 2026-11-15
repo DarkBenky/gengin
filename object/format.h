@@ -169,4 +169,20 @@ static inline bool HasPrefix(const char *str, const char *prefix) {
     return strncmp(str, prefix, strlen(prefix)) == 0;
 }
 
+// WrapIndex(-1, 4) -> 3
+static inline int WrapIndex(int pos, int count) {
+    return pos < 0 ? pos + count : pos;
+}
+
+// SetBit(0b1000, 2, true) -> 0b1100
+static inline uint32 SetBit(uint32 in, int pos, bool val) {
+    uint32 mask = 1u << WrapIndex(pos, 32);
+    return val ? (in | mask) : (in & ~mask);
+}
+
+// GetBit(0b1100, 2) -> true
+static inline bool GetBit(uint32 in, int pos) {
+    return (in >> WrapIndex(pos, 32)) & 1u;
+}
+
 #endif // FORMAT_H

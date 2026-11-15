@@ -12,11 +12,11 @@ import struct
 
 import binlib
 
-# v3 header: magic, version, fileSize, resolution; the payload is always six faces
-FACE_MAGIC = 0x334D4546
-FACE_VERSION = 3
-FACE_HEADER = 16
+# header: fileSize, resolution; the payload is always six faces
+FACE_HEADER = 8
 FACE_COUNT = 6
+FACE_COMPONENTS = 3
+FACE_STRIDE = 4  # float3 carries a pad float, so a cell is 16 bytes on disk
 
 # (name, uAxis, vAxis, wAxis, side) matching the faces table in CalculateFaceEmissions
 FACES = (
@@ -165,7 +165,7 @@ def writeGrids(path, grids):
 
 
 def faceHeader(fileSize, resolution):
-    return struct.pack("<4I", FACE_MAGIC, FACE_VERSION, fileSize, resolution)
+    return struct.pack("<2I", fileSize, resolution)
 
 
 def writeFaceBin(path, grids, resolution):
@@ -174,7 +174,7 @@ def writeFaceBin(path, grids, resolution):
     for cells in grids.values():
         for row in cells:
             for cell in row:
-                body += struct.pack("<3f", cell[0], cell[1], cell[2])
+                body += struct.pack("<4f", cell[0], cell[1], cell[2], 0.0)
     total = FACE_HEADER + len(body)
     with open(path, "wb") as handle:
         handle.write(faceHeader(total, resolution))
@@ -187,18 +187,14 @@ def readFaceBin(path):
     data = binlib.readFile(path)
     if len(data) < FACE_HEADER:
         raise binlib.BinError("not a face map file: only {} bytes".format(len(data)))
-    magic, version, total, resolution = struct.unpack_from("<4I", data, 0)
-    if magic != FACE_MAGIC:
-        raise binlib.BinError("not a face map file: bad magic 0x{:08x}".format(magic))
-    if version != FACE_VERSION:
-        raise binlib.BinError("unsupported face map version {}".format(version))
-    components = 3
-    expected = FACE_HEADER + FACE_COUNT * resolution * resolution * components * 4
+    total, resolution = struct.unpack_from("<2I", data, 0)
+    components = FACE_COMPONENTS
+    expected = FACE_HEADER + FACE_COUNT * resolution * resolution * FACE_STRIDE * 4
     if total != expected or len(data) != expected:
         raise binlib.BinError("truncated or corrupt face map: header says {} bytes, expected {}".format(
             total, expected))
-    count = FACE_COUNT * resolution * resolution * components
+    count = FACE_COUNT * resolution * resolution * FACE_STRIDE
     values = struct.unpack_from("<{}f".format(count), data, FACE_HEADER)
     header = {"resolution": resolution, "faceCount": FACE_COUNT, "components": components,
-              "fileSize": total, "version": version}
+              "stride": FACE_STRIDE, "fileSize": total}
     return header, values

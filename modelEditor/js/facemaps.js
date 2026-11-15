@@ -17,9 +17,7 @@ const FaceMaps = {
 	defaultResolution: 16,
 	minResolution: 2,
 	maxResolution: 256,
-	headerSize: 16,
-	version: 3,
-	magic: 0x334D4546, // 'FEM3'
+	headerSize: 8,
 };
 
 function modelBounds(model) {
@@ -148,19 +146,17 @@ function buildFaceGrids(model, emissionRgb, resolution, onProgress) {
 	});
 }
 
-// writeFaceHeader fills the 16 byte header: magic, version, fileSize, resolution
+// writeFaceHeader fills the 8 byte header: fileSize, resolution
 function writeFaceHeader(view, fileSize, resolution) {
-	view.setUint32(0, FaceMaps.magic, true);
-	view.setUint32(4, FaceMaps.version, true);
-	view.setUint32(8, fileSize, true);
-	view.setUint32(12, resolution, true);
+	view.setUint32(0, fileSize, true);
+	view.setUint32(4, resolution, true);
 }
 
 // writeFaceMap writes the six faces into one file: header, then face, row (top first), cell RGB
 // as float32, so a loader copies each face straight into an EmissionMap
 function writeFaceMap(grids) {
 	const resolution = grids.resolution;
-	const floatsPerFace = resolution * resolution * 3;
+	const floatsPerFace = resolution * resolution * 4; // float3 pads to 16 bytes
 	const total = FaceMaps.headerSize + grids.faces.length * floatsPerFace * 4;
 	const bytes = new Uint8Array(total);
 	const view = new DataView(bytes.buffer);
@@ -172,7 +168,7 @@ function writeFaceMap(grids) {
 				view.setFloat32(offset, cell[0], true);
 				view.setFloat32(offset + 4, cell[1], true);
 				view.setFloat32(offset + 8, cell[2], true);
-				offset += 12;
+				offset += 16; // pad float stays zero because bytes is zero filled
 			});
 		});
 	});

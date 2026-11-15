@@ -7,6 +7,7 @@
 #include "../render/color/color.h"
 #include "../util/json.h"
 
+// TODO: **Important** Update for support of FaceMap
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	if (filename == NULL || obj == NULL) {
 		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
@@ -172,10 +173,10 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 
 	// Binary layout:
 	// Header (20 bytes):
-	//   fileSize           uint32
+	//   fileSize           uint32  — File size ignores FaceMap
 	//   triangleStructSize uint32  — 108 bytes
 	//   triangleCount      uint32
-	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces
+	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces, bit2: has emission map
 	//   textureSize        uint32  — texture edge length
 	//
 	// Texture data (if hasTextures):
@@ -188,14 +189,25 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	//   roughness metallic emission                    = 12
 	//   color float3 padded                            = 16
 	//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
+	//
+	// Face Map Layout if hasEmissionMap:
+	//  FileSizeEmissionMap 	uint32
+	//  SizeOfTexture 			uint32 —  based on the EMISSION_RESOLUTION defined in object.h
+	//  FrontTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  BackTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  RightTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  LeftTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  TopTexture   			float3 *SizeOfTexture * SizeOfTexture
+	//  BottomTexture 			float3 *SizeOfTexture * SizeOfTexture
 
 	const uint32 triangleStructSize = 108;
 
 	uint32 triangleCount = obj->triangleCount;
-	uint32 hasTextures = obj->hasTexture ? 1 : 0;
+	uint32 hasTextures = SetBit(0, 0, obj->hasTexture);
 	bool cullBackfaces = obj->cullBackfaces;
 	uint32 textureSize = 4096; // default texture size
 	uint32 textureBytes = 0;
+	bool hasEmissionMap = obj->hasEmission ? 1 : 0;
 
 	if (hasTextures) {
 		Material mat = lib->entries[obj->materialIds[0]];
@@ -205,7 +217,8 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	}
 
 	uint32 fileSize = 20 + triangleCount * triangleStructSize + (hasTextures ? textureBytes : 0);
-	hasTextures |= (cullBackfaces ? 2 : 0);
+	hasTextures = SetBit(hasTextures, 1, cullBackfaces);
+	hasTextures = SetBit(hasTextures, 2, hasEmissionMap);
 
 	fwrite(&fileSize, sizeof(uint32), 1, file);
 	fwrite(&triangleStructSize, sizeof(uint32), 1, file);
@@ -255,10 +268,26 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		fwrite(&uv->uv3y, sizeof(uint16), 1, file);
 		fwrite(zeroPad, sizeof(char), 4, file); // 4-byte pad after UV block
 	}
+
+	if (hasEmissionMap) {
+		// uint32 FileSize + uint32 SizeOfTexture + 6 * SizeOfTexture * SizeOfTexture * sizeof(float3_no_pad)
+		uint32 fileSizeFaceMap = sizeof(uint32) * 2 + EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3) * 6;
+		uint32 sizeOfTexture = EMISSION_RESOLUTION;
+
+		fwrite(&fileSizeFaceMap, sizeof(uint32), 1, file);
+		fwrite(&sizeOfTexture, sizeof(uint32), 1, file);
+
+		fwrite(obj->frontFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->backFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->rightFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->leftFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->topFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->bottomFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+	}
+
 	fclose(file);
 	return Error_Ok();
 };
-
 
 // TODO: **Important** Implement the function to save a scene to a JSON file
 Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
@@ -274,7 +303,7 @@ Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
 		} else {
 			addJsonField(objJson, "type", "object", JSON_TYPE_STRING);
 		}
-		
+
 		if (isShape) {
 			// extract the shape type from the ObjectPathOrType string
 			char shapeType[64] = {0};
@@ -291,10 +320,10 @@ Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
 		}
 
 		// Save position, rotation, scale, color as arrays
-		char *posArray = newJsonNumberArray((float *)&obj->position, 3); 
+		char *posArray = newJsonNumberArray((float *)&obj->position, 3);
 		char *rotArray = newJsonNumberArray((float *)&obj->rotation, 3);
 		char *scaleArray = newJsonNumberArray((float *)&obj->scale, 3);
-		float3 color = UnpackColor(obj->_temp); 
+		float3 color = UnpackColor(obj->_temp);
 		char *colorArray = newJsonNumberArray(&color.x, 3);
 
 		addJsonField(objJson, "position", posArray, JSON_TYPE_ARRAY);
