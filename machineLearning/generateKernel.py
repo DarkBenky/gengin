@@ -1288,6 +1288,20 @@ def pixelShufflePlan(channels):
     return channels // 4 if channels % 4 == 0 else 1
 
 
+def outputQuadItems(outFloats):
+    """Work items when each stores four consecutive output floats, or 0.
+
+    A channels-last body that steps one channel at a time writes `channels`
+    scalars per pixel, which is a partial sector per lane whenever the channel
+    count is not a multiple of four.  Four consecutive output floats are
+    contiguous whatever the channel count, so one item can own a whole float4.
+    """
+    return outFloats // 4 if outFloats % 4 == 0 else 0
+
+
+STORE_QUAD_GROUP = 128   # work items per group in the float4-store output form
+
+
 def generateKernelPixelShuffle(width, height, channels, upscale):
     """torch.nn.PixelShuffle(upscale): (H,W,C*r^2) -> (H*r,W*r,C), channels-last.
 
@@ -1303,6 +1317,8 @@ def generateKernelPixelShuffle(width, height, channels, upscale):
     name = pixelShuffleKernelName(width, height, channels, upscale)
     vec = (channels % 4) == 0
     groups = pixelShufflePlan(channels)
+    outFloats = outW * outH * channels
+    quads = 0 if vec else outputQuadItems(outFloats)
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
@@ -1312,6 +1328,8 @@ def generateKernelPixelShuffle(width, height, channels, upscale):
     out.append(f"// out[y*{upscale} + i][x*{upscale} + j][c] = in[y][x][c*{upscale * upscale} + i*{upscale} + j]")
     if vec:
         out.append(f"// plan: {groups} channel group(s) over global_id(0), float4 stores")
+    elif quads:
+        out.append(f"// plan: {quads} output float4(s) over global_id(0)")
     out.append("// params: input, output")
     out.append("// ---------------------------------------------------------------------------")
     out.append(f"__kernel void {name}(")
@@ -1335,6 +1353,24 @@ def generateKernelPixelShuffle(width, height, channels, upscale):
             offset = "" if c == 0 else f" + {c * upscale * upscale}"
             out.append(f"    v.{'xyzw'[c]} = input[src{offset}];")
         out.append("    *(__global float4*)(output + dst) = v;")
+    elif quads:
+        rowFloats = outW * channels
+        out.append("    const int f0 = get_global_id(0) * 4;")
+        out.append(f"    if (f0 >= {outFloats}) return;")
+        out.append("")
+        out.append("    float4 v;")
+        for j, comp in enumerate("xyzw"):
+            out.append("    {")
+            out.append(f"        const int f = f0{'' if j == 0 else f' + {j}'};")
+            out.append(f"        const int y = f / {rowFloats};")
+            out.append(f"        const int x = f / {channels} - y * {outW};")
+            out.append(f"        const int sub = (y % {upscale}) * {upscale} + (x % {upscale});")
+            out.append(f"        const int src = ((y / {upscale}) * {width} + (x / {upscale})) * {inChannels}"
+                       f" + sub + (f - (y * {outW} + x) * {channels}) * {upscale * upscale};")
+            out.append(f"        v.{comp} = input[src];")
+            out.append("    }")
+        out.append("")
+        out.append("    *(__global float4*)(output + f0) = v;")
     else:
         out.append("    const int x = get_global_id(0);")
         out.append("    const int y = get_global_id(1);")
@@ -1357,8 +1393,15 @@ def generateCPixelShuffle(width, height, channels, upscale):
     outH = height * upscale
     inChannels = channels * upscale * upscale
     groups = pixelShufflePlan(channels)
-    gx = roundUp(outW * groups, 16)
-    gy = roundUp(outH, 16)
+    quads = 0 if channels % 4 == 0 else outputQuadItems(outW * outH * channels)
+    if quads:
+        gx = roundUp(quads, STORE_QUAD_GROUP)
+        gy = 1
+        localX, localY = STORE_QUAD_GROUP, 1
+    else:
+        gx = roundUp(outW * groups, 16)
+        gy = roundUp(outH, 16)
+        localX, localY = 16, 16
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
@@ -1397,8 +1440,8 @@ def generateCPixelShuffle(width, height, channels, upscale):
     out.append(f"\tlayer.upscale = {upscale};")
     out.append(f"\tlayer.outWidth = {outW};")
     out.append(f"\tlayer.outHeight = {outH};")
-    out.append("\tlayer.localX = 16;")
-    out.append("\tlayer.localY = 16;")
+    out.append(f"\tlayer.localX = {localX};")
+    out.append(f"\tlayer.localY = {localY};")
     out.append("")
     out.append(f'\tlayer.pip = CL_Pipeline_FromFile(ctx, clPath, "{name}", NULL);')
     out.append("\tif (layer.pip.kernel == NULL) {")
@@ -1459,12 +1502,16 @@ def generateKernelBilinear(width, height, channels, upscale):
     outW = width * upscale
     outH = height * upscale
     name = bilinearKernelName(width, height, channels, upscale)
+    outFloats = outW * outH * channels
+    quads = outputQuadItems(outFloats)
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
     out.append(f"// {name} -- generated by generateKernel.py (do not edit by hand)")
     out.append(f"// width={width} height={height} channels={channels} upscale={upscale} -> {outW}x{outH}")
     out.append(f"// dims: in {width}x{height}x{channels} -> out {outW}x{outH}x{channels} (bilinear x{upscale}, align_corners=false, channels-last)")
+    if quads:
+        out.append(f"// plan: {quads} output float4(s) over global_id(0)")
     out.append("// params: input, output, accumulate")
     out.append("// ---------------------------------------------------------------------------")
     out.append(f"__kernel void {name}(")
@@ -1472,6 +1519,45 @@ def generateKernelBilinear(width, height, channels, upscale):
     out.append("    __global float* output,")
     out.append("    const int accumulate)")
     out.append("{")
+    if quads:
+        rowFloats = outW * channels
+        rowStride = width * channels
+        out.append("    const int f0 = get_global_id(0) * 4;")
+        out.append(f"    if (f0 >= {outFloats}) return;")
+        out.append("")
+        out.append("    float4 v;")
+        for j, comp in enumerate("xyzw"):
+            out.append("    {")
+            out.append(f"        const int f = f0{'' if j == 0 else f' + {j}'};")
+            out.append(f"        const int y = f / {rowFloats};")
+            out.append(f"        const int x = f / {channels} - y * {outW};")
+            out.append(f"        const int c = f - (y * {outW} + x) * {channels};")
+            out.append(f"        const float sx = max((x + 0.5f) / {upscale} - 0.5f, 0.0f);")
+            out.append(f"        const float sy = max((y + 0.5f) / {upscale} - 0.5f, 0.0f);")
+            out.append("        const int x0 = (int)sx;")
+            out.append("        const int y0 = (int)sy;")
+            out.append(f"        const int x1 = (x0 + 1 < {width}) ? (x0 + 1) : x0;")
+            out.append(f"        const int y1 = (y0 + 1 < {height}) ? (y0 + 1) : y0;")
+            out.append("        const float tx = sx - (float)x0;")
+            out.append("        const float ty = sy - (float)y0;")
+            out.append("")
+            out.append(f"        const int row0 = y0 * {rowStride};")
+            out.append(f"        const int row1 = y1 * {rowStride};")
+            out.append(f"        const int col0 = x0 * {channels};")
+            out.append(f"        const int col1 = x1 * {channels};")
+            out.append("        const float v00 = input[row0 + col0 + c];")
+            out.append("        const float v01 = input[row0 + col1 + c];")
+            out.append("        const float v10 = input[row1 + col0 + c];")
+            out.append("        const float v11 = input[row1 + col1 + c];")
+            out.append("        const float top = v00 + (v01 - v00) * tx;")
+            out.append("        const float bottom = v10 + (v11 - v10) * tx;")
+            out.append(f"        v.{comp} = top + (bottom - top) * ty;")
+            out.append("    }")
+        out.append("")
+        out.append("    *(__global float4*)(output + f0) = accumulate ? *(__global const float4*)(output + f0) + v : v;")
+        out.append("}")
+        return "\n".join(out) + "\n"
+
     out.append("    const int x = get_global_id(0);")
     out.append("    const int y = get_global_id(1);")
     out.append(f"    if (x >= {outW} || y >= {outH}) return;")
@@ -1511,8 +1597,15 @@ def generateCBilinear(width, height, channels, upscale):
     name = bilinearKernelName(width, height, channels, upscale)
     outW = width * upscale
     outH = height * upscale
-    gx = roundUp(outW, 16)
-    gy = roundUp(outH, 16)
+    quads = outputQuadItems(outW * outH * channels)
+    if quads:
+        gx = roundUp(quads, STORE_QUAD_GROUP)
+        gy = 1
+        localX, localY = STORE_QUAD_GROUP, 1
+    else:
+        gx = roundUp(outW, 16)
+        gy = roundUp(outH, 16)
+        localX, localY = 16, 16
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
@@ -1551,8 +1644,8 @@ def generateCBilinear(width, height, channels, upscale):
     out.append(f"\tlayer.upscale = {upscale};")
     out.append(f"\tlayer.outWidth = {outW};")
     out.append(f"\tlayer.outHeight = {outH};")
-    out.append("\tlayer.localX = 16;")
-    out.append("\tlayer.localY = 16;")
+    out.append(f"\tlayer.localX = {localX};")
+    out.append(f"\tlayer.localY = {localY};")
     out.append("")
     out.append(f'\tlayer.pip = CL_Pipeline_FromFile(ctx, clPath, "{name}", NULL);')
     out.append("\tif (layer.pip.kernel == NULL) {")
