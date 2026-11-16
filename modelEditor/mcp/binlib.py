@@ -14,6 +14,10 @@ RECORD_SIZE = 108
 OBSOLETE_RECORD_SIZE = 92
 FLAG_TEXTURED = 1
 FLAG_CULL_BACKFACES = 2
+FLAG_EMISSION_MAP = 4
+FACE_MAP_HEADER = 8
+FACE_COUNT = 6
+FACE_CELL_BYTES = 16
 MIN_TEXTURE_SIZE = 256
 MAX_TEXTURE_SIZE = 16384
 LEGACY_TEXTURE_SIZE = 4096
@@ -118,14 +122,26 @@ def loadBin(path):
     layout = resolveLayout(fileSize, recordSize, triangleCount, flags, sizeField)
     if not layout["ok"]:
         raise BinError(layout["error"])
-    if len(data) != fileSize:
-        raise BinError("truncated or corrupt .bin: file is {} bytes but the header declares {}".format(
-            formatBytes(len(data)), formatBytes(fileSize)))
 
     textured = bool(flags & FLAG_TEXTURED)
     atlasBytes = layout["textureSize"] * layout["textureSize"] * BYTES_PER_TEXEL if textured else 0
     triangleBytes = triangleCount * RECORD_SIZE
-    if layout["headerSize"] + atlasBytes + triangleBytes != len(data):
+    # the header fileSize stops at the triangles; a flagged face map carries its own size
+    modelBytes = layout["headerSize"] + atlasBytes + triangleBytes
+    faceMapBytes = 0
+    faceMapResolution = 0
+    if flags & FLAG_EMISSION_MAP:
+        if len(data) < modelBytes + FACE_MAP_HEADER:
+            raise BinError("truncated or corrupt .bin: face map header is missing")
+        faceMapBytes, faceMapResolution = struct.unpack_from("<2I", data, modelBytes)
+        expectedMap = FACE_MAP_HEADER + FACE_COUNT * faceMapResolution * faceMapResolution * FACE_CELL_BYTES
+        if faceMapBytes != expectedMap:
+            raise BinError("corrupt .bin: face map declares {} for a {} grid, which needs {}".format(
+                formatBytes(faceMapBytes), faceMapResolution, formatBytes(expectedMap)))
+        if len(data) != modelBytes + faceMapBytes:
+            raise BinError("truncated .bin: face map declares {} but {} follow the triangles".format(
+                formatBytes(faceMapBytes), formatBytes(len(data) - modelBytes)))
+    elif len(data) != modelBytes:
         raise BinError("truncated or corrupt .bin: data blocks do not fill the file")
 
     info = {
@@ -144,6 +160,10 @@ def loadBin(path):
         "atlasBytes": atlasBytes,
         "triangleOffset": layout["headerSize"] + atlasBytes,
         "sizeEquation": layout["headerSize"] + triangleCount * RECORD_SIZE + atlasBytes,
+        "hasEmissionMap": bool(flags & FLAG_EMISSION_MAP),
+        "faceMapOffset": modelBytes if flags & FLAG_EMISSION_MAP else 0,
+        "faceMapBytes": faceMapBytes,
+        "emissionResolution": faceMapResolution,
     }
     return data, info
 

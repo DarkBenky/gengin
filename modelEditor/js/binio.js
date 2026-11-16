@@ -10,6 +10,8 @@ const BinFormat = {
 	obsoleteRecordSize: 92,
 	flagTextured: 1,
 	flagCullBackfaces: 2,
+	flagEmissionMap: 4,
+	faceMapHeaderSize: 8,
 	minTextureSize: 256,
 	maxTextureSize: 16384,
 	legacyTextureSize: 4096,
@@ -88,10 +90,6 @@ function readBinModel(arrayBuffer, fileName) {
 
 	const layout = resolveLayout(fileSize, recordSize, triangleCount, flags, sizeField);
 	if (!layout.ok) throw FormatError(layout.message);
-	if (arrayBuffer.byteLength !== fileSize) {
-		throw FormatError("truncated or corrupt .bin: file is " + formatBytes(arrayBuffer.byteLength) +
-			" bytes but the header declares " + formatBytes(fileSize));
-	}
 	if (triangleCount > 0 && triangleCount * BinFormat.recordSize > arrayBuffer.byteLength) {
 		throw FormatError("truncated or corrupt .bin: triangle count " + formatCount(triangleCount) +
 			" does not fit the file");
@@ -100,7 +98,24 @@ function readBinModel(arrayBuffer, fileName) {
 	const textured = (flags & BinFormat.flagTextured) !== 0;
 	const atlasBytes = textured ? layout.textureSize * layout.textureSize * BinFormat.bytesPerTexel : 0;
 	const triangleBytes = triangleCount * BinFormat.recordSize;
-	if (layout.headerSize + atlasBytes + triangleBytes !== arrayBuffer.byteLength) {
+	// fileSize stops at the triangles; a flagged face map carries its own size and follows them
+	let end = layout.headerSize + atlasBytes + triangleBytes;
+	let faceMapView = null;
+	let faceMapResolution = 0;
+	if (flags & BinFormat.flagEmissionMap) {
+		if (arrayBuffer.byteLength < end + BinFormat.faceMapHeaderSize) {
+			throw FormatError("truncated or corrupt .bin: face map header is missing");
+		}
+		const faceMapBytes = header.getUint32(end, true);
+		faceMapResolution = header.getUint32(end + 4, true);
+		if (arrayBuffer.byteLength !== end + faceMapBytes) {
+			throw FormatError("truncated or corrupt .bin: face map declares " + formatBytes(faceMapBytes) +
+				" but the file holds " + formatBytes(arrayBuffer.byteLength - end) + " after the triangles");
+		}
+		faceMapView = new Uint8Array(arrayBuffer, end, faceMapBytes);
+		end += faceMapBytes;
+	}
+	if (end !== arrayBuffer.byteLength) {
 		throw FormatError("truncated or corrupt .bin: data blocks do not fill the file");
 	}
 
@@ -117,6 +132,8 @@ function readBinModel(arrayBuffer, fileName) {
 		textureSize: textured ? layout.textureSize : 0,
 		flags: flags,
 		cullBackfaces: (flags & BinFormat.flagCullBackfaces) !== 0,
+		faceMapView: faceMapView,
+		faceMapResolution: faceMapResolution,
 		groups: null,
 		sourceHandle: null,
 	};
@@ -125,15 +142,18 @@ function readBinModel(arrayBuffer, fileName) {
 function buildBinBlob(model) {
 	const atlasBytes = model.atlasView ? model.textureSize * model.textureSize * BinFormat.bytesPerTexel : 0;
 	const triangleBytes = model.triCount * BinFormat.recordSize;
-	const total = BinFormat.headerSize + atlasBytes + triangleBytes;
+	const modelBytes = BinFormat.headerSize + atlasBytes + triangleBytes;
+	const faceMap = model.faceMapView || null;
 
 	const header = new Uint8Array(BinFormat.headerSize);
 	const outView = new DataView(header.buffer);
 	const flags = (model.atlasView ? BinFormat.flagTextured : 0) |
 		(model.cullBackfaces ? BinFormat.flagCullBackfaces : 0) |
-		(model.flags & ~(BinFormat.flagTextured | BinFormat.flagCullBackfaces));
+		(faceMap ? BinFormat.flagEmissionMap : 0) |
+		(model.flags & ~(BinFormat.flagTextured | BinFormat.flagCullBackfaces | BinFormat.flagEmissionMap));
 
-	outView.setUint32(0, total, true);
+	// the face map is appended after the triangles, so fileSize has to stop before it
+	outView.setUint32(0, modelBytes, true);
 	outView.setUint32(4, BinFormat.recordSize, true);
 	outView.setUint32(8, model.triCount, true);
 	outView.setUint32(12, flags, true);
@@ -144,6 +164,7 @@ function buildBinBlob(model) {
 	// the header, atlas and triangle block are handed to the Blob as they are: a 173 MiB model
 	// would otherwise be copied again just to be written out
 	const parts = model.atlasView ? [header, model.atlasView, model.triView] : [header, model.triView];
+	if (faceMap) parts.push(faceMap);
 	return new Blob(parts, { type: "application/octet-stream" });
 }
 

@@ -56,6 +56,9 @@ def bin_info(path: str) -> dict:
         "textureSize": info["textureSize"],
         "fileSize": info["fileSize"],
         "sizeEquation": info["sizeEquation"],
+        "hasEmissionMap": info["hasEmissionMap"],
+        "faceMapBytes": info["faceMapBytes"],
+        "emissionResolution": info["emissionResolution"],
         "sha256": binlib.sha256File(path),
     }
 

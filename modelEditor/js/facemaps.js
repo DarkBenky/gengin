@@ -152,9 +152,10 @@ function writeFaceHeader(view, fileSize, resolution) {
 	view.setUint32(4, resolution, true);
 }
 
-// writeFaceMap writes the six faces into one file: header, then face, row (top first), cell RGB
-// as float32, so a loader copies each face straight into an EmissionMap
-function writeFaceMap(grids) {
+// buildFaceMapBytes packs the six faces as one section: header (fileSize, resolution), then face,
+// row (top first), cell as rgb plus a pad float, so a loader copies each face straight into an
+// EmissionMap. This section is what gets appended to a model bin.
+function buildFaceMapBytes(grids) {
 	const resolution = grids.resolution;
 	const floatsPerFace = resolution * resolution * 4; // float3 pads to 16 bytes
 	const total = FaceMaps.headerSize + grids.faces.length * floatsPerFace * 4;
@@ -172,5 +173,9 @@ function writeFaceMap(grids) {
 			});
 		});
 	});
-	return new Blob([bytes], { type: "application/octet-stream" });
+	return bytes;
+}
+
+function writeFaceMap(grids) {
+	return new Blob([buildFaceMapBytes(grids)], { type: "application/octet-stream" });
 }

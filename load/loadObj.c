@@ -22,19 +22,29 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 
 	// read header
-	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures;
+	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures, textureSize;
 	if (fread(&fileSize, sizeof(uint32), 1, file) != 1 ||
 		fread(&triangleStructSize, sizeof(uint32), 1, file) != 1 ||
 		fread(&triangleCountRead, sizeof(uint32), 1, file) != 1 ||
-		fread(&hasTextures, sizeof(uint32), 1, file) != 1) {
+		fread(&hasTextures, sizeof(uint32), 1, file) != 1 ||
+		fread(&textureSize, sizeof(uint32), 1, file) != 1) {
 		fprintf(stderr, "Error: %s is not a model file.\n", filename);
 		fclose(file);
 		return;
 	}
 
 	// hasTextures bit 0 = textures present, bit 1 = cull backfaces
-	obj->cullBackfaces = (hasTextures & 2) != 0;
-	hasTextures &= 1;
+	obj->cullBackfaces = GetBit(hasTextures, 1);
+	hasTextures = GetBit(hasTextures, 0);
+    bool hasEmissionMap = GetBit(hasTextures, 2);
+
+	// if file has emission map, we need to get size of this section
+	if (hasEmissionMap) {
+		uint32 position = 20; // 20 bytes for the header
+		if (hasTextures) {
+			position += textureSize
+		}
+	}
 
 	uint32 triangleCount = triangleCountRead;
 

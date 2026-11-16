@@ -13,6 +13,11 @@
 
 - [ ] Map loading files
   - [ ] Fix / Design the file format for saving the model
+  - [ ] LoadObj reads the face map section after the triangles and sets hasEmission so painted emission is used instead of recomputed
+  - [ ] Object_Init skip CalculateFaceEmissions when the file already carried a face map
+  - [ ] LoadObj reject SizeOfTexture that is not EMISSION_RESOLUTION before filling the fixed 16x16 grid
+  - [ ] loadObj.h FaceMap still declares float3_no_pad and LoadFaceMap has no body, fix the type and drop or implement the function
+  - [ ] emission_face_maps mcp tool writes a standalone .face file, add a mode that appends into the model bin
   - [X] Object struct needs new field PathObjectType this can be used for saving scene and loading scene the object loading method needs to be updated to save the path to the struct of loaded object if object is created my merging multiple object on scene saving we need to create the file for that object
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
