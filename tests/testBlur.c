@@ -11,7 +11,7 @@ static void FillTestImage(Camera *camera) {
 	for (int i = 0; i < width * height; i++)
 		camera->framebufferLdr[i] = 0xFF101010;
 
-	unsigned int seed = 0xDEADBEEF;
+	uint32 seed = 0xDEADBEEF;
 	for (int i = 0; i < 1024; i++) {
 		seed = seed * 1664525u + 1013904223u;
 		int x = (seed >> 16) % (width - 80);
@@ -20,7 +20,7 @@ static void FillTestImage(Camera *camera) {
 		seed = seed * 1664525u + 1013904223u;
 		int size = 20 + (int)((seed >> 16) % 80);
 		seed = seed * 1664525u + 1013904223u;
-		unsigned int color = 0xFF000000 | (seed & 0x00FFFFFF);
+		uint32 color = 0xFF000000 | (seed & 0x00FFFFFF);
 		for (int py = y; py < y + size && py < height; py++)
 			for (int px = x; px < x + size && px < width; px++)
 				camera->framebufferLdr[py * width + px] = color;

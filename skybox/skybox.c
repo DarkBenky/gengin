@@ -30,15 +30,15 @@ static uint32 *loadJpeg(const char *path, int *outWidth, int *outHeight) {
 		return NULL;
 	}
 
-	unsigned char *row = malloc((size_t)w * 3);
+	uint8 *row = malloc((size_t)w * 3);
 	while ((int)cinfo.output_scanline < h) {
 		JSAMPROW rowPtr = row;
 		jpeg_read_scanlines(&cinfo, &rowPtr, 1);
 		int y = (int)cinfo.output_scanline - 1;
 		for (int x = 0; x < w; x++) {
-			unsigned char r = row[x * 3 + 0];
-			unsigned char g = row[x * 3 + 1];
-			unsigned char b = row[x * 3 + 2];
+			uint8 r = row[x * 3 + 0];
+			uint8 g = row[x * 3 + 1];
+			uint8 b = row[x * 3 + 2];
 			pixels[y * w + x] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | b;
 		}
 	}

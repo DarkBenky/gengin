@@ -399,7 +399,7 @@ static ScenarioResult fbRun(const Scenario *s, int steps, float dt, const char *
 }
 
 static uint32_t fbHash(uint32_t h, const void *data, size_t len) {
-	const unsigned char *bytes = (const unsigned char *)data;
+	const uint8 *bytes = (const uint8 *)data;
 	for (size_t i = 0; i < len; i++) {
 		h ^= bytes[i];
 		h *= 16777619u;

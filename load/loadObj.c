@@ -22,44 +22,49 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 
 	// read header
-	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures, textureSize;
+	uint32 fileSize, triangleStructSize, triangleCountRead, _hasTextures, _textureSize;
 	if (fread(&fileSize, sizeof(uint32), 1, file) != 1 ||
 		fread(&triangleStructSize, sizeof(uint32), 1, file) != 1 ||
 		fread(&triangleCountRead, sizeof(uint32), 1, file) != 1 ||
-		fread(&hasTextures, sizeof(uint32), 1, file) != 1 ||
-		fread(&textureSize, sizeof(uint32), 1, file) != 1) {
+		fread(&_hasTextures, sizeof(uint32), 1, file) != 1 ||
+		fread(&_textureSize, sizeof(uint32), 1, file) != 1) {
 		fprintf(stderr, "Error: %s is not a model file.\n", filename);
 		fclose(file);
 		return;
 	}
 
 	// hasTextures bit 0 = textures present, bit 1 = cull backfaces
-	obj->cullBackfaces = GetBit(hasTextures, 1);
-	hasTextures = GetBit(hasTextures, 0);
-    bool hasEmissionMap = GetBit(hasTextures, 2);
+	obj->cullBackfaces = GetBit(_hasTextures, 1);
+	bool hasTextures = GetBit(_hasTextures, 0);
+	bool hasEmissionMap = GetBit(_hasTextures, 2);
 
 	// if file has emission map, we need to get size of this section
+	uint32 FileSizeEmissionMap = 0;
 	if (hasEmissionMap) {
-		uint32 position = 20; // 20 bytes for the header
+		uint64 position = 20; // 20 bytes for the header
 		if (hasTextures) {
-			position += textureSize
+			position += (uint64)_textureSize * _textureSize * 9; // 9 floats per texel (color, normal, material)
 		}
+		position += (uint64)triangleCountRead * triangleStructSize; // 108 bytes per triangle
+
+		long keep = ftell(file);
+		if (fseek(file, position, SEEK_SET) != 0 ||
+			fread(&FileSizeEmissionMap, sizeof(uint32), 1, file) != 1) {
+			FileSizeEmissionMap = 0;
+		}
+		if (keep >= 0) fseek(file, keep, SEEK_SET);
 	}
 
 	uint32 triangleCount = triangleCountRead;
 
-	// the texture size field is validated against fileSize; legacy files carry
-	// triangle or texture data there instead and are always 4096
-	uint32 textureSize = 4096;
-	uint32 sizeField = 0;
-	if (fread(&sizeField, sizeof(uint32), 1, file) == 1) {
-		unsigned long long expected = 20ull + (unsigned long long)triangleCount * triangleStructSize +
-									  (hasTextures ? (unsigned long long)sizeField * sizeField * 9 : 0);
-		if (expected == fileSize && sizeField >= 256 && sizeField <= 16384) {
-			textureSize = sizeField;
-		} else {
-			fseek(file, 16, SEEK_SET);
-		}
+	// the header already carried textureSize; a file whose size equation does not hold is the
+	// legacy 16 byte header, where that word was triangle data, and it always used a 4096 atlas
+	uint32 textureSize = _textureSize;
+	uint64 expected = 20ull + (uint64)triangleCount * triangleStructSize +
+					  (hasTextures ? (uint64)textureSize * textureSize * 9 : 0);
+	if (expected != fileSize || textureSize < 256 || textureSize > 16384) {
+		textureSize = 4096;
+		fseek(file, 16, SEEK_SET);
 	}
 
 	// the field reads below assume the writer's single record layout, so a file
@@ -67,12 +72,14 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	long dataStart = ftell(file);
 	long fileEnd = -1;
 	if (dataStart >= 0 && fseek(file, 0, SEEK_END) == 0) fileEnd = ftell(file);
-	unsigned long long recordSize = 5ull * sizeof(float3) + 3ull * sizeof(float) +
-									6ull * sizeof(uint16) + sizeof(uint32);
-	unsigned long long expectedSize = (unsigned long long)dataStart +
-									  (hasTextures ? (unsigned long long)textureSize * textureSize * 9 : 0) +
-									  (unsigned long long)triangleCount * recordSize;
-	if (triangleStructSize != recordSize || fileEnd < 0 || (unsigned long long)fileEnd != expectedSize) {
+	uint64 recordSize = 5ull * sizeof(float3) + 3ull * sizeof(float) +
+						6ull * sizeof(uint16) + sizeof(uint32);
+	uint64 expectedSize = (uint64)dataStart +
+						  (hasTextures ? (uint64)textureSize * textureSize * 9 : 0) +
+						  (uint64)triangleCount * recordSize;
+	// fileSize stops at the triangles; the face map follows them and carries its own size
+	if (hasEmissionMap) expectedSize += FileSizeEmissionMap;
+	if (triangleStructSize != recordSize || fileEnd < 0 || (uint64)fileEnd != expectedSize) {
 		fprintf(stderr, "Error: %s is truncated or corrupt.\n", filename);
 		fclose(file);
 		return;
@@ -153,6 +160,22 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;
+
+	if (hasEmissionMap) {
+		fread(NULL, sizeof(uint32), 1, file); // skip the FileSizeEmissionMap field, we already read it
+		fread(NULL, sizeof(uint32), 1, file); // skip the SizeOfTexture field, we already read it
+
+		float3 *EmissionMap = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
+		float3 *EmissionMapOut = (float3 *)malloc((size_t)EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3));
+		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
+
+		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Front Side
+		
+		if (textureSize != EMISSION_RESOLUTION) {
+		    ResizeToCorrectSize // TODO: Create generic float3 function that can be use later use bilinear interpolation
+		}
+	}
+
 	fclose(file);
 }
 

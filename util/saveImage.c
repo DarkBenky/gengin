@@ -16,13 +16,13 @@ void SaveImage(const char *filename, const Camera *camera) {
 	int fileSize = 14 + 40 + dataSize;
 
 	// BMP file header (14 bytes)
-	unsigned char fileHeader[14] = {
+	uint8 fileHeader[14] = {
 		'B',
 		'M',
-		(unsigned char)(fileSize),
-		(unsigned char)(fileSize >> 8),
-		(unsigned char)(fileSize >> 16),
-		(unsigned char)(fileSize >> 24),
+		(uint8)(fileSize),
+		(uint8)(fileSize >> 8),
+		(uint8)(fileSize >> 16),
+		(uint8)(fileSize >> 24),
 		0,
 		0,
 		0,
@@ -34,19 +34,19 @@ void SaveImage(const char *filename, const Camera *camera) {
 	};
 
 	// DIB header — BITMAPINFOHEADER (40 bytes)
-	unsigned char dibHeader[40] = {
+	uint8 dibHeader[40] = {
 		40,
 		0,
 		0,
 		0, // header size
-		(unsigned char)(width),
-		(unsigned char)(width >> 8),
-		(unsigned char)(width >> 16),
-		(unsigned char)(width >> 24),
-		(unsigned char)(height),
-		(unsigned char)(height >> 8),
-		(unsigned char)(height >> 16),
-		(unsigned char)(height >> 24),
+		(uint8)(width),
+		(uint8)(width >> 8),
+		(uint8)(width >> 16),
+		(uint8)(width >> 24),
+		(uint8)(height),
+		(uint8)(height >> 8),
+		(uint8)(height >> 16),
+		(uint8)(height >> 24),
 		1,
 		0, // color planes
 		24,
@@ -55,10 +55,10 @@ void SaveImage(const char *filename, const Camera *camera) {
 		0,
 		0,
 		0, // no compression
-		(unsigned char)(dataSize),
-		(unsigned char)(dataSize >> 8),
-		(unsigned char)(dataSize >> 16),
-		(unsigned char)(dataSize >> 24),
+		(uint8)(dataSize),
+		(uint8)(dataSize >> 8),
+		(uint8)(dataSize >> 16),
+		(uint8)(dataSize >> 24),
 		0x13,
 		0x0B,
 		0,
@@ -81,10 +81,10 @@ void SaveImage(const char *filename, const Camera *camera) {
 	fwrite(dibHeader, 1, sizeof(dibHeader), f);
 
 	// BMP rows are bottom-up, pixels are BGR
-	unsigned char row[rowSize];
+	uint8 row[rowSize];
 	for (int y = height - 1; y >= 0; y--) {
 		for (int x = 0; x < width; x++) {
-			unsigned int c = camera->framebufferLdr[y * width + x];
+			uint32 c = camera->framebufferLdr[y * width + x];
 			row[x * 3 + 0] = (c) & 0xFF;	   // B
 			row[x * 3 + 1] = (c >> 8) & 0xFF;  // G
 			row[x * 3 + 2] = (c >> 16) & 0xFF; // R

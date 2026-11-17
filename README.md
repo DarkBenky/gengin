@@ -2,6 +2,14 @@
 
 - [X] when running on local model option for the main model to delegate to small Qwen2.5 Coder
 
+- [ ] Check if we can add something like **defer**
+
+  ```c
+  defer {
+    someFunc()
+  }
+  ```
+
 - [ ] Align all allocations to 64 (malloc, calloc)
   - [ ] test if this improve preformance
   - [ ] try to align only hot staff
@@ -12,8 +20,10 @@
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
 
 - [ ] Map loading files
-  - [ ] Fix / Design the file format for saving the model
-  - [ ] LoadObj reads the face map section after the triangles and sets hasEmission so painted emission is used instead of recomputed
+  - [X] Fix / Design the file format for saving the model
+  - [X] LoadObj reads the face map size field after the triangles, SaveObj, the editor and the Go writer all match the format
+  - [ ] LoadObj add FileSizeEmissionMap to expectedSize so a file with a face map is not rejected as corrupt
+  - [ ] LoadObj read the six grids into frontFaceEmission ... bottomFaceEmission and set hasEmission
   - [ ] Object_Init skip CalculateFaceEmissions when the file already carried a face map
   - [ ] LoadObj reject SizeOfTexture that is not EMISSION_RESOLUTION before filling the fixed 16x16 grid
   - [ ] loadObj.h FaceMap still declares float3_no_pad and LoadFaceMap has no body, fix the type and drop or implement the function

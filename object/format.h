@@ -185,4 +185,19 @@ static inline bool GetBit(uint32 in, int pos) {
     return (in >> WrapIndex(pos, 32)) & 1u;
 }
 
+typedef struct DeferCall {
+	void (*fn)(void *);
+	void *arg;
+} DeferCall;
+
+static inline void Defer_Run(DeferCall *call) {
+	if (call->fn) call->fn(call->arg);
+}
+
+// defer(fclose, file) runs the call when the enclosing scope exits, returns included
+#define Defer_Cat(a, b) Defer_Cat_(a, b)
+#define Defer_Cat_(a, b) a##b
+#define defer(fn, arg) __attribute__((cleanup(Defer_Run))) DeferCall \
+	Defer_Cat(deferCall_, __COUNTER__) = {(void (*)(void *))(fn), (void *)(arg)}
+
 #endif // FORMAT_H
