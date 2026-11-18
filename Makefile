@@ -4,7 +4,6 @@ CFLAGS_BASE += -fomit-frame-pointer -fno-stack-protector
 CFLAGS_BASE += -fdata-sections -ffunction-sections
 CFLAGS_BASE += -falign-functions=64 -falign-loops=64
 CFLAGS_BASE += -fno-plt -fprefetch-loop-arrays
-CFLAGS_BASE += -fblocks # defer { } in object/format.h uses clang blocks (see README for BlocksRuntime)
 CFLAGS_BASE += -fvectorize -fslp-vectorize
 CFLAGS_BASE += -mllvm -polly
 CFLAGS_BASE += -w -I/usr/local/include -Iobject
