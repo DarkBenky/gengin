@@ -2,18 +2,13 @@
 
 - [X] when running on local model option for the main model to delegate to small Qwen2.5 Coder
 
-- [X] Check if we can add something like **defer**
-  - Done: clang blocks based `defer` in [object/format.h](object/format.h) (`-fblocks` is in the Makefile)
+- [ ] Check if we can add something like **defer**
 
   ```c
   defer {
-    someFunc();
-    otherFunc();
+    someFunc()
   }
   ```
-  - Runs the block at scope exit, on every exit path, in reverse order of declaration
-  - Blocks capture by value at the `defer` line; declare a captured variable `__block` if you change it later (e.g. realloc) so the block sees the update
-  - Linux needs the blocks runtime: `sudo apt install libblocksruntime-dev` and add `-lBlocksRuntime` to the link (macOS has it builtin)
 
 - [ ] Align all allocations to 64 (malloc, calloc)
   - [ ] test if this improve preformance
