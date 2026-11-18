@@ -13,6 +13,9 @@
 #define NORMAL_MAP_STRENGTH 2.0f
 
 // ray.c darkens a shadowed pixel with 0.5 + 0.5*shadow, i.e. 50% at full shadow.
+// ray.c's own light pass uses 0.03 + 0.97*shadow, but its shadow is a binary shadow ray;
+// the raster's depth-map PCF is already soft, so the harsher 0.03 floor over-darkens
+// (measured: 0.03 -> 4104 near-black px vs ray's 2235, 0.5 -> 1726). 0.5 matches the PCF.
 #define SHADOW_AMBIENT 0.5f
 
 // The depth pass packs (depth bits, triangle id) into one 64-bit word resolved by a single
@@ -36,6 +39,16 @@ static constant float AO_KERNEL[5] = {				  // lineKernelvaluse
 
 // object/format.h: the value the host fills the depth buffer with before the pass.
 #define DEPTH_FAR 1e30f
+
+// render/cpu/ssr.h: screen-space reflection march. The C ray tracer blends ray-traced
+// scene reflections in its light-row pass (accumulatedColor * reflectBuffer.w); the
+// raster has no geometry reflection, so this recovers it from the G-buffers.
+#define SSR_MAX_STEPS 96
+#define SSR_STEP_SIZE 0.22f
+#define SSR_MAX_DIST 22.0f
+#define SSR_DEPTH_BIAS 0.02f
+// reflectBuffer.w = roughGloss^2; below this the blend moves a channel by <1 LDR step.
+#define SSR_MIN_REFLECT 0.05f
 
 #define SKY_RIGHT 0
 #define SKY_LEFT 1
@@ -372,8 +385,9 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 							 __global float4 *restrict framebuffer,
 							 __global float *restrict depthOut,
 							 __global float4 *restrict normalOut,
-							 __global float4 *restrict positionOut,
-							 __global int *restrict objectIdOut,
+							__global float4 *restrict positionOut,
+							__global float4 *restrict reflectOut,
+							__global int *restrict objectIdOut,
 							 __global int *restrict triangleIdOut) {
 	int x = get_global_id(0);
 	int y = get_global_id(1);
@@ -520,6 +534,11 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 
 	float3 shaded = color * lit + specularColor + color * emission;
 
+	// Reflection direction, same as ray.c's reflectBuffer: the SSR pass marches this.
+	// Computed unconditionally (ray.c writes reflectBuffer for every hit pixel).
+	float3 reflDir = viewDir - n * (2.0f * dot(n, viewDir));
+	float roughGloss = 1.0f - roughness;
+
 	// Sky reflection: same Fresnel term, damped by roughness and N.L, tinted by metal albedo.
 	if (skyWidth > 0) {
 		float reflectStrength = fresnel * (1.0f - roughness) * 0.18f *
@@ -528,7 +547,6 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 		// Below this the blend moves a channel by less than one 8-bit step, so the texture
 		// fetch is pure cost - and most of this scene is rough enough to land here.
 		if (st > 0.002f) {
-			float3 reflDir = viewDir - n * (2.0f * dot(n, viewDir));
 			float3 skyColor = sampleSkybox(sky, skyWidth, skyHeight, reflDir);
 			float3 tint = (float3)(1.0f - metallic, 1.0f - metallic, 1.0f - metallic) + metallic * color;
 			shaded = shaded * (1.0f - st) + skyColor * tint * st;
@@ -561,6 +579,8 @@ __kernel void rasterizeShade(__global const RasterTri *restrict tris,
 	depthOut[idx] = depth;
 	normalOut[idx] = (float4)(n.x, n.y, n.z, 0.0f);
 	positionOut[idx] = (float4)(worldPos.x, worldPos.y, worldPos.z, 0.0f);
+	// xyz = reflection direction, w = roughGloss^2 (ray.c's reflectBuffer.w).
+	reflectOut[idx] = (float4)(reflDir.x, reflDir.y, reflDir.z, roughGloss * roughGloss);
 	objectIdOut[idx] = obj->sceneIndex;
 	triangleIdOut[idx] = tid - obj->triStart;
 }
@@ -589,6 +609,101 @@ __kernel void rasterizeSky(__global const uint *restrict sky,
 
 	float3 c = sampleSkybox(sky, skyWidth, skyHeight, dir);
 	framebuffer[idx] = (float4)(c.x, c.y, c.z, 0.0f);
+}
+
+// Screen-space reflections: the raster's stand-in for ray.c's light-row reflection term
+// (combined = base*shadowMod + accumulatedEmission + accumulatedColor * reflectBuffer.w).
+// Marches the reflection direction the shade pass stored in reflectBuf through the depth
+// buffer; on a hit reflColor is the (bilinear) framebuffer colour there, on a miss it is the
+// skybox along reflDir - exactly ray.c's `if (RayCast) ... else skyColor`. The blend is
+// ADDITIVE (base + reflColor * reflW), not a lerp, because ray.c adds it on top of the
+// inline sky-reflection blend the shade pass already applied. fbSrc is a snapshot taken
+// before this pass writes, so a march never reads a pixel this pass already modified.
+__kernel void rasterizeSsr(__global const float4 *restrict fbSrc,
+						   __global const float *restrict depthBuf,
+						   __global const float4 *restrict normalBuf,
+						   __global const float4 *restrict positionBuf,
+						   __global const float4 *restrict reflectBuf,
+						   __global const uint *restrict sky,
+						   int skyWidth, int skyHeight,
+						   float3 camPos, float3 right, float3 up, float3 fwd,
+						   float fovScale, float aspect,
+						   int screenWidth, int screenHeight,
+						   __global float4 *restrict framebuffer) {
+	int x = get_global_id(0);
+	int y = get_global_id(1);
+	if (x >= screenWidth || y >= screenHeight)
+		return;
+
+	int idx = y * screenWidth + x;
+	float viewDepth = depthBuf[idx];
+	if (viewDepth >= DEPTH_FAR || viewDepth <= 0.0f)
+		return;
+
+	float4 refl = reflectBuf[idx];
+	float reflW = refl.w;
+	if (reflW < SSR_MIN_REFLECT)
+		return;
+
+	float3 worldPos = positionBuf[idx].xyz;
+	float3 n = normalBuf[idx].xyz;
+	float3 reflDir = refl.xyz;
+
+	float3 reflColor = (float3)(0.0f, 0.0f, 0.0f);
+	int hit = 0;
+
+	float3 c = worldPos + n * SSR_DEPTH_BIAS;
+	float stepLen = SSR_STEP_SIZE;
+
+	for (int step = 0; step < SSR_MAX_STEPS; step++) {
+		c += reflDir * stepLen;
+
+		float3 r = c - camPos;
+		float marchDepth = dot(r, fwd);
+		if (marchDepth < 0.01f)
+			continue;
+
+		float invD = 1.0f / (marchDepth * fovScale);
+		float ndcX = dot(r, right) * invD / aspect;
+		float ndcY = dot(r, up) * invD;
+		float sx = (ndcX + 1.0f) * 0.5f * (float)screenWidth;
+		float sy = (1.0f - ndcY) * 0.5f * (float)screenHeight;
+		if (sx < 1.0f || sx >= (float)(screenWidth - 1) || sy < 1.0f || sy >= (float)(screenHeight - 1))
+			continue;
+
+		int px = (int)sx, py = (int)sy;
+		int pidx = py * screenWidth + px;
+		float sceneDepth = depthBuf[pidx];
+		float threshold = SSR_STEP_SIZE * 1.5f + marchDepth * 0.001f;
+		float diff = marchDepth - sceneDepth;
+		if (!(sceneDepth > 0.01f && diff > 0.0f && diff < threshold))
+			continue;
+
+		// Bilinear fetch of the snapshot at the hit screen position.
+		int x1 = px + 1 < screenWidth ? px + 1 : px;
+		int y1 = py + 1 < screenHeight ? py + 1 : py;
+		float fx = sx - (float)px, fy = sy - (float)py;
+		float4 c00 = fbSrc[py * screenWidth + px];
+		float4 c10 = fbSrc[py * screenWidth + x1];
+		float4 c01 = fbSrc[y1 * screenWidth + px];
+		float4 c11 = fbSrc[y1 * screenWidth + x1];
+		float3 top = (float3)(c00.x + (c10.x - c00.x) * fx, c00.y + (c10.y - c00.y) * fx, c00.z + (c10.z - c00.z) * fx);
+		float3 bot = (float3)(c01.x + (c11.x - c01.x) * fx, c01.y + (c11.y - c01.y) * fx, c01.z + (c11.z - c01.z) * fx);
+		reflColor = (float3)(top.x + (bot.x - top.x) * fy, top.y + (bot.y - top.y) * fy, top.z + (bot.z - top.z) * fy);
+
+		if (reflColor.x + reflColor.y + reflColor.z > (3.0f / 255.0f))
+			hit = 1;
+		break; // first depth crossing wins, matching ssr.c
+	}
+
+	// ray.c falls back to the skybox when the reflection ray hits nothing.
+	if (!hit && skyWidth > 0)
+		reflColor = sampleSkybox(sky, skyWidth, skyHeight, reflDir);
+
+	float4 base = fbSrc[idx];
+	framebuffer[idx] = (float4)(base.x + reflColor.x * reflW,
+								base.y + reflColor.y * reflW,
+								base.z + reflColor.z * reflW, 0.0f);
 }
 
 static uint aoHash(int x, int y) {
