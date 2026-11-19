@@ -260,10 +260,12 @@ static void printSummary(const DiffStats *stats, float rasterMs) {
 	printf("\n  by object:");
 	for (int i = 0; i < 32; i++)
 		if (stats->colorMismatchObj[i]) printf(" obj%d=%d", i, stats->colorMismatchObj[i]);
-	printf("\n");	printf("  signed mean (ray-raster) by object:");
+	printf("\n");
+	printf("  signed mean (ray-raster) by object:");
 	for (int i = 0; i < 32; i++)
 		if (stats->objSignedCount[i]) printf(" obj%d=%+.1f", i, stats->objSignedDelta[i] / (float)stats->objSignedCount[i]);
-	printf("\n");	printf("Normals (radians, tolerance %.2f)\n", NORMAL_TOLERANCE);
+	printf("\n");
+	printf("Normals (radians, tolerance %.2f)\n", NORMAL_TOLERANCE);
 	printf("  mismatched pixels:       %d\n", stats->normalMismatch);
 	printf("  max angle difference:    %.4f\n", stats->maxNormalDiff);
 	printf("  by object:");
