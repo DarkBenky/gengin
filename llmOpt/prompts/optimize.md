@@ -116,6 +116,10 @@ CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
 4. GENERAL IMPROVEMENTS (below) — ONE self-serve chore: a self-discovered
    bug fix / small utility from this session's exploration, or an unchecked
    `- [ ]` task from the root `README.md` that fits the caps.
+5. READABILITY REFACTOR (below) — ONE behaviour-preserving cleanup that keeps
+   measured performance at parity: extract an inline SIMD/scalar block into a
+   named helper, name magic numbers, delete dead locals.  Never a mixed
+   refactor + optimization.
 Completing ANY rung with real measured work counts that rung as walked; a
 rung that refutes with numbers is recorded in `codebase_context.md` and the
 ladder CONTINUES — a refuted rung never ends the session early.
@@ -503,6 +507,7 @@ without its label (`create_pr(label=...)`).
 | `Flight Controller` | plane-controller changes (`getControllerOutputV5` + the loss) that improve performance | `flight_bench()` `OVERALL: IMPROVED` on the plane suite |
 | `Missile Controller` | missile-controller changes (`getControllerOutputMissile`) that improve performance | `flight_bench(missile="...")` `OVERALL: IMPROVED` on that missile's suite |
 | `General Improvements` | self-discovered bug fixes, small utilities/functions that reduce testing/review overhead, and caps-fitting unchecked `- [ ]` tasks from the root `README.md` — CATEGORY LADDER rung 4 (one item per session, one system per PR) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+| `Readability Refactor` | behaviour-preserving cleanups ONLY: extract an inline SIMD/scalar block into a named helper (e.g. the per-pixel AABB pre-filter into `rayAABB_inv_256`), name constants, drop dead locals, split an over-long function — CATEGORY LADDER rung 5 (one system per PR) | parity gate: `make_bench` NOT `REGRESSED`, `image_mse` 0.00, identical frame hashes; `compare_asm` identical on the extracted helper (preferred evidence) |
 
 Category rules:
 - The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
@@ -517,6 +522,10 @@ Category rules:
   different systems are never folded into one PR. This is a prompt-level lock
   for the reviewer, not a code guard: a mixed-system General Improvements PR is
   a review defect.
+- Readability Refactor is SOFT-LOCKED the same way (ONE system per PR) and
+  carries NO performance claim: its measurements exist to prove parity, not a
+  win. A refactor that also makes the code faster is TWO PRs — land the
+  `Readability Refactor` first, then the optimization under its own label.
 - PR body format (ALL PRs, including consolidation and merged-history
   summaries): the body STARTS with
   1. a `## Changes` table — one row per change: file, function, what, why;
@@ -690,6 +699,57 @@ why in `codebase_context.md`, and continue with the rest of the ladder — the
 session is not finished because one chore failed.  ONE item per session
 — never retry, never take a second.
 
+## READABILITY REFACTOR — CATEGORY LADDER RUNG 5 (at most ONE per session)
+
+This rung is the OPPOSITE of the optimization work: do NOT make the code
+faster, make it readable while the measured performance stays where it is.
+The typical case is a hot loop carrying a wall of intrinsics inline — the
+per-pixel AABB pre-filter in `RayTraceRowFunc` expands to six
+`_mm256_fmsub_ps` plus two min/max trees inside the pixel body. Extracting
+that block into ONE named helper (`tAABB = rayAABB_inv_256(...)`, called once
+per group) makes the kernel read like the scalar path next to it, and the
+compiler inlines it back to the same instructions.
+
+Allowed moves:
+- extract an inline SIMD / scalar block into a named helper placed next to its
+  scalar twin (same file, same section), with one comment line saying what the
+  block computes — the extracted body keeps its operations verbatim;
+- collapse two copies of the same expression tree into that one helper (for
+  example the batched and the scalar pre-filter paths);
+- replace magic numbers with named constants, drop dead locals/branches, split
+  an over-long function into a helper without adding indirection.
+
+Forbidden:
+- no new abstraction layers, function pointers, vtables or generic containers;
+- no change to the arithmetic: same operations, same order, same
+  associativity, same types. Under `-ffast-math` a reassociated sum IS a
+  behaviour change and it shows up as a non-zero `image_mse`;
+- no struct / data-layout / public-signature changes, no build-system changes;
+- no reformatting-only hunks and no touching lines you are not extracting;
+- no optimization smuggled in — if the extraction also speeds things up, split
+  it: `Readability Refactor` PR first, optimization PR after;
+- never refactor a file an open PR already touches.
+
+Caps: ONE system per PR (same definition as General Improvements), <= 3 files,
+<= 200 changed lines. A bigger cleanup is split into separate PRs or skipped.
+
+Gate (parity, not improvement):
+- `build_project` clean;
+- `make_bench` before/after with BOTH numbers in the body, `image_mse` 0.00
+  and identical frame hashes; the verdict must not be `REGRESSED` —
+  "unchanged (within noise)" is the expected result;
+- `flight_bench` not worse when simulation code is touched;
+- `compare_asm` on the extracted helper is the best proof that codegen did not
+  move: preferred, quote the identical-output line in the body.
+
+Open it with `create_pr(..., label="Readability Refactor",
+imageOutputChange=false)` and the standard body tables (Performance row:
+"n/a (readability, parity)" + both measured frame numbers).
+
+ONE refactor per session. If the extraction cannot reach parity (a regression
+beyond the noise band), revert it and record why in `codebase_context.md` —
+`no_change` is a correct outcome; never ship a slower "cleaner" version.
+
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
 - requires OpenCL, minifb, or infrastructure that cannot be isolated;
@@ -839,6 +899,12 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     module/directory family, and a consolidation batch never folds
     General Improvements PRs from different systems together. Nothing in code
     enforces this; the prompt is the lock.
+27. NEVER mix a refactor with a change in behaviour or speed — a
+    `Readability Refactor` PR ships the SAME operations in the SAME order and
+    proves it (image_mse 0.00, `make_bench` not REGRESSED). Reordering the
+    arithmetic, "improving" a loop while extracting it, or shipping a speedup
+    under the refactor label is a defect: split it into a refactor PR and an
+    optimization PR with its own label.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

@@ -308,11 +308,13 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
     label is REQUIRED by the workflow rules: exactly one category from
     Render Improvements, Render Improvements [Visual change / Performance],
     Render Improvements Visual [No/Minimal Cost], Flight Controller, Missile
-    Controller, General Improvements, ML Improvements. One PR = one category;
-    never fold two categories into one PR. General Improvements are
-    additionally soft-locked to ONE system: such a PR never spans two
-    module/directory families, and GI PRs from different systems are never
-    folded together. An unknown name is rejected.
+    Controller, General Improvements, Readability Refactor, ML Improvements.
+    One PR = one category; never fold two categories into one PR. General
+    Improvements and Readability Refactor are additionally soft-locked to ONE
+    system: such a PR never spans two module/directory families, and PRs from
+    different systems are never folded together. A Readability Refactor PR
+    claims NO speedup — its numbers only prove parity (make_bench not
+    REGRESSED, image_mse 0.00). An unknown name is rejected.
 
     imageOutputChange is required: False for exact-match optimizations
     (screenshots/ is never staged); True for a deliberate visual change —

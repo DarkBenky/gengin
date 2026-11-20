@@ -204,7 +204,12 @@ Every PR carries exactly one category label (`create_pr(label=...)`,
 category (all `Render Improvements*` label variants count together) a session
 verifies them and folds survivors into one consolidation PR —
 never across categories. `General Improvements` is soft-locked to one system
-per PR (and per consolidation batch). Requires GITHUB_TOKEN with `Issues: write`
+per PR (and per consolidation batch). `Readability Refactor` is the parity
+category — behaviour-preserving cleanups (extracting an inline SIMD/scalar
+block into a named helper, naming constants, deleting dead locals) that ship
+`image_mse` 0.00 and a `make_bench` verdict that is not `REGRESSED`; it is
+soft-locked to one system per PR too, claims no speedup, and never mixes with
+an optimization. Requires GITHUB_TOKEN with `Issues: write`
 for labels.
 
 `create_pr` appends an `## Environment` section to every body: a

@@ -1,5 +1,17 @@
 # Tasks
 
+- [ ] **Low** Test optimization
+  - [ ] while we run RayTraceRowFunc we run one task where we sort BBox of object by distance we add new field dist array and order array where we store idx of Object
+
+    ```c
+    Object *objects;
+    float *dist;
+    int *order;
+    int numObjects;
+    ```
+
+  and on next frame we test intersection of BBoxes from closest to farthest
+
 - [X] when running on local model option for the main model to delegate to small Qwen2.5 Coder
 
 - [ ] Check if we can add something like **defer**
