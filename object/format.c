@@ -35,6 +35,57 @@ void clearBuffers(Camera *camera) {
 	// objectIdBuffer: fully overwritten by ray tracer each frame.
 }
 
+static void freeCameraBuffers(Camera *camera) {
+	free(camera->framebufferLdr);
+	free(camera->framebufferHdr);
+	free(camera->tempFramebufferHdr);
+	free(camera->normalBuffer);
+	free(camera->positionBuffer);
+	free(camera->reflectBuffer);
+	free(camera->bloomBuffer);
+	free(camera->bloomTemp);
+	free(camera->bloomDst);
+	free(camera->depthBuffer);
+	free(camera->ambientOcclusionBuffer);
+	free(camera->reflectCache);
+	free(camera->tempBuffer_1);
+	free(camera->tempBuffer_2);
+	free(camera->shadowCache);
+	free(camera->objectIdBuffer);
+	free(camera->uvBuffer);
+	free(camera->triangleIdBuffer);
+	free(camera->motionVectorBuffer);
+	camera->framebufferLdr = NULL;
+	camera->framebufferHdr = NULL;
+	camera->tempFramebufferHdr = NULL;
+	camera->normalBuffer = NULL;
+	camera->positionBuffer = NULL;
+	camera->reflectBuffer = NULL;
+	camera->bloomBuffer = NULL;
+	camera->bloomTemp = NULL;
+	camera->bloomDst = NULL;
+	camera->depthBuffer = NULL;
+	camera->ambientOcclusionBuffer = NULL;
+	camera->reflectCache = NULL;
+	camera->tempBuffer_1 = NULL;
+	camera->tempBuffer_2 = NULL;
+	camera->shadowCache = NULL;
+	camera->objectIdBuffer = NULL;
+	camera->uvBuffer = NULL;
+	camera->triangleIdBuffer = NULL;
+	camera->motionVectorBuffer = NULL;
+}
+
+static int cameraBuffersAllocated(const Camera *camera) {
+	return camera->framebufferLdr && camera->framebufferHdr && camera->tempFramebufferHdr &&
+		   camera->normalBuffer && camera->positionBuffer && camera->reflectBuffer &&
+		   camera->bloomBuffer && camera->bloomTemp && camera->bloomDst &&
+		   camera->depthBuffer && camera->ambientOcclusionBuffer && camera->reflectCache &&
+		   camera->tempBuffer_1 && camera->tempBuffer_2 && camera->shadowCache &&
+		   camera->objectIdBuffer && camera->uvBuffer && camera->triangleIdBuffer &&
+		   camera->motionVectorBuffer;
+}
+
 void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, float3 position, float3 forward, float3 lightDir) {
 	if (!camera) return;
 	camera->screenWidth = screenWidth;
@@ -62,6 +113,10 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->uvBuffer = (uvMap *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(uvMap)));
 	camera->triangleIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
 	camera->motionVectorBuffer = (float2 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float2)));
+	if (!cameraBuffersAllocated(camera)) {
+		freeCameraBuffers(camera);
+		return;
+	}
 	camera->frameCounter = 0;
 	camera->maxDepth = 0.0f;
 	camera->minDepth = DEPTH_FAR;
@@ -71,44 +126,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 
 void destroyCamera(Camera *camera) {
 	if (!camera || !camera->framebufferLdr) return;
-	free(camera->framebufferLdr);
-	free(camera->framebufferHdr);
-	free(camera->tempFramebufferHdr);
-	free(camera->normalBuffer);
-	free(camera->positionBuffer);
-	free(camera->reflectBuffer);
-	free(camera->depthBuffer);
-	free(camera->ambientOcclusionBuffer);
-	free(camera->reflectCache);
-	free(camera->tempBuffer_1);
-	free(camera->tempBuffer_2);
-	free(camera->shadowCache);
-	free(camera->objectIdBuffer);
-	free(camera->bloomBuffer);
-	free(camera->bloomTemp);
-	free(camera->bloomDst);
-	free(camera->uvBuffer);
-	free(camera->triangleIdBuffer);
-	free(camera->motionVectorBuffer);
-	camera->framebufferLdr = NULL;
-	camera->framebufferHdr = NULL;
-	camera->tempFramebufferHdr = NULL;
-	camera->normalBuffer = NULL;
-	camera->positionBuffer = NULL;
-	camera->reflectBuffer = NULL;
-	camera->depthBuffer = NULL;
-	camera->ambientOcclusionBuffer = NULL;
-	camera->reflectCache = NULL;
-	camera->tempBuffer_1 = NULL;
-	camera->tempBuffer_2 = NULL;
-	camera->shadowCache = NULL;
-	camera->objectIdBuffer = NULL;
-	camera->bloomBuffer = NULL;
-	camera->bloomTemp = NULL;
-	camera->bloomDst = NULL;
-	camera->uvBuffer = NULL;
-	camera->triangleIdBuffer = NULL;
-	camera->motionVectorBuffer = NULL;
+	freeCameraBuffers(camera);
 	camera->frameCounter = 0;
 	pthread_mutex_destroy(&camera->depthLock);
 }
