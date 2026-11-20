@@ -231,6 +231,12 @@ Do not re-derive what a previous session already recorded in
     (`llmopt/<7-40 hex sha>/<topic>`, e.g. `llmopt/<target-sha>/conv-interior`);
     the PR is opened from the sandbox, so only files you changed under `gengin/`
     are published.
+    Readability-only cleanups of kernel/bench code (extracting an inline block
+    into a named helper, naming constants) keep the `ML Improvements` label
+    here, but they claim NO speedup: the torch gate must stay clean, every
+    config must still pass, and reordering the arithmetic (sum order included)
+    is a behaviour change, not a refactor. Ship a refactor and a kernel change
+    as separate PRs.
 
 ## EVIDENCE RULES
 - Never claim a speedup you did not measure with `ml_bench` in this session.

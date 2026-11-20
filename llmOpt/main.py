@@ -1752,6 +1752,8 @@ PR_LABELS = {
         "missile flight controller changes measured on the missile suites"),
     "General Improvements": ("4c7876",
         "minor fixes and utilities; preserve style and performance"),
+    "Readability Refactor": ("0052cc",
+        "behaviour-preserving refactors that keep measured performance at parity"),
     "ML Improvements": ("5319e7",
         "machine learning kernel/model changes passing the torch gate"),
 }
@@ -1974,9 +1976,9 @@ def createPR(title, body, branch="", commit_msg=None,
     label: exactly one PR_LABELS category ("Render Improvements", "Render
     Improvements [Visual change / Performance]", "Render Improvements Visual
     [No/Minimal Cost]", "Flight Controller", "Missile Controller", "General
-    Improvements", "ML Improvements"). The prompt makes it mandatory; an
-    unknown name is a ValueError. A label failure after the PR exists is a
-    warning, not an error.
+    Improvements", "Readability Refactor", "ML Improvements"). The prompt makes
+    it mandatory; an unknown name is a ValueError. A label failure after the PR
+    exists is a warning, not an error.
 
     image_output_change=True: the PR deliberately alters the rendered image
     (algorithm variation). compareImagePaths must list the composites written

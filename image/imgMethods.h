@@ -110,4 +110,57 @@ static inline void BoxBlur3x3(float3 *src, float3 *tmp, float3 *dst, int width, 
 	}
 }
 
+static inline void ResizeAxis(const float3 *src, int srcLineStride, int srcStep,
+							  float3 *dst, int dstLineStride, int dstStep,
+							  int srcLen, int dstLen, int lineCount) {
+	float scale = (float)srcLen / (float)dstLen;
+	for (int line = 0; line < lineCount; line++) {
+		const float3 *s = src + line * srcLineStride;
+		float3 *d = dst + line * dstLineStride;
+		if (scale >= 1.0f) {
+			for (int i = 0; i < dstLen; i++) {
+				float a = i * scale;
+				float b = a + scale;
+				int k0 = (int)a;
+				int k1 = (int)ceilf(b);
+				if (k1 > srcLen) k1 = srcLen;
+				float3 accum = {0.0f, 0.0f, 0.0f};
+				float total = 0.0f;
+				for (int k = k0; k < k1; k++) {
+					float lo = k > a ? (float)k : a;
+					float hi = (k + 1) < b ? (float)(k + 1) : b;
+					float w = hi - lo;
+					const float3 *p = s + k * srcStep;
+					accum.x += p->x * w;
+					accum.y += p->y * w;
+					accum.z += p->z * w;
+					total += w;
+				}
+				d[i * dstStep] = (float3){accum.x / total, accum.y / total, accum.z / total};
+			}
+		} else {
+			for (int i = 0; i < dstLen; i++) {
+				float u = (i + 0.5f) * scale - 0.5f;
+				if (u < 0.0f) u = 0.0f;
+				int k0 = (int)u;
+				int k1 = k0 + 1 < srcLen ? k0 + 1 : k0;
+				float t = u - (float)k0;
+				float it = 1.0f - t;
+				const float3 *p0 = s + k0 * srcStep;
+				const float3 *p1 = s + k1 * srcStep;
+				d[i * dstStep] = (float3){p0->x * it + p1->x * t,
+										  p0->y * it + p1->y * t,
+										  p0->z * it + p1->z * t};
+			}
+		}
+	}
+}
+
+// tmp must point to srcHeight * dstWidth float3 elements
+static inline void ResizeImage(float3 *src, float3 *tmp, float3 *dst, int srcWidth, int srcHeight, int dstWidth, int dstHeight) {
+	if (srcWidth <= 0 || srcHeight <= 0 || dstWidth <= 0 || dstHeight <= 0) return;
+	ResizeAxis(src, srcWidth, 1, tmp, dstWidth, 1, srcWidth, dstWidth, srcHeight);
+	ResizeAxis(tmp, 1, dstWidth, dst, 1, dstWidth, srcHeight, dstHeight, dstWidth);
+}
+
 #endif // IMG_METHODS_H
