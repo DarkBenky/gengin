@@ -84,6 +84,7 @@ typedef struct {
 	CL_Pipeline aoBlurPipeline;
 	CL_Pipeline aoApplyPipeline;
 	CL_Pipeline shadowPipeline;
+	CL_Pipeline ssrPipeline;
 
 	CL_Buffer triBuf;
 	CL_Buffer triObjectBuf;
@@ -104,8 +105,11 @@ typedef struct {
 	CL_Buffer aoBufA;    // ambient occlusion, ping-ponged by the blur passes
 	CL_Buffer aoBufB;
 	CL_Buffer shadowBuf; // light-space depth (uint, monotonic float bits)
+	CL_Buffer reflectBuf;  // per-pixel reflection dir (xyz) + roughGloss^2 (w), written by shade
+	CL_Buffer fbSnapBuf;   // framebuffer snapshot the SSR pass reads (ssr.c's tempFramebufferHdr)
 	float aoStrength; // 0 disables the AO passes; the default keeps contact darkening visible
 	int shadowMapSize; // 0 disables the shadow pass; 2048 is plenty for this scene
+	int ssrEnabled;    // 0 disables the screen-space reflection pass
 	RasterShadow shadow; // rebuilt every frame by Raster_Render
 	unsigned readbackMask; // RASTER_OUT_* bits; defaults to framebuffer + depth
 

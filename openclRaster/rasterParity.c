@@ -30,6 +30,10 @@ typedef struct {
 	int maxColorDiff;
 	int colorDiffHist[9]; // mismatched pixels bucketed by channel diff (32 LDR steps)
 	int colorMismatchObj[32];
+	// Signed mean brightness (ray - raster) per object over shared pixels: tells whether the
+	// raster is systematically darker (a missing additive term) or brighter on each object.
+	float objSignedDelta[32];
+	int objSignedCount[32];
 	int rasterCloser;	// raster surface in front of the ray surface (ray missed geometry?)
 	int rayCloser;		// ray surface in front of the raster surface (raster overdraws?)
 	int normalMismatch; // shared pixels where the geometric normal differs by more than NORMAL_TOLERANCE
@@ -154,6 +158,15 @@ static void diffFrames(const Camera *cam, const float *rtDepth, const uint32 *rt
 			if (d < 0) d = -d;
 			if (d > worst) worst = d;
 		}
+		{
+			int oid = cam->objectIdBuffer[i];
+			if (oid >= 0 && oid < 32) {
+				float sa = (float)((*a >> 16) & 0xFF) + (float)((*a >> 8) & 0xFF) + (float)(*a & 0xFF);
+				float sb = (float)((*b >> 16) & 0xFF) + (float)((*b >> 8) & 0xFF) + (float)(*b & 0xFF);
+				stats->objSignedDelta[oid] += (sa - sb) * (1.0f / 3.0f);
+				stats->objSignedCount[oid]++;
+			}
+		}
 		if (worst > stats->maxColorDiff) stats->maxColorDiff = worst;
 		if (worst > COLOR_TOLERANCE) {
 			stats->colorMismatch++;
@@ -247,6 +260,10 @@ static void printSummary(const DiffStats *stats, float rasterMs) {
 	printf("\n  by object:");
 	for (int i = 0; i < 32; i++)
 		if (stats->colorMismatchObj[i]) printf(" obj%d=%d", i, stats->colorMismatchObj[i]);
+	printf("\n");
+	printf("  signed mean (ray-raster) by object:");
+	for (int i = 0; i < 32; i++)
+		if (stats->objSignedCount[i]) printf(" obj%d=%+.1f", i, stats->objSignedDelta[i] / (float)stats->objSignedCount[i]);
 	printf("\n");
 	printf("Normals (radians, tolerance %.2f)\n", NORMAL_TOLERANCE);
 	printf("  mismatched pixels:       %d\n", stats->normalMismatch);
@@ -445,6 +462,8 @@ int main(int argc, char **argv) {
 	int shadowSize = argc > 4 ? atoi(argv[4]) : 2048;
 	// Fifth argument overrides the read-back set (RASTER_OUT_* bits, default framebuffer+depth).
 	unsigned readbackMask = argc > 5 ? (unsigned)strtoul(argv[5], NULL, 0) : RASTER_OUT_FRAME;
+	// Sixth argument toggles the screen-space reflection pass (0 = off, default on).
+	int ssrOn = argc > 6 ? atoi(argv[6]) : 1;
 	printf("Rendering %dx%d\n", renderWidth, renderHeight);
 
 	MaterialLib matLib;
@@ -523,10 +542,11 @@ int main(int argc, char **argv) {
 	Raster_SetSkybox(&raster, &skybox);
 	if (hasAoOverride) raster.aoStrength = aoOverride;
 	raster.shadowMapSize = shadowSize;
+	raster.ssrEnabled = ssrOn;
 	// The harness compares every G-buffer, so it asks for all of them; the frame path
 	// default is framebuffer + depth only.
 	raster.readbackMask = RASTER_OUT_ALL;
-	printf("AO strength %.2f, shadow map %d\n", raster.aoStrength, raster.shadowMapSize);
+	printf("AO strength %.2f, shadow map %d, ssr %d\n", raster.aoStrength, raster.shadowMapSize, raster.ssrEnabled);
 
 	resetGbuffers(&camera);
 	Raster_Render(&raster, &scene, &matLib, &camera);
@@ -540,17 +560,21 @@ int main(int argc, char **argv) {
 	diffIds(&camera, rtObjectId, rtTriangleId, rtDepth, rasterDepth, &stats);
 	diffPositions(&camera, rtPos, rtDepth, rasterDepth, &stats);
 
-	// The analytic check expects the AO- and shadow-free shading value, so it runs on a
-	// separate frame with both extra terms disabled (geometry and normals are unchanged).
+	// The analytic check expects the AO-, shadow- and reflection-free shading value, so it
+	// runs on a separate frame with all three extra terms disabled (geometry and normals
+	// are unchanged). The check models the shade kernel's base output only.
 	float savedAo = raster.aoStrength;
 	int savedShadow = raster.shadowMapSize;
+	int savedSsr = raster.ssrEnabled;
 	raster.aoStrength = 0.0f;
 	raster.shadowMapSize = 0;
+	raster.ssrEnabled = 0;
 	Raster_Render(&raster, &scene, &matLib, &camera);
 	packLdr(camera.framebufferHdr, camera.framebufferLdr, pixels);
 	checkAnalyticLighting(&scene, &matLib, &camera, &skybox, rasterDepth);
 	raster.aoStrength = savedAo;
 	raster.shadowMapSize = savedShadow;
+	raster.ssrEnabled = savedSsr;
 
 	// Timing only — the images above are already captured. Everything is measured from the
 	// same camera and scene, so the three numbers are directly comparable.
@@ -610,6 +634,7 @@ int main(int argc, char **argv) {
 	float blurTotal = raster.aoBlurPipeline.timeTook * AO_BLUR_PASSES;
 	float kernelTotal = raster.shadowPipeline.timeTook + raster.depthPipeline.timeTook +
 						raster.shadePipeline.timeTook + raster.skyPipeline.timeTook +
+						raster.ssrPipeline.timeTook +
 						raster.aoPipeline.timeTook + blurTotal + raster.aoApplyPipeline.timeTook;
 	printf("  ray tracer    (CPU, RayTraceScene)   : %7.2f ms\n", rayMedian);
 	printf("  CPU raster    (render.c RenderObjects): %7.2f ms\n", medianOf(legacySamples, CPU_SAMPLES));
@@ -617,9 +642,9 @@ int main(int argc, char **argv) {
 	printf("  OpenCL raster (frame path, fb+depth)  : %7.2f ms   (colour only: %.2f, all 6 buffers: %.2f)\n",
 		   rasterMedian, medianOf(colorOnlySamples, PARITY_SAMPLES), medianOf(fullSamples, 10));
 	printf("  OpenCL kernel breakdown:\n");
-	printf("      shadow %5.2f | depth %5.2f | shade %6.2f | sky %5.2f | ao %5.2f | blur x%d %5.2f | apply %5.2f\n",
+	printf("      shadow %5.2f | depth %5.2f | shade %6.2f | sky %5.2f | ssr %5.2f | ao %5.2f | blur x%d %5.2f | apply %5.2f\n",
 		   raster.shadowPipeline.timeTook, raster.depthPipeline.timeTook, raster.shadePipeline.timeTook,
-		   raster.skyPipeline.timeTook, raster.aoPipeline.timeTook, AO_BLUR_PASSES, blurTotal,
+		   raster.skyPipeline.timeTook, raster.ssrPipeline.timeTook, raster.aoPipeline.timeTook, AO_BLUR_PASSES, blurTotal,
 		   raster.aoApplyPipeline.timeTook);
 	printf("      kernels total %.2f ms, read-back + dispatch overhead %.2f ms\n",
 		   kernelTotal, rasterMedian - kernelTotal);

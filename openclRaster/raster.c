@@ -60,6 +60,8 @@ void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int heig
 	rr->aoBlurPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeAoBlur", NULL);
 	rr->aoApplyPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeAoApply", NULL);
 	rr->shadowPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeShadow", NULL);
+	rr->ssrPipeline = CL_Pipeline_FromFile(&rr->ctx, kernelPath, "rasterizeSsr", NULL);
+	rr->ssrEnabled = 1;
 
 	size_t pixels = (size_t)width * height;
 	rr->objectBuf = CL_Buffer_CreatePinned(&rr->ctx, sizeof(RasterObject), CL_MEM_READ_ONLY);
@@ -77,14 +79,17 @@ void Raster_Init(RasterRenderer *rr, const char *kernelPath, int width, int heig
 	rr->positionBuf = CL_Buffer_CreatePinned(&rr->ctx, pixels * sizeof(float4), CL_MEM_READ_WRITE);
 	rr->objectIdBuf = CL_Buffer_CreatePinned(&rr->ctx, pixels * sizeof(int), CL_MEM_READ_WRITE);
 	rr->triangleIdBuf = CL_Buffer_CreatePinned(&rr->ctx, pixels * sizeof(int), CL_MEM_READ_WRITE);
+	// SSR scratch stays device-side: it never crosses PCIe, only the shade and SSR kernels touch it.
+	rr->reflectBuf = CL_Buffer_Create(&rr->ctx, pixels * sizeof(float4), CL_MEM_READ_WRITE);
+	rr->fbSnapBuf = CL_Buffer_Create(&rr->ctx, pixels * sizeof(float4), CL_MEM_READ_WRITE);
 
 	if (rr->ctx.context == NULL || rr->ctx.queue == NULL ||
 		rr->depthPipeline.kernel == NULL || rr->shadePipeline.kernel == NULL ||
 		rr->skyPipeline.kernel == NULL || rr->aoPipeline.kernel == NULL ||
 		rr->aoBlurPipeline.kernel == NULL || rr->aoApplyPipeline.kernel == NULL ||
-		rr->shadowPipeline.kernel == NULL ||
+		rr->shadowPipeline.kernel == NULL || rr->ssrPipeline.kernel == NULL ||
 		rr->depthUBuf.buf == NULL || rr->aoBufA.buf == NULL || rr->aoBufB.buf == NULL ||
-		rr->shadowBuf.buf == NULL ||
+		rr->shadowBuf.buf == NULL || rr->reflectBuf.buf == NULL || rr->fbSnapBuf.buf == NULL ||
 		rr->framebufferBuf.buf == NULL ||
 		rr->depthBuf.buf == NULL || rr->normalBuf.buf == NULL ||
 		rr->positionBuf.buf == NULL || rr->objectIdBuf.buf == NULL ||
@@ -557,6 +562,7 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->depthBuf.buf);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->normalBuf.buf);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->positionBuf.buf);
+	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->reflectBuf.buf);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->objectIdBuf.buf);
 	clSetKernelArg(k, a++, sizeof(cl_mem), &rr->triangleIdBuf.buf);
 	dispatchScreenTiled(rr, &rr->shadePipeline, width, height);
@@ -580,6 +586,33 @@ void Raster_Render(RasterRenderer *rr, const ObjectList *scene, const MaterialLi
 		clSetKernelArg(k, a++, sizeof(int), &height);
 		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->framebufferBuf.buf);
 		dispatchScreenTiled(rr, &rr->skyPipeline, width, height);
+	}
+
+	// Screen-space reflections, port of render/cpu/ssr.c. Runs after the sky fill so a
+	// march can sample sky pixels, and before AO so the blend order matches ray.c's
+	// light-row pass (reflection into framebuffer, then applyAmbientOcclusion).
+	if (rr->ssrEnabled) {
+		CL_Buffer_Copy(&rr->ctx, &rr->framebufferBuf, &rr->fbSnapBuf, pixels * sizeof(float4));
+		k = rr->ssrPipeline.kernel;
+		a = 0;
+		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->fbSnapBuf.buf);
+		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->depthBuf.buf);
+		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->normalBuf.buf);
+		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->positionBuf.buf);
+		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->reflectBuf.buf);
+		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->skyBuf.buf);
+		clSetKernelArg(k, a++, sizeof(int), &rr->skyWidth);
+		clSetKernelArg(k, a++, sizeof(int), &rr->skyHeight);
+		clSetKernelArg(k, a++, sizeof(float3), &cam->position);
+		clSetKernelArg(k, a++, sizeof(float3), &camRight);
+		clSetKernelArg(k, a++, sizeof(float3), &camUp);
+		clSetKernelArg(k, a++, sizeof(float3), &camFwd);
+		clSetKernelArg(k, a++, sizeof(float), &cam->fovScale);
+		clSetKernelArg(k, a++, sizeof(float), &cam->aspect);
+		clSetKernelArg(k, a++, sizeof(int), &width);
+		clSetKernelArg(k, a++, sizeof(int), &height);
+		clSetKernelArg(k, a++, sizeof(cl_mem), &rr->framebufferBuf.buf);
+		dispatchScreenTiled(rr, &rr->ssrPipeline, width, height);
 	}
 
 	// Ambient occlusion, same chain as AO.h: raw SSAO, an edge-preserving separable blur,
@@ -665,6 +698,8 @@ void Raster_Destroy(RasterRenderer *rr) {
 	freeBuffer(&rr->aoBufA);
 	freeBuffer(&rr->aoBufB);
 	freeBuffer(&rr->shadowBuf);
+	freeBuffer(&rr->reflectBuf);
+	freeBuffer(&rr->fbSnapBuf);
 	freeBuffer(&rr->framebufferBuf);
 	freeBuffer(&rr->depthBuf);
 	freeBuffer(&rr->normalBuf);
@@ -678,6 +713,7 @@ void Raster_Destroy(RasterRenderer *rr) {
 	freePipeline(&rr->aoBlurPipeline);
 	freePipeline(&rr->aoApplyPipeline);
 	freePipeline(&rr->shadowPipeline);
+	freePipeline(&rr->ssrPipeline);
 	if (rr->ctx.queue) CL_Context_Destroy(&rr->ctx);
 	free(rr->triStarts);
 	rr->triStarts = NULL;
