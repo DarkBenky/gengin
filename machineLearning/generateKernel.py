@@ -178,8 +178,10 @@ CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
 CONV_WIDE_PIXELS = 16384    # from this map size up a doubled filter block still fills the device
 CONV_MAX_WIDE_PER_ITEM = 32
-CONV_BLOCK_COLUMNS = 4      # output columns a work item may accumulate
-CONV_BLOCK_BUDGET = 16      # accumulators per work item (filters x columns)
+CONV_BLOCK_COLUMNS = 8      # output columns a work item may accumulate
+CONV_BLOCK_BUDGET = 32      # accumulators per work item (filters x columns)
+CONV_BLOCK_LOCAL_X = 32     # work-group shape of the column-blocked body
+CONV_BLOCK_LOCAL_Y = 4
 
 
 def convBlockX(width, channels, filterSize, filters, perItem):
@@ -189,8 +191,9 @@ def convBlockX(width, channels, filterSize, filters, perItem):
     every load on one output, so the weight loads per output stay at `k*k *
     channels` however the filters are blocked.  Accumulating `blockX` adjacent
     columns amortizes one weight load (and the input load beside it) over
-    `blockX` outputs, which at a fixed accumulator budget is the even split
-    between the two.
+    `blockX` outputs.  The columns pay before the filters do: 8 columns x 4
+    filters beats the even 4 x 4 split by 27-30% once the work group is widened
+    to match (see generateC), and 32 accumulators still fit without spilling.
 
     Only the scalar body gets the columns: it keeps one register per
     accumulator, where the float4 body already spends four on each of its
@@ -211,9 +214,12 @@ def convBlockX(width, channels, filterSize, filters, perItem):
 # its FMA rate.  When one tap's weights fit in __local the work group loads them
 # once and shares them, which turns that stream into a compute-bound kernel.
 CONV_STAGE_QUADS_MIN = 16   # channels >= 64: a thinner tile is not worth a barrier
+CONV_STAGE_QUADS_NARROW = 4  # channels >= 16, only once the weight stream outgrows the caches
+CONV_STAGE_WEIGHT_MIN = 128 << 20  # weight bytes one call re-reads before staging pays
 CONV_STAGE_TILE_MAX = 2048  # float4 of weights staged per tap (32 KB)
 CONV_STAGE_BLOCK_X = 64
 CONV_STAGE_BLOCK_Y = 2
+CONV_STAGE_GROUP_MIN = 32   # a group this small cannot feed a whole tile
 CONV_STAGE_COLUMNS = 2      # output pixels sharing one staged weight load
 CONV_STAGE_ACCUM_MAX = 32   # float4 accumulators per work item, columns included
 CONV_STAGE_COLUMN_MIN = 64  # narrower images leave the halved x-block short of lanes
@@ -222,18 +228,26 @@ CONV_STAGE_COLUMN_MIN = 64  # narrower images leave the halved x-block short of 
 def stagedConvPlan(width, height, channels, filterSize, filters, perItem):
     """(perItem, groups, blockX, blockY, perThread, columns) for the __local body, or None.
 
-    Only k=3 and a float4-aligned channel count are staged: the tile has to be
+    Only a float4-aligned channel count and k >= 3 are staged: the tile has to be
     shared by enough work items to pay for the two barriers per tap, and the
     per-thread staging slice has to divide evenly (see generateKernelStaged).
+    A narrow tile pays only on a map big enough that the direct body's per-output
+    weight re-reads stop hitting L1, so below CONV_STAGE_QUADS_MIN the plan is
+    gated on that re-read volume instead.
     `perItem` stays the direct body's so the two plans put the same number of
     work items in flight.
     """
-    if filterSize != 3 or channels % 4:
+    if filterSize < 3 or channels % 4:
         return None
     quads = channels // 4
-    if quads < CONV_STAGE_QUADS_MIN:
+    if quads < CONV_STAGE_QUADS_NARROW:
         return None
-    if perItem * quads > CONV_STAGE_TILE_MAX:
+    if (quads < CONV_STAGE_QUADS_MIN
+            and (width * height * filters * filterSize * filterSize * channels * 4
+                 < CONV_STAGE_WEIGHT_MIN)):
+        return None
+    tile = perItem * quads
+    if tile > CONV_STAGE_TILE_MAX:
         return None
     columns = 1
     if (quads >= 2 * CONV_STAGE_QUADS_MIN and width >= CONV_STAGE_COLUMN_MIN
@@ -242,11 +256,64 @@ def stagedConvPlan(width, height, channels, filterSize, filters, perItem):
         columns = CONV_STAGE_COLUMNS
     span = width // columns
     blockX = CONV_STAGE_BLOCK_X if span >= CONV_STAGE_BLOCK_X else -(-span // 32) * 32
-    threads = blockX * CONV_STAGE_BLOCK_Y
-    if (perItem * quads) % threads:
+    blockY = CONV_STAGE_BLOCK_Y
+    while blockY > 1 and tile % (blockX * blockY):
+        blockY //= 2
+    while blockX > CONV_STAGE_GROUP_MIN and tile % (blockX * blockY):
+        blockX //= 2
+    threads = blockX * blockY
+    if tile % threads:
         return None
-    return (perItem, -(-filters // perItem), blockX, CONV_STAGE_BLOCK_Y,
-            (perItem * quads) // threads, columns)
+    return (perItem, -(-filters // perItem), blockX, blockY, tile // threads, columns)
+
+
+CONV_TILE_BLOCK_X = 16
+CONV_TILE_BLOCK_Y = 8       # 16x8 = 128 lanes, the narrowest group that fills an SM
+CONV_TILE_COLUMNS = 2       # output pixels sharing one staged weight load
+CONV_TILE_SLICE = 4         # channel quads staged per pass
+CONV_TILE_LOCAL_MAX = 3072  # float4 of __local one block may take (48 KB on this driver)
+CONV_TILE_GROUPS_MIN = 32   # below this the tile's halo re-reads outweigh the shared loads
+CONV_TILE_BLOCKS_MIN = 96   # work groups that fill the device: 3 blocks per SM here
+CONV_TILE_SPLIT_PIXELS = 4096  # below this map size a narrower tile costs more halo than it buys
+
+
+def tiledConvPlan(width, height, channels, filterSize, filters, perItem):
+    """(perItem, groups, blockX, blockY, columns, sliceQuads, tilePixels) for the tiled body, or None.
+
+    Staging the input quad-major is what makes a warp's input reads run along
+    pixels instead of down a `channels`-float stride; both tiles then have to
+    fit in one block's __local, which caps the slice, and the tile's halo caps
+    how few work groups are still worth having.
+    """
+    if filterSize != 3 or channels % 4:
+        return None
+    quads = channels // 4
+    if quads < CONV_STAGE_QUADS_MIN:
+        return None
+    if width % CONV_TILE_COLUMNS or width < CONV_TILE_COLUMNS * CONV_TILE_BLOCK_X:
+        return None
+    perItem = min(perItem, CONV_MAX_PER_ITEM)
+    tilePixels = (CONV_TILE_BLOCK_X * CONV_TILE_COLUMNS + 4) * (CONV_TILE_BLOCK_Y + 2)
+    planeBlocks = (-(-width // (CONV_TILE_COLUMNS * CONV_TILE_BLOCK_X))
+                   * -(-height // CONV_TILE_BLOCK_Y))
+    # A thin filter block leaves too few groups to fill the device; a narrower
+    # one buys waves of parallelism the wider register block cannot pay for.
+    if width * height >= CONV_TILE_SPLIT_PIXELS:
+        for candidate in (CONV_MAX_PER_ITEM // 2, CONV_MIN_PER_ITEM):
+            if perItem <= candidate or planeBlocks * -(-filters // perItem) >= CONV_TILE_BLOCKS_MIN:
+                break
+            perItem = candidate
+    sliceQuads = min(CONV_TILE_SLICE, quads)
+    while sliceQuads and (tilePixels + perItem * filterSize * filterSize) * sliceQuads > CONV_TILE_LOCAL_MAX:
+        sliceQuads //= 2
+    if not sliceQuads:
+        return None
+    groups = -(-filters // perItem)                    # ceil
+    blocks = planeBlocks * groups
+    if blocks < CONV_TILE_GROUPS_MIN:
+        return None
+    return (perItem, groups, CONV_TILE_BLOCK_X, CONV_TILE_BLOCK_Y,
+            CONV_TILE_COLUMNS, sliceQuads, tilePixels)
 
 
 def convPlan(width, height, channels, filterSize, filters):
@@ -276,6 +343,149 @@ def convPlan(width, height, channels, filterSize, filters):
         perItem = max(1, CONV_BLOCK_BUDGET // blockX)  # columns share the same budget
         groups = -(-filters // perItem)                # ceil
     return groups, perItem, blockX, vectorized, quads
+
+# Row-blocked plan.  The direct body walks output taps, so a work item reads
+# `filterSize` input rows per output row.  Walking input rows instead reads
+# `rows + filterSize - 1` input rows for `rows` output rows, which at a tall
+# filter cuts the input stream several-fold; the weight stream is unchanged, so
+# the win is only as large as the input stream is.  The cost is `rows`
+# accumulator sets on top of what the filter block already needs, and past a
+# couple of filters per item the kernel spills instead.
+CONV_ROWS_FILTER_MIN = 5    # a 3x3 halo re-read costs more than one row saves
+CONV_ROWS_FILTER_MAX = 2    # more filters per item and the accumulators win
+CONV_ROWS_ACCUM_MAX = 16    # float4 accumulators per work item, rows included
+
+
+def rowBlockedConvPlan(width, height, channels, filterSize, filters, perItem):
+    """Output rows one work item accumulates, 1 for the direct body."""
+    # `perItem * rows` accumulator sets is the budget that keeps the register
+    # count down, and it only leaves room while one work item owns the whole
+    # filter block: no filter groups and no column blocks.
+    if (channels % 4) != 0 or filters != perItem:
+        return 1
+    if filters > CONV_ROWS_FILTER_MAX or filterSize < CONV_ROWS_FILTER_MIN:
+        return 1
+    rows = 1
+    while (rows * 2 <= filterSize
+           and perItem * rows * 2 <= CONV_ROWS_ACCUM_MAX
+           and width * (-(-height // (rows * 2))) >= CONV_SPLIT_TARGET):
+        rows *= 2
+    return rows
+
+
+def generateKernelRowBlocked(width, height, channels, filterSize, filters, rows):
+    """Conv body accumulating `rows` output rows per work item off one input row.
+
+    Each input row the work item loads is multiplied into every output row whose
+    filter window covers it, so the input rows and the filter block are read
+    `rows + filterSize - 1` times per `rows` outputs instead of
+    `rows * filterSize`.  Each accumulator still sees its taps in (row, column)
+    order, so the output is bit-identical to the direct body.
+    """
+    pad = filterSize // 2
+    rowStride = width * channels
+    planeStride = filterSize * channels
+    filterStride = filterSize * filterSize * channels
+    quads = channels // 4
+    perItem = filters
+    name = kernelName(width, height, channels, filterSize, filters)
+
+    def rowGuard(dy):
+        if dy < 0:
+            return f"y0 >= {-dy}"
+        if dy > 0:
+            return f"y0 < {height - dy}"
+        return ""
+
+    out = []
+    out.append("// ---------------------------------------------------------------------------")
+    out.append(f"// {name} -- generated by generateKernel.py (kernelGen v2, do not edit by hand)")
+    out.append(f"// width={width} height={height} channels={channels} filterSize={filterSize} filters={filters}")
+    out.append(f"// dims: in {width}x{height}x{channels} -> out {width}x{height}x{filters} (output channels = {filters}) | weights [{filters}][{filterSize}][{filterSize}][{channels}] | bias [{filters}]")
+    out.append(f"// plan: {perItem} filter(s) x {rows} output rows in registers, float4 channel loads")
+    out.append("// params: input, filterWeights, bias, output, activation, accumulate")
+    out.append("// ---------------------------------------------------------------------------")
+    out.append(f"__kernel void {name}(")
+    out.append("    __global const float* input,")
+    out.append("    __global const float* filterWeights,")
+    out.append("    __global const float* bias,")
+    out.append("    __global float* output,")
+    out.append("    const int activation,")
+    out.append("    const int accumulate)")
+    out.append("{")
+    out.append("    const int x = get_global_id(0);")
+    out.append(f"    const int y0 = get_global_id(1) * {rows};")
+    out.append(f"    if (x >= {width} || y0 >= {height}) return;")
+    out.append("")
+
+    body = "    "
+    for r in range(rows):
+        for b in range(perItem):
+            out.append(f"{body}float4 a{r}_{b} = (float4)(0.0f);")
+    out.append("")
+
+    for r in range(rows + filterSize - 1):
+        dy = r - pad
+        rowCond = rowGuard(dy)
+        out.append(f"{body}// input row {dy}")
+        if rowCond:
+            out.append(f"{body}if ({rowCond})")
+        out.append(f"{body}{{")
+        inner = body + "    "
+        for i in range(filterSize):
+            dx = i - pad
+            colCond = tapGuard(0, dx, width, height)
+            tapInner = inner
+            if colCond:
+                out.append(f"{inner}if ({colCond})")
+                out.append(f"{inner}{{")
+                tapInner = inner + "    "
+            base = f"base_{r}_{i}"
+            out.append(f"{tapInner}const int {base} = {offsetTerm('y0', dy)} * {rowStride}"
+                       f" + {offsetTerm('x', dx)} * {channels};")
+            for q in range(quads):
+                out.append(f"{tapInner}const float4 v{q} = *(__global const float4*)(input + {base} + {4 * q});")
+                for rr in range(max(0, r - 2 * pad), min(rows - 1, r) + 1):
+                    filterBase = (r - rr) * planeStride + i * channels
+                    for b in range(perItem):
+                        out.append(f"{tapInner}a{rr}_{b} += v{q} * *(__global const float4*)"
+                                   f"(filterWeights + {b * filterStride + filterBase + 4 * q});")
+            if colCond:
+                out.append(f"{inner}}}")
+            out.append("")
+        out.append(f"{body}}}")
+        out.append("")
+
+    for r in range(rows):
+        storeIndent = body + ("    " if r else "")
+        if r:
+            out.append(f"{body}if (y0 + {r} < {height})")
+            out.append(f"{body}{{")
+        storeY = "y0" if r == 0 else f"(y0 + {r})"
+        for b in range(perItem):
+            out.append(f"{storeIndent}{{")
+            inner = storeIndent + "    "
+            acc = f"(a{r}_{b}.x + a{r}_{b}.y) + (a{r}_{b}.z + a{r}_{b}.w)"
+            out.append(f"{inner}float sum = {acc} + bias[{b}];")
+            out.append("")
+            out.append(f"{inner}float value = sum;")
+            out.append(f"{inner}switch (activation)")
+            out.append(f"{inner}{{")
+            out.append(f"{inner}    case ReLU:    value = max(sum, 0.0f); break;")
+            out.append(f"{inner}    case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;")
+            out.append(f"{inner}    case Tanh:    value = tanh(sum); break;")
+            out.append(f"{inner}    case None:    value = sum; break;")
+            out.append(f"{inner}}}")
+            out.append("")
+            out.append(f"{inner}const int idx = ({storeY} * {width} + x) * {filters} + {b};")
+            out.append(f"{inner}output[idx] = accumulate ? output[idx] + value : value;")
+            out.append(f"{storeIndent}}}")
+        if r:
+            out.append(f"{body}}}")
+        out.append("")
+
+    out.append("}")
+    return "\n".join(out) + "\n"
 
 
 def generateKernelStaged(width, height, channels, filterSize, filters, perItem,
@@ -388,6 +598,163 @@ def generateKernelStaged(width, height, channels, filterSize, filters, perItem,
             out.append("    barrier(CLK_LOCAL_MEM_FENCE);")
             out.append("")
 
+    pack = 4 if (filters % 4) == 0 and (perItem % 4) == 0 else 1
+
+    for p in range(columns):
+        storeX = "x" if p == 0 else f"x + {p}"
+        for first in range(0, perItem, pack):
+            cond = "ok" if wholeGroup else f"ok && n0 + {first} < {filters}"
+            out.append(f"    if ({cond})")
+            out.append("    {")
+            inner = "        "
+            if pack > 1:
+                out.append(f"{inner}float4 value4 = (float4)(0.0f);")
+                out.append("")
+            for b in range(first, first + pack):
+                if pack > 1:
+                    out.append(f"{inner}{{")
+                    line = inner + "    "
+                else:
+                    line = inner
+                acc = accName(p, b)
+                out.append(f"{line}float sum = ({acc}.x + {acc}.y) + ({acc}.z + {acc}.w) + bias[n0 + {b}];")
+                out.append("")
+                out.append(f"{line}float value = sum;")
+                out.append(f"{line}switch (activation)")
+                out.append(f"{line}{{")
+                out.append(f"{line}    case ReLU:    value = max(sum, 0.0f); break;")
+                out.append(f"{line}    case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;")
+                out.append(f"{line}    case Tanh:    value = tanh(sum); break;")
+                out.append(f"{line}    case None:    value = sum; break;")
+                out.append(f"{line}}}")
+                out.append("")
+                if pack > 1:
+                    out.append(f"{line}value4.s{b - first} = value;")
+                    out.append(f"{inner}}}")
+                    out.append("")
+                else:
+                    out.append(f"{line}const int idx = (y * {width} + {storeX}) * {filters} + n0 + {b};")
+                    out.append(f"{line}output[idx] = accumulate ? output[idx] + value : value;")
+            if pack > 1:
+                out.append(f"{inner}const int idx = (y * {width} + {storeX}) * {filters} + n0 + {first};")
+                out.append(f"{inner}*(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;")
+            out.append("    }")
+            out.append("")
+
+    out.append("}")
+    return "\n".join(out) + "\n"
+
+
+def generateKernelTiled(width, height, channels, filterSize, filters, perItem, groups,
+                        blockX, blockY, columns, sliceQuads, tilePixels):
+    """Conv body with an input slice and the filter block staged in __local.
+
+    Like the staged body, but the input tile is staged quad-major and read back
+    with the lanes running along pixels, and the weights are staged once per
+    slice instead of once per tap.
+    """
+    pad = filterSize // 2
+    taps = filterSize * filterSize
+    planeStride = filterSize * channels
+    filterStride = filterSize * filterSize * channels
+    quads = channels // 4
+    name = kernelName(width, height, channels, filterSize, filters)
+    tileWidth = blockX * columns + 4
+    blockXCount = -(-width // (blockX * columns))
+    threads = blockX * blockY
+    slices = quads // sliceQuads
+    weightTile = perItem * sliceQuads * taps
+    wholeGroup = perItem * groups == filters
+
+    def accName(p, b):
+        return f"a{b}" if columns == 1 else f"a{p}_{b}"
+
+    out = []
+    out.append("// ---------------------------------------------------------------------------")
+    out.append(f"// {name} -- generated by generateKernel.py (kernelGen v2, do not edit by hand)")
+    out.append(f"// width={width} height={height} channels={channels} filterSize={filterSize} filters={filters}")
+    out.append(f"// dims: in {width}x{height}x{channels} -> out {width}x{height}x{filters} (output channels = {filters}) | weights [{filters}][{filterSize}][{filterSize}][{channels}] | bias [{filters}]")
+    out.append(f"// plan: {perItem} filter(s) in registers, {blockX}x{blockY} work group, "
+               f"{sliceQuads}-quad input + weight slices in __local, {slices} slice(s), "
+               f"{blockXCount} x-block(s) x {groups} filter groups")
+    out.append("// params: input, filterWeights, bias, output, activation, accumulate")
+    out.append("// ---------------------------------------------------------------------------")
+    out.append(f"__kernel void {name}(")
+    out.append("    __global const float* input,")
+    out.append("    __global const float* filterWeights,")
+    out.append("    __global const float* bias,")
+    out.append("    __global float* output,")
+    out.append("    const int activation,")
+    out.append("    const int accumulate)")
+    out.append("{")
+    out.append(f"    const int bx = get_group_id(0) % {blockXCount};")
+    out.append(f"    const int n0 = (get_group_id(0) / {blockXCount}) * {perItem};")
+    out.append(f"    const int y0 = get_group_id(1) * {blockY};")
+    out.append("    const int tx = get_local_id(0);")
+    out.append("    const int ty = get_local_id(1);")
+    out.append(f"    const int tid = ty * {blockX} + tx;")
+    out.append(f"    const int x0 = bx * {blockX * columns};")
+    out.append(f"    const int x = x0 + tx * {columns};")
+    out.append("    const int y = y0 + ty;")
+    out.append(f"    const int ok = (x < {width} && y < {height});")
+    out.append("")
+    out.append(f"    __local float4 inputLocal[{sliceQuads * tilePixels}];")
+    out.append(f"    __local float4 weightsLocal[{weightTile}];")
+    out.append("")
+    for p in range(columns):
+        for b in range(perItem):
+            out.append(f"    float4 {accName(p, b)} = (float4)(0.0f);")
+    out.append("")
+    out.append(f"    for (int s = 0; s < {slices}; s++)")
+    out.append("    {")
+    out.append(f"        for (int i = tid; i < {sliceQuads * tilePixels}; i += {threads})")
+    out.append("        {")
+    out.append(f"            const int q = i / {tilePixels};")
+    out.append(f"            const int p = i - q * {tilePixels};")
+    out.append(f"            const int col = p % {tileWidth};")
+    out.append(f"            const int row = p / {tileWidth};")
+    out.append("            const int gx = x0 - 1 + col;")
+    out.append("            const int gy = y0 - 1 + row;")
+    out.append(f"            inputLocal[i] = (gx >= 0 && gx < {width} && gy >= 0 && gy < {height})")
+    out.append(f"                ? *(__global const float4*)(input + (gy * {width} + gx) * {channels}"
+               f" + 4 * (s * {sliceQuads} + q))")
+    out.append("                : (float4)(0.0f);")
+    out.append("        }")
+    out.append(f"        for (int i = tid; i < {weightTile}; i += {threads})")
+    out.append("        {")
+    out.append(f"            const int tap = i / {perItem * sliceQuads};")
+    out.append(f"            const int r = i - tap * {perItem * sliceQuads};")
+    out.append(f"            const int f = r / {sliceQuads};")
+    out.append(f"            const int q = r - f * {sliceQuads};")
+    load = (f"*(__global const float4*)(filterWeights + (n0 + f) * {filterStride}"
+            f" + (tap / {filterSize}) * {planeStride} + (tap % {filterSize}) * {channels}"
+            f" + 4 * (s * {sliceQuads} + q))")
+    if not wholeGroup:
+        load = f"(n0 + f < {filters}) ? {load} : (float4)(0.0f)"
+    out.append(f"            weightsLocal[i] = {load};")
+    out.append("        }")
+    out.append("        barrier(CLK_LOCAL_MEM_FENCE);")
+    out.append("")
+    for j in range(filterSize):
+        dy = j - pad
+        for i in range(filterSize):
+            dx = i - pad
+            tap = j * filterSize + i
+            out.append(f"        // tap ({j}, {i})")
+            out.append(f"        {{ const int pTap = (ty + {1 + dy}) * {tileWidth} + tx * {columns} + {1 + dx};")
+            out.append(f"        for (int q = 0; q < {sliceQuads}; q++)")
+            out.append("        {")
+            for p in range(columns):
+                out.append(f"            const float4 v{p} = inputLocal[q * {tilePixels} + pTap + {p}];")
+            for b in range(perItem):
+                for p in range(columns):
+                    out.append(f"            {accName(p, b)} += v{p} * weightsLocal[{(tap * perItem + b) * sliceQuads} + q];")
+            out.append("        }")
+            out.append("        }")
+            out.append("")
+    out.append("        barrier(CLK_LOCAL_MEM_FENCE);")
+    out.append("    }")
+    out.append("")
     for p in range(columns):
         storeX = "x" if p == 0 else f"x + {p}"
         for b in range(perItem):
@@ -410,7 +777,6 @@ def generateKernelStaged(width, height, channels, filterSize, filters, perItem,
             out.append(f"{inner}const int idx = (y * {width} + {storeX}) * {filters} + n0 + {b};")
             out.append(f"{inner}output[idx] = accumulate ? output[idx] + value : value;")
             out.append("    }")
-            out.append("")
 
     out.append("}")
     return "\n".join(out) + "\n"
@@ -421,6 +787,9 @@ def generateKernel(width, height, channels, filterSize, filters=1):
         raise ValueError("width, height, channels, filterSize and filters must be >= 1")
 
     perItem = convPlan(width, height, channels, filterSize, filters)[1]
+    tiled = tiledConvPlan(width, height, channels, filterSize, filters, perItem)
+    if tiled:
+        return generateKernelTiled(width, height, channels, filterSize, filters, *tiled)
     staged = stagedConvPlan(width, height, channels, filterSize, filters, perItem)
     if staged:
         return generateKernelStaged(width, height, channels, filterSize, filters, *staged)
@@ -431,6 +800,9 @@ def generateKernel(width, height, channels, filterSize, filters=1):
     filterStride = filterSize * filterSize * channels
     name = kernelName(width, height, channels, filterSize, filters)
     groups, perItem, blockX, vec, quads = convPlan(width, height, channels, filterSize, filters)
+    rows = rowBlockedConvPlan(width, height, channels, filterSize, filters, perItem)
+    if rows > 1:
+        return generateKernelRowBlocked(width, height, channels, filterSize, filters, rows)
     split = groups > 1
     wholeBlock = perItem == filters          # one block holds every filter
     looped = (not split) and (not wholeBlock)
@@ -503,25 +875,34 @@ def generateKernel(width, height, channels, filterSize, filters=1):
 
     for j in range(filterSize):
         dy = j - pad
+        # Every tap of a row shares its row guard, so one branch covers the
+        # whole row instead of one per (tap, column).
+        rowGuard = tapGuard(dy, 0, width, height)
+        rowInd = body + "    "
+        if rowGuard:
+            out.append(f"{body}if ({rowGuard})")
+            out.append(f"{body}{{")
+        else:
+            rowInd = body
         for i in range(filterSize):
             dx = i - pad
             yTerm = offsetTerm("y", dy)
             filterBase = j * planeStride + i * channels
 
-            out.append(f"{body}// tap ({j}, {i})")
+            out.append(f"{rowInd}// tap ({j}, {i})")
             for p in range(blockX):
                 # column p owns output x + p, so this tap lands on x + p + dx
                 col = p + dx
                 base = f"base_{j}_{i}" if blockX == 1 else f"base_{j}_{i}_{p}"
-                guard = tapGuard(dy, col, width, height)
+                guard = tapGuard(0, col, width, height)
                 xTerm = offsetTerm("x", col)
-                inner = body
+                inner = rowInd
                 if guard:
-                    out.append(f"{body}if ({guard})")
+                    out.append(f"{rowInd}if ({guard})")
                 if guard or blockX > 1:
                     # sibling column blocks need their own scope for v{q}
-                    out.append(f"{body}{{")
-                    inner = body + "    "
+                    out.append(f"{rowInd}{{")
+                    inner = rowInd + "    "
                 out.append(f"{inner}const int {base} = {yTerm} * {rowStride} + {xTerm} * {channels};")
                 if vec:
                     for q in range(quads):
@@ -536,8 +917,13 @@ def generateKernel(width, height, channels, filterSize, filters=1):
                         for b in range(perItem):
                             out.append(f"{inner}{accName(p, b)} += v{k} * filterWeights[{wIndex(b, filterBase + k)}];")
                 if guard or blockX > 1:
-                    out.append(f"{body}}}")
+                    out.append(f"{rowInd}}}")
                 out.append("")
+        if rowGuard:
+            if out[-1] == "":
+                out.pop()
+            out.append(f"{body}}}")
+            out.append("")
 
     # Lane neighbours own separate pixels, so a scalar store wastes a sector
     # each; the filter block is contiguous, so four values go out as one float4.
@@ -612,7 +998,13 @@ def generateC(width, height, channels, filterSize, filters=1):
     name = kernelName(width, height, channels, filterSize, filters)
     groups, perItem, blockX, _vec, _quads = convPlan(width, height, channels, filterSize, filters)
     staged = stagedConvPlan(width, height, channels, filterSize, filters, perItem)
-    if staged:
+    tiled = tiledConvPlan(width, height, channels, filterSize, filters, perItem)
+    if tiled:
+        groups, blockX, blockY, columns = tiled[1], tiled[2], tiled[3], tiled[4]
+        gx = -(-width // (columns * blockX)) * groups * blockX
+        gy = roundUp(height, blockY)
+        localX, localY = blockX, blockY
+    elif staged:
         groups, blockX, blockY, columns = staged[1], staged[2], staged[3], staged[5]
         # The kernel reads its filter group from get_group_id(0) and covers
         # blockX work items of `columns` x-values each per group, so the grid is
@@ -623,10 +1015,17 @@ def generateC(width, height, channels, filterSize, filters=1):
     else:
         # One work item per (output column block, filter group): the kernel's
         # global_id(0) carries `x + (width / blockX) * group` (see generateKernel),
-        # so the grid is `groups` times wider than the image.
-        gx = roundUp((width // blockX) * groups, 16)
-        gy = roundUp(height, 16)
-        localX, localY = 16, 16
+        # so the grid is `groups` times wider than the image.  The blocked body
+        # runs a wide, shallow group: 32 lanes over `width / blockX` block
+        # columns put two filter blocks of one pixel in one warp, and 4 rows
+        # bound the group's footprint in an output whose writes are strided by
+        # `filters` floats (27-30% at 8 columns, 7-25% at 4, over 16x16).
+        localX, localY = (CONV_BLOCK_LOCAL_X, CONV_BLOCK_LOCAL_Y) if blockX > 1 else (16, 16)
+        gx = roundUp((width // blockX) * groups, localX)
+        # A row-blocked item owns `rows` output rows, so global_id(1) only has to
+        # reach every `rows`-th row (see generateKernelRowBlocked).
+        rows = rowBlockedConvPlan(width, height, channels, filterSize, filters, perItem)
+        gy = roundUp(-(-height // rows), localY)
     initBound = (6.0 / (filterSize * filterSize * channels)) ** 0.5
 
     out = []
@@ -1288,6 +1687,20 @@ def pixelShufflePlan(channels):
     return channels // 4 if channels % 4 == 0 else 1
 
 
+def outputQuadItems(outFloats):
+    """Work items when each stores four consecutive output floats, or 0.
+
+    A channels-last body that steps one channel at a time writes `channels`
+    scalars per pixel, which is a partial sector per lane whenever the channel
+    count is not a multiple of four.  Four consecutive output floats are
+    contiguous whatever the channel count, so one item can own a whole float4.
+    """
+    return outFloats // 4 if outFloats % 4 == 0 else 0
+
+
+STORE_QUAD_GROUP = 128   # work items per group in the float4-store output form
+
+
 def generateKernelPixelShuffle(width, height, channels, upscale):
     """torch.nn.PixelShuffle(upscale): (H,W,C*r^2) -> (H*r,W*r,C), channels-last.
 
@@ -1303,6 +1716,8 @@ def generateKernelPixelShuffle(width, height, channels, upscale):
     name = pixelShuffleKernelName(width, height, channels, upscale)
     vec = (channels % 4) == 0
     groups = pixelShufflePlan(channels)
+    outFloats = outW * outH * channels
+    quads = 0 if vec else outputQuadItems(outFloats)
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
@@ -1312,6 +1727,8 @@ def generateKernelPixelShuffle(width, height, channels, upscale):
     out.append(f"// out[y*{upscale} + i][x*{upscale} + j][c] = in[y][x][c*{upscale * upscale} + i*{upscale} + j]")
     if vec:
         out.append(f"// plan: {groups} channel group(s) over global_id(0), float4 stores")
+    elif quads:
+        out.append(f"// plan: {quads} output float4(s) over global_id(0)")
     out.append("// params: input, output")
     out.append("// ---------------------------------------------------------------------------")
     out.append(f"__kernel void {name}(")
@@ -1335,6 +1752,24 @@ def generateKernelPixelShuffle(width, height, channels, upscale):
             offset = "" if c == 0 else f" + {c * upscale * upscale}"
             out.append(f"    v.{'xyzw'[c]} = input[src{offset}];")
         out.append("    *(__global float4*)(output + dst) = v;")
+    elif quads:
+        rowFloats = outW * channels
+        out.append("    const int f0 = get_global_id(0) * 4;")
+        out.append(f"    if (f0 >= {outFloats}) return;")
+        out.append("")
+        out.append("    float4 v;")
+        for j, comp in enumerate("xyzw"):
+            out.append("    {")
+            out.append(f"        const int f = f0{'' if j == 0 else f' + {j}'};")
+            out.append(f"        const int y = f / {rowFloats};")
+            out.append(f"        const int x = f / {channels} - y * {outW};")
+            out.append(f"        const int sub = (y % {upscale}) * {upscale} + (x % {upscale});")
+            out.append(f"        const int src = ((y / {upscale}) * {width} + (x / {upscale})) * {inChannels}"
+                       f" + sub + (f - (y * {outW} + x) * {channels}) * {upscale * upscale};")
+            out.append(f"        v.{comp} = input[src];")
+            out.append("    }")
+        out.append("")
+        out.append("    *(__global float4*)(output + f0) = v;")
     else:
         out.append("    const int x = get_global_id(0);")
         out.append("    const int y = get_global_id(1);")
@@ -1357,8 +1792,15 @@ def generateCPixelShuffle(width, height, channels, upscale):
     outH = height * upscale
     inChannels = channels * upscale * upscale
     groups = pixelShufflePlan(channels)
-    gx = roundUp(outW * groups, 16)
-    gy = roundUp(outH, 16)
+    quads = 0 if channels % 4 == 0 else outputQuadItems(outW * outH * channels)
+    if quads:
+        gx = roundUp(quads, STORE_QUAD_GROUP)
+        gy = 1
+        localX, localY = STORE_QUAD_GROUP, 1
+    else:
+        gx = roundUp(outW * groups, 16)
+        gy = roundUp(outH, 16)
+        localX, localY = 16, 16
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
@@ -1397,8 +1839,8 @@ def generateCPixelShuffle(width, height, channels, upscale):
     out.append(f"\tlayer.upscale = {upscale};")
     out.append(f"\tlayer.outWidth = {outW};")
     out.append(f"\tlayer.outHeight = {outH};")
-    out.append("\tlayer.localX = 16;")
-    out.append("\tlayer.localY = 16;")
+    out.append(f"\tlayer.localX = {localX};")
+    out.append(f"\tlayer.localY = {localY};")
     out.append("")
     out.append(f'\tlayer.pip = CL_Pipeline_FromFile(ctx, clPath, "{name}", NULL);')
     out.append("\tif (layer.pip.kernel == NULL) {")
@@ -1459,12 +1901,16 @@ def generateKernelBilinear(width, height, channels, upscale):
     outW = width * upscale
     outH = height * upscale
     name = bilinearKernelName(width, height, channels, upscale)
+    outFloats = outW * outH * channels
+    quads = outputQuadItems(outFloats)
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
     out.append(f"// {name} -- generated by generateKernel.py (do not edit by hand)")
     out.append(f"// width={width} height={height} channels={channels} upscale={upscale} -> {outW}x{outH}")
     out.append(f"// dims: in {width}x{height}x{channels} -> out {outW}x{outH}x{channels} (bilinear x{upscale}, align_corners=false, channels-last)")
+    if quads:
+        out.append(f"// plan: {quads} output float4(s) over global_id(0)")
     out.append("// params: input, output, accumulate")
     out.append("// ---------------------------------------------------------------------------")
     out.append(f"__kernel void {name}(")
@@ -1472,6 +1918,45 @@ def generateKernelBilinear(width, height, channels, upscale):
     out.append("    __global float* output,")
     out.append("    const int accumulate)")
     out.append("{")
+    if quads:
+        rowFloats = outW * channels
+        rowStride = width * channels
+        out.append("    const int f0 = get_global_id(0) * 4;")
+        out.append(f"    if (f0 >= {outFloats}) return;")
+        out.append("")
+        out.append("    float4 v;")
+        for j, comp in enumerate("xyzw"):
+            out.append("    {")
+            out.append(f"        const int f = f0{'' if j == 0 else f' + {j}'};")
+            out.append(f"        const int y = f / {rowFloats};")
+            out.append(f"        const int x = f / {channels} - y * {outW};")
+            out.append(f"        const int c = f - (y * {outW} + x) * {channels};")
+            out.append(f"        const float sx = max((x + 0.5f) / {upscale} - 0.5f, 0.0f);")
+            out.append(f"        const float sy = max((y + 0.5f) / {upscale} - 0.5f, 0.0f);")
+            out.append("        const int x0 = (int)sx;")
+            out.append("        const int y0 = (int)sy;")
+            out.append(f"        const int x1 = (x0 + 1 < {width}) ? (x0 + 1) : x0;")
+            out.append(f"        const int y1 = (y0 + 1 < {height}) ? (y0 + 1) : y0;")
+            out.append("        const float tx = sx - (float)x0;")
+            out.append("        const float ty = sy - (float)y0;")
+            out.append("")
+            out.append(f"        const int row0 = y0 * {rowStride};")
+            out.append(f"        const int row1 = y1 * {rowStride};")
+            out.append(f"        const int col0 = x0 * {channels};")
+            out.append(f"        const int col1 = x1 * {channels};")
+            out.append("        const float v00 = input[row0 + col0 + c];")
+            out.append("        const float v01 = input[row0 + col1 + c];")
+            out.append("        const float v10 = input[row1 + col0 + c];")
+            out.append("        const float v11 = input[row1 + col1 + c];")
+            out.append("        const float top = v00 + (v01 - v00) * tx;")
+            out.append("        const float bottom = v10 + (v11 - v10) * tx;")
+            out.append(f"        v.{comp} = top + (bottom - top) * ty;")
+            out.append("    }")
+        out.append("")
+        out.append("    *(__global float4*)(output + f0) = accumulate ? *(__global const float4*)(output + f0) + v : v;")
+        out.append("}")
+        return "\n".join(out) + "\n"
+
     out.append("    const int x = get_global_id(0);")
     out.append("    const int y = get_global_id(1);")
     out.append(f"    if (x >= {outW} || y >= {outH}) return;")
@@ -1511,8 +1996,15 @@ def generateCBilinear(width, height, channels, upscale):
     name = bilinearKernelName(width, height, channels, upscale)
     outW = width * upscale
     outH = height * upscale
-    gx = roundUp(outW, 16)
-    gy = roundUp(outH, 16)
+    quads = outputQuadItems(outW * outH * channels)
+    if quads:
+        gx = roundUp(quads, STORE_QUAD_GROUP)
+        gy = 1
+        localX, localY = STORE_QUAD_GROUP, 1
+    else:
+        gx = roundUp(outW, 16)
+        gy = roundUp(outH, 16)
+        localX, localY = 16, 16
 
     out = []
     out.append("// ---------------------------------------------------------------------------")
@@ -1551,8 +2043,8 @@ def generateCBilinear(width, height, channels, upscale):
     out.append(f"\tlayer.upscale = {upscale};")
     out.append(f"\tlayer.outWidth = {outW};")
     out.append(f"\tlayer.outHeight = {outH};")
-    out.append("\tlayer.localX = 16;")
-    out.append("\tlayer.localY = 16;")
+    out.append(f"\tlayer.localX = {localX};")
+    out.append(f"\tlayer.localY = {localY};")
     out.append("")
     out.append(f'\tlayer.pip = CL_Pipeline_FromFile(ctx, clPath, "{name}", NULL);')
     out.append("\tif (layer.pip.kernel == NULL) {")
