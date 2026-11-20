@@ -1167,6 +1167,28 @@ func parseObjFile(filename string, texSize int) (*FileObject, error) {
 	return fileObj, nil
 }
 
+// WrapIndex(-1, 4) -> 3
+func WrapIndex(pos, count int) int {
+	if pos < 0 {
+		return pos + count
+	}
+	return pos
+}
+
+// SetBit(0b1000, 2, true) -> 0b1100
+func SetBit(in uint32, pos int, val bool) uint32 {
+	mask := uint32(1) << WrapIndex(pos, 32)
+	if val {
+		return in | mask
+	}
+	return in &^ mask
+}
+
+// GetBit(0b1100, 2) -> true
+func GetBit(in uint32, pos int) bool {
+	return (in>>WrapIndex(pos, 32))&1 == 1
+}
+
 func uint32ToBytes(value uint32) []byte {
 	return []byte{
 		byte(value & 0xFF),
@@ -1190,7 +1212,11 @@ func uint16ToBytes(value uint16) []byte {
 	return []byte{byte(value & 0xFF), byte(value >> 8)}
 }
 
-func writeFile(filename string, obj *FileObject, color *[3]float32, boost float32, cull uint32) error {
+type float3 struct {
+	x, y, z, w float32 // w for extra pending
+}
+
+func writeFile(filename string, obj *FileObject, color *[3]float32, boost float32, cull bool) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -1200,10 +1226,10 @@ func writeFile(filename string, obj *FileObject, color *[3]float32, boost float3
 
 	// Binary layout:
 	// Header (20 bytes):
-	//   fileSize           uint32
+	//   fileSize           uint32  — File size ignores FaceMap
 	//   triangleStructSize uint32  — 108 bytes
 	//   triangleCount      uint32
-	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces
+	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces, bit2: has emission map (golang code will always set this bit to false)
 	//   textureSize        uint32  — texture edge length
 	//
 	// Texture data (if hasTextures):
@@ -1216,15 +1242,24 @@ func writeFile(filename string, obj *FileObject, color *[3]float32, boost float3
 	//   roughness metallic emission                    = 12
 	//   color float3 padded                            = 16
 	//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
+	//
+	// Face Map Layout if hasEmissionMap:
+	//  FileSizeEmissionMap 	uint32
+	//  SizeOfTexture 			uint32 —  based on the EMISSION_RESOLUTION defined in object.h
+	//  FrontTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  BackTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  RightTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  LeftTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  TopTexture   			float3 *SizeOfTexture * SizeOfTexture
+	//  BottomTexture 			float3 *SizeOfTexture * SizeOfTexture
 
 	const triangleStructSize = uint32(4*16 + 12 + 16 + 16) // 108
 	texSize := obj.TexSize
 	triCount := uint32(len(obj.Triangles))
 	hasTextures := uint32(0)
-	if obj.HasTextures {
-		hasTextures = 1
-	}
-	hasTextures |= cull
+	hasTextures = SetBit(hasTextures, 0, obj.HasTextures)
+	hasTextures = SetBit(hasTextures, 1, cull)
+	hasTextures = SetBit(hasTextures, 2, false) // go does not support emission maps
 
 	textureBytes := uint32(0)
 	if obj.HasTextures {
@@ -1365,16 +1400,14 @@ func main() {
 		boost = clamp(float32(f), 0, 1)
 	}
 
-	cull := uint32(0)
+	cull := false
 	if len(os.Args) >= 6 {
 		v, err := strconv.Atoi(os.Args[5])
 		if err != nil {
 			fmt.Printf("Error parsing cull: %v\n", err)
 			os.Exit(1)
 		}
-		if v != 0 {
-			cull = 2
-		}
+		cull = v != 0
 	}
 
 	obj, err := parseObjFile(inputFile, textureSize)

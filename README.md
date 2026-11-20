@@ -1,8 +1,26 @@
 # Tasks
 
-- [ ] when running on local model option for the main model to delegate to small Qwen2.5 Cider 
+- [ ] **Low** Test optimization
+  - [ ] while we run RayTraceRowFunc we run one task where we sort BBox of object by distance we add new field dist array and order array where we store idx of Object
 
-- [X] add more tasks if some PR can't be merged correct it
+    ```c
+    Object *objects;
+    float *dist;
+    int *order;
+    int numObjects;
+    ```
+
+  and on next frame we test intersection of BBoxes from closest to farthest
+
+- [X] when running on local model option for the main model to delegate to small Qwen2.5 Coder
+
+- [ ] Check if we can add something like **defer**
+
+  ```c
+  defer {
+    someFunc()
+  }
+  ```
 
 - [ ] Align all allocations to 64 (malloc, calloc)
   - [ ] test if this improve preformance
@@ -11,12 +29,17 @@
 
 - [ ] Clouds look bad need to improved also reflections for clouds would be nice
 
-- [X] ( Done probably ? ) New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
-
 - [ ] Add lib for drawing 2d graphics for example for plotting frame time graphs
 
 - [ ] Map loading files
-  - [ ] Fix / Design the file format for saving the model
+  - [X] Fix / Design the file format for saving the model
+  - [X] LoadObj reads the face map size field after the triangles, SaveObj, the editor and the Go writer all match the format
+  - [ ] LoadObj add FileSizeEmissionMap to expectedSize so a file with a face map is not rejected as corrupt
+  - [ ] LoadObj read the six grids into frontFaceEmission ... bottomFaceEmission and set hasEmission
+  - [ ] Object_Init skip CalculateFaceEmissions when the file already carried a face map
+  - [ ] LoadObj reject SizeOfTexture that is not EMISSION_RESOLUTION before filling the fixed 16x16 grid
+  - [ ] loadObj.h FaceMap still declares float3_no_pad and LoadFaceMap has no body, fix the type and drop or implement the function
+  - [ ] emission_face_maps mcp tool writes a standalone .face file, add a mode that appends into the model bin
   - [X] Object struct needs new field PathObjectType this can be used for saving scene and loading scene the object loading method needs to be updated to save the path to the struct of loaded object if object is created my merging multiple object on scene saving we need to create the file for that object
   - [X] More primitives like toroid, cone, pyramid ...
   - [ ] Optimize loading by building multiple bvh at same time not one by one
@@ -376,6 +399,10 @@
 
 - [X] maybe splitting emission map is kinda stupid we can reuse same logic for uv maping as is used for textures normals ...
   - [X] Note: Doesnt make sense
+
+- [X] ( Done probably ? ) New task when running locally -> test pr if the results can be reproduce locally if not close pr with comment when possible add comment with info
+
+- [X] add more tasks if some PR can't be merged correct it
 
 ## Current Render
 

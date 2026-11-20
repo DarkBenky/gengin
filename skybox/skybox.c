@@ -23,7 +23,7 @@ static uint32 *decodeJpeg(struct jpeg_decompress_struct *cinfo, FILE *f, const c
 	// libjpeg's default error manager calls exit(), so a face that is not a
 	// decodable JPEG would end the process instead of falling back to no sky.
 	JpegErrorHandler handler;
-	unsigned char *volatile row = NULL;
+	uint8 *volatile row = NULL;
 	uint32 *volatile pixels = NULL;
 	cinfo->err = jpeg_std_error(&handler.pub);
 	handler.pub.error_exit = decodeFailedExit;
@@ -50,15 +50,15 @@ static uint32 *decodeJpeg(struct jpeg_decompress_struct *cinfo, FILE *f, const c
 
 	row = malloc((size_t)w * 3);
 	uint32 *out = pixels;
-	unsigned char *scan = row;
+	uint8 *scan = row;
 	while ((int)cinfo->output_scanline < h) {
 		JSAMPROW rowPtr = scan;
 		jpeg_read_scanlines(cinfo, &rowPtr, 1);
 		int y = (int)cinfo->output_scanline - 1;
 		for (int x = 0; x < w; x++) {
-			unsigned char r = scan[x * 3 + 0];
-			unsigned char g = scan[x * 3 + 1];
-			unsigned char b = scan[x * 3 + 2];
+			uint8 r = scan[x * 3 + 0];
+			uint8 g = scan[x * 3 + 1];
+			uint8 b = scan[x * 3 + 2];
 			out[y * w + x] = 0xFF000000u | ((uint32)r << 16) | ((uint32)g << 8) | b;
 		}
 	}

@@ -54,6 +54,10 @@ llmOpt/state/
 llmOpt/logs/
 llmOpt/run/
 
+# llmOpt kernel sweeps dump generated .cl sources and .out.bin result dumps
+llmOpt/scratch/
+llmOpt/*.out.bin
+
 # python caches + runtime baseline caches (both are machine-local, keyed by fingerprint)
 __pycache__/
 *.pyc

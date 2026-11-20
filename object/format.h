@@ -45,6 +45,13 @@ typedef struct float3 {
 	float w; // padding for alignment
 } float3;
 
+typedef struct float3_no_pad {
+	float x;
+	float y;
+	float z;
+	float w; // padding for alignment
+} float3_no_pad;
+
 typedef struct float2 {
 	float x;
 	float y;
@@ -161,5 +168,36 @@ enum ErrorTypes {
 static inline bool HasPrefix(const char *str, const char *prefix) {
     return strncmp(str, prefix, strlen(prefix)) == 0;
 }
+
+// WrapIndex(-1, 4) -> 3
+static inline int WrapIndex(int pos, int count) {
+    return pos < 0 ? pos + count : pos;
+}
+
+// SetBit(0b1000, 2, true) -> 0b1100
+static inline uint32 SetBit(uint32 in, int pos, bool val) {
+    uint32 mask = 1u << WrapIndex(pos, 32);
+    return val ? (in | mask) : (in & ~mask);
+}
+
+// GetBit(0b1100, 2) -> true
+static inline bool GetBit(uint32 in, int pos) {
+    return (in >> WrapIndex(pos, 32)) & 1u;
+}
+
+typedef struct DeferCall {
+	void (*fn)(void *);
+	void *arg;
+} DeferCall;
+
+static inline void Defer_Run(DeferCall *call) {
+	if (call->fn) call->fn(call->arg);
+}
+
+// defer(fclose, file) runs the call when the enclosing scope exits, returns included
+#define Defer_Cat(a, b) Defer_Cat_(a, b)
+#define Defer_Cat_(a, b) a##b
+#define defer(fn, arg) __attribute__((cleanup(Defer_Run))) DeferCall \
+	Defer_Cat(deferCall_, __COUNTER__) = {(void (*)(void *))(fn), (void *)(arg)}
 
 #endif // FORMAT_H

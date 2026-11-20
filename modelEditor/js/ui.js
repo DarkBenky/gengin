@@ -661,8 +661,8 @@ App.prototype.exportEmission = function () {
 	});
 };
 
-// exportFaceMaps bakes the painted emission into the six EmissionMap style grids and saves them as
-// one face map file: into the linked folder when there is one, otherwise as a download
+// exportFaceMaps bakes the painted emission into the six EmissionMap style grids and stores them
+// on the model, so the model bin gets them as the section that follows the triangles
 App.prototype.exportFaceMaps = function () {
 	if (!this.surface) { setStatus("paint some emission first: there is no emission map to export", "error"); return; }
 	const resolution = Number(this.elements.faceResolution.value);
@@ -676,9 +676,13 @@ App.prototype.exportFaceMaps = function () {
 	buildFaceGrids(this.model, this.surface.emission, resolution, function (done, total) {
 		setStatus("Baking face maps: " + formatCount(done) + " / " + formatCount(total) + " triangles", "busy");
 	}).then(function (grids) {
-		const name = baseNameOf(self.model.fileName) + "_faces.bin";
-		return saveBlob(writeFaceMap(grids), name, folder || undefined).then(function (savedName) {
-			self.endBusy("Exported " + savedName + ": six " + resolution + "x" + resolution + " face maps");
+		self.model.faceMapView = buildFaceMapBytes(grids);
+		self.model.faceMapResolution = resolution;
+		const blob = buildBinBlob(self.model);
+		const name = baseNameOf(self.model.fileName) + ".bin";
+		return saveBlob(blob, name, folder || undefined).then(function (savedName) {
+			self.endBusy("Saved " + savedName + ": six " + resolution + "x" + resolution +
+				" face maps (" + formatBytes(self.model.faceMapView.byteLength) + ") after the triangles");
 		});
 	}).catch(function (err) {
 		self.endBusy("face export failed: " + err.message, "error");

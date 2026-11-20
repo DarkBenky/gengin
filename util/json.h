@@ -92,7 +92,7 @@ static inline void addJsonField(jsonObject *obj, char *key, char *value, jsonTyp
 static inline void jsonPrintString(const char *value) {
     putchar('"');
     if (value) {
-        for (const unsigned char *c = (const unsigned char *)value; *c; c++) {
+        for (const uint8 *c = (const uint8 *)value; *c; c++) {
             switch (*c) {
             case '"': fputs("\\\"", stdout); break;
             case '\\': fputs("\\\\", stdout); break;

@@ -5,7 +5,8 @@ File editing, code search, and terminal work are provided by the driving
 harness (dsh, or the legacy Hermes Agent) — this server only exposes what
 the harness cannot do itself: sandbox lifecycle, make/flame/bench
 orchestration, perf annotation, regression bisection, clangd semantic
-queries, and the cheap advisory quick_ask classifier (Jev decisions).
+queries, the cheap advisory quick_ask classifier (Jev decisions), and
+one-shot delegation to the small local code model.
 """
 
 import json
@@ -26,6 +27,7 @@ import asm_tools as _asm
 import getFunc as _gf
 import main as _main
 import quick_ask as _qa
+import small_model as _sm
 
 # All tools operate on llmOpt/gengin/ — a sandboxed copy of the renderer.
 _gengin_dir = os.path.join(_llmOpt_dir, "gengin")
@@ -306,11 +308,13 @@ def create_pr(title: str, body: str, imageOutputChange: bool,
     label is REQUIRED by the workflow rules: exactly one category from
     Render Improvements, Render Improvements [Visual change / Performance],
     Render Improvements Visual [No/Minimal Cost], Flight Controller, Missile
-    Controller, General Improvements, ML Improvements. One PR = one category;
-    never fold two categories into one PR. General Improvements are
-    additionally soft-locked to ONE system: such a PR never spans two
-    module/directory families, and GI PRs from different systems are never
-    folded together. An unknown name is rejected.
+    Controller, General Improvements, Readability Refactor, ML Improvements.
+    One PR = one category; never fold two categories into one PR. General
+    Improvements and Readability Refactor are additionally soft-locked to ONE
+    system: such a PR never spans two module/directory families, and PRs from
+    different systems are never folded together. A Readability Refactor PR
+    claims NO speedup — its numbers only prove parity (make_bench not
+    REGRESSED, image_mse 0.00). An unknown name is rejected.
 
     imageOutputChange is required: False for exact-match optimizations
     (screenshots/ is never staged); True for a deliberate visual change —
@@ -781,6 +785,37 @@ def quick_ask(question: str = "", context: str = "",
     return json.dumps(_qa.quick_ask(question, context=context, choices=choices,
                                     yes_no=yes_no, questions=questions),
                       indent=2)
+
+
+if _sm.is_enabled():
+    # Local runs only (`gengin-opt.sh local` exports the flag): on cloud
+    # presets the tool is not registered, so the session sees no stray tool.
+    @mcp.tool()
+    def delegate_to_small_model(task: str, context: str = "",
+                                max_tokens: int = 0) -> str:
+        """Hand ONE narrow, mechanical text job to the small local code model
+        (Qwen2.5-Coder-7B, the same llama-server that serves FIM).
+
+        This tool exists only on local runs (the small model shares this
+        machine with the local main model, so a call is free and fast). The
+        job must be bulk/mechanical: rename, reformat, extract fields, rewrite
+        a snippet, or write one small function body from a spec you already
+        have.
+
+        IT IS A REALLY SMALL, DUMB MODEL: no planning, no repo access, no
+        tools, no reasoning about the system - it only sees `task` +
+        `context`. Its output is often subtly wrong, so give it the exact
+        input text and then diff/compile/test whatever comes back. Never
+        delegate design decisions, review, profiling or anything that needs
+        judgement.
+
+        Returns {"output": ...} (plus finish_reason / tokens / ms, and
+        insufficient_context=true if it asked for more input) or
+        {"error": ...}; finish_reason == "length" means the answer was cut
+        off."""
+        return json.dumps(
+            _sm.delegate(task, context=context, max_tokens=max_tokens),
+            indent=2)
 
 
 if __name__ == "__main__":

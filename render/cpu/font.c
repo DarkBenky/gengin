@@ -21,7 +21,7 @@ static int parseLetterIndex(const char *filename) {
 
 	int allDigits = 1;
 	for (size_t i = 0; i < stemLen; i++) {
-		if (!isdigit((unsigned char)stem[i])) {
+		if (!isdigit((uint8)stem[i])) {
 			allDigits = 0;
 			break;
 		}
@@ -36,7 +36,7 @@ static int parseLetterIndex(const char *filename) {
 		return -1;
 	}
 
-	if (stemLen == 1) return (unsigned char)stem[0];
+	if (stemLen == 1) return (uint8)stem[0];
 	return -1;
 }
 
@@ -95,7 +95,7 @@ void LoadAlphabet(struct Alphabet *alphabet, const char *dirname) {
 		}
 
 		size_t packedBytes = ((size_t)width + 7u) / 8u;
-		unsigned char *rowData = (unsigned char *)malloc(packedBytes);
+		uint8 *rowData = (uint8 *)malloc(packedBytes);
 		if (!rowData) {
 			free(pixels);
 			fclose(file);
@@ -160,7 +160,7 @@ void RenderText(uint32 *dst, int dstWidth, int dstHeight, struct Alphabet *alpha
 
 	int cursorX = x;
 	for (size_t i = 0; text[i] != '\0'; i++) {
-		unsigned char code = (unsigned char)text[i];
+		uint8 code = (uint8)text[i];
 		Tile tile = alphabet->letters[code].tile;
 
 		if (tile.pixels && tile.width > 0 && tile.height > 0) {
@@ -179,7 +179,7 @@ int MeasureTextWidth(struct Alphabet *alphabet, const char *text, float scale) {
 
 	int width = 0;
 	for (size_t i = 0; text[i] != '\0'; i++) {
-		unsigned char code = (unsigned char)text[i];
+		uint8 code = (uint8)text[i];
 		Tile tile = alphabet->letters[code].tile;
 
 		if (tile.pixels && tile.width > 0 && tile.height > 0) {
@@ -198,7 +198,7 @@ void RenderTextHdr(float3 *dst, int dstWidth, int dstHeight, struct Alphabet *al
 
 	int cursorX = x;
 	for (size_t i = 0; text[i] != '\0'; i++) {
-		unsigned char code = (unsigned char)text[i];
+		uint8 code = (uint8)text[i];
 		Tile tile = alphabet->letters[code].tile;
 
 		if (tile.pixels && tile.width > 0 && tile.height > 0) {

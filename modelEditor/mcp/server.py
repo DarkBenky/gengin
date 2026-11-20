@@ -56,6 +56,9 @@ def bin_info(path: str) -> dict:
         "textureSize": info["textureSize"],
         "fileSize": info["fileSize"],
         "sizeEquation": info["sizeEquation"],
+        "hasEmissionMap": info["hasEmissionMap"],
+        "faceMapBytes": info["faceMapBytes"],
+        "emissionResolution": info["emissionResolution"],
         "sha256": binlib.sha256File(path),
     }
 
@@ -311,7 +314,7 @@ def emission_face_maps(bin_path: str, bmp_path: str = "", resolution: int = 16, 
         return fail(error)
     summary = emissionfaces.summarise(grids, resolution, useScalar, coverage)
     summary.update({"ok": True, "path": bin_path, "bmpPath": bmp_path or None,
-                    "bytes": 6 * resolution * resolution * 12})
+                    "bytes": 6 * resolution * resolution * 16})
     if out_path:
         summary["outPath"] = out_path
         summary["outBytes"] = emissionfaces.writeGrids(out_path, grids)
@@ -321,7 +324,7 @@ def emission_face_maps(bin_path: str, bmp_path: str = "", resolution: int = 16, 
         try:
             header, values = emissionfaces.readFaceBin(out_bin)
             summary["outBinVerified"] = (header["fileSize"] == summary["outBinBytes"] and
-                                         len(values) == 6 * resolution * resolution * 3)
+                                         len(values) == 6 * resolution * resolution * header["stride"])
         except binlib.BinError as error:
             summary["outBinVerified"] = False
             summary["outBinError"] = str(error)
@@ -340,20 +343,21 @@ def emission_faces_info(path: str) -> dict:
         return fail(error)
     resolution = header["resolution"]
     cells = resolution * resolution
+    stride = header["stride"]
     litPerFace = []
     peak = 0.0
     for face in range(header["faceCount"]):
-        base = face * cells * 3
+        base = face * cells * stride
         lit = 0
         for cell in range(cells):
-            r, g, b = values[base + cell * 3:base + cell * 3 + 3]
+            r, g, b = values[base + cell * stride:base + cell * stride + 3]
             if max(r, g, b) > 0.0:
                 lit += 1
             peak = max(peak, r, g, b)
         litPerFace.append(lit)
     return {"ok": True, "path": path, "resolution": resolution,
             "faceCount": header["faceCount"], "components": header["components"],
-            "fileSize": header["fileSize"], "version": header["version"],
+            "stride": header["stride"], "fileSize": header["fileSize"],
             "litPerFace": litPerFace, "peak": round(peak, 4)}
 
 

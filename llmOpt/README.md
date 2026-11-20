@@ -177,7 +177,7 @@ answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
 `llmOpt/.env` on the VM — the agent could mint unlimited keys.
 
-## Tools (36)
+## Tools (36; 37 on local runs)
 
 | Group              | Tools |
 |--------------------|-------|
@@ -192,6 +192,7 @@ Secrets never live in the checkout. Never put the OpenRouter *management* key in
 | clangd             | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Environment        | `machine_info` |
 | Advisory decisions | `quick_ask` |
+| Small local model  | `delegate_to_small_model` (local runs only; the 7B is weak, verify its output) |
 | Session control    | `report_session_result` (supervised only) |
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate) ->
@@ -203,7 +204,12 @@ Every PR carries exactly one category label (`create_pr(label=...)`,
 category (all `Render Improvements*` label variants count together) a session
 verifies them and folds survivors into one consolidation PR —
 never across categories. `General Improvements` is soft-locked to one system
-per PR (and per consolidation batch). Requires GITHUB_TOKEN with `Issues: write`
+per PR (and per consolidation batch). `Readability Refactor` is the parity
+category — behaviour-preserving cleanups (extracting an inline SIMD/scalar
+block into a named helper, naming constants, deleting dead locals) that ship
+`image_mse` 0.00 and a `make_bench` verdict that is not `REGRESSED`; it is
+soft-locked to one system per PR too, claims no speedup, and never mixes with
+an optimization. Requires GITHUB_TOKEN with `Issues: write`
 for labels.
 
 `create_pr` appends an `## Environment` section to every body: a

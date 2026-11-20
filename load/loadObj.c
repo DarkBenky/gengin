@@ -6,7 +6,9 @@
 #include "../util/bbox.h"
 #include "../render/color/color.h"
 #include "../util/json.h"
+#include "../image/imgMethods.h"
 
+// TODO: **Important** Update for support of FaceMap
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	if (filename == NULL || obj == NULL) {
 		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
@@ -21,34 +23,49 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 
 	// read header
-	uint32 fileSize, triangleStructSize, triangleCountRead, hasTextures;
+	uint32 fileSize, triangleStructSize, triangleCountRead, _hasTextures, _textureSize;
 	if (fread(&fileSize, sizeof(uint32), 1, file) != 1 ||
 		fread(&triangleStructSize, sizeof(uint32), 1, file) != 1 ||
 		fread(&triangleCountRead, sizeof(uint32), 1, file) != 1 ||
-		fread(&hasTextures, sizeof(uint32), 1, file) != 1) {
+		fread(&_hasTextures, sizeof(uint32), 1, file) != 1 ||
+		fread(&_textureSize, sizeof(uint32), 1, file) != 1) {
 		fprintf(stderr, "Error: %s is not a model file.\n", filename);
 		fclose(file);
 		return;
 	}
 
 	// hasTextures bit 0 = textures present, bit 1 = cull backfaces
-	obj->cullBackfaces = (hasTextures & 2) != 0;
-	hasTextures &= 1;
+	obj->cullBackfaces = GetBit(_hasTextures, 1);
+	bool hasTextures = GetBit(_hasTextures, 0);
+	bool hasEmissionMap = GetBit(_hasTextures, 2);
+
+	// if file has emission map, we need to get size of this section
+	uint32 FileSizeEmissionMap = 0;
+	if (hasEmissionMap) {
+		uint64 position = 20; // 20 bytes for the header
+		if (hasTextures) {
+			position += (uint64)_textureSize * _textureSize * 9; // 9 floats per texel (color, normal, material)
+		}
+		position += (uint64)triangleCountRead * triangleStructSize; // 108 bytes per triangle
+
+		long keep = ftell(file);
+		if (fseek(file, position, SEEK_SET) != 0 ||
+			fread(&FileSizeEmissionMap, sizeof(uint32), 1, file) != 1) {
+			FileSizeEmissionMap = 0;
+		}
+		if (keep >= 0) fseek(file, keep, SEEK_SET);
+	}
 
 	uint32 triangleCount = triangleCountRead;
 
-	// the texture size field is validated against fileSize; legacy files carry
-	// triangle or texture data there instead and are always 4096
-	uint32 textureSize = 4096;
-	uint32 sizeField = 0;
-	if (fread(&sizeField, sizeof(uint32), 1, file) == 1) {
-		unsigned long long expected = 20ull + (unsigned long long)triangleCount * triangleStructSize +
-									  (hasTextures ? (unsigned long long)sizeField * sizeField * 9 : 0);
-		if (expected == fileSize && sizeField >= 256 && sizeField <= 16384) {
-			textureSize = sizeField;
-		} else {
-			fseek(file, 16, SEEK_SET);
-		}
+	// the header already carried textureSize; a file whose size equation does not hold is the
+	// legacy 16 byte header, where that word was triangle data, and it always used a 4096 atlas
+	uint32 textureSize = _textureSize;
+	uint64 expected = 20ull + (uint64)triangleCount * triangleStructSize +
+					  (hasTextures ? (uint64)textureSize * textureSize * 9 : 0);
+	if (expected != fileSize || textureSize < 256 || textureSize > 16384) {
+		textureSize = 4096;
+		fseek(file, 16, SEEK_SET);
 	}
 
 	// the field reads below assume the writer's single record layout, so a file
@@ -56,12 +73,14 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	long dataStart = ftell(file);
 	long fileEnd = -1;
 	if (dataStart >= 0 && fseek(file, 0, SEEK_END) == 0) fileEnd = ftell(file);
-	unsigned long long recordSize = 5ull * sizeof(float3) + 3ull * sizeof(float) +
-									6ull * sizeof(uint16) + sizeof(uint32);
-	unsigned long long expectedSize = (unsigned long long)dataStart +
-									  (hasTextures ? (unsigned long long)textureSize * textureSize * 9 : 0) +
-									  (unsigned long long)triangleCount * recordSize;
-	if (triangleStructSize != recordSize || fileEnd < 0 || (unsigned long long)fileEnd != expectedSize) {
+	uint64 recordSize = 5ull * sizeof(float3) + 3ull * sizeof(float) +
+						6ull * sizeof(uint16) + sizeof(uint32);
+	uint64 expectedSize = (uint64)dataStart +
+						  (hasTextures ? (uint64)textureSize * textureSize * 9 : 0) +
+						  (uint64)triangleCount * recordSize;
+	// fileSize stops at the triangles; the face map follows them and carries its own size
+	if (hasEmissionMap) expectedSize += FileSizeEmissionMap;
+	if (triangleStructSize != recordSize || fileEnd < 0 || (uint64)fileEnd != expectedSize) {
 		fprintf(stderr, "Error: %s is truncated or corrupt.\n", filename);
 		fclose(file);
 		return;
@@ -142,6 +161,27 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	}
 	obj->BBmin = BBmin;
 	obj->BBmax = BBmax;
+
+	if (hasEmissionMap) {
+		fread(NULL, sizeof(uint32), 1, file); // skip the FileSizeEmissionMap field, we already read it
+		fread(NULL, sizeof(uint32), 1, file); // skip the SizeOfTexture field, we already read it
+
+		float3 *EmissionMap = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
+		float3 *EmissionMapTemp = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
+		float3 *EmissionMapOut = (float3 *)malloc((size_t)EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3));
+
+		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMapOut, 0, (size_t)EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3));
+
+		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Front Side
+		
+		if (textureSize != EMISSION_RESOLUTION) {
+		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
+		}
+		// TODO: **Important** Finish this
+	}
+
 	fclose(file);
 }
 
@@ -172,10 +212,10 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 
 	// Binary layout:
 	// Header (20 bytes):
-	//   fileSize           uint32
+	//   fileSize           uint32  — File size ignores FaceMap
 	//   triangleStructSize uint32  — 108 bytes
 	//   triangleCount      uint32
-	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces
+	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces, bit2: has emission map
 	//   textureSize        uint32  — texture edge length
 	//
 	// Texture data (if hasTextures):
@@ -188,14 +228,25 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	//   roughness metallic emission                    = 12
 	//   color float3 padded                            = 16
 	//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
+	//
+	// Face Map Layout if hasEmissionMap:
+	//  FileSizeEmissionMap 	uint32
+	//  SizeOfTexture 			uint32 —  based on the EMISSION_RESOLUTION defined in object.h
+	//  FrontTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  BackTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  RightTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  LeftTexture  			float3 *SizeOfTexture * SizeOfTexture
+	//  TopTexture   			float3 *SizeOfTexture * SizeOfTexture
+	//  BottomTexture 			float3 *SizeOfTexture * SizeOfTexture
 
 	const uint32 triangleStructSize = 108;
 
 	uint32 triangleCount = obj->triangleCount;
-	uint32 hasTextures = obj->hasTexture ? 1 : 0;
+	uint32 hasTextures = SetBit(0, 0, obj->hasTexture);
 	bool cullBackfaces = obj->cullBackfaces;
 	uint32 textureSize = 4096; // default texture size
 	uint32 textureBytes = 0;
+	bool hasEmissionMap = obj->hasEmission ? 1 : 0;
 
 	if (hasTextures) {
 		Material mat = lib->entries[obj->materialIds[0]];
@@ -205,7 +256,8 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 	}
 
 	uint32 fileSize = 20 + triangleCount * triangleStructSize + (hasTextures ? textureBytes : 0);
-	hasTextures |= (cullBackfaces ? 2 : 0);
+	hasTextures = SetBit(hasTextures, 1, cullBackfaces);
+	hasTextures = SetBit(hasTextures, 2, hasEmissionMap);
 
 	fwrite(&fileSize, sizeof(uint32), 1, file);
 	fwrite(&triangleStructSize, sizeof(uint32), 1, file);
@@ -255,10 +307,26 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		fwrite(&uv->uv3y, sizeof(uint16), 1, file);
 		fwrite(zeroPad, sizeof(char), 4, file); // 4-byte pad after UV block
 	}
+
+	if (hasEmissionMap) {
+		// uint32 FileSize + uint32 SizeOfTexture + 6 * SizeOfTexture * SizeOfTexture * sizeof(float3_no_pad)
+		uint32 fileSizeFaceMap = sizeof(uint32) * 2 + EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3) * 6;
+		uint32 sizeOfTexture = EMISSION_RESOLUTION;
+
+		fwrite(&fileSizeFaceMap, sizeof(uint32), 1, file);
+		fwrite(&sizeOfTexture, sizeof(uint32), 1, file);
+
+		fwrite(obj->frontFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->backFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->rightFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->leftFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->topFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+		fwrite(obj->bottomFaceEmission.emissionMap, sizeof(float3), EMISSION_RESOLUTION * EMISSION_RESOLUTION, file);
+	}
+
 	fclose(file);
 	return Error_Ok();
 };
-
 
 // TODO: **Important** Implement the function to save a scene to a JSON file
 Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
@@ -274,7 +342,7 @@ Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
 		} else {
 			addJsonField(objJson, "type", "object", JSON_TYPE_STRING);
 		}
-		
+
 		if (isShape) {
 			// extract the shape type from the ObjectPathOrType string
 			char shapeType[64] = {0};
@@ -291,10 +359,10 @@ Error SaveSceneToJson(const ObjectList *scene, const char *filename) {
 		}
 
 		// Save position, rotation, scale, color as arrays
-		char *posArray = newJsonNumberArray((float *)&obj->position, 3); 
+		char *posArray = newJsonNumberArray((float *)&obj->position, 3);
 		char *rotArray = newJsonNumberArray((float *)&obj->rotation, 3);
 		char *scaleArray = newJsonNumberArray((float *)&obj->scale, 3);
-		float3 color = UnpackColor(obj->_temp); 
+		float3 color = UnpackColor(obj->_temp);
 		char *colorArray = newJsonNumberArray(&color.x, 3);
 
 		addJsonField(objJson, "position", posArray, JSON_TYPE_ARRAY);
