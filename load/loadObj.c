@@ -6,6 +6,7 @@
 #include "../util/bbox.h"
 #include "../render/color/color.h"
 #include "../util/json.h"
+#include "../image/imgMethods.h"
 
 // TODO: **Important** Update for support of FaceMap
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
@@ -166,14 +167,19 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		fread(NULL, sizeof(uint32), 1, file); // skip the SizeOfTexture field, we already read it
 
 		float3 *EmissionMap = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
+		float3 *EmissionMapTemp = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
 		float3 *EmissionMapOut = (float3 *)malloc((size_t)EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3));
+
 		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMapOut, 0, (size_t)EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3));
 
 		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Front Side
 		
 		if (textureSize != EMISSION_RESOLUTION) {
-		    // ResizeToCorrectSize // TODO: Create generic float3 function that can be use later use bilinear interpolation
+		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
 		}
+		// TODO: **Important** Finish this
 	}
 
 	fclose(file);
