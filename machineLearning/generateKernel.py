@@ -173,7 +173,7 @@ def tapGuard(dy, dx, width, height):
 #     spread over global_id(0) (`x + width * group`), multiplying the thread
 #     count by `groups`.
 CONV_SPLIT_TARGET = 16384   # work items we would like in flight
-CONV_SPLIT_FLOOR = 1024     # below this many work items the per-item floor starves the device
+CONV_SPLIT_FLOOR = 2560     # below this many work items the per-item floor starves the device
 CONV_MIN_PER_ITEM = 4       # never block fewer filters than this
 CONV_MAX_PER_ITEM = 16      # register budget for the accumulator array
 CONV_WIDE_PIXELS = 16384    # from this map size up a doubled filter block still fills the device
@@ -266,8 +266,9 @@ def convPlan(width, height, channels, filterSize, filters):
     groups = -(-filters // perItem)                    # ceil
     # The floor above buys tap amortisation at the cost of grid width: it caps
     # the plan at `groups` rows per pixel, which on a small image is next to
-    # nothing to run (16x16 with 4 filters is 256 threads on an 82-SM part).
-    # There is no amortisation left to win at that point, so split per filter.
+    # nothing to run (a 14x14 map with 8 groups is 49 warps on a 30-SM part).
+    # Below ~2.5k items the idle SMs cost more than the extra tap re-reads a
+    # per-filter split buys (14x14x16->32 -32%, 28x28x1->16 at 3136 +10%).
     if width * height * groups < CONV_SPLIT_FLOOR:
         perItem = 1
         groups = filters
