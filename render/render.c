@@ -367,13 +367,18 @@ void RenderObject(const Object *obj, const Camera *camera, const MaterialLib *li
 
 		float NdotL = MaxF(0.0f, Float3_Dot(normal, camera->renderLightDir));
 		float NdotH = MaxF(0.0f, Float3_Dot(normal, camera->halfVec));
-		const Material *mat = &lib->entries[obj->materialIds[i]];
-		float roughness = mat->roughness;
+		Material mat = {.color = {0.8f, 0.8f, 0.8f}, .roughness = 0.8f};
+		if (lib && obj->materialIds) {
+			int matId = obj->materialIds[i];
+			if (matId >= 0 && matId < lib->count)
+				mat = lib->entries[matId];
+		}
+		float roughness = mat.roughness;
 		float shininess = (1.0f - roughness) * 128.0f + 1.0f;
 		float spec = powf(NdotH, shininess);
 
-		float metallic = mat->metallic;
-		float3 baseColor = mat->color;
+		float metallic = mat.metallic;
+		float3 baseColor = mat.color;
 		float3 diffuse = Float3_Scale(baseColor, (1.0f - metallic) * NdotL);
 		float3 specColor = Float3_Scale(baseColor, metallic);
 		specColor = Float3_Add(specColor, Float3_Scale((float3){1, 1, 1}, 1.0f - metallic));
