@@ -172,7 +172,7 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Front Side
 		
 		if (textureSize != EMISSION_RESOLUTION) {
-		    ResizeToCorrectSize // TODO: Create generic float3 function that can be use later use bilinear interpolation
+		    // ResizeToCorrectSize // TODO: Create generic float3 function that can be use later use bilinear interpolation
 		}
 	}
 
