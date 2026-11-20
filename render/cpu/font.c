@@ -153,6 +153,12 @@ void LoadAlphabet(struct Alphabet *alphabet, const char *dirname) {
 	closedir(dir);
 }
 
+static inline int LetterAdvance(Tile tile, float scale) {
+	if (tile.pixels && tile.width > 0 && tile.height > 0)
+		return (int)((float)tile.width * scale);
+	return (int)(LETTER_SIZE * scale);
+}
+
 void RenderText(uint32 *dst, int dstWidth, int dstHeight, struct Alphabet *alphabet, const char *text, int x, int y, float scale, uint32 color) {
 	if (!dst || !alphabet || !text) return;
 
@@ -165,10 +171,8 @@ void RenderText(uint32 *dst, int dstWidth, int dstHeight, struct Alphabet *alpha
 
 		if (tile.pixels && tile.width > 0 && tile.height > 0) {
 			drawTileColorScaled(dst, dstWidth, dstHeight, tile, cursorX, y, scale, scale, color);
-			cursorX += (int)((float)tile.width * scale);
-		} else {
-			cursorX += (int)(LETTER_SIZE * scale);
 		}
+		cursorX += LetterAdvance(tile, scale);
 	}
 }
 
@@ -182,11 +186,7 @@ int MeasureTextWidth(struct Alphabet *alphabet, const char *text, float scale) {
 		uint8 code = (uint8)text[i];
 		Tile tile = alphabet->letters[code].tile;
 
-		if (tile.pixels && tile.width > 0 && tile.height > 0) {
-			width += (int)((float)tile.width * scale);
-		} else {
-			width += (int)(LETTER_SIZE * scale);
-		}
+		width += LetterAdvance(tile, scale);
 	}
 	return width;
 }
@@ -203,9 +203,7 @@ void RenderTextHdr(float3 *dst, int dstWidth, int dstHeight, struct Alphabet *al
 
 		if (tile.pixels && tile.width > 0 && tile.height > 0) {
 			drawTileColorScaledHdr(dst, dstWidth, dstHeight, tile, cursorX, y, scale, scale, color);
-			cursorX += (int)((float)tile.width * scale);
-		} else {
-			cursorX += (int)(LETTER_SIZE * scale);
 		}
+		cursorX += LetterAdvance(tile, scale);
 	}
 }
