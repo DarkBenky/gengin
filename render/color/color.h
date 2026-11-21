@@ -39,7 +39,12 @@
 Color PackColor(float r, float g, float b);
 Color PackColorF(float3 color);
 Color BlendColors(Color c1, Color c2, float t);
-float3 UnpackColor(Color c);
+static inline float3 UnpackColor(Color c) {
+	float r = ((c >> 16) & 0xFF) / 255.0f;
+	float g = ((c >> 8) & 0xFF) / 255.0f;
+	float b = (c & 0xFF) / 255.0f;
+	return (float3){r, g, b, 0.0f};
+}
 int4 UnpackColorInt(Color c);
 Color BoostColor(Color c, float satAmount, float brightFactor);
 Color ApplyGamma(Color c, float gamma);
