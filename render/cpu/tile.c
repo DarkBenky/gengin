@@ -2,6 +2,48 @@
 
 #include <string.h>
 
+typedef struct {
+	int dstX;
+	int dstY;
+	int srcX;
+	int srcY;
+	int width;
+	int height;
+} TileClip;
+
+static int clipScaledTile(Tile tile, int dstWidth, int dstHeight, int x, int y, float scaleX, float scaleY, TileClip *clip) {
+	int scaledW = (int)(tile.width * scaleX);
+	int scaledH = (int)(tile.height * scaleY);
+	int dstX = x;
+	int dstY = y;
+	int srcX = 0;
+	int srcY = 0;
+
+	// Clip left/top against dst
+	if (dstX < 0) {
+		srcX -= (int)(dstX / scaleX);
+		scaledW += dstX;
+		dstX = 0;
+	}
+	if (dstY < 0) {
+		srcY -= (int)(dstY / scaleY);
+		scaledH += dstY;
+		dstY = 0;
+	}
+
+	// Clip right/bottom against dst
+	if (dstX + scaledW > dstWidth) scaledW = dstWidth - dstX;
+	if (dstY + scaledH > dstHeight) scaledH = dstHeight - dstY;
+
+	clip->dstX = dstX;
+	clip->dstY = dstY;
+	clip->srcX = srcX;
+	clip->srcY = srcY;
+	clip->width = scaledW;
+	clip->height = scaledH;
+	return scaledW > 0 && scaledH > 0;
+}
+
 void drawTile(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y) {
 	int srcX = 0, srcY = 0;
 	int copyW = tile.width;
@@ -35,36 +77,14 @@ void drawTile(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y)
 }
 
 void drawTileScaled(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y, float scaleX, float scaleY) {
-	int scaledW = (int)(tile.width * scaleX);
-	int scaledH = (int)(tile.height * scaleY);
+	TileClip clip;
+	if (!clipScaledTile(tile, dstWidth, dstHeight, x, y, scaleX, scaleY, &clip)) return;
 
-	// Clip left/top against dst
-	int dstX = x;
-	int dstY = y;
-	int srcX = 0;
-	int srcY = 0;
-	if (dstX < 0) {
-		srcX -= (int)(dstX / scaleX);
-		scaledW += dstX;
-		dstX = 0;
-	}
-	if (dstY < 0) {
-		srcY -= (int)(dstY / scaleY);
-		scaledH += dstY;
-		dstY = 0;
-	}
-
-	// Clip right/bottom against dst
-	if (dstX + scaledW > dstWidth) scaledW = dstWidth - dstX;
-	if (dstY + scaledH > dstHeight) scaledH = dstHeight - dstY;
-
-	if (scaledW <= 0 || scaledH <= 0) return;
-
-	for (int row = 0; row < scaledH; row++) {
-		for (int col = 0; col < scaledW; col++) {
-			int srcCol = srcX + (int)(col / scaleX);
-			int srcRow = srcY + (int)(row / scaleY);
-			dst[(dstY + row) * dstWidth + (dstX + col)] = tile.pixels[srcRow * tile.width + srcCol];
+	for (int row = 0; row < clip.height; row++) {
+		for (int col = 0; col < clip.width; col++) {
+			int srcCol = clip.srcX + (int)(col / scaleX);
+			int srcRow = clip.srcY + (int)(row / scaleY);
+			dst[(clip.dstY + row) * dstWidth + (clip.dstX + col)] = tile.pixels[srcRow * tile.width + srcCol];
 		}
 	}
 }
@@ -99,65 +119,31 @@ void drawTileColor(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, i
 }
 
 void drawTileColorScaled(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y, float scaleX, float scaleY, uint32 color) {
-	int scaledW = (int)(tile.width * scaleX);
-	int scaledH = (int)(tile.height * scaleY);
+	TileClip clip;
+	if (!clipScaledTile(tile, dstWidth, dstHeight, x, y, scaleX, scaleY, &clip)) return;
 
-	int dstX = x, dstY = y;
-	int srcX = 0, srcY = 0;
-	if (dstX < 0) {
-		srcX -= (int)(dstX / scaleX);
-		scaledW += dstX;
-		dstX = 0;
-	}
-	if (dstY < 0) {
-		srcY -= (int)(dstY / scaleY);
-		scaledH += dstY;
-		dstY = 0;
-	}
-	if (dstX + scaledW > dstWidth) scaledW = dstWidth - dstX;
-	if (dstY + scaledH > dstHeight) scaledH = dstHeight - dstY;
-
-	if (scaledW <= 0 || scaledH <= 0) return;
-
-	for (int row = 0; row < scaledH; row++) {
-		for (int col = 0; col < scaledW; col++) {
-			int srcCol = srcX + (int)(col / scaleX);
-			int srcRow = srcY + (int)(row / scaleY);
+	for (int row = 0; row < clip.height; row++) {
+		for (int col = 0; col < clip.width; col++) {
+			int srcCol = clip.srcX + (int)(col / scaleX);
+			int srcRow = clip.srcY + (int)(row / scaleY);
 			uint32 src = tile.pixels[srcRow * tile.width + srcCol];
 			if (src != 0x00000000)
-				dst[(dstY + row) * dstWidth + (dstX + col)] = color;
+				dst[(clip.dstY + row) * dstWidth + (clip.dstX + col)] = color;
 		}
 	}
 }
 
 void drawTileColorScaledHdr(float3 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y, float scaleX, float scaleY, float3 color) {
-	int scaledW = (int)(tile.width * scaleX);
-	int scaledH = (int)(tile.height * scaleY);
+	TileClip clip;
+	if (!clipScaledTile(tile, dstWidth, dstHeight, x, y, scaleX, scaleY, &clip)) return;
 
-	int dstX = x, dstY = y;
-	int srcX = 0, srcY = 0;
-	if (dstX < 0) {
-		srcX -= (int)(dstX / scaleX);
-		scaledW += dstX;
-		dstX = 0;
-	}
-	if (dstY < 0) {
-		srcY -= (int)(dstY / scaleY);
-		scaledH += dstY;
-		dstY = 0;
-	}
-	if (dstX + scaledW > dstWidth) scaledW = dstWidth - dstX;
-	if (dstY + scaledH > dstHeight) scaledH = dstHeight - dstY;
-
-	if (scaledW <= 0 || scaledH <= 0) return;
-
-	for (int row = 0; row < scaledH; row++) {
-		for (int col = 0; col < scaledW; col++) {
-			int srcCol = srcX + (int)(col / scaleX);
-			int srcRow = srcY + (int)(row / scaleY);
+	for (int row = 0; row < clip.height; row++) {
+		for (int col = 0; col < clip.width; col++) {
+			int srcCol = clip.srcX + (int)(col / scaleX);
+			int srcRow = clip.srcY + (int)(row / scaleY);
 			uint32 src = tile.pixels[srcRow * tile.width + srcCol];
 			if (src != 0x00000000)
-				dst[(dstY + row) * dstWidth + (dstX + col)] = color;
+				dst[(clip.dstY + row) * dstWidth + (clip.dstX + col)] = color;
 		}
 	}
 }
