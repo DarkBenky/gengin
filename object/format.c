@@ -149,19 +149,24 @@ void setMinDepth(Camera *camera, float minDepth) {
 	pthread_mutex_unlock(&camera->depthLock);
 }
 
+static float3 cameraRightFor(float3 forward) {
+	return Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, forward));
+}
+
+static void cameraTranslate(Camera *camera, float3 direction, float amount) {
+	camera->position.x += direction.x * amount;
+	camera->position.y += direction.y * amount;
+	camera->position.z += direction.z * amount;
+}
+
 void CameraMoveForward(Camera *camera, float amount) {
 	if (!camera) return;
-	camera->position.x += camera->forward.x * amount;
-	camera->position.y += camera->forward.y * amount;
-	camera->position.z += camera->forward.z * amount;
+	cameraTranslate(camera, camera->forward, amount);
 }
 
 void CameraMoveRight(Camera *camera, float amount) {
 	if (!camera) return;
-	float3 right = Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, camera->forward));
-	camera->position.x += right.x * amount;
-	camera->position.y += right.y * amount;
-	camera->position.z += right.z * amount;
+	cameraTranslate(camera, cameraRightFor(camera->forward), amount);
 }
 
 void CameraMoveUp(Camera *camera, float amount) {
@@ -181,7 +186,7 @@ void CameraRotate(Camera *camera, float pitch, float yaw) {
 		fwd.y,
 		fwd.x * sinYaw + fwd.z * cosYaw};
 	// pitch — rotate around camera's right axis
-	float3 right = Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, fwd1));
+	float3 right = cameraRightFor(fwd1);
 	float3 camUp = Float3_Cross(right, fwd1); // points upward relative to forward
 	float cosPitch = cosf(pitch);
 	float sinPitch = sinf(pitch);
