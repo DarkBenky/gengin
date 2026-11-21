@@ -67,6 +67,14 @@
 #define EXT_MISS_HORIZON 3.5f
 #define EXT_MISS_STEPS 8
 #define EXT_MISS_WEIGHT 0.02f
+// The arc carries the rollout's turn rate forward and advances the target along
+// a straight line; both are model error, and the further the arc runs the more
+// of it is guesswork.  How far it is worth trusting falls with how fast the
+// target is actually moving, so samples are dropped rather than trusted: the
+// shed ramps linearly from none at a standstill to EXT_MISS_SHED_STEPS of the
+// EXT_MISS_STEPS samples at EXT_MISS_TRUST_SPEED.
+#define EXT_MISS_TRUST_SPEED 75.0f
+#define EXT_MISS_SHED_STEPS 4
 // A strong terminal demand puts the walk's optimum against the surface stops;
 // charging deflection past a quarter of the stick travel keeps authority margin.
 #define SURFACE_MARGIN_FRACTION 0.25f
@@ -252,6 +260,15 @@ static inline float extendedFlightPathMiss(const Plane *start, const Plane *simP
 	axis = axisLen > 1e-5f ? Float3_Scale(axis, 1.0f / axisLen) : (float3){0.0f, 1.0f, 0.0f, 0.0f};
 
 	const float stepDt = EXT_MISS_HORIZON / (float)EXT_MISS_STEPS;
+	// targetVel is ctrl->targetVelocity already scaled by TARGET_LEAD_GAIN, the
+	// same gain the rollout advances the target by; undoing it keeps this
+	// threshold in metres per second.  Samples are counted, not their spacing,
+	// so a target below an eighth of the trust speed keeps the exact arc it had.
+	float targetSpeed = Float3_Length(targetVel) / TARGET_LEAD_GAIN;
+	int arcSteps = EXT_MISS_STEPS - (int)(EXT_MISS_SHED_STEPS * fminf(targetSpeed / EXT_MISS_TRUST_SPEED, 1.0f) + 0.5f);
+	if (arcSteps < 1) {
+		arcSteps = 1;
+	}
 	const float dTheta = omega * stepDt;
 	const float rotCos = cosf(dTheta);
 	const float rotSin = sinf(dTheta);
@@ -259,7 +276,7 @@ static inline float extendedFlightPathMiss(const Plane *start, const Plane *simP
 	float3 pos = simPlane->position;
 	float3 tgt = predictedTarget;
 	float best = Float3_Length(Float3_Sub(tgt, pos));
-	for (int i = 0; i < EXT_MISS_STEPS; i++) {
+	for (int i = 0; i < arcSteps; i++) {
 		float3 rotated = Float3_Add(Float3_Add(Float3_Scale(dir, rotCos), Float3_Scale(Float3_Cross(axis, dir), rotSin)),
 									Float3_Scale(axis, Float3_Dot(axis, dir) * (1.0f - rotCos)));
 		dir = Float3_Normalize(rotated);
