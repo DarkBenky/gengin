@@ -163,8 +163,7 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	obj->BBmax = BBmax;
 
 	if (hasEmissionMap) {
-		fread(NULL, sizeof(uint32), 1, file); // skip the FileSizeEmissionMap field, we already read it
-		fread(NULL, sizeof(uint32), 1, file); // skip the SizeOfTexture field, we already read it
+		fseek(file, 2 * (long)sizeof(uint32), SEEK_CUR); // skip the FileSizeEmissionMap and SizeOfTexture fields, already read
 
 		float3 *EmissionMap = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
 		float3 *EmissionMapTemp = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
