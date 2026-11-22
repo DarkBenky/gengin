@@ -191,47 +191,6 @@ static inline float rollMisalignment(const Plane *plane, float3 target) {
 	return Float3_Dot(Float3_Cross(up, idealUp), forward);
 }
 
-float rollLoss(const Plane *plane, float3 target) {
-	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
-	float3 forward = planeGetForwardVector(plane);
-	float3 up = planeGetUpVector(plane);
-
-	// Projection kept unnormalized: atan2 is scale-invariant, while
-	// normalizing a near-degenerate projection amplified float noise.
-	float3 idealUp = Float3_Sub(toTarget, Float3_Scale(forward, Float3_Dot(toTarget, forward)));
-
-	float cross = Float3_Dot(Float3_Cross(up, idealUp), forward);
-	float dot = Float3_Dot(up, idealUp);
-
-	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect roll alignment
-}
-
-float pitchLoss(const Plane *plane, float3 target) {
-	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
-	float3 forward = planeGetForwardVector(plane);
-	float3 right = planeGetRightVector(plane);
-
-	float3 idealForward = Float3_Sub(toTarget, Float3_Scale(right, Float3_Dot(toTarget, right)));
-
-	float cross = Float3_Dot(Float3_Cross(forward, idealForward), right);
-	float dot = Float3_Dot(forward, idealForward);
-
-	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect pitch alignment
-}
-
-float yawLoss(const Plane *plane, float3 target) {
-	float3 toTarget = Float3_Normalize(Float3_Sub(target, plane->position));
-	float3 forward = planeGetForwardVector(plane);
-	float3 up = planeGetUpVector(plane);
-
-	float3 idealForward = Float3_Sub(toTarget, Float3_Scale(up, Float3_Dot(toTarget, up)));
-
-	float cross = Float3_Dot(Float3_Cross(forward, idealForward), up);
-	float dot = Float3_Dot(forward, idealForward);
-
-	return fabsf(atan2f(cross, dot)); // radians, 0 = perfect yaw alignment
-}
-
 static inline float flightPathMissDistance(float3 velocity, float3 toTarget) {
 	float3 path = Float3_Normalize(velocity);
 	float along = Float3_Dot(toTarget, path);
