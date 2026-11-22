@@ -27,12 +27,22 @@ preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResea
     llmOpt/scripts/gengin-opt.sh local --headless      # auto-run one-shot, no UI
     llmOpt/scripts/gengin-opt.sh local --hermes        # Hermes TUI instead
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
+    llmOpt/scripts/gengin-opt.sh local small           # small model only (router /small/ prefix)
+    llmOpt/scripts/gengin-opt.sh local deepseek        # forced DeepSeek API (router /ds/ prefix)
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
     llmOpt/scripts/gengin-opt.sh openai                # direct OpenAI API
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
     llmOpt/scripts/gengin-opt.sh --headless            # unattended oneshot (-z)
     llmOpt/scripts/gengin-opt.sh --harness hermes      # same session on Hermes Agent (shorthand: --hermes)
     llmOpt/scripts/gengin-opt.sh ml [provider]         # ML/OpenCL-kernel objective (needs a GPU)
+
+The `small` / `deepseek` words directly after `local` select the router endpoint
+instead of a model: `http://localhost:8013/small/v1` always answers from the
+small local model (no profile switch, no cloud fallback) and
+`http://localhost:8013/ds/v1` forces the DeepSeek API (no local fallback, the
+router's own key and `DEEPSEEK_MODEL` apply). The prefix, not the model id, picks
+the backend — the router rewrites or ignores the id. `LOCAL_LLM_BASE` moves the
+router root. `ml local small` / `ml local deepseek` work the same way.
 
 Provider words (`local` / `deepseek` / `openai` / `openrouter <id>`) work in any order and
 default to the local server. They work on both harnesses: dsh renders a per-run
