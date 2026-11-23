@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import signal
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -1936,8 +1937,57 @@ def _rel(path):
         return path
 
 
+def _export_agent_trace(config, session_id, session_home, run_dir, warnings):
+    """Snapshot the harness's stored agent trace into the session run dir.
+
+    A dsh session prints a running transcript, which _stream_output already
+    tees into the session log.  A Hermes session (`hermes -z`) prints only the
+    final answer, so its turn-by-turn record (messages, tool calls and tool
+    results) exists only inside the harness's private state.db, whose
+    retention the supervisor does not control.  Copy that database into the
+    session run dir (via the SQLite backup API, so a live WAL is handled) and
+    reference it from the session summary.  Best effort: a missing or
+    unreadable state.db adds a warning, never a session failure.
+    """
+    if config.harness != "hermes":
+        return ""
+    db_path = os.path.join(session_home, "state.db")
+    if not os.path.isfile(db_path):
+        warnings.append("hermes session trace missing: no state.db")
+        return ""
+    out_path = os.path.join(run_dir, "agent-trace.db")
+    tmp_path = out_path + ".tmp"
+    try:
+        src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            dst = sqlite3.connect(tmp_path)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+        if config.agent_user:
+            # The run dir is group-shared (setgid); keep the snapshot readable
+            # by the agent group so post-processing tools can read it.
+            try:
+                os.chmod(tmp_path, 0o640)
+            except OSError:
+                pass
+        os.replace(tmp_path, out_path)
+        return out_path
+    except (OSError, sqlite3.Error) as exc:
+        warnings.append(f"hermes session trace not exported: {exc}")
+        log("WARN", "trace.export_failed", session=session_id, detail=str(exc))
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return ""
+
+
 def _write_summary(config, session, exit_reason, exit_code, usage_usd, pr_url,
-                   setup_checks, warnings, started_at, ended_at):
+                   setup_checks, warnings, started_at, ended_at, trace_path=""):
     route = session.get("route") or {}
     summary = {
         "schemaVersion": 1,
@@ -1957,6 +2007,7 @@ def _write_summary(config, session, exit_reason, exit_code, usage_usd, pr_url,
         "environmentFingerprint": session.get("environmentFingerprint", ""),
         "usageFile": _rel(session.get("usagePath", "")),
         "logFile": _rel(session.get("logPath", "")),
+        "traceFile": _rel(trace_path),
         "setupChecks": setup_checks,
         "warnings": warnings,
         "route": (
@@ -2366,8 +2417,11 @@ def run_session(config, state, target_sha):
             log("ERROR", "key.delete_failed", session=session_id, detail=str(exc))
         clear_route(state["activeSession"].get("route"))
         ended_at = utc_now()
+        trace_path = _export_agent_trace(config, session_id, session_home,
+                                         run_dir, warnings)
         _write_summary(config, state["activeSession"], exit_reason, exit_code,
-                       usage_usd, pr_url, {}, warnings, started_at, ended_at)
+                       usage_usd, pr_url, {}, warnings, started_at, ended_at,
+                       trace_path)
         log("INFO", "session.finished", session=session_id, reason=exit_reason,
             exit_code=exit_code, usage=usage_usd)
         _active_session_id = None
@@ -2479,3 +2533,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         log("WARN", "supervisor.interrupted")
         sys.exit(EXIT_RUNTIME)
+
