@@ -8,16 +8,14 @@ CFLAGS_BASE += -fvectorize -fslp-vectorize
 CFLAGS_BASE += -mllvm -polly
 CFLAGS_BASE += -w -I/usr/local/include -Iobject
 
-# Vendored minifb: headers + locally built static lib (deps/minifb/build)
-MINIFB_DIR = deps/minifb
-CFLAGS_BASE += -I$(MINIFB_DIR)/include
+# Window backend is util/glWin (X11 + GLX + CL/GL sharing), no external window lib
 
 CFLAGS = $(CFLAGS_BASE)
 # Pin the system linker: conda's ld on PATH lacks the Debian multiarch search
 # dirs and fails to resolve libxcb/libGL/libc dependencies.
-LDFLAGS = --ld-path=/usr/bin/ld -flto -L/usr/local/lib -L$(MINIFB_DIR)/build
+LDFLAGS = --ld-path=/usr/bin/ld -flto -L/usr/local/lib
 LDFLAGS += -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed
-LIBS = -lminifb -lxkbcommon -lX11 -lXrandr -lGL -lpthread -lm -ljpeg -lOpenCL
+LIBS = -lX11 -lGL -lpthread -lm -ljpeg -lOpenCL
 
 # ---- Output layout: every target builds into its own dir under build/ ----
 # build/<target>/<binary> (+ variants like main_debug / main_bench)
@@ -43,7 +41,7 @@ endif
 BENCH_DURATION ?= 10.0
 
 TARGET = $(MAIN_DIR)/main
-SRC = main.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util/threadPool.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboard/keyboard.c render/gpu/format.c render/gpu/kernels/cloadrendering/cload.c hexDump/hexDump.c simulation/cSim/import.c simulation/cSim/simulate.c
+SRC = main.c client/gameClient.c client/client.c load/loadObj.c util/bbox.c util/threadPool.c util/glWin/glWin.c object/object.c object/format.c object/scene.c object/material/material.c render/render.c render/cpu/ray.c render/cpu/ssr.c render/cpu/tile.c render/cpu/font.c render/color/color.c skybox/skybox.c keyboard/keyboard.c render/gpu/format.c render/gpu/kernels/cloadrendering/cload.c hexDump/hexDump.c simulation/cSim/import.c simulation/cSim/simulate.c
 
 FLAMEGRAPH_DIR = .flamegraph
 
@@ -98,7 +96,7 @@ $(TARGET): $(SRC)
 	@mkdir -p $(MAIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
 
-debug: CFLAGS = -g -O0 -march=native -Wall -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include
+debug: CFLAGS = -g -O0 -march=native -Wall -I/usr/local/include -Iobject
 debug: $(SRC)
 	@mkdir -p $(MAIN_DIR)
 	$(CC) $(CFLAGS) -o $(MAIN_DIR)/main_debug $^ $(LDFLAGS) $(LIBS)
@@ -202,7 +200,7 @@ bench: $(SRC)
 
 benchUnOpt: $(SRC)
 	@mkdir -p $(MAIN_DIR)
-	$(CC) -O1 -w -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(MAIN_DIR)/main_bench_unopt $^ -L/usr/local/lib -L$(MINIFB_DIR)/build $(LIBS)
+	$(CC) -O1 -w -I/usr/local/include -Iobject -DBENCH_MODE -DBENCH_DURATION=2.0 -o $(MAIN_DIR)/main_bench_unopt $^ -L/usr/local/lib $(LIBS)
 	./$(MAIN_DIR)/main_bench_unopt
 	rm -f $(MAIN_DIR)/main_bench_unopt
 
@@ -217,7 +215,7 @@ $(TEST_DIR)/%: $(TESTS_DIR)/%.c $(TEST_COMMON)
 $(TEST_DIR)/%_flame: $(TESTS_DIR)/%.c $(TEST_COMMON)
 	@mkdir -p $(TEST_DIR)
 	$(CC) $(CFLAGS_BASE) -fno-omit-frame-pointer -fno-inline-functions -fno-lto -g -I$(TESTS_DIR) \
-		-o $@ $^ --ld-path=/usr/bin/ld -L/usr/local/lib -L$(MINIFB_DIR)/build -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
+		-o $@ $^ --ld-path=/usr/bin/ld -L/usr/local/lib -Wl,--gc-sections -Wl,-O3 -Wl,--as-needed $(LIBS)
 
 # make test          → build & run all tests
 # make test testRay  → build & run only testRay (+ perf flame graph)
@@ -275,8 +273,8 @@ FLAME_SECONDS = 20
 flame:
 	@mkdir -p $(PROF_DIR)
 	$(CC) -O3 -march=native -fno-omit-frame-pointer -fno-inline-functions -fno-lto -g \
-		-w -I/usr/local/include -Iobject -I$(MINIFB_DIR)/include \
-		-o $(FLAME_BIN) $(SRC) --ld-path=/usr/bin/ld -L/usr/local/lib -L$(MINIFB_DIR)/build $(LIBS)
+		-w -I/usr/local/include -Iobject \
+		-o $(FLAME_BIN) $(SRC) --ld-path=/usr/bin/ld -L/usr/local/lib $(LIBS)
 	bash $(TOOLS_DIR)/flame.sh $(FLAME_BIN) $(PROF_DIR)/flamegraph.svg $(FLAME_SECONDS)
 
 # Requires: pip install gprof2dot   conda install -c conda-forge graphviz

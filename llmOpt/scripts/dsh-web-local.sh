@@ -11,6 +11,8 @@
 # discovered from /v1/models). Runs as the dsh-web-local systemd user unit
 # (llmOpt/systemd/) for login autostart; DSH_WEB_WAIT_SECONDS then makes
 # startup wait for the router instead of serving a bogus model id.
+# DSH_WEB_HOST=lan (or 0.0.0.0) binds every interface instead of loopback,
+# which serves the UI to the LAN/Wi-Fi (DSH_WEB_PORT moves the port).
 #
 # DSH_HOME is scoped to llmOpt/.dsh so the global ~/.dsh is never touched. The
 # web profile patch is rendered fresh on every run. Proprietary-code opt-out:
@@ -27,6 +29,18 @@ PATCH_FILE="$PATCH_DIR/cordis.patch.yml"
 
 BASE_URL="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
 PORT="${DSH_WEB_PORT:-3080}"
+# Bind host: loopback only by default. DSH_WEB_HOST=lan (or 0.0.0.0) serves the
+# UI on every interface; dsh then derives this machine's IPv4 addresses into its
+# Host fence, so http://<lan-ip>:PORT is accepted without --trusted-host.
+HOST="${DSH_WEB_HOST:-127.0.0.1}"
+[[ "$HOST" == "lan" ]] && HOST="0.0.0.0"
+
+# The router selects the backend from the path prefix, not the model id, and
+# pi-ai binds one endpoint per provider - so each backend is its own provider.
+# Both override hooks exist for a non-default router location.
+ROUTER_ROOT="${BASE_URL%/v1}"
+DS_BASE_URL="${DSH_WEB_DS_URL:-$ROUTER_ROOT/ds/v1}"
+SMALL_BASE_URL="${DSH_WEB_SMALL_URL:-$ROUTER_ROOT/small/v1}"
 
 if ! command -v dsh >/dev/null 2>&1; then
   echo "error: dsh not installed" >&2
@@ -79,9 +93,10 @@ mkdir -p "$PATCH_DIR"
 cat > "$PATCH_FILE" <<YAML
 # Rendered by llmOpt/scripts/dsh-web-local.sh - interactive browser chat on the
 # local model only. Regenerated every run; edit the script, not this file.
-# The provider id is display-only (the router ignores it) but must be STABLE:
-# saved per-session selections outlive re-renders, and the router's reported id
-# flips between backend modes (fast 7B path vs big-model id).
+# One provider per router prefix (/v1 = big, /ds/ = forced DeepSeek API,
+# /small/ = small model only); the router picks the backend from the prefix and
+# ignores the model id. Ids must be STABLE: saved per-session selections
+# outlive re-renders.
 - id: llm-pi-ai
   config:
     providers:
@@ -89,15 +104,48 @@ cat > "$PATCH_FILE" <<YAML
         apiKeyEnv: LOCAL_LLM_KEY
         api: openai-completions
         baseURL: $BASE_URL
+        displayName: Local models
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
         models:
-          - id: local-router
+          - id: qwen3.8-flash-next-iq3_s
+            name: qwen3.8-flash-next-iq3_s (Local)
+            contextWindow: 256000
+            maxTokens: 16000
+            input: [text]
+      local-gengin-ds:
+        apiKeyEnv: LOCAL_LLM_KEY
+        api: openai-completions
+        baseURL: $DS_BASE_URL
+        displayName: Local models - DeepSeek API
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          - id: deepseek-v4.1-flash-proxy
+            name: deepseek flash v4.1 (proxy)
+            contextWindow: 655360
+            maxTokens: 393216
+            input: [text, image]
+      local-gengin-small:
+        apiKeyEnv: LOCAL_LLM_KEY
+        api: openai-completions
+        baseURL: $SMALL_BASE_URL
+        displayName: Local models - small
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          - id: nemotron-bolt-e4b
+            name: Nemotron-3.5-Bolt-E4B (Local small)
+            contextWindow: 131072
+            maxTokens: 16000
+            input: [text]
 - id: agent-default-model
   config:
     provider: local-gengin
-    model: local-router
+    model: qwen3.8-flash-next-iq3_s
 # Proprietary code: no session-log contribution to DeepSeek.
 - id: session-log-deepseek
   disabled: true
@@ -115,14 +163,28 @@ chmod 600 "$PATCH_FILE"
 # optimizer Web UI.
 source "$SCRIPT_DIR/dsh-web-common.sh"
 dshWebPrepareLaunch "$DSH_DIR"
+dshWebPatchStatus
 
 # The OTel row is launcher-owned (config cannot disable it): opt out via env.
 export DSH_TELEMETRY_MODE=DISABLED DSH_TELEMETRY_DISABLED=1
 
-echo "dsh web: model 'local-router' (router reports '$MODEL_ID') via $BASE_URL"
+echo "dsh web: default 'qwen3.8-flash-next-iq3_s' (router reports '$MODEL_ID') via $BASE_URL"
+echo "models:   deepseek-v4.1-flash-proxy -> $DS_BASE_URL"
+echo "          nemotron-bolt-e4b        -> $SMALL_BASE_URL"
 echo "DSH_HOME: $DSH_DIR   patch: $PATCH_FILE"
 echo "open http://127.0.0.1:$PORT  (Ctrl+C to stop)"
+if [[ "$HOST" != "127.0.0.1" ]]; then
+  for addr in $(hostname -I); do
+    case "$addr" in *:*) continue ;; esac
+    echo "LAN:      http://$addr:$PORT"
+  done
+  if [[ "${DSH_WEB_NO_AUTH:-1}" != "0" ]]; then
+    echo "WARNING:   the login gate is disabled and this UI is reachable from the"
+    echo "           network - anyone on it can drive the agent."
+    echo "           set DSH_WEB_NO_AUTH=0 to restore the token/cookie login."
+  fi
+fi
 echo "bookmark (stable login token): http://127.0.0.1:$PORT/?token=$DSH_LAUNCH_TOKEN"
 echo
 
-DSH_HOME="$DSH_DIR" exec dsh web --port "$PORT" --no-open
+DSH_HOME="$DSH_DIR" exec dsh web --port "$PORT" --host "$HOST" --no-open

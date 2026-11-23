@@ -21,6 +21,7 @@ build/prof/main_flame
 
 # bench results
 bench/results/bench_results.json
+bench/results/flight_trace_*.csv
 
 # root binaries (legacy, now built under build/)
 main
@@ -52,6 +53,10 @@ llmOpt/.dsh/
 llmOpt/state/
 llmOpt/logs/
 llmOpt/run/
+
+# llmOpt kernel sweeps dump generated .cl sources and .out.bin result dumps
+llmOpt/scratch/
+llmOpt/*.out.bin
 
 # python caches + runtime baseline caches (both are machine-local, keyed by fingerprint)
 __pycache__/

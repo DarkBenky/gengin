@@ -23,6 +23,10 @@ Type=simple
 # launcher must be named explicitly.
 Environment=PATH=/home/user/.nvm/versions/node/v24.19.0/bin:/home/user/miniconda3/bin:/usr/local/bin:/usr/bin:/bin
 Environment=DSH_WEB_WAIT_SECONDS=180
+# Serve the LAN/Wi-Fi as well as loopback ("lan" = 0.0.0.0; dsh's refusal of
+# that host is patched out by dsh-web-common.sh). Drop this line to keep the UI
+# on 127.0.0.1 only; DSH_WEB_PORT moves the port (default 3080).
+Environment=DSH_WEB_HOST=lan
 ExecStart=%h/Desktop/gengin/llmOpt/scripts/dsh-web-local.sh
 Restart=on-failure
 RestartSec=10

@@ -19,6 +19,8 @@ This is a personal hobby project. I write the code to learn, so treat me as the 
 - **Naming**: Use `camelCase` for variables and functions, `PascalCase` for types and classes
 - **Comments**: Only when necessary—explain **why**, not **what**. Avoid obvious or boilerplate comments
 - **Formatting**: Consistent indentation, clear separation between logical blocks
+- **Types**: Use my typedefs `uint8`, `uint16`, `uint32`, `uint64`, `int32`, `int64`, `float2`, `float3`, `float4`, `int3`, `int4` instead of raw `unsigned char`, `unsigned int`, `unsigned long long`, `int`, `long`, `float x, y, z` fields; `float3` and `int3` are physically 4 wide, `w` is only alignment padding; keep the raw type only where an external API or a `printf` specifier requires it
+- **Important**: Imagine that each line of code costs lots of money and you have limited budget so use budget responsibly, each line should justify its cost, do not waste lines unnecessarily
 
 ## Architecture & Performance
 - **Memory Layout**: Prefer **Structure-of-Arrays (SoA)** over Array-of-Structs for data-oriented design

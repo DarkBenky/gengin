@@ -72,21 +72,21 @@ __kernel void cnn2dFilter_w64_h64_c3_f3(
 
     float a0 = 0.0f;
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 192 + (x - 1) * 3;
-        const float v0 = input[base_0_0];
-        a0 += v0 * filterWeights[0];
-        const float v1 = input[base_0_0 + 1];
-        a0 += v1 * filterWeights[1];
-        const float v2 = input[base_0_0 + 2];
-        a0 += v2 * filterWeights[2];
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 192 + (x - 1) * 3;
+            const float v0 = input[base_0_0];
+            a0 += v0 * filterWeights[0];
+            const float v1 = input[base_0_0 + 1];
+            a0 += v1 * filterWeights[1];
+            const float v2 = input[base_0_0 + 2];
+            a0 += v2 * filterWeights[2];
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 192 + x * 3;
         const float v0 = input[base_0_1];
         a0 += v0 * filterWeights[3];
@@ -94,18 +94,18 @@ __kernel void cnn2dFilter_w64_h64_c3_f3(
         a0 += v1 * filterWeights[4];
         const float v2 = input[base_0_1 + 2];
         a0 += v2 * filterWeights[5];
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 63)
-    {
-        const int base_0_2 = (y - 1) * 192 + (x + 1) * 3;
-        const float v0 = input[base_0_2];
-        a0 += v0 * filterWeights[6];
-        const float v1 = input[base_0_2 + 1];
-        a0 += v1 * filterWeights[7];
-        const float v2 = input[base_0_2 + 2];
-        a0 += v2 * filterWeights[8];
+        // tap (0, 2)
+        if (x < 63)
+        {
+            const int base_0_2 = (y - 1) * 192 + (x + 1) * 3;
+            const float v0 = input[base_0_2];
+            a0 += v0 * filterWeights[6];
+            const float v1 = input[base_0_2 + 1];
+            a0 += v1 * filterWeights[7];
+            const float v2 = input[base_0_2 + 2];
+            a0 += v2 * filterWeights[8];
+        }
     }
 
     // tap (1, 0)
@@ -141,21 +141,21 @@ __kernel void cnn2dFilter_w64_h64_c3_f3(
         a0 += v2 * filterWeights[17];
     }
 
-    // tap (2, 0)
-    if (y < 63 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 192 + (x - 1) * 3;
-        const float v0 = input[base_2_0];
-        a0 += v0 * filterWeights[18];
-        const float v1 = input[base_2_0 + 1];
-        a0 += v1 * filterWeights[19];
-        const float v2 = input[base_2_0 + 2];
-        a0 += v2 * filterWeights[20];
-    }
-
-    // tap (2, 1)
     if (y < 63)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 192 + (x - 1) * 3;
+            const float v0 = input[base_2_0];
+            a0 += v0 * filterWeights[18];
+            const float v1 = input[base_2_0 + 1];
+            a0 += v1 * filterWeights[19];
+            const float v2 = input[base_2_0 + 2];
+            a0 += v2 * filterWeights[20];
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 192 + x * 3;
         const float v0 = input[base_2_1];
         a0 += v0 * filterWeights[21];
@@ -163,18 +163,18 @@ __kernel void cnn2dFilter_w64_h64_c3_f3(
         a0 += v1 * filterWeights[22];
         const float v2 = input[base_2_1 + 2];
         a0 += v2 * filterWeights[23];
-    }
 
-    // tap (2, 2)
-    if (y < 63 && x < 63)
-    {
-        const int base_2_2 = (y + 1) * 192 + (x + 1) * 3;
-        const float v0 = input[base_2_2];
-        a0 += v0 * filterWeights[24];
-        const float v1 = input[base_2_2 + 1];
-        a0 += v1 * filterWeights[25];
-        const float v2 = input[base_2_2 + 2];
-        a0 += v2 * filterWeights[26];
+        // tap (2, 2)
+        if (x < 63)
+        {
+            const int base_2_2 = (y + 1) * 192 + (x + 1) * 3;
+            const float v0 = input[base_2_2];
+            a0 += v0 * filterWeights[24];
+            const float v1 = input[base_2_2 + 1];
+            a0 += v1 * filterWeights[25];
+            const float v2 = input[base_2_2 + 2];
+            a0 += v2 * filterWeights[26];
+        }
     }
 
     {
@@ -216,28 +216,28 @@ __kernel void cnn2dFilter_w28_h28_c1_f3(
 
     float a0 = 0.0f;
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 28 + (x - 1) * 1;
-        const float v0 = input[base_0_0];
-        a0 += v0 * filterWeights[0];
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 28 + (x - 1) * 1;
+            const float v0 = input[base_0_0];
+            a0 += v0 * filterWeights[0];
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 28 + x * 1;
         const float v0 = input[base_0_1];
         a0 += v0 * filterWeights[1];
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 27)
-    {
-        const int base_0_2 = (y - 1) * 28 + (x + 1) * 1;
-        const float v0 = input[base_0_2];
-        a0 += v0 * filterWeights[2];
+        // tap (0, 2)
+        if (x < 27)
+        {
+            const int base_0_2 = (y - 1) * 28 + (x + 1) * 1;
+            const float v0 = input[base_0_2];
+            a0 += v0 * filterWeights[2];
+        }
     }
 
     // tap (1, 0)
@@ -261,28 +261,28 @@ __kernel void cnn2dFilter_w28_h28_c1_f3(
         a0 += v0 * filterWeights[5];
     }
 
-    // tap (2, 0)
-    if (y < 27 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 28 + (x - 1) * 1;
-        const float v0 = input[base_2_0];
-        a0 += v0 * filterWeights[6];
-    }
-
-    // tap (2, 1)
     if (y < 27)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 28 + (x - 1) * 1;
+            const float v0 = input[base_2_0];
+            a0 += v0 * filterWeights[6];
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 28 + x * 1;
         const float v0 = input[base_2_1];
         a0 += v0 * filterWeights[7];
-    }
 
-    // tap (2, 2)
-    if (y < 27 && x < 27)
-    {
-        const int base_2_2 = (y + 1) * 28 + (x + 1) * 1;
-        const float v0 = input[base_2_2];
-        a0 += v0 * filterWeights[8];
+        // tap (2, 2)
+        if (x < 27)
+        {
+            const int base_2_2 = (y + 1) * 28 + (x + 1) * 1;
+            const float v0 = input[base_2_2];
+            a0 += v0 * filterWeights[8];
+        }
     }
 
     {
@@ -324,28 +324,28 @@ __kernel void cnn2dFilter_w28_h28_c4_f3(
 
     float4 a0 = (float4)(0.0f);
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 112 + (x - 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_0_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + 0);
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 112 + (x - 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_0_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + 0);
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 112 + x * 4;
         const float4 v0 = *(__global const float4*)(input + base_0_1);
         a0 += v0 * *(__global const float4*)(filterWeights + 4);
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 27)
-    {
-        const int base_0_2 = (y - 1) * 112 + (x + 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_0_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + 8);
+        // tap (0, 2)
+        if (x < 27)
+        {
+            const int base_0_2 = (y - 1) * 112 + (x + 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_0_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + 8);
+        }
     }
 
     // tap (1, 0)
@@ -369,28 +369,28 @@ __kernel void cnn2dFilter_w28_h28_c4_f3(
         a0 += v0 * *(__global const float4*)(filterWeights + 20);
     }
 
-    // tap (2, 0)
-    if (y < 27 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 112 + (x - 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_2_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + 24);
-    }
-
-    // tap (2, 1)
     if (y < 27)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 112 + (x - 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_2_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + 24);
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 112 + x * 4;
         const float4 v0 = *(__global const float4*)(input + base_2_1);
         a0 += v0 * *(__global const float4*)(filterWeights + 28);
-    }
 
-    // tap (2, 2)
-    if (y < 27 && x < 27)
-    {
-        const int base_2_2 = (y + 1) * 112 + (x + 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_2_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + 32);
+        // tap (2, 2)
+        if (x < 27)
+        {
+            const int base_2_2 = (y + 1) * 112 + (x + 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_2_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + 32);
+        }
     }
 
     {
@@ -432,34 +432,34 @@ __kernel void cnn2dFilter_w28_h28_c8_f3(
 
     float4 a0 = (float4)(0.0f);
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 224 + (x - 1) * 8;
-        const float4 v0 = *(__global const float4*)(input + base_0_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + 0);
-        const float4 v1 = *(__global const float4*)(input + base_0_0 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + 4);
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 224 + (x - 1) * 8;
+            const float4 v0 = *(__global const float4*)(input + base_0_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + 0);
+            const float4 v1 = *(__global const float4*)(input + base_0_0 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + 4);
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 224 + x * 8;
         const float4 v0 = *(__global const float4*)(input + base_0_1);
         a0 += v0 * *(__global const float4*)(filterWeights + 8);
         const float4 v1 = *(__global const float4*)(input + base_0_1 + 4);
         a0 += v1 * *(__global const float4*)(filterWeights + 12);
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 27)
-    {
-        const int base_0_2 = (y - 1) * 224 + (x + 1) * 8;
-        const float4 v0 = *(__global const float4*)(input + base_0_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + 16);
-        const float4 v1 = *(__global const float4*)(input + base_0_2 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + 20);
+        // tap (0, 2)
+        if (x < 27)
+        {
+            const int base_0_2 = (y - 1) * 224 + (x + 1) * 8;
+            const float4 v0 = *(__global const float4*)(input + base_0_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + 16);
+            const float4 v1 = *(__global const float4*)(input + base_0_2 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + 20);
+        }
     }
 
     // tap (1, 0)
@@ -489,34 +489,34 @@ __kernel void cnn2dFilter_w28_h28_c8_f3(
         a0 += v1 * *(__global const float4*)(filterWeights + 44);
     }
 
-    // tap (2, 0)
-    if (y < 27 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 224 + (x - 1) * 8;
-        const float4 v0 = *(__global const float4*)(input + base_2_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + 48);
-        const float4 v1 = *(__global const float4*)(input + base_2_0 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + 52);
-    }
-
-    // tap (2, 1)
     if (y < 27)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 224 + (x - 1) * 8;
+            const float4 v0 = *(__global const float4*)(input + base_2_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + 48);
+            const float4 v1 = *(__global const float4*)(input + base_2_0 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + 52);
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 224 + x * 8;
         const float4 v0 = *(__global const float4*)(input + base_2_1);
         a0 += v0 * *(__global const float4*)(filterWeights + 56);
         const float4 v1 = *(__global const float4*)(input + base_2_1 + 4);
         a0 += v1 * *(__global const float4*)(filterWeights + 60);
-    }
 
-    // tap (2, 2)
-    if (y < 27 && x < 27)
-    {
-        const int base_2_2 = (y + 1) * 224 + (x + 1) * 8;
-        const float4 v0 = *(__global const float4*)(input + base_2_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + 64);
-        const float4 v1 = *(__global const float4*)(input + base_2_2 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + 68);
+        // tap (2, 2)
+        if (x < 27)
+        {
+            const int base_2_2 = (y + 1) * 224 + (x + 1) * 8;
+            const float4 v0 = *(__global const float4*)(input + base_2_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + 64);
+            const float4 v1 = *(__global const float4*)(input + base_2_2 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + 68);
+        }
     }
 
     {
@@ -558,28 +558,28 @@ __kernel void cnn2dFilter_w14_h14_c1_f3(
 
     float a0 = 0.0f;
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 14 + (x - 1) * 1;
-        const float v0 = input[base_0_0];
-        a0 += v0 * filterWeights[0];
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 14 + (x - 1) * 1;
+            const float v0 = input[base_0_0];
+            a0 += v0 * filterWeights[0];
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 14 + x * 1;
         const float v0 = input[base_0_1];
         a0 += v0 * filterWeights[1];
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 13)
-    {
-        const int base_0_2 = (y - 1) * 14 + (x + 1) * 1;
-        const float v0 = input[base_0_2];
-        a0 += v0 * filterWeights[2];
+        // tap (0, 2)
+        if (x < 13)
+        {
+            const int base_0_2 = (y - 1) * 14 + (x + 1) * 1;
+            const float v0 = input[base_0_2];
+            a0 += v0 * filterWeights[2];
+        }
     }
 
     // tap (1, 0)
@@ -603,28 +603,28 @@ __kernel void cnn2dFilter_w14_h14_c1_f3(
         a0 += v0 * filterWeights[5];
     }
 
-    // tap (2, 0)
-    if (y < 13 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 14 + (x - 1) * 1;
-        const float v0 = input[base_2_0];
-        a0 += v0 * filterWeights[6];
-    }
-
-    // tap (2, 1)
     if (y < 13)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 14 + (x - 1) * 1;
+            const float v0 = input[base_2_0];
+            a0 += v0 * filterWeights[6];
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 14 + x * 1;
         const float v0 = input[base_2_1];
         a0 += v0 * filterWeights[7];
-    }
 
-    // tap (2, 2)
-    if (y < 13 && x < 13)
-    {
-        const int base_2_2 = (y + 1) * 14 + (x + 1) * 1;
-        const float v0 = input[base_2_2];
-        a0 += v0 * filterWeights[8];
+        // tap (2, 2)
+        if (x < 13)
+        {
+            const int base_2_2 = (y + 1) * 14 + (x + 1) * 1;
+            const float v0 = input[base_2_2];
+            a0 += v0 * filterWeights[8];
+        }
     }
 
     {
@@ -668,28 +668,28 @@ __kernel void cnn2dFilter_w28_h28_c1_f3_n4(
 
     float a0 = 0.0f;
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 28 + (x - 1) * 1;
-        const float v0 = input[base_0_0];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 0];
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 28 + (x - 1) * 1;
+            const float v0 = input[base_0_0];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 0];
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 28 + x * 1;
         const float v0 = input[base_0_1];
         a0 += v0 * filterWeights[(n0 + 0) * 9 + 1];
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 27)
-    {
-        const int base_0_2 = (y - 1) * 28 + (x + 1) * 1;
-        const float v0 = input[base_0_2];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 2];
+        // tap (0, 2)
+        if (x < 27)
+        {
+            const int base_0_2 = (y - 1) * 28 + (x + 1) * 1;
+            const float v0 = input[base_0_2];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 2];
+        }
     }
 
     // tap (1, 0)
@@ -713,28 +713,28 @@ __kernel void cnn2dFilter_w28_h28_c1_f3_n4(
         a0 += v0 * filterWeights[(n0 + 0) * 9 + 5];
     }
 
-    // tap (2, 0)
-    if (y < 27 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 28 + (x - 1) * 1;
-        const float v0 = input[base_2_0];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 6];
-    }
-
-    // tap (2, 1)
     if (y < 27)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 28 + (x - 1) * 1;
+            const float v0 = input[base_2_0];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 6];
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 28 + x * 1;
         const float v0 = input[base_2_1];
         a0 += v0 * filterWeights[(n0 + 0) * 9 + 7];
-    }
 
-    // tap (2, 2)
-    if (y < 27 && x < 27)
-    {
-        const int base_2_2 = (y + 1) * 28 + (x + 1) * 1;
-        const float v0 = input[base_2_2];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 8];
+        // tap (2, 2)
+        if (x < 27)
+        {
+            const int base_2_2 = (y + 1) * 28 + (x + 1) * 1;
+            const float v0 = input[base_2_2];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 8];
+        }
     }
 
     {
@@ -778,28 +778,28 @@ __kernel void cnn2dFilter_w14_h14_c4_f3_n4(
 
     float4 a0 = (float4)(0.0f);
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 56 + (x - 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_0_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 0);
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 56 + (x - 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_0_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 0);
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 56 + x * 4;
         const float4 v0 = *(__global const float4*)(input + base_0_1);
         a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 4);
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 13)
-    {
-        const int base_0_2 = (y - 1) * 56 + (x + 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_0_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 8);
+        // tap (0, 2)
+        if (x < 13)
+        {
+            const int base_0_2 = (y - 1) * 56 + (x + 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_0_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 8);
+        }
     }
 
     // tap (1, 0)
@@ -823,28 +823,28 @@ __kernel void cnn2dFilter_w14_h14_c4_f3_n4(
         a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 20);
     }
 
-    // tap (2, 0)
-    if (y < 13 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 56 + (x - 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_2_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 24);
-    }
-
-    // tap (2, 1)
     if (y < 13)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 56 + (x - 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_2_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 24);
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 56 + x * 4;
         const float4 v0 = *(__global const float4*)(input + base_2_1);
         a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 28);
-    }
 
-    // tap (2, 2)
-    if (y < 13 && x < 13)
-    {
-        const int base_2_2 = (y + 1) * 56 + (x + 1) * 4;
-        const float4 v0 = *(__global const float4*)(input + base_2_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 32);
+        // tap (2, 2)
+        if (x < 13)
+        {
+            const int base_2_2 = (y + 1) * 56 + (x + 1) * 4;
+            const float4 v0 = *(__global const float4*)(input + base_2_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 36 + 32);
+        }
     }
 
     {
@@ -1162,37 +1162,37 @@ __kernel void cnn2dFilter_w28_h28_c1_f3_n16(
     float a2 = 0.0f;
     float a3 = 0.0f;
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 28 + (x - 1) * 1;
-        const float v0 = input[base_0_0];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 0];
-        a1 += v0 * filterWeights[(n0 + 1) * 9 + 0];
-        a2 += v0 * filterWeights[(n0 + 2) * 9 + 0];
-        a3 += v0 * filterWeights[(n0 + 3) * 9 + 0];
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 28 + (x - 1) * 1;
+            const float v0 = input[base_0_0];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 0];
+            a1 += v0 * filterWeights[(n0 + 1) * 9 + 0];
+            a2 += v0 * filterWeights[(n0 + 2) * 9 + 0];
+            a3 += v0 * filterWeights[(n0 + 3) * 9 + 0];
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 28 + x * 1;
         const float v0 = input[base_0_1];
         a0 += v0 * filterWeights[(n0 + 0) * 9 + 1];
         a1 += v0 * filterWeights[(n0 + 1) * 9 + 1];
         a2 += v0 * filterWeights[(n0 + 2) * 9 + 1];
         a3 += v0 * filterWeights[(n0 + 3) * 9 + 1];
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 27)
-    {
-        const int base_0_2 = (y - 1) * 28 + (x + 1) * 1;
-        const float v0 = input[base_0_2];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 2];
-        a1 += v0 * filterWeights[(n0 + 1) * 9 + 2];
-        a2 += v0 * filterWeights[(n0 + 2) * 9 + 2];
-        a3 += v0 * filterWeights[(n0 + 3) * 9 + 2];
+        // tap (0, 2)
+        if (x < 27)
+        {
+            const int base_0_2 = (y - 1) * 28 + (x + 1) * 1;
+            const float v0 = input[base_0_2];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 2];
+            a1 += v0 * filterWeights[(n0 + 1) * 9 + 2];
+            a2 += v0 * filterWeights[(n0 + 2) * 9 + 2];
+            a3 += v0 * filterWeights[(n0 + 3) * 9 + 2];
+        }
     }
 
     // tap (1, 0)
@@ -1225,101 +1225,104 @@ __kernel void cnn2dFilter_w28_h28_c1_f3_n16(
         a3 += v0 * filterWeights[(n0 + 3) * 9 + 5];
     }
 
-    // tap (2, 0)
-    if (y < 27 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 28 + (x - 1) * 1;
-        const float v0 = input[base_2_0];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 6];
-        a1 += v0 * filterWeights[(n0 + 1) * 9 + 6];
-        a2 += v0 * filterWeights[(n0 + 2) * 9 + 6];
-        a3 += v0 * filterWeights[(n0 + 3) * 9 + 6];
-    }
-
-    // tap (2, 1)
     if (y < 27)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 28 + (x - 1) * 1;
+            const float v0 = input[base_2_0];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 6];
+            a1 += v0 * filterWeights[(n0 + 1) * 9 + 6];
+            a2 += v0 * filterWeights[(n0 + 2) * 9 + 6];
+            a3 += v0 * filterWeights[(n0 + 3) * 9 + 6];
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 28 + x * 1;
         const float v0 = input[base_2_1];
         a0 += v0 * filterWeights[(n0 + 0) * 9 + 7];
         a1 += v0 * filterWeights[(n0 + 1) * 9 + 7];
         a2 += v0 * filterWeights[(n0 + 2) * 9 + 7];
         a3 += v0 * filterWeights[(n0 + 3) * 9 + 7];
-    }
 
-    // tap (2, 2)
-    if (y < 27 && x < 27)
-    {
-        const int base_2_2 = (y + 1) * 28 + (x + 1) * 1;
-        const float v0 = input[base_2_2];
-        a0 += v0 * filterWeights[(n0 + 0) * 9 + 8];
-        a1 += v0 * filterWeights[(n0 + 1) * 9 + 8];
-        a2 += v0 * filterWeights[(n0 + 2) * 9 + 8];
-        a3 += v0 * filterWeights[(n0 + 3) * 9 + 8];
-    }
-
-    {
-        float sum = a0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
+        // tap (2, 2)
+        if (x < 27)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            const int base_2_2 = (y + 1) * 28 + (x + 1) * 1;
+            const float v0 = input[base_2_2];
+            a0 += v0 * filterWeights[(n0 + 0) * 9 + 8];
+            a1 += v0 * filterWeights[(n0 + 1) * 9 + 8];
+            a2 += v0 * filterWeights[(n0 + 2) * 9 + 8];
+            a3 += v0 * filterWeights[(n0 + 3) * 9 + 8];
+        }
+    }
+
+    {
+        float4 value4 = (float4)(0.0f);
+
+        {
+            float sum = a0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = a1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 28 + x) * 16 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1 + bias[(n0 + 1)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 28 + x) * 16 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 28 + x) * 16 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 28 + x) * 16 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
@@ -1380,35 +1383,35 @@ __kernel void cnn2dFilter_w14_h14_c16_f3_n32(
     float4 a2 = (float4)(0.0f);
     float4 a3 = (float4)(0.0f);
 
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0 = (y - 1) * 224 + (x - 1) * 16;
-        const float4 v0 = *(__global const float4*)(input + base_0_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 0);
-        a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 0);
-        a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 0);
-        a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 0);
-        const float4 v1 = *(__global const float4*)(input + base_0_0 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 4);
-        a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 4);
-        a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 4);
-        a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 4);
-        const float4 v2 = *(__global const float4*)(input + base_0_0 + 8);
-        a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 8);
-        a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 8);
-        a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 8);
-        a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 8);
-        const float4 v3 = *(__global const float4*)(input + base_0_0 + 12);
-        a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 12);
-        a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 12);
-        a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 12);
-        a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 12);
-    }
-
-    // tap (0, 1)
     if (y >= 1)
     {
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0 = (y - 1) * 224 + (x - 1) * 16;
+            const float4 v0 = *(__global const float4*)(input + base_0_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 0);
+            a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 0);
+            a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 0);
+            a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 0);
+            const float4 v1 = *(__global const float4*)(input + base_0_0 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 4);
+            a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 4);
+            a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 4);
+            a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 4);
+            const float4 v2 = *(__global const float4*)(input + base_0_0 + 8);
+            a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 8);
+            a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 8);
+            a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 8);
+            a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 8);
+            const float4 v3 = *(__global const float4*)(input + base_0_0 + 12);
+            a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 12);
+            a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 12);
+            a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 12);
+            a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 12);
+        }
+
+        // tap (0, 1)
         const int base_0_1 = (y - 1) * 224 + x * 16;
         const float4 v0 = *(__global const float4*)(input + base_0_1);
         a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 16);
@@ -1430,32 +1433,32 @@ __kernel void cnn2dFilter_w14_h14_c16_f3_n32(
         a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 28);
         a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 28);
         a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 28);
-    }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 13)
-    {
-        const int base_0_2 = (y - 1) * 224 + (x + 1) * 16;
-        const float4 v0 = *(__global const float4*)(input + base_0_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 32);
-        a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 32);
-        a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 32);
-        a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 32);
-        const float4 v1 = *(__global const float4*)(input + base_0_2 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 36);
-        a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 36);
-        a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 36);
-        a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 36);
-        const float4 v2 = *(__global const float4*)(input + base_0_2 + 8);
-        a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 40);
-        a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 40);
-        a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 40);
-        a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 40);
-        const float4 v3 = *(__global const float4*)(input + base_0_2 + 12);
-        a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 44);
-        a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 44);
-        a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 44);
-        a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 44);
+        // tap (0, 2)
+        if (x < 13)
+        {
+            const int base_0_2 = (y - 1) * 224 + (x + 1) * 16;
+            const float4 v0 = *(__global const float4*)(input + base_0_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 32);
+            a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 32);
+            a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 32);
+            a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 32);
+            const float4 v1 = *(__global const float4*)(input + base_0_2 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 36);
+            a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 36);
+            a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 36);
+            a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 36);
+            const float4 v2 = *(__global const float4*)(input + base_0_2 + 8);
+            a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 40);
+            a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 40);
+            a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 40);
+            a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 40);
+            const float4 v3 = *(__global const float4*)(input + base_0_2 + 12);
+            a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 44);
+            a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 44);
+            a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 44);
+            a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 44);
+        }
     }
 
     // tap (1, 0)
@@ -1533,35 +1536,35 @@ __kernel void cnn2dFilter_w14_h14_c16_f3_n32(
         a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 92);
     }
 
-    // tap (2, 0)
-    if (y < 13 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 224 + (x - 1) * 16;
-        const float4 v0 = *(__global const float4*)(input + base_2_0);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 96);
-        a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 96);
-        a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 96);
-        a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 96);
-        const float4 v1 = *(__global const float4*)(input + base_2_0 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 100);
-        a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 100);
-        a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 100);
-        a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 100);
-        const float4 v2 = *(__global const float4*)(input + base_2_0 + 8);
-        a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 104);
-        a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 104);
-        a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 104);
-        a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 104);
-        const float4 v3 = *(__global const float4*)(input + base_2_0 + 12);
-        a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 108);
-        a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 108);
-        a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 108);
-        a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 108);
-    }
-
-    // tap (2, 1)
     if (y < 13)
     {
+        // tap (2, 0)
+        if (x >= 1)
+        {
+            const int base_2_0 = (y + 1) * 224 + (x - 1) * 16;
+            const float4 v0 = *(__global const float4*)(input + base_2_0);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 96);
+            a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 96);
+            a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 96);
+            a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 96);
+            const float4 v1 = *(__global const float4*)(input + base_2_0 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 100);
+            a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 100);
+            a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 100);
+            a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 100);
+            const float4 v2 = *(__global const float4*)(input + base_2_0 + 8);
+            a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 104);
+            a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 104);
+            a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 104);
+            a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 104);
+            const float4 v3 = *(__global const float4*)(input + base_2_0 + 12);
+            a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 108);
+            a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 108);
+            a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 108);
+            a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 108);
+        }
+
+        // tap (2, 1)
         const int base_2_1 = (y + 1) * 224 + x * 16;
         const float4 v0 = *(__global const float4*)(input + base_2_1);
         a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 112);
@@ -1583,96 +1586,99 @@ __kernel void cnn2dFilter_w14_h14_c16_f3_n32(
         a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 124);
         a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 124);
         a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 124);
-    }
 
-    // tap (2, 2)
-    if (y < 13 && x < 13)
-    {
-        const int base_2_2 = (y + 1) * 224 + (x + 1) * 16;
-        const float4 v0 = *(__global const float4*)(input + base_2_2);
-        a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 128);
-        a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 128);
-        a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 128);
-        a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 128);
-        const float4 v1 = *(__global const float4*)(input + base_2_2 + 4);
-        a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 132);
-        a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 132);
-        a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 132);
-        a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 132);
-        const float4 v2 = *(__global const float4*)(input + base_2_2 + 8);
-        a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 136);
-        a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 136);
-        a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 136);
-        a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 136);
-        const float4 v3 = *(__global const float4*)(input + base_2_2 + 12);
-        a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 140);
-        a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 140);
-        a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 140);
-        a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 140);
-    }
-
-    {
-        float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
+        // tap (2, 2)
+        if (x < 13)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            const int base_2_2 = (y + 1) * 224 + (x + 1) * 16;
+            const float4 v0 = *(__global const float4*)(input + base_2_2);
+            a0 += v0 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 128);
+            a1 += v0 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 128);
+            a2 += v0 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 128);
+            a3 += v0 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 128);
+            const float4 v1 = *(__global const float4*)(input + base_2_2 + 4);
+            a0 += v1 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 132);
+            a1 += v1 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 132);
+            a2 += v1 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 132);
+            a3 += v1 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 132);
+            const float4 v2 = *(__global const float4*)(input + base_2_2 + 8);
+            a0 += v2 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 136);
+            a1 += v2 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 136);
+            a2 += v2 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 136);
+            a3 += v2 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 136);
+            const float4 v3 = *(__global const float4*)(input + base_2_2 + 12);
+            a0 += v3 * *(__global const float4*)(filterWeights + (n0 + 0) * 144 + 140);
+            a1 += v3 * *(__global const float4*)(filterWeights + (n0 + 1) * 144 + 140);
+            a2 += v3 * *(__global const float4*)(filterWeights + (n0 + 2) * 144 + 140);
+            a3 += v3 * *(__global const float4*)(filterWeights + (n0 + 3) * 144 + 140);
+        }
+    }
+
+    {
+        float4 value4 = (float4)(0.0f);
+
+        {
+            float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 14 + x) * 32 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[(n0 + 1)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 14 + x) * 32 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 14 + x) * 32 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
-        {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
-        }
-
-        const int idx = (y * 14 + x) * 32 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
@@ -1800,28 +1806,58 @@ __kernel void cnn2dDense_i128_o10(
 // width=14 height=14 channels=1 upscale=2 -> 28x28
 // dims: in 14x14x4 -> out 28x28x1 | pixel shuffle x2, channels-last
 // out[y*2 + i][x*2 + j][c] = in[y][x][c*4 + i*2 + j]
+// plan: 196 output float4(s) over global_id(0)
 // params: input, output
 // ---------------------------------------------------------------------------
 __kernel void cnn2dPixelShuffle_w14_h14_c1_r2(
     __global const float* input,
     __global float* output)
 {
-    const int x = get_global_id(0);
-    const int y = get_global_id(1);
-    if (x >= 28 || y >= 28) return;
+    const int f0 = get_global_id(0) * 4;
+    if (f0 >= 784) return;
 
-    const int sub = (y % 2) * 2 + (x % 2);
-    const int src = ((y / 2) * 14 + (x / 2)) * 4 + sub;
-    const int dst = (y * 28 + x) * 1;
-    for (int c = 0; c < 1; c++)
-        output[dst + c] = input[src + c * 4];
+    float4 v;
+    {
+        const int f = f0;
+        const int y = f / 28;
+        const int x = f / 1 - y * 28;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 14 + (x / 2)) * 4 + sub + (f - (y * 28 + x) * 1) * 4;
+        v.x = input[src];
+    }
+    {
+        const int f = f0 + 1;
+        const int y = f / 28;
+        const int x = f / 1 - y * 28;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 14 + (x / 2)) * 4 + sub + (f - (y * 28 + x) * 1) * 4;
+        v.y = input[src];
+    }
+    {
+        const int f = f0 + 2;
+        const int y = f / 28;
+        const int x = f / 1 - y * 28;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 14 + (x / 2)) * 4 + sub + (f - (y * 28 + x) * 1) * 4;
+        v.z = input[src];
+    }
+    {
+        const int f = f0 + 3;
+        const int y = f / 28;
+        const int x = f / 1 - y * 28;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 14 + (x / 2)) * 4 + sub + (f - (y * 28 + x) * 1) * 4;
+        v.w = input[src];
+    }
+
+    *(__global float4*)(output + f0) = v;
 }
 
 // ---------------------------------------------------------------------------
 // cnn2dFilter_w128_h128_c3_f3_n256 -- generated by generateKernel.py (kernelGen v2, do not edit by hand)
 // width=128 height=128 channels=3 filterSize=3 filters=256
 // dims: in 128x128x3 -> out 128x128x256 (output channels = 256) | weights [256][3][3][3] | bias [256]
-// plan: 4 filter(s) in registers, 4 output columns per work item, 64 filter groups over global_id(0), scalar channel loads
+// plan: 4 filter(s) in registers, 8 output columns per work item, 64 filter groups over global_id(0), scalar channel loads
 // params: input, filterWeights, bias, output, activation, accumulate
 // ---------------------------------------------------------------------------
 __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
@@ -1833,8 +1869,8 @@ __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
     const int accumulate)
 {
     const int g0 = get_global_id(0);
-    const int x = (g0 % 32) * 4;
-    const int n0 = (g0 / 32) * 4;
+    const int x = (g0 % 16) * 8;
+    const int n0 = (g0 / 16) * 4;
     const int y = get_global_id(1);
     if (x >= 128 || y >= 128 || n0 >= 256) return;
 
@@ -1854,248 +1890,505 @@ __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
     float a3_1 = 0.0f;
     float a3_2 = 0.0f;
     float a3_3 = 0.0f;
-
-    // tap (0, 0)
-    if (y >= 1 && x >= 1)
-    {
-        const int base_0_0_0 = (y - 1) * 384 + (x - 1) * 3;
-        const float v0 = input[base_0_0_0];
-        a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
-        a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
-        a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
-        a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
-        const float v1 = input[base_0_0_0 + 1];
-        a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
-        a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
-        a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
-        a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
-        const float v2 = input[base_0_0_0 + 2];
-        a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
-        a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
-        a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
-        a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
-    }
+    float a4_0 = 0.0f;
+    float a4_1 = 0.0f;
+    float a4_2 = 0.0f;
+    float a4_3 = 0.0f;
+    float a5_0 = 0.0f;
+    float a5_1 = 0.0f;
+    float a5_2 = 0.0f;
+    float a5_3 = 0.0f;
+    float a6_0 = 0.0f;
+    float a6_1 = 0.0f;
+    float a6_2 = 0.0f;
+    float a6_3 = 0.0f;
+    float a7_0 = 0.0f;
+    float a7_1 = 0.0f;
+    float a7_2 = 0.0f;
+    float a7_3 = 0.0f;
 
     if (y >= 1)
     {
-        const int base_0_0_1 = (y - 1) * 384 + x * 3;
-        const float v0 = input[base_0_0_1];
-        a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
-        a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
-        a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
-        a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
-        const float v1 = input[base_0_0_1 + 1];
-        a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
-        a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
-        a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
-        a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
-        const float v2 = input[base_0_0_1 + 2];
-        a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
-        a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
-        a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
-        a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
-    }
+        // tap (0, 0)
+        if (x >= 1)
+        {
+            const int base_0_0_0 = (y - 1) * 384 + (x - 1) * 3;
+            const float v0 = input[base_0_0_0];
+            a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_0 + 1];
+            a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_0 + 2];
+            a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    if (y >= 1 && x < 127)
-    {
-        const int base_0_0_2 = (y - 1) * 384 + (x + 1) * 3;
-        const float v0 = input[base_0_0_2];
-        a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
-        a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
-        a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
-        a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
-        const float v1 = input[base_0_0_2 + 1];
-        a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
-        a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
-        a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
-        a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
-        const float v2 = input[base_0_0_2 + 2];
-        a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
-        a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
-        a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
-        a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
-    }
+        {
+            const int base_0_0_1 = (y - 1) * 384 + x * 3;
+            const float v0 = input[base_0_0_1];
+            a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_1 + 1];
+            a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_1 + 2];
+            a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    if (y >= 1 && x < 126)
-    {
-        const int base_0_0_3 = (y - 1) * 384 + (x + 2) * 3;
-        const float v0 = input[base_0_0_3];
-        a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
-        a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
-        a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
-        a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
-        const float v1 = input[base_0_0_3 + 1];
-        a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
-        a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
-        a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
-        a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
-        const float v2 = input[base_0_0_3 + 2];
-        a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
-        a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
-        a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
-        a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
-    }
+        if (x < 127)
+        {
+            const int base_0_0_2 = (y - 1) * 384 + (x + 1) * 3;
+            const float v0 = input[base_0_0_2];
+            a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_2 + 1];
+            a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_2 + 2];
+            a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    // tap (0, 1)
-    if (y >= 1)
-    {
-        const int base_0_1_0 = (y - 1) * 384 + x * 3;
-        const float v0 = input[base_0_1_0];
-        a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
-        a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
-        a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
-        a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
-        const float v1 = input[base_0_1_0 + 1];
-        a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
-        a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
-        a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
-        a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
-        const float v2 = input[base_0_1_0 + 2];
-        a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
-        a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
-        a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
-        a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
-    }
+        if (x < 126)
+        {
+            const int base_0_0_3 = (y - 1) * 384 + (x + 2) * 3;
+            const float v0 = input[base_0_0_3];
+            a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_3 + 1];
+            a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_3 + 2];
+            a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    if (y >= 1 && x < 127)
-    {
-        const int base_0_1_1 = (y - 1) * 384 + (x + 1) * 3;
-        const float v0 = input[base_0_1_1];
-        a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
-        a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
-        a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
-        a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
-        const float v1 = input[base_0_1_1 + 1];
-        a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
-        a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
-        a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
-        a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
-        const float v2 = input[base_0_1_1 + 2];
-        a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
-        a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
-        a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
-        a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
-    }
+        if (x < 125)
+        {
+            const int base_0_0_4 = (y - 1) * 384 + (x + 3) * 3;
+            const float v0 = input[base_0_0_4];
+            a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_4 + 1];
+            a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_4 + 2];
+            a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    if (y >= 1 && x < 126)
-    {
-        const int base_0_1_2 = (y - 1) * 384 + (x + 2) * 3;
-        const float v0 = input[base_0_1_2];
-        a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
-        a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
-        a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
-        a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
-        const float v1 = input[base_0_1_2 + 1];
-        a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
-        a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
-        a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
-        a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
-        const float v2 = input[base_0_1_2 + 2];
-        a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
-        a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
-        a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
-        a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
-    }
+        if (x < 124)
+        {
+            const int base_0_0_5 = (y - 1) * 384 + (x + 4) * 3;
+            const float v0 = input[base_0_0_5];
+            a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_5 + 1];
+            a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_5 + 2];
+            a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    if (y >= 1 && x < 125)
-    {
-        const int base_0_1_3 = (y - 1) * 384 + (x + 3) * 3;
-        const float v0 = input[base_0_1_3];
-        a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
-        a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
-        a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
-        a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
-        const float v1 = input[base_0_1_3 + 1];
-        a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
-        a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
-        a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
-        a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
-        const float v2 = input[base_0_1_3 + 2];
-        a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
-        a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
-        a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
-        a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
-    }
+        if (x < 123)
+        {
+            const int base_0_0_6 = (y - 1) * 384 + (x + 5) * 3;
+            const float v0 = input[base_0_0_6];
+            a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_6 + 1];
+            a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_6 + 2];
+            a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    // tap (0, 2)
-    if (y >= 1 && x < 127)
-    {
-        const int base_0_2_0 = (y - 1) * 384 + (x + 1) * 3;
-        const float v0 = input[base_0_2_0];
-        a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
-        a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
-        a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
-        a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
-        const float v1 = input[base_0_2_0 + 1];
-        a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
-        a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
-        a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
-        a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
-        const float v2 = input[base_0_2_0 + 2];
-        a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
-        a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
-        a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
-        a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
-    }
+        if (x < 122)
+        {
+            const int base_0_0_7 = (y - 1) * 384 + (x + 6) * 3;
+            const float v0 = input[base_0_0_7];
+            a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 0];
+            a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 0];
+            a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 0];
+            a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 0];
+            const float v1 = input[base_0_0_7 + 1];
+            a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 1];
+            a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 1];
+            a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 1];
+            a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 1];
+            const float v2 = input[base_0_0_7 + 2];
+            a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 2];
+            a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 2];
+            a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 2];
+            a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 2];
+        }
 
-    if (y >= 1 && x < 126)
-    {
-        const int base_0_2_1 = (y - 1) * 384 + (x + 2) * 3;
-        const float v0 = input[base_0_2_1];
-        a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
-        a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
-        a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
-        a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
-        const float v1 = input[base_0_2_1 + 1];
-        a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
-        a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
-        a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
-        a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
-        const float v2 = input[base_0_2_1 + 2];
-        a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
-        a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
-        a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
-        a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
-    }
+        // tap (0, 1)
+        {
+            const int base_0_1_0 = (y - 1) * 384 + x * 3;
+            const float v0 = input[base_0_1_0];
+            a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_0 + 1];
+            a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_0 + 2];
+            a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
 
-    if (y >= 1 && x < 125)
-    {
-        const int base_0_2_2 = (y - 1) * 384 + (x + 3) * 3;
-        const float v0 = input[base_0_2_2];
-        a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
-        a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
-        a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
-        a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
-        const float v1 = input[base_0_2_2 + 1];
-        a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
-        a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
-        a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
-        a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
-        const float v2 = input[base_0_2_2 + 2];
-        a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
-        a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
-        a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
-        a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
-    }
+        if (x < 127)
+        {
+            const int base_0_1_1 = (y - 1) * 384 + (x + 1) * 3;
+            const float v0 = input[base_0_1_1];
+            a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_1 + 1];
+            a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_1 + 2];
+            a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
 
-    if (y >= 1 && x < 124)
-    {
-        const int base_0_2_3 = (y - 1) * 384 + (x + 4) * 3;
-        const float v0 = input[base_0_2_3];
-        a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
-        a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
-        a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
-        a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
-        const float v1 = input[base_0_2_3 + 1];
-        a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
-        a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
-        a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
-        a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
-        const float v2 = input[base_0_2_3 + 2];
-        a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
-        a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
-        a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
-        a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        if (x < 126)
+        {
+            const int base_0_1_2 = (y - 1) * 384 + (x + 2) * 3;
+            const float v0 = input[base_0_1_2];
+            a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_2 + 1];
+            a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_2 + 2];
+            a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
+
+        if (x < 125)
+        {
+            const int base_0_1_3 = (y - 1) * 384 + (x + 3) * 3;
+            const float v0 = input[base_0_1_3];
+            a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_3 + 1];
+            a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_3 + 2];
+            a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
+
+        if (x < 124)
+        {
+            const int base_0_1_4 = (y - 1) * 384 + (x + 4) * 3;
+            const float v0 = input[base_0_1_4];
+            a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_4 + 1];
+            a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_4 + 2];
+            a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
+
+        if (x < 123)
+        {
+            const int base_0_1_5 = (y - 1) * 384 + (x + 5) * 3;
+            const float v0 = input[base_0_1_5];
+            a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_5 + 1];
+            a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_5 + 2];
+            a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
+
+        if (x < 122)
+        {
+            const int base_0_1_6 = (y - 1) * 384 + (x + 6) * 3;
+            const float v0 = input[base_0_1_6];
+            a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_6 + 1];
+            a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_6 + 2];
+            a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
+
+        if (x < 121)
+        {
+            const int base_0_1_7 = (y - 1) * 384 + (x + 7) * 3;
+            const float v0 = input[base_0_1_7];
+            a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 3];
+            a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 3];
+            a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 3];
+            a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 3];
+            const float v1 = input[base_0_1_7 + 1];
+            a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 4];
+            a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 4];
+            a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 4];
+            a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 4];
+            const float v2 = input[base_0_1_7 + 2];
+            a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 5];
+            a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 5];
+            a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 5];
+            a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 5];
+        }
+
+        // tap (0, 2)
+        if (x < 127)
+        {
+            const int base_0_2_0 = (y - 1) * 384 + (x + 1) * 3;
+            const float v0 = input[base_0_2_0];
+            a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_0 + 1];
+            a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_0 + 2];
+            a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
+
+        if (x < 126)
+        {
+            const int base_0_2_1 = (y - 1) * 384 + (x + 2) * 3;
+            const float v0 = input[base_0_2_1];
+            a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_1 + 1];
+            a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_1 + 2];
+            a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
+
+        if (x < 125)
+        {
+            const int base_0_2_2 = (y - 1) * 384 + (x + 3) * 3;
+            const float v0 = input[base_0_2_2];
+            a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_2 + 1];
+            a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_2 + 2];
+            a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
+
+        if (x < 124)
+        {
+            const int base_0_2_3 = (y - 1) * 384 + (x + 4) * 3;
+            const float v0 = input[base_0_2_3];
+            a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_3 + 1];
+            a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_3 + 2];
+            a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
+
+        if (x < 123)
+        {
+            const int base_0_2_4 = (y - 1) * 384 + (x + 5) * 3;
+            const float v0 = input[base_0_2_4];
+            a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_4 + 1];
+            a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_4 + 2];
+            a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
+
+        if (x < 122)
+        {
+            const int base_0_2_5 = (y - 1) * 384 + (x + 6) * 3;
+            const float v0 = input[base_0_2_5];
+            a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_5 + 1];
+            a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_5 + 2];
+            a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
+
+        if (x < 121)
+        {
+            const int base_0_2_6 = (y - 1) * 384 + (x + 7) * 3;
+            const float v0 = input[base_0_2_6];
+            a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_6 + 1];
+            a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_6 + 2];
+            a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
+
+        if (x < 120)
+        {
+            const int base_0_2_7 = (y - 1) * 384 + (x + 8) * 3;
+            const float v0 = input[base_0_2_7];
+            a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 6];
+            a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 6];
+            a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 6];
+            a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 6];
+            const float v1 = input[base_0_2_7 + 1];
+            a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 7];
+            a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 7];
+            a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 7];
+            a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 7];
+            const float v2 = input[base_0_2_7 + 2];
+            a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 8];
+            a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 8];
+            a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 8];
+            a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 8];
+        }
     }
 
     // tap (1, 0)
@@ -2178,6 +2471,86 @@ __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
         a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 11];
     }
 
+    if (x < 125)
+    {
+        const int base_1_0_4 = y * 384 + (x + 3) * 3;
+        const float v0 = input[base_1_0_4];
+        a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 9];
+        a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 9];
+        a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 9];
+        a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 9];
+        const float v1 = input[base_1_0_4 + 1];
+        a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 10];
+        a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 10];
+        a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 10];
+        a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 10];
+        const float v2 = input[base_1_0_4 + 2];
+        a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 11];
+        a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 11];
+        a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 11];
+        a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 11];
+    }
+
+    if (x < 124)
+    {
+        const int base_1_0_5 = y * 384 + (x + 4) * 3;
+        const float v0 = input[base_1_0_5];
+        a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 9];
+        a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 9];
+        a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 9];
+        a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 9];
+        const float v1 = input[base_1_0_5 + 1];
+        a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 10];
+        a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 10];
+        a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 10];
+        a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 10];
+        const float v2 = input[base_1_0_5 + 2];
+        a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 11];
+        a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 11];
+        a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 11];
+        a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 11];
+    }
+
+    if (x < 123)
+    {
+        const int base_1_0_6 = y * 384 + (x + 5) * 3;
+        const float v0 = input[base_1_0_6];
+        a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 9];
+        a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 9];
+        a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 9];
+        a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 9];
+        const float v1 = input[base_1_0_6 + 1];
+        a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 10];
+        a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 10];
+        a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 10];
+        a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 10];
+        const float v2 = input[base_1_0_6 + 2];
+        a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 11];
+        a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 11];
+        a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 11];
+        a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 11];
+    }
+
+    if (x < 122)
+    {
+        const int base_1_0_7 = y * 384 + (x + 6) * 3;
+        const float v0 = input[base_1_0_7];
+        a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 9];
+        a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 9];
+        a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 9];
+        a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 9];
+        const float v1 = input[base_1_0_7 + 1];
+        a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 10];
+        a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 10];
+        a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 10];
+        a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 10];
+        const float v2 = input[base_1_0_7 + 2];
+        a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 11];
+        a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 11];
+        a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 11];
+        a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 11];
+    }
+
     // tap (1, 1)
     {
         const int base_1_1_0 = y * 384 + x * 3;
@@ -2256,6 +2629,86 @@ __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
         a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 14];
         a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 14];
         a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 14];
+    }
+
+    if (x < 124)
+    {
+        const int base_1_1_4 = y * 384 + (x + 4) * 3;
+        const float v0 = input[base_1_1_4];
+        a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 12];
+        a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 12];
+        a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 12];
+        a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 12];
+        const float v1 = input[base_1_1_4 + 1];
+        a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 13];
+        a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 13];
+        a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 13];
+        a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 13];
+        const float v2 = input[base_1_1_4 + 2];
+        a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 14];
+        a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 14];
+        a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 14];
+        a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 14];
+    }
+
+    if (x < 123)
+    {
+        const int base_1_1_5 = y * 384 + (x + 5) * 3;
+        const float v0 = input[base_1_1_5];
+        a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 12];
+        a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 12];
+        a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 12];
+        a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 12];
+        const float v1 = input[base_1_1_5 + 1];
+        a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 13];
+        a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 13];
+        a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 13];
+        a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 13];
+        const float v2 = input[base_1_1_5 + 2];
+        a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 14];
+        a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 14];
+        a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 14];
+        a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 14];
+    }
+
+    if (x < 122)
+    {
+        const int base_1_1_6 = y * 384 + (x + 6) * 3;
+        const float v0 = input[base_1_1_6];
+        a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 12];
+        a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 12];
+        a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 12];
+        a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 12];
+        const float v1 = input[base_1_1_6 + 1];
+        a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 13];
+        a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 13];
+        a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 13];
+        a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 13];
+        const float v2 = input[base_1_1_6 + 2];
+        a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 14];
+        a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 14];
+        a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 14];
+        a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 14];
+    }
+
+    if (x < 121)
+    {
+        const int base_1_1_7 = y * 384 + (x + 7) * 3;
+        const float v0 = input[base_1_1_7];
+        a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 12];
+        a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 12];
+        a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 12];
+        a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 12];
+        const float v1 = input[base_1_1_7 + 1];
+        a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 13];
+        a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 13];
+        a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 13];
+        a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 13];
+        const float v2 = input[base_1_1_7 + 2];
+        a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 14];
+        a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 14];
+        a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 14];
+        a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 14];
     }
 
     // tap (1, 2)
@@ -2339,511 +2792,1113 @@ __kernel void cnn2dFilter_w128_h128_c3_f3_n256(
         a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 17];
     }
 
-    // tap (2, 0)
-    if (y < 127 && x >= 1)
+    if (x < 123)
     {
-        const int base_2_0_0 = (y + 1) * 384 + (x - 1) * 3;
-        const float v0 = input[base_2_0_0];
-        a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
-        a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
-        a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
-        a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
-        const float v1 = input[base_2_0_0 + 1];
-        a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
-        a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
-        a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
-        a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
-        const float v2 = input[base_2_0_0 + 2];
-        a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
-        a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
-        a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
-        a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        const int base_1_2_4 = y * 384 + (x + 5) * 3;
+        const float v0 = input[base_1_2_4];
+        a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 15];
+        a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 15];
+        a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 15];
+        a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 15];
+        const float v1 = input[base_1_2_4 + 1];
+        a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 16];
+        a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 16];
+        a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 16];
+        a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 16];
+        const float v2 = input[base_1_2_4 + 2];
+        a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 17];
+        a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 17];
+        a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 17];
+        a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 17];
+    }
+
+    if (x < 122)
+    {
+        const int base_1_2_5 = y * 384 + (x + 6) * 3;
+        const float v0 = input[base_1_2_5];
+        a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 15];
+        a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 15];
+        a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 15];
+        a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 15];
+        const float v1 = input[base_1_2_5 + 1];
+        a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 16];
+        a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 16];
+        a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 16];
+        a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 16];
+        const float v2 = input[base_1_2_5 + 2];
+        a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 17];
+        a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 17];
+        a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 17];
+        a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 17];
+    }
+
+    if (x < 121)
+    {
+        const int base_1_2_6 = y * 384 + (x + 7) * 3;
+        const float v0 = input[base_1_2_6];
+        a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 15];
+        a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 15];
+        a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 15];
+        a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 15];
+        const float v1 = input[base_1_2_6 + 1];
+        a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 16];
+        a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 16];
+        a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 16];
+        a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 16];
+        const float v2 = input[base_1_2_6 + 2];
+        a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 17];
+        a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 17];
+        a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 17];
+        a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 17];
+    }
+
+    if (x < 120)
+    {
+        const int base_1_2_7 = y * 384 + (x + 8) * 3;
+        const float v0 = input[base_1_2_7];
+        a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 15];
+        a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 15];
+        a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 15];
+        a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 15];
+        const float v1 = input[base_1_2_7 + 1];
+        a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 16];
+        a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 16];
+        a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 16];
+        a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 16];
+        const float v2 = input[base_1_2_7 + 2];
+        a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 17];
+        a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 17];
+        a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 17];
+        a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 17];
     }
 
     if (y < 127)
     {
-        const int base_2_0_1 = (y + 1) * 384 + x * 3;
-        const float v0 = input[base_2_0_1];
-        a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
-        a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
-        a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
-        a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
-        const float v1 = input[base_2_0_1 + 1];
-        a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
-        a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
-        a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
-        a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
-        const float v2 = input[base_2_0_1 + 2];
-        a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
-        a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
-        a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
-        a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
-    }
-
-    if (y < 127 && x < 127)
-    {
-        const int base_2_0_2 = (y + 1) * 384 + (x + 1) * 3;
-        const float v0 = input[base_2_0_2];
-        a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
-        a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
-        a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
-        a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
-        const float v1 = input[base_2_0_2 + 1];
-        a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
-        a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
-        a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
-        a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
-        const float v2 = input[base_2_0_2 + 2];
-        a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
-        a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
-        a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
-        a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
-    }
-
-    if (y < 127 && x < 126)
-    {
-        const int base_2_0_3 = (y + 1) * 384 + (x + 2) * 3;
-        const float v0 = input[base_2_0_3];
-        a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
-        a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
-        a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
-        a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
-        const float v1 = input[base_2_0_3 + 1];
-        a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
-        a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
-        a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
-        a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
-        const float v2 = input[base_2_0_3 + 2];
-        a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
-        a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
-        a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
-        a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
-    }
-
-    // tap (2, 1)
-    if (y < 127)
-    {
-        const int base_2_1_0 = (y + 1) * 384 + x * 3;
-        const float v0 = input[base_2_1_0];
-        a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
-        a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
-        a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
-        a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
-        const float v1 = input[base_2_1_0 + 1];
-        a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
-        a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
-        a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
-        a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
-        const float v2 = input[base_2_1_0 + 2];
-        a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
-        a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
-        a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
-        a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
-    }
-
-    if (y < 127 && x < 127)
-    {
-        const int base_2_1_1 = (y + 1) * 384 + (x + 1) * 3;
-        const float v0 = input[base_2_1_1];
-        a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
-        a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
-        a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
-        a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
-        const float v1 = input[base_2_1_1 + 1];
-        a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
-        a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
-        a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
-        a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
-        const float v2 = input[base_2_1_1 + 2];
-        a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
-        a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
-        a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
-        a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
-    }
-
-    if (y < 127 && x < 126)
-    {
-        const int base_2_1_2 = (y + 1) * 384 + (x + 2) * 3;
-        const float v0 = input[base_2_1_2];
-        a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
-        a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
-        a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
-        a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
-        const float v1 = input[base_2_1_2 + 1];
-        a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
-        a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
-        a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
-        a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
-        const float v2 = input[base_2_1_2 + 2];
-        a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
-        a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
-        a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
-        a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
-    }
-
-    if (y < 127 && x < 125)
-    {
-        const int base_2_1_3 = (y + 1) * 384 + (x + 3) * 3;
-        const float v0 = input[base_2_1_3];
-        a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
-        a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
-        a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
-        a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
-        const float v1 = input[base_2_1_3 + 1];
-        a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
-        a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
-        a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
-        a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
-        const float v2 = input[base_2_1_3 + 2];
-        a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
-        a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
-        a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
-        a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
-    }
-
-    // tap (2, 2)
-    if (y < 127 && x < 127)
-    {
-        const int base_2_2_0 = (y + 1) * 384 + (x + 1) * 3;
-        const float v0 = input[base_2_2_0];
-        a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
-        a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
-        a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
-        a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
-        const float v1 = input[base_2_2_0 + 1];
-        a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
-        a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
-        a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
-        a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
-        const float v2 = input[base_2_2_0 + 2];
-        a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
-        a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
-        a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
-        a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
-    }
-
-    if (y < 127 && x < 126)
-    {
-        const int base_2_2_1 = (y + 1) * 384 + (x + 2) * 3;
-        const float v0 = input[base_2_2_1];
-        a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
-        a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
-        a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
-        a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
-        const float v1 = input[base_2_2_1 + 1];
-        a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
-        a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
-        a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
-        a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
-        const float v2 = input[base_2_2_1 + 2];
-        a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
-        a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
-        a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
-        a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
-    }
-
-    if (y < 127 && x < 125)
-    {
-        const int base_2_2_2 = (y + 1) * 384 + (x + 3) * 3;
-        const float v0 = input[base_2_2_2];
-        a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
-        a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
-        a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
-        a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
-        const float v1 = input[base_2_2_2 + 1];
-        a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
-        a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
-        a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
-        a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
-        const float v2 = input[base_2_2_2 + 2];
-        a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
-        a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
-        a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
-        a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
-    }
-
-    if (y < 127 && x < 124)
-    {
-        const int base_2_2_3 = (y + 1) * 384 + (x + 4) * 3;
-        const float v0 = input[base_2_2_3];
-        a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
-        a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
-        a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
-        a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
-        const float v1 = input[base_2_2_3 + 1];
-        a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
-        a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
-        a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
-        a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
-        const float v2 = input[base_2_2_3 + 2];
-        a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
-        a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
-        a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
-        a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
-    }
-
-    {
-        float sum = a0_0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
+        // tap (2, 0)
+        if (x >= 1)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            const int base_2_0_0 = (y + 1) * 384 + (x - 1) * 3;
+            const float v0 = input[base_2_0_0];
+            a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_0 + 1];
+            a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_0 + 2];
+            a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        {
+            const int base_2_0_1 = (y + 1) * 384 + x * 3;
+            const float v0 = input[base_2_0_1];
+            a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_1 + 1];
+            a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_1 + 2];
+            a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        if (x < 127)
+        {
+            const int base_2_0_2 = (y + 1) * 384 + (x + 1) * 3;
+            const float v0 = input[base_2_0_2];
+            a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_2 + 1];
+            a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_2 + 2];
+            a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        if (x < 126)
+        {
+            const int base_2_0_3 = (y + 1) * 384 + (x + 2) * 3;
+            const float v0 = input[base_2_0_3];
+            a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_3 + 1];
+            a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_3 + 2];
+            a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        if (x < 125)
+        {
+            const int base_2_0_4 = (y + 1) * 384 + (x + 3) * 3;
+            const float v0 = input[base_2_0_4];
+            a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_4 + 1];
+            a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_4 + 2];
+            a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        if (x < 124)
+        {
+            const int base_2_0_5 = (y + 1) * 384 + (x + 4) * 3;
+            const float v0 = input[base_2_0_5];
+            a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_5 + 1];
+            a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_5 + 2];
+            a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        if (x < 123)
+        {
+            const int base_2_0_6 = (y + 1) * 384 + (x + 5) * 3;
+            const float v0 = input[base_2_0_6];
+            a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_6 + 1];
+            a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_6 + 2];
+            a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        if (x < 122)
+        {
+            const int base_2_0_7 = (y + 1) * 384 + (x + 6) * 3;
+            const float v0 = input[base_2_0_7];
+            a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 18];
+            a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 18];
+            a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 18];
+            a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 18];
+            const float v1 = input[base_2_0_7 + 1];
+            a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 19];
+            a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 19];
+            a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 19];
+            a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 19];
+            const float v2 = input[base_2_0_7 + 2];
+            a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 20];
+            a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 20];
+            a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 20];
+            a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 20];
+        }
+
+        // tap (2, 1)
+        {
+            const int base_2_1_0 = (y + 1) * 384 + x * 3;
+            const float v0 = input[base_2_1_0];
+            a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_0 + 1];
+            a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_0 + 2];
+            a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        if (x < 127)
+        {
+            const int base_2_1_1 = (y + 1) * 384 + (x + 1) * 3;
+            const float v0 = input[base_2_1_1];
+            a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_1 + 1];
+            a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_1 + 2];
+            a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        if (x < 126)
+        {
+            const int base_2_1_2 = (y + 1) * 384 + (x + 2) * 3;
+            const float v0 = input[base_2_1_2];
+            a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_2 + 1];
+            a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_2 + 2];
+            a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        if (x < 125)
+        {
+            const int base_2_1_3 = (y + 1) * 384 + (x + 3) * 3;
+            const float v0 = input[base_2_1_3];
+            a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_3 + 1];
+            a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_3 + 2];
+            a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        if (x < 124)
+        {
+            const int base_2_1_4 = (y + 1) * 384 + (x + 4) * 3;
+            const float v0 = input[base_2_1_4];
+            a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_4 + 1];
+            a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_4 + 2];
+            a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        if (x < 123)
+        {
+            const int base_2_1_5 = (y + 1) * 384 + (x + 5) * 3;
+            const float v0 = input[base_2_1_5];
+            a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_5 + 1];
+            a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_5 + 2];
+            a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        if (x < 122)
+        {
+            const int base_2_1_6 = (y + 1) * 384 + (x + 6) * 3;
+            const float v0 = input[base_2_1_6];
+            a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_6 + 1];
+            a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_6 + 2];
+            a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        if (x < 121)
+        {
+            const int base_2_1_7 = (y + 1) * 384 + (x + 7) * 3;
+            const float v0 = input[base_2_1_7];
+            a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 21];
+            a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 21];
+            a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 21];
+            a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 21];
+            const float v1 = input[base_2_1_7 + 1];
+            a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 22];
+            a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 22];
+            a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 22];
+            a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 22];
+            const float v2 = input[base_2_1_7 + 2];
+            a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 23];
+            a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 23];
+            a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 23];
+            a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 23];
+        }
+
+        // tap (2, 2)
+        if (x < 127)
+        {
+            const int base_2_2_0 = (y + 1) * 384 + (x + 1) * 3;
+            const float v0 = input[base_2_2_0];
+            a0_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a0_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a0_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a0_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_0 + 1];
+            a0_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a0_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a0_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a0_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_0 + 2];
+            a0_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a0_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a0_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a0_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+
+        if (x < 126)
+        {
+            const int base_2_2_1 = (y + 1) * 384 + (x + 2) * 3;
+            const float v0 = input[base_2_2_1];
+            a1_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a1_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a1_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a1_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_1 + 1];
+            a1_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a1_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a1_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a1_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_1 + 2];
+            a1_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a1_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a1_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a1_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+
+        if (x < 125)
+        {
+            const int base_2_2_2 = (y + 1) * 384 + (x + 3) * 3;
+            const float v0 = input[base_2_2_2];
+            a2_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a2_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a2_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a2_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_2 + 1];
+            a2_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a2_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a2_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a2_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_2 + 2];
+            a2_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a2_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a2_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a2_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+
+        if (x < 124)
+        {
+            const int base_2_2_3 = (y + 1) * 384 + (x + 4) * 3;
+            const float v0 = input[base_2_2_3];
+            a3_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a3_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a3_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a3_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_3 + 1];
+            a3_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a3_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a3_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a3_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_3 + 2];
+            a3_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a3_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a3_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a3_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+
+        if (x < 123)
+        {
+            const int base_2_2_4 = (y + 1) * 384 + (x + 5) * 3;
+            const float v0 = input[base_2_2_4];
+            a4_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a4_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a4_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a4_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_4 + 1];
+            a4_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a4_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a4_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a4_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_4 + 2];
+            a4_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a4_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a4_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a4_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+
+        if (x < 122)
+        {
+            const int base_2_2_5 = (y + 1) * 384 + (x + 6) * 3;
+            const float v0 = input[base_2_2_5];
+            a5_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a5_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a5_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a5_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_5 + 1];
+            a5_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a5_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a5_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a5_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_5 + 2];
+            a5_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a5_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a5_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a5_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+
+        if (x < 121)
+        {
+            const int base_2_2_6 = (y + 1) * 384 + (x + 7) * 3;
+            const float v0 = input[base_2_2_6];
+            a6_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a6_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a6_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a6_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_6 + 1];
+            a6_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a6_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a6_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a6_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_6 + 2];
+            a6_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a6_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a6_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a6_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+
+        if (x < 120)
+        {
+            const int base_2_2_7 = (y + 1) * 384 + (x + 8) * 3;
+            const float v0 = input[base_2_2_7];
+            a7_0 += v0 * filterWeights[(n0 + 0) * 27 + 24];
+            a7_1 += v0 * filterWeights[(n0 + 1) * 27 + 24];
+            a7_2 += v0 * filterWeights[(n0 + 2) * 27 + 24];
+            a7_3 += v0 * filterWeights[(n0 + 3) * 27 + 24];
+            const float v1 = input[base_2_2_7 + 1];
+            a7_0 += v1 * filterWeights[(n0 + 0) * 27 + 25];
+            a7_1 += v1 * filterWeights[(n0 + 1) * 27 + 25];
+            a7_2 += v1 * filterWeights[(n0 + 2) * 27 + 25];
+            a7_3 += v1 * filterWeights[(n0 + 3) * 27 + 25];
+            const float v2 = input[base_2_2_7 + 2];
+            a7_0 += v2 * filterWeights[(n0 + 0) * 27 + 26];
+            a7_1 += v2 * filterWeights[(n0 + 1) * 27 + 26];
+            a7_2 += v2 * filterWeights[(n0 + 2) * 27 + 26];
+            a7_3 += v2 * filterWeights[(n0 + 3) * 27 + 26];
+        }
+    }
+
+    {
+        float4 value4 = (float4)(0.0f);
+
+        {
+            float sum = a0_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = a0_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a0_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a0_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a0_1 + bias[(n0 + 1)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a0_2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a0_3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1_0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a1_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 1) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a1_1 + bias[(n0 + 1)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1_2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a1_3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x + 1) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2_0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a2_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 2) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a2_1 + bias[(n0 + 1)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 2) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2_2 + bias[(n0 + 2)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
         }
 
-        const int idx = (y * 128 + x + 2) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a2_3 + bias[(n0 + 3)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
         }
 
-        const int idx = (y * 128 + x + 2) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
-    }
-
-    {
-        float sum = a3_0 + bias[(n0 + 0)];
-
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a3_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
         }
 
         const int idx = (y * 128 + x + 3) * 256 + (n0 + 0);
-        output[idx] = accumulate ? output[idx] + value : value;
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a3_1 + bias[(n0 + 1)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a4_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 3) * 256 + (n0 + 1);
-        output[idx] = accumulate ? output[idx] + value : value;
+        {
+            float sum = a4_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a4_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a4_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
+        }
+
+        const int idx = (y * 128 + x + 4) * 256 + (n0 + 0);
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a3_2 + bias[(n0 + 2)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a5_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 3) * 256 + (n0 + 2);
-        output[idx] = accumulate ? output[idx] + value : value;
+        {
+            float sum = a5_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a5_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a5_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
+        }
+
+        const int idx = (y * 128 + x + 5) * 256 + (n0 + 0);
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
     {
-        float sum = a3_3 + bias[(n0 + 3)];
+        float4 value4 = (float4)(0.0f);
 
-        float value = sum;
-        switch (activation)
         {
-            case ReLU:    value = max(sum, 0.0f); break;
-            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
-            case Tanh:    value = tanh(sum); break;
-            case None:    value = sum; break;
+            float sum = a6_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
         }
 
-        const int idx = (y * 128 + x + 3) * 256 + (n0 + 3);
-        output[idx] = accumulate ? output[idx] + value : value;
+        {
+            float sum = a6_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a6_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a6_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
+        }
+
+        const int idx = (y * 128 + x + 6) * 256 + (n0 + 0);
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
+    }
+
+    {
+        float4 value4 = (float4)(0.0f);
+
+        {
+            float sum = a7_0 + bias[(n0 + 0)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s0 = value;
+        }
+
+        {
+            float sum = a7_1 + bias[(n0 + 1)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s1 = value;
+        }
+
+        {
+            float sum = a7_2 + bias[(n0 + 2)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s2 = value;
+        }
+
+        {
+            float sum = a7_3 + bias[(n0 + 3)];
+
+            float value = sum;
+            switch (activation)
+            {
+                case ReLU:    value = max(sum, 0.0f); break;
+                case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+                case Tanh:    value = tanh(sum); break;
+                case None:    value = sum; break;
+            }
+
+            value4.s3 = value;
+        }
+
+        const int idx = (y * 128 + x + 7) * 256 + (n0 + 0);
+        *(__global float4*)(output + idx) = accumulate ? *(__global float4*)(output + idx) + value4 : value4;
     }
 
 }
+
 // ---------------------------------------------------------------------------
 // cnn2dFilter_w128_h128_c256_f3_n256 -- generated by generateKernel.py (kernelGen v2, do not edit by hand)
 // width=128 height=128 channels=256 filterSize=3 filters=256
 // dims: in 128x128x256 -> out 128x128x256 (output channels = 256) | weights [256][3][3][256] | bias [256]
-// plan: 16 filter(s) in registers, 64x2 work group, 1024 weight quads staged in __local per tap, 2 x-block(s) x 16 filter groups
+// plan: 16 filter(s) in registers, 16x8 work group, 4-quad input + weight slices in __local, 16 slice(s), 4 x-block(s) x 16 filter groups
 // params: input, filterWeights, bias, output, activation, accumulate
 // ---------------------------------------------------------------------------
 __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
@@ -2854,371 +3909,452 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
     const int activation,
     const int accumulate)
 {
-    const int bx = get_group_id(0) % 2;
-    const int n0 = (get_group_id(0) / 2) * 16;
-    const int y0 = get_group_id(1) * 2;
+    const int bx = get_group_id(0) % 4;
+    const int n0 = (get_group_id(0) / 4) * 16;
+    const int y0 = get_group_id(1) * 8;
     const int tx = get_local_id(0);
     const int ty = get_local_id(1);
-    const int tid = ty * 64 + tx;
-    const int x = bx * 64 + tx;
+    const int tid = ty * 16 + tx;
+    const int x0 = bx * 32;
+    const int x = x0 + tx * 2;
     const int y = y0 + ty;
     const int ok = (x < 128 && y < 128);
 
-    __local float4 weightsLocal[1024];
+    __local float4 inputLocal[1440];
+    __local float4 weightsLocal[576];
 
-    float4 a0 = (float4)(0.0f);
-    float4 a1 = (float4)(0.0f);
-    float4 a2 = (float4)(0.0f);
-    float4 a3 = (float4)(0.0f);
-    float4 a4 = (float4)(0.0f);
-    float4 a5 = (float4)(0.0f);
-    float4 a6 = (float4)(0.0f);
-    float4 a7 = (float4)(0.0f);
-    float4 a8 = (float4)(0.0f);
-    float4 a9 = (float4)(0.0f);
-    float4 a10 = (float4)(0.0f);
-    float4 a11 = (float4)(0.0f);
-    float4 a12 = (float4)(0.0f);
-    float4 a13 = (float4)(0.0f);
-    float4 a14 = (float4)(0.0f);
-    float4 a15 = (float4)(0.0f);
+    float4 a0_0 = (float4)(0.0f);
+    float4 a0_1 = (float4)(0.0f);
+    float4 a0_2 = (float4)(0.0f);
+    float4 a0_3 = (float4)(0.0f);
+    float4 a0_4 = (float4)(0.0f);
+    float4 a0_5 = (float4)(0.0f);
+    float4 a0_6 = (float4)(0.0f);
+    float4 a0_7 = (float4)(0.0f);
+    float4 a0_8 = (float4)(0.0f);
+    float4 a0_9 = (float4)(0.0f);
+    float4 a0_10 = (float4)(0.0f);
+    float4 a0_11 = (float4)(0.0f);
+    float4 a0_12 = (float4)(0.0f);
+    float4 a0_13 = (float4)(0.0f);
+    float4 a0_14 = (float4)(0.0f);
+    float4 a0_15 = (float4)(0.0f);
+    float4 a1_0 = (float4)(0.0f);
+    float4 a1_1 = (float4)(0.0f);
+    float4 a1_2 = (float4)(0.0f);
+    float4 a1_3 = (float4)(0.0f);
+    float4 a1_4 = (float4)(0.0f);
+    float4 a1_5 = (float4)(0.0f);
+    float4 a1_6 = (float4)(0.0f);
+    float4 a1_7 = (float4)(0.0f);
+    float4 a1_8 = (float4)(0.0f);
+    float4 a1_9 = (float4)(0.0f);
+    float4 a1_10 = (float4)(0.0f);
+    float4 a1_11 = (float4)(0.0f);
+    float4 a1_12 = (float4)(0.0f);
+    float4 a1_13 = (float4)(0.0f);
+    float4 a1_14 = (float4)(0.0f);
+    float4 a1_15 = (float4)(0.0f);
 
-    // tap (0, 0)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 0 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 0 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 0 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 0 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 0 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 0 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 0 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 0 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y >= 1 && x >= 1)
+    for (int s = 0; s < 16; s++)
     {
-        const int base_0_0 = (y - 1) * 32768 + (x - 1) * 256;
-        for (int q = 0; q < 64; q++)
+        for (int i = tid; i < 1440; i += 128)
         {
-            const float4 v = *(__global const float4*)(input + base_0_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
+            const int q = i / 360;
+            const int p = i - q * 360;
+            const int col = p % 36;
+            const int row = p / 36;
+            const int gx = x0 - 1 + col;
+            const int gy = y0 - 1 + row;
+            inputLocal[i] = (gx >= 0 && gx < 128 && gy >= 0 && gy < 128)
+                ? *(__global const float4*)(input + (gy * 128 + gx) * 256 + 4 * (s * 4 + q))
+                : (float4)(0.0f);
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // tap (0, 1)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 256 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 256 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 256 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 256 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 256 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 256 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 256 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 256 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y >= 1)
-    {
-        const int base_0_1 = (y - 1) * 32768 + x * 256;
-        for (int q = 0; q < 64; q++)
+        for (int i = tid; i < 576; i += 128)
         {
-            const float4 v = *(__global const float4*)(input + base_0_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
+            const int tap = i / 64;
+            const int r = i - tap * 64;
+            const int f = r / 4;
+            const int q = r - f * 4;
+            weightsLocal[i] = *(__global const float4*)(filterWeights + (n0 + f) * 2304 + (tap / 3) * 768 + (tap % 3) * 256 + 4 * (s * 4 + q));
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
 
-    // tap (0, 2)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 512 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 512 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 512 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 512 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 512 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 512 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 512 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 512 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y >= 1 && x < 127)
-    {
-        const int base_0_2 = (y - 1) * 32768 + (x + 1) * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (0, 0)
+        { const int pTap = (ty + 0) * 36 + tx * 2 + 0;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_0_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[4 + q];
+            a1_1 += v1 * weightsLocal[4 + q];
+            a0_2 += v0 * weightsLocal[8 + q];
+            a1_2 += v1 * weightsLocal[8 + q];
+            a0_3 += v0 * weightsLocal[12 + q];
+            a1_3 += v1 * weightsLocal[12 + q];
+            a0_4 += v0 * weightsLocal[16 + q];
+            a1_4 += v1 * weightsLocal[16 + q];
+            a0_5 += v0 * weightsLocal[20 + q];
+            a1_5 += v1 * weightsLocal[20 + q];
+            a0_6 += v0 * weightsLocal[24 + q];
+            a1_6 += v1 * weightsLocal[24 + q];
+            a0_7 += v0 * weightsLocal[28 + q];
+            a1_7 += v1 * weightsLocal[28 + q];
+            a0_8 += v0 * weightsLocal[32 + q];
+            a1_8 += v1 * weightsLocal[32 + q];
+            a0_9 += v0 * weightsLocal[36 + q];
+            a1_9 += v1 * weightsLocal[36 + q];
+            a0_10 += v0 * weightsLocal[40 + q];
+            a1_10 += v1 * weightsLocal[40 + q];
+            a0_11 += v0 * weightsLocal[44 + q];
+            a1_11 += v1 * weightsLocal[44 + q];
+            a0_12 += v0 * weightsLocal[48 + q];
+            a1_12 += v1 * weightsLocal[48 + q];
+            a0_13 += v0 * weightsLocal[52 + q];
+            a1_13 += v1 * weightsLocal[52 + q];
+            a0_14 += v0 * weightsLocal[56 + q];
+            a1_14 += v1 * weightsLocal[56 + q];
+            a0_15 += v0 * weightsLocal[60 + q];
+            a1_15 += v1 * weightsLocal[60 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (1, 0)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 768 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 768 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 768 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 768 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 768 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 768 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 768 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 768 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && x >= 1)
-    {
-        const int base_1_0 = y * 32768 + (x - 1) * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (0, 1)
+        { const int pTap = (ty + 0) * 36 + tx * 2 + 1;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_1_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[64 + q];
+            a1_0 += v1 * weightsLocal[64 + q];
+            a0_1 += v0 * weightsLocal[68 + q];
+            a1_1 += v1 * weightsLocal[68 + q];
+            a0_2 += v0 * weightsLocal[72 + q];
+            a1_2 += v1 * weightsLocal[72 + q];
+            a0_3 += v0 * weightsLocal[76 + q];
+            a1_3 += v1 * weightsLocal[76 + q];
+            a0_4 += v0 * weightsLocal[80 + q];
+            a1_4 += v1 * weightsLocal[80 + q];
+            a0_5 += v0 * weightsLocal[84 + q];
+            a1_5 += v1 * weightsLocal[84 + q];
+            a0_6 += v0 * weightsLocal[88 + q];
+            a1_6 += v1 * weightsLocal[88 + q];
+            a0_7 += v0 * weightsLocal[92 + q];
+            a1_7 += v1 * weightsLocal[92 + q];
+            a0_8 += v0 * weightsLocal[96 + q];
+            a1_8 += v1 * weightsLocal[96 + q];
+            a0_9 += v0 * weightsLocal[100 + q];
+            a1_9 += v1 * weightsLocal[100 + q];
+            a0_10 += v0 * weightsLocal[104 + q];
+            a1_10 += v1 * weightsLocal[104 + q];
+            a0_11 += v0 * weightsLocal[108 + q];
+            a1_11 += v1 * weightsLocal[108 + q];
+            a0_12 += v0 * weightsLocal[112 + q];
+            a1_12 += v1 * weightsLocal[112 + q];
+            a0_13 += v0 * weightsLocal[116 + q];
+            a1_13 += v1 * weightsLocal[116 + q];
+            a0_14 += v0 * weightsLocal[120 + q];
+            a1_14 += v1 * weightsLocal[120 + q];
+            a0_15 += v0 * weightsLocal[124 + q];
+            a1_15 += v1 * weightsLocal[124 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (1, 1)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1024 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1024 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1024 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1024 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1024 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1024 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1024 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1024 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
+        // tap (0, 2)
+        { const int pTap = (ty + 0) * 36 + tx * 2 + 2;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[128 + q];
+            a1_0 += v1 * weightsLocal[128 + q];
+            a0_1 += v0 * weightsLocal[132 + q];
+            a1_1 += v1 * weightsLocal[132 + q];
+            a0_2 += v0 * weightsLocal[136 + q];
+            a1_2 += v1 * weightsLocal[136 + q];
+            a0_3 += v0 * weightsLocal[140 + q];
+            a1_3 += v1 * weightsLocal[140 + q];
+            a0_4 += v0 * weightsLocal[144 + q];
+            a1_4 += v1 * weightsLocal[144 + q];
+            a0_5 += v0 * weightsLocal[148 + q];
+            a1_5 += v1 * weightsLocal[148 + q];
+            a0_6 += v0 * weightsLocal[152 + q];
+            a1_6 += v1 * weightsLocal[152 + q];
+            a0_7 += v0 * weightsLocal[156 + q];
+            a1_7 += v1 * weightsLocal[156 + q];
+            a0_8 += v0 * weightsLocal[160 + q];
+            a1_8 += v1 * weightsLocal[160 + q];
+            a0_9 += v0 * weightsLocal[164 + q];
+            a1_9 += v1 * weightsLocal[164 + q];
+            a0_10 += v0 * weightsLocal[168 + q];
+            a1_10 += v1 * weightsLocal[168 + q];
+            a0_11 += v0 * weightsLocal[172 + q];
+            a1_11 += v1 * weightsLocal[172 + q];
+            a0_12 += v0 * weightsLocal[176 + q];
+            a1_12 += v1 * weightsLocal[176 + q];
+            a0_13 += v0 * weightsLocal[180 + q];
+            a1_13 += v1 * weightsLocal[180 + q];
+            a0_14 += v0 * weightsLocal[184 + q];
+            a1_14 += v1 * weightsLocal[184 + q];
+            a0_15 += v0 * weightsLocal[188 + q];
+            a1_15 += v1 * weightsLocal[188 + q];
+        }
+        }
+
+        // tap (1, 0)
+        { const int pTap = (ty + 1) * 36 + tx * 2 + 0;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[192 + q];
+            a1_0 += v1 * weightsLocal[192 + q];
+            a0_1 += v0 * weightsLocal[196 + q];
+            a1_1 += v1 * weightsLocal[196 + q];
+            a0_2 += v0 * weightsLocal[200 + q];
+            a1_2 += v1 * weightsLocal[200 + q];
+            a0_3 += v0 * weightsLocal[204 + q];
+            a1_3 += v1 * weightsLocal[204 + q];
+            a0_4 += v0 * weightsLocal[208 + q];
+            a1_4 += v1 * weightsLocal[208 + q];
+            a0_5 += v0 * weightsLocal[212 + q];
+            a1_5 += v1 * weightsLocal[212 + q];
+            a0_6 += v0 * weightsLocal[216 + q];
+            a1_6 += v1 * weightsLocal[216 + q];
+            a0_7 += v0 * weightsLocal[220 + q];
+            a1_7 += v1 * weightsLocal[220 + q];
+            a0_8 += v0 * weightsLocal[224 + q];
+            a1_8 += v1 * weightsLocal[224 + q];
+            a0_9 += v0 * weightsLocal[228 + q];
+            a1_9 += v1 * weightsLocal[228 + q];
+            a0_10 += v0 * weightsLocal[232 + q];
+            a1_10 += v1 * weightsLocal[232 + q];
+            a0_11 += v0 * weightsLocal[236 + q];
+            a1_11 += v1 * weightsLocal[236 + q];
+            a0_12 += v0 * weightsLocal[240 + q];
+            a1_12 += v1 * weightsLocal[240 + q];
+            a0_13 += v0 * weightsLocal[244 + q];
+            a1_13 += v1 * weightsLocal[244 + q];
+            a0_14 += v0 * weightsLocal[248 + q];
+            a1_14 += v1 * weightsLocal[248 + q];
+            a0_15 += v0 * weightsLocal[252 + q];
+            a1_15 += v1 * weightsLocal[252 + q];
+        }
+        }
+
+        // tap (1, 1)
+        { const int pTap = (ty + 1) * 36 + tx * 2 + 1;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[256 + q];
+            a1_0 += v1 * weightsLocal[256 + q];
+            a0_1 += v0 * weightsLocal[260 + q];
+            a1_1 += v1 * weightsLocal[260 + q];
+            a0_2 += v0 * weightsLocal[264 + q];
+            a1_2 += v1 * weightsLocal[264 + q];
+            a0_3 += v0 * weightsLocal[268 + q];
+            a1_3 += v1 * weightsLocal[268 + q];
+            a0_4 += v0 * weightsLocal[272 + q];
+            a1_4 += v1 * weightsLocal[272 + q];
+            a0_5 += v0 * weightsLocal[276 + q];
+            a1_5 += v1 * weightsLocal[276 + q];
+            a0_6 += v0 * weightsLocal[280 + q];
+            a1_6 += v1 * weightsLocal[280 + q];
+            a0_7 += v0 * weightsLocal[284 + q];
+            a1_7 += v1 * weightsLocal[284 + q];
+            a0_8 += v0 * weightsLocal[288 + q];
+            a1_8 += v1 * weightsLocal[288 + q];
+            a0_9 += v0 * weightsLocal[292 + q];
+            a1_9 += v1 * weightsLocal[292 + q];
+            a0_10 += v0 * weightsLocal[296 + q];
+            a1_10 += v1 * weightsLocal[296 + q];
+            a0_11 += v0 * weightsLocal[300 + q];
+            a1_11 += v1 * weightsLocal[300 + q];
+            a0_12 += v0 * weightsLocal[304 + q];
+            a1_12 += v1 * weightsLocal[304 + q];
+            a0_13 += v0 * weightsLocal[308 + q];
+            a1_13 += v1 * weightsLocal[308 + q];
+            a0_14 += v0 * weightsLocal[312 + q];
+            a1_14 += v1 * weightsLocal[312 + q];
+            a0_15 += v0 * weightsLocal[316 + q];
+            a1_15 += v1 * weightsLocal[316 + q];
+        }
+        }
+
+        // tap (1, 2)
+        { const int pTap = (ty + 1) * 36 + tx * 2 + 2;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[320 + q];
+            a1_0 += v1 * weightsLocal[320 + q];
+            a0_1 += v0 * weightsLocal[324 + q];
+            a1_1 += v1 * weightsLocal[324 + q];
+            a0_2 += v0 * weightsLocal[328 + q];
+            a1_2 += v1 * weightsLocal[328 + q];
+            a0_3 += v0 * weightsLocal[332 + q];
+            a1_3 += v1 * weightsLocal[332 + q];
+            a0_4 += v0 * weightsLocal[336 + q];
+            a1_4 += v1 * weightsLocal[336 + q];
+            a0_5 += v0 * weightsLocal[340 + q];
+            a1_5 += v1 * weightsLocal[340 + q];
+            a0_6 += v0 * weightsLocal[344 + q];
+            a1_6 += v1 * weightsLocal[344 + q];
+            a0_7 += v0 * weightsLocal[348 + q];
+            a1_7 += v1 * weightsLocal[348 + q];
+            a0_8 += v0 * weightsLocal[352 + q];
+            a1_8 += v1 * weightsLocal[352 + q];
+            a0_9 += v0 * weightsLocal[356 + q];
+            a1_9 += v1 * weightsLocal[356 + q];
+            a0_10 += v0 * weightsLocal[360 + q];
+            a1_10 += v1 * weightsLocal[360 + q];
+            a0_11 += v0 * weightsLocal[364 + q];
+            a1_11 += v1 * weightsLocal[364 + q];
+            a0_12 += v0 * weightsLocal[368 + q];
+            a1_12 += v1 * weightsLocal[368 + q];
+            a0_13 += v0 * weightsLocal[372 + q];
+            a1_13 += v1 * weightsLocal[372 + q];
+            a0_14 += v0 * weightsLocal[376 + q];
+            a1_14 += v1 * weightsLocal[376 + q];
+            a0_15 += v0 * weightsLocal[380 + q];
+            a1_15 += v1 * weightsLocal[380 + q];
+        }
+        }
+
+        // tap (2, 0)
+        { const int pTap = (ty + 2) * 36 + tx * 2 + 0;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[384 + q];
+            a1_0 += v1 * weightsLocal[384 + q];
+            a0_1 += v0 * weightsLocal[388 + q];
+            a1_1 += v1 * weightsLocal[388 + q];
+            a0_2 += v0 * weightsLocal[392 + q];
+            a1_2 += v1 * weightsLocal[392 + q];
+            a0_3 += v0 * weightsLocal[396 + q];
+            a1_3 += v1 * weightsLocal[396 + q];
+            a0_4 += v0 * weightsLocal[400 + q];
+            a1_4 += v1 * weightsLocal[400 + q];
+            a0_5 += v0 * weightsLocal[404 + q];
+            a1_5 += v1 * weightsLocal[404 + q];
+            a0_6 += v0 * weightsLocal[408 + q];
+            a1_6 += v1 * weightsLocal[408 + q];
+            a0_7 += v0 * weightsLocal[412 + q];
+            a1_7 += v1 * weightsLocal[412 + q];
+            a0_8 += v0 * weightsLocal[416 + q];
+            a1_8 += v1 * weightsLocal[416 + q];
+            a0_9 += v0 * weightsLocal[420 + q];
+            a1_9 += v1 * weightsLocal[420 + q];
+            a0_10 += v0 * weightsLocal[424 + q];
+            a1_10 += v1 * weightsLocal[424 + q];
+            a0_11 += v0 * weightsLocal[428 + q];
+            a1_11 += v1 * weightsLocal[428 + q];
+            a0_12 += v0 * weightsLocal[432 + q];
+            a1_12 += v1 * weightsLocal[432 + q];
+            a0_13 += v0 * weightsLocal[436 + q];
+            a1_13 += v1 * weightsLocal[436 + q];
+            a0_14 += v0 * weightsLocal[440 + q];
+            a1_14 += v1 * weightsLocal[440 + q];
+            a0_15 += v0 * weightsLocal[444 + q];
+            a1_15 += v1 * weightsLocal[444 + q];
+        }
+        }
+
+        // tap (2, 1)
+        { const int pTap = (ty + 2) * 36 + tx * 2 + 1;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[448 + q];
+            a1_0 += v1 * weightsLocal[448 + q];
+            a0_1 += v0 * weightsLocal[452 + q];
+            a1_1 += v1 * weightsLocal[452 + q];
+            a0_2 += v0 * weightsLocal[456 + q];
+            a1_2 += v1 * weightsLocal[456 + q];
+            a0_3 += v0 * weightsLocal[460 + q];
+            a1_3 += v1 * weightsLocal[460 + q];
+            a0_4 += v0 * weightsLocal[464 + q];
+            a1_4 += v1 * weightsLocal[464 + q];
+            a0_5 += v0 * weightsLocal[468 + q];
+            a1_5 += v1 * weightsLocal[468 + q];
+            a0_6 += v0 * weightsLocal[472 + q];
+            a1_6 += v1 * weightsLocal[472 + q];
+            a0_7 += v0 * weightsLocal[476 + q];
+            a1_7 += v1 * weightsLocal[476 + q];
+            a0_8 += v0 * weightsLocal[480 + q];
+            a1_8 += v1 * weightsLocal[480 + q];
+            a0_9 += v0 * weightsLocal[484 + q];
+            a1_9 += v1 * weightsLocal[484 + q];
+            a0_10 += v0 * weightsLocal[488 + q];
+            a1_10 += v1 * weightsLocal[488 + q];
+            a0_11 += v0 * weightsLocal[492 + q];
+            a1_11 += v1 * weightsLocal[492 + q];
+            a0_12 += v0 * weightsLocal[496 + q];
+            a1_12 += v1 * weightsLocal[496 + q];
+            a0_13 += v0 * weightsLocal[500 + q];
+            a1_13 += v1 * weightsLocal[500 + q];
+            a0_14 += v0 * weightsLocal[504 + q];
+            a1_14 += v1 * weightsLocal[504 + q];
+            a0_15 += v0 * weightsLocal[508 + q];
+            a1_15 += v1 * weightsLocal[508 + q];
+        }
+        }
+
+        // tap (2, 2)
+        { const int pTap = (ty + 2) * 36 + tx * 2 + 2;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[512 + q];
+            a1_0 += v1 * weightsLocal[512 + q];
+            a0_1 += v0 * weightsLocal[516 + q];
+            a1_1 += v1 * weightsLocal[516 + q];
+            a0_2 += v0 * weightsLocal[520 + q];
+            a1_2 += v1 * weightsLocal[520 + q];
+            a0_3 += v0 * weightsLocal[524 + q];
+            a1_3 += v1 * weightsLocal[524 + q];
+            a0_4 += v0 * weightsLocal[528 + q];
+            a1_4 += v1 * weightsLocal[528 + q];
+            a0_5 += v0 * weightsLocal[532 + q];
+            a1_5 += v1 * weightsLocal[532 + q];
+            a0_6 += v0 * weightsLocal[536 + q];
+            a1_6 += v1 * weightsLocal[536 + q];
+            a0_7 += v0 * weightsLocal[540 + q];
+            a1_7 += v1 * weightsLocal[540 + q];
+            a0_8 += v0 * weightsLocal[544 + q];
+            a1_8 += v1 * weightsLocal[544 + q];
+            a0_9 += v0 * weightsLocal[548 + q];
+            a1_9 += v1 * weightsLocal[548 + q];
+            a0_10 += v0 * weightsLocal[552 + q];
+            a1_10 += v1 * weightsLocal[552 + q];
+            a0_11 += v0 * weightsLocal[556 + q];
+            a1_11 += v1 * weightsLocal[556 + q];
+            a0_12 += v0 * weightsLocal[560 + q];
+            a1_12 += v1 * weightsLocal[560 + q];
+            a0_13 += v0 * weightsLocal[564 + q];
+            a1_13 += v1 * weightsLocal[564 + q];
+            a0_14 += v0 * weightsLocal[568 + q];
+            a1_14 += v1 * weightsLocal[568 + q];
+            a0_15 += v0 * weightsLocal[572 + q];
+            a1_15 += v1 * weightsLocal[572 + q];
+        }
+        }
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
 
     if (ok)
     {
-        const int base_1_1 = y * 32768 + x * 256;
-        for (int q = 0; q < 64; q++)
-        {
-            const float4 v = *(__global const float4*)(input + base_1_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
-        }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // tap (1, 2)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1280 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1280 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1280 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1280 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1280 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1280 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1280 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1280 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && x < 127)
-    {
-        const int base_1_2 = y * 32768 + (x + 1) * 256;
-        for (int q = 0; q < 64; q++)
-        {
-            const float4 v = *(__global const float4*)(input + base_1_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
-        }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // tap (2, 0)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1536 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1536 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1536 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1536 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1536 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1536 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1536 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1536 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y < 127 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 32768 + (x - 1) * 256;
-        for (int q = 0; q < 64; q++)
-        {
-            const float4 v = *(__global const float4*)(input + base_2_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
-        }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // tap (2, 1)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1792 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1792 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1792 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1792 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1792 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1792 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 1792 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 1792 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y < 127)
-    {
-        const int base_2_1 = (y + 1) * 32768 + x * 256;
-        for (int q = 0; q < 64; q++)
-        {
-            const float4 v = *(__global const float4*)(input + base_2_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
-        }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // tap (2, 2)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 2048 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 2048 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 2048 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 2048 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 2048 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 2048 + 4 * ((tid + 640) % 64));
-    weightsLocal[tid + 768] = *(__global const float4*)(filterWeights + (n0 + (tid + 768) / 64) * 2304 + 2048 + 4 * ((tid + 768) % 64));
-    weightsLocal[tid + 896] = *(__global const float4*)(filterWeights + (n0 + (tid + 896) / 64) * 2304 + 2048 + 4 * ((tid + 896) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y < 127 && x < 127)
-    {
-        const int base_2_2 = (y + 1) * 32768 + (x + 1) * 256;
-        for (int q = 0; q < 64; q++)
-        {
-            const float4 v = *(__global const float4*)(input + base_2_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
-            a12 += v * weightsLocal[768 + q];
-            a13 += v * weightsLocal[832 + q];
-            a14 += v * weightsLocal[896 + q];
-            a15 += v * weightsLocal[960 + q];
-        }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok)
-    {
-        float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[n0 + 0];
+        float sum = (a0_0.x + a0_0.y) + (a0_0.z + a0_0.w) + bias[n0 + 0];
 
         float value = sum;
         switch (activation)
@@ -3232,10 +4368,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 0;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[n0 + 1];
+        float sum = (a0_1.x + a0_1.y) + (a0_1.z + a0_1.w) + bias[n0 + 1];
 
         float value = sum;
         switch (activation)
@@ -3249,10 +4384,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 1;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[n0 + 2];
+        float sum = (a0_2.x + a0_2.y) + (a0_2.z + a0_2.w) + bias[n0 + 2];
 
         float value = sum;
         switch (activation)
@@ -3266,10 +4400,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 2;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[n0 + 3];
+        float sum = (a0_3.x + a0_3.y) + (a0_3.z + a0_3.w) + bias[n0 + 3];
 
         float value = sum;
         switch (activation)
@@ -3283,10 +4416,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 3;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a4.x + a4.y) + (a4.z + a4.w) + bias[n0 + 4];
+        float sum = (a0_4.x + a0_4.y) + (a0_4.z + a0_4.w) + bias[n0 + 4];
 
         float value = sum;
         switch (activation)
@@ -3300,10 +4432,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 4;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a5.x + a5.y) + (a5.z + a5.w) + bias[n0 + 5];
+        float sum = (a0_5.x + a0_5.y) + (a0_5.z + a0_5.w) + bias[n0 + 5];
 
         float value = sum;
         switch (activation)
@@ -3317,10 +4448,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 5;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a6.x + a6.y) + (a6.z + a6.w) + bias[n0 + 6];
+        float sum = (a0_6.x + a0_6.y) + (a0_6.z + a0_6.w) + bias[n0 + 6];
 
         float value = sum;
         switch (activation)
@@ -3334,10 +4464,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 6;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a7.x + a7.y) + (a7.z + a7.w) + bias[n0 + 7];
+        float sum = (a0_7.x + a0_7.y) + (a0_7.z + a0_7.w) + bias[n0 + 7];
 
         float value = sum;
         switch (activation)
@@ -3351,10 +4480,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 7;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a8.x + a8.y) + (a8.z + a8.w) + bias[n0 + 8];
+        float sum = (a0_8.x + a0_8.y) + (a0_8.z + a0_8.w) + bias[n0 + 8];
 
         float value = sum;
         switch (activation)
@@ -3368,10 +4496,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 8;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a9.x + a9.y) + (a9.z + a9.w) + bias[n0 + 9];
+        float sum = (a0_9.x + a0_9.y) + (a0_9.z + a0_9.w) + bias[n0 + 9];
 
         float value = sum;
         switch (activation)
@@ -3385,10 +4512,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 9;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a10.x + a10.y) + (a10.z + a10.w) + bias[n0 + 10];
+        float sum = (a0_10.x + a0_10.y) + (a0_10.z + a0_10.w) + bias[n0 + 10];
 
         float value = sum;
         switch (activation)
@@ -3402,10 +4528,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 10;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a11.x + a11.y) + (a11.z + a11.w) + bias[n0 + 11];
+        float sum = (a0_11.x + a0_11.y) + (a0_11.z + a0_11.w) + bias[n0 + 11];
 
         float value = sum;
         switch (activation)
@@ -3419,10 +4544,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 11;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a12.x + a12.y) + (a12.z + a12.w) + bias[n0 + 12];
+        float sum = (a0_12.x + a0_12.y) + (a0_12.z + a0_12.w) + bias[n0 + 12];
 
         float value = sum;
         switch (activation)
@@ -3436,10 +4560,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 12;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a13.x + a13.y) + (a13.z + a13.w) + bias[n0 + 13];
+        float sum = (a0_13.x + a0_13.y) + (a0_13.z + a0_13.w) + bias[n0 + 13];
 
         float value = sum;
         switch (activation)
@@ -3453,10 +4576,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 13;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a14.x + a14.y) + (a14.z + a14.w) + bias[n0 + 14];
+        float sum = (a0_14.x + a0_14.y) + (a0_14.z + a0_14.w) + bias[n0 + 14];
 
         float value = sum;
         switch (activation)
@@ -3470,10 +4592,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 14;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
     if (ok)
     {
-        float sum = (a15.x + a15.y) + (a15.z + a15.w) + bias[n0 + 15];
+        float sum = (a0_15.x + a0_15.y) + (a0_15.z + a0_15.w) + bias[n0 + 15];
 
         float value = sum;
         switch (activation)
@@ -3487,14 +4608,269 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n256(
         const int idx = (y * 128 + x) * 256 + n0 + 15;
         output[idx] = accumulate ? output[idx] + value : value;
     }
+    if (ok)
+    {
+        float sum = (a1_0.x + a1_0.y) + (a1_0.z + a1_0.w) + bias[n0 + 0];
 
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 0;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_1.x + a1_1.y) + (a1_1.z + a1_1.w) + bias[n0 + 1];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 1;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_2.x + a1_2.y) + (a1_2.z + a1_2.w) + bias[n0 + 2];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 2;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_3.x + a1_3.y) + (a1_3.z + a1_3.w) + bias[n0 + 3];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 3;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_4.x + a1_4.y) + (a1_4.z + a1_4.w) + bias[n0 + 4];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 4;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_5.x + a1_5.y) + (a1_5.z + a1_5.w) + bias[n0 + 5];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 5;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_6.x + a1_6.y) + (a1_6.z + a1_6.w) + bias[n0 + 6];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 6;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_7.x + a1_7.y) + (a1_7.z + a1_7.w) + bias[n0 + 7];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 7;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_8.x + a1_8.y) + (a1_8.z + a1_8.w) + bias[n0 + 8];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 8;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_9.x + a1_9.y) + (a1_9.z + a1_9.w) + bias[n0 + 9];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 9;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_10.x + a1_10.y) + (a1_10.z + a1_10.w) + bias[n0 + 10];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 10;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_11.x + a1_11.y) + (a1_11.z + a1_11.w) + bias[n0 + 11];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 11;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_12.x + a1_12.y) + (a1_12.z + a1_12.w) + bias[n0 + 12];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 12;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_13.x + a1_13.y) + (a1_13.z + a1_13.w) + bias[n0 + 13];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 13;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_14.x + a1_14.y) + (a1_14.z + a1_14.w) + bias[n0 + 14];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 14;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok)
+    {
+        float sum = (a1_15.x + a1_15.y) + (a1_15.z + a1_15.w) + bias[n0 + 15];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 256 + n0 + 15;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // cnn2dFilter_w128_h128_c256_f3_n12 -- generated by generateKernel.py (kernelGen v2, do not edit by hand)
 // width=128 height=128 channels=256 filterSize=3 filters=12
 // dims: in 128x128x256 -> out 128x128x12 (output channels = 12) | weights [12][3][3][256] | bias [12]
-// plan: 12 filter(s) in registers, 64x2 work group, 768 weight quads staged in __local per tap, 2 x-block(s) x 1 filter groups
+// plan: 8 filter(s) in registers, 16x8 work group, 4-quad input + weight slices in __local, 16 slice(s), 4 x-block(s) x 2 filter groups
 // params: input, filterWeights, bias, output, activation, accumulate
 // ---------------------------------------------------------------------------
 __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
@@ -3505,313 +4881,292 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
     const int activation,
     const int accumulate)
 {
-    const int bx = get_group_id(0) % 2;
-    const int n0 = (get_group_id(0) / 2) * 12;
-    const int y0 = get_group_id(1) * 2;
+    const int bx = get_group_id(0) % 4;
+    const int n0 = (get_group_id(0) / 4) * 8;
+    const int y0 = get_group_id(1) * 8;
     const int tx = get_local_id(0);
     const int ty = get_local_id(1);
-    const int tid = ty * 64 + tx;
-    const int x = bx * 64 + tx;
+    const int tid = ty * 16 + tx;
+    const int x0 = bx * 32;
+    const int x = x0 + tx * 2;
     const int y = y0 + ty;
     const int ok = (x < 128 && y < 128);
 
-    __local float4 weightsLocal[768];
+    __local float4 inputLocal[1440];
+    __local float4 weightsLocal[288];
 
-    float4 a0 = (float4)(0.0f);
-    float4 a1 = (float4)(0.0f);
-    float4 a2 = (float4)(0.0f);
-    float4 a3 = (float4)(0.0f);
-    float4 a4 = (float4)(0.0f);
-    float4 a5 = (float4)(0.0f);
-    float4 a6 = (float4)(0.0f);
-    float4 a7 = (float4)(0.0f);
-    float4 a8 = (float4)(0.0f);
-    float4 a9 = (float4)(0.0f);
-    float4 a10 = (float4)(0.0f);
-    float4 a11 = (float4)(0.0f);
+    float4 a0_0 = (float4)(0.0f);
+    float4 a0_1 = (float4)(0.0f);
+    float4 a0_2 = (float4)(0.0f);
+    float4 a0_3 = (float4)(0.0f);
+    float4 a0_4 = (float4)(0.0f);
+    float4 a0_5 = (float4)(0.0f);
+    float4 a0_6 = (float4)(0.0f);
+    float4 a0_7 = (float4)(0.0f);
+    float4 a1_0 = (float4)(0.0f);
+    float4 a1_1 = (float4)(0.0f);
+    float4 a1_2 = (float4)(0.0f);
+    float4 a1_3 = (float4)(0.0f);
+    float4 a1_4 = (float4)(0.0f);
+    float4 a1_5 = (float4)(0.0f);
+    float4 a1_6 = (float4)(0.0f);
+    float4 a1_7 = (float4)(0.0f);
 
-    // tap (0, 0)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 0 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 0 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 0 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 0 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 0 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 0 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y >= 1 && x >= 1)
+    for (int s = 0; s < 16; s++)
     {
-        const int base_0_0 = (y - 1) * 32768 + (x - 1) * 256;
-        for (int q = 0; q < 64; q++)
+        for (int i = tid; i < 1440; i += 128)
         {
-            const float4 v = *(__global const float4*)(input + base_0_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const int q = i / 360;
+            const int p = i - q * 360;
+            const int col = p % 36;
+            const int row = p / 36;
+            const int gx = x0 - 1 + col;
+            const int gy = y0 - 1 + row;
+            inputLocal[i] = (gx >= 0 && gx < 128 && gy >= 0 && gy < 128)
+                ? *(__global const float4*)(input + (gy * 128 + gx) * 256 + 4 * (s * 4 + q))
+                : (float4)(0.0f);
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // tap (0, 1)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 256 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 256 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 256 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 256 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 256 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 256 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y >= 1)
-    {
-        const int base_0_1 = (y - 1) * 32768 + x * 256;
-        for (int q = 0; q < 64; q++)
+        for (int i = tid; i < 288; i += 128)
         {
-            const float4 v = *(__global const float4*)(input + base_0_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const int tap = i / 32;
+            const int r = i - tap * 32;
+            const int f = r / 4;
+            const int q = r - f * 4;
+            weightsLocal[i] = (n0 + f < 12) ? *(__global const float4*)(filterWeights + (n0 + f) * 2304 + (tap / 3) * 768 + (tap % 3) * 256 + 4 * (s * 4 + q)) : (float4)(0.0f);
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
 
-    // tap (0, 2)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 512 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 512 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 512 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 512 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 512 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 512 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y >= 1 && x < 127)
-    {
-        const int base_0_2 = (y - 1) * 32768 + (x + 1) * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (0, 0)
+        { const int pTap = (ty + 0) * 36 + tx * 2 + 0;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_0_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[0 + q];
+            a1_0 += v1 * weightsLocal[0 + q];
+            a0_1 += v0 * weightsLocal[4 + q];
+            a1_1 += v1 * weightsLocal[4 + q];
+            a0_2 += v0 * weightsLocal[8 + q];
+            a1_2 += v1 * weightsLocal[8 + q];
+            a0_3 += v0 * weightsLocal[12 + q];
+            a1_3 += v1 * weightsLocal[12 + q];
+            a0_4 += v0 * weightsLocal[16 + q];
+            a1_4 += v1 * weightsLocal[16 + q];
+            a0_5 += v0 * weightsLocal[20 + q];
+            a1_5 += v1 * weightsLocal[20 + q];
+            a0_6 += v0 * weightsLocal[24 + q];
+            a1_6 += v1 * weightsLocal[24 + q];
+            a0_7 += v0 * weightsLocal[28 + q];
+            a1_7 += v1 * weightsLocal[28 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (1, 0)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 768 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 768 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 768 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 768 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 768 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 768 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && x >= 1)
-    {
-        const int base_1_0 = y * 32768 + (x - 1) * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (0, 1)
+        { const int pTap = (ty + 0) * 36 + tx * 2 + 1;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_1_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[32 + q];
+            a1_0 += v1 * weightsLocal[32 + q];
+            a0_1 += v0 * weightsLocal[36 + q];
+            a1_1 += v1 * weightsLocal[36 + q];
+            a0_2 += v0 * weightsLocal[40 + q];
+            a1_2 += v1 * weightsLocal[40 + q];
+            a0_3 += v0 * weightsLocal[44 + q];
+            a1_3 += v1 * weightsLocal[44 + q];
+            a0_4 += v0 * weightsLocal[48 + q];
+            a1_4 += v1 * weightsLocal[48 + q];
+            a0_5 += v0 * weightsLocal[52 + q];
+            a1_5 += v1 * weightsLocal[52 + q];
+            a0_6 += v0 * weightsLocal[56 + q];
+            a1_6 += v1 * weightsLocal[56 + q];
+            a0_7 += v0 * weightsLocal[60 + q];
+            a1_7 += v1 * weightsLocal[60 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (1, 1)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1024 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1024 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1024 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1024 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1024 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1024 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok)
-    {
-        const int base_1_1 = y * 32768 + x * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (0, 2)
+        { const int pTap = (ty + 0) * 36 + tx * 2 + 2;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_1_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[64 + q];
+            a1_0 += v1 * weightsLocal[64 + q];
+            a0_1 += v0 * weightsLocal[68 + q];
+            a1_1 += v1 * weightsLocal[68 + q];
+            a0_2 += v0 * weightsLocal[72 + q];
+            a1_2 += v1 * weightsLocal[72 + q];
+            a0_3 += v0 * weightsLocal[76 + q];
+            a1_3 += v1 * weightsLocal[76 + q];
+            a0_4 += v0 * weightsLocal[80 + q];
+            a1_4 += v1 * weightsLocal[80 + q];
+            a0_5 += v0 * weightsLocal[84 + q];
+            a1_5 += v1 * weightsLocal[84 + q];
+            a0_6 += v0 * weightsLocal[88 + q];
+            a1_6 += v1 * weightsLocal[88 + q];
+            a0_7 += v0 * weightsLocal[92 + q];
+            a1_7 += v1 * weightsLocal[92 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (1, 2)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1280 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1280 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1280 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1280 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1280 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1280 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && x < 127)
-    {
-        const int base_1_2 = y * 32768 + (x + 1) * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (1, 0)
+        { const int pTap = (ty + 1) * 36 + tx * 2 + 0;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_1_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[96 + q];
+            a1_0 += v1 * weightsLocal[96 + q];
+            a0_1 += v0 * weightsLocal[100 + q];
+            a1_1 += v1 * weightsLocal[100 + q];
+            a0_2 += v0 * weightsLocal[104 + q];
+            a1_2 += v1 * weightsLocal[104 + q];
+            a0_3 += v0 * weightsLocal[108 + q];
+            a1_3 += v1 * weightsLocal[108 + q];
+            a0_4 += v0 * weightsLocal[112 + q];
+            a1_4 += v1 * weightsLocal[112 + q];
+            a0_5 += v0 * weightsLocal[116 + q];
+            a1_5 += v1 * weightsLocal[116 + q];
+            a0_6 += v0 * weightsLocal[120 + q];
+            a1_6 += v1 * weightsLocal[120 + q];
+            a0_7 += v0 * weightsLocal[124 + q];
+            a1_7 += v1 * weightsLocal[124 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (2, 0)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1536 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1536 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1536 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1536 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1536 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1536 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y < 127 && x >= 1)
-    {
-        const int base_2_0 = (y + 1) * 32768 + (x - 1) * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (1, 1)
+        { const int pTap = (ty + 1) * 36 + tx * 2 + 1;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_2_0 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[128 + q];
+            a1_0 += v1 * weightsLocal[128 + q];
+            a0_1 += v0 * weightsLocal[132 + q];
+            a1_1 += v1 * weightsLocal[132 + q];
+            a0_2 += v0 * weightsLocal[136 + q];
+            a1_2 += v1 * weightsLocal[136 + q];
+            a0_3 += v0 * weightsLocal[140 + q];
+            a1_3 += v1 * weightsLocal[140 + q];
+            a0_4 += v0 * weightsLocal[144 + q];
+            a1_4 += v1 * weightsLocal[144 + q];
+            a0_5 += v0 * weightsLocal[148 + q];
+            a1_5 += v1 * weightsLocal[148 + q];
+            a0_6 += v0 * weightsLocal[152 + q];
+            a1_6 += v1 * weightsLocal[152 + q];
+            a0_7 += v0 * weightsLocal[156 + q];
+            a1_7 += v1 * weightsLocal[156 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (2, 1)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 1792 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 1792 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 1792 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 1792 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 1792 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 1792 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y < 127)
-    {
-        const int base_2_1 = (y + 1) * 32768 + x * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (1, 2)
+        { const int pTap = (ty + 1) * 36 + tx * 2 + 2;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_2_1 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[160 + q];
+            a1_0 += v1 * weightsLocal[160 + q];
+            a0_1 += v0 * weightsLocal[164 + q];
+            a1_1 += v1 * weightsLocal[164 + q];
+            a0_2 += v0 * weightsLocal[168 + q];
+            a1_2 += v1 * weightsLocal[168 + q];
+            a0_3 += v0 * weightsLocal[172 + q];
+            a1_3 += v1 * weightsLocal[172 + q];
+            a0_4 += v0 * weightsLocal[176 + q];
+            a1_4 += v1 * weightsLocal[176 + q];
+            a0_5 += v0 * weightsLocal[180 + q];
+            a1_5 += v1 * weightsLocal[180 + q];
+            a0_6 += v0 * weightsLocal[184 + q];
+            a1_6 += v1 * weightsLocal[184 + q];
+            a0_7 += v0 * weightsLocal[188 + q];
+            a1_7 += v1 * weightsLocal[188 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    // tap (2, 2)
-    weightsLocal[tid] = *(__global const float4*)(filterWeights + (n0 + (tid) / 64) * 2304 + 2048 + 4 * ((tid) % 64));
-    weightsLocal[tid + 128] = *(__global const float4*)(filterWeights + (n0 + (tid + 128) / 64) * 2304 + 2048 + 4 * ((tid + 128) % 64));
-    weightsLocal[tid + 256] = *(__global const float4*)(filterWeights + (n0 + (tid + 256) / 64) * 2304 + 2048 + 4 * ((tid + 256) % 64));
-    weightsLocal[tid + 384] = *(__global const float4*)(filterWeights + (n0 + (tid + 384) / 64) * 2304 + 2048 + 4 * ((tid + 384) % 64));
-    weightsLocal[tid + 512] = *(__global const float4*)(filterWeights + (n0 + (tid + 512) / 64) * 2304 + 2048 + 4 * ((tid + 512) % 64));
-    weightsLocal[tid + 640] = *(__global const float4*)(filterWeights + (n0 + (tid + 640) / 64) * 2304 + 2048 + 4 * ((tid + 640) % 64));
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (ok && y < 127 && x < 127)
-    {
-        const int base_2_2 = (y + 1) * 32768 + (x + 1) * 256;
-        for (int q = 0; q < 64; q++)
+        // tap (2, 0)
+        { const int pTap = (ty + 2) * 36 + tx * 2 + 0;
+        for (int q = 0; q < 4; q++)
         {
-            const float4 v = *(__global const float4*)(input + base_2_2 + 4 * q);
-            a0 += v * weightsLocal[0 + q];
-            a1 += v * weightsLocal[64 + q];
-            a2 += v * weightsLocal[128 + q];
-            a3 += v * weightsLocal[192 + q];
-            a4 += v * weightsLocal[256 + q];
-            a5 += v * weightsLocal[320 + q];
-            a6 += v * weightsLocal[384 + q];
-            a7 += v * weightsLocal[448 + q];
-            a8 += v * weightsLocal[512 + q];
-            a9 += v * weightsLocal[576 + q];
-            a10 += v * weightsLocal[640 + q];
-            a11 += v * weightsLocal[704 + q];
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[192 + q];
+            a1_0 += v1 * weightsLocal[192 + q];
+            a0_1 += v0 * weightsLocal[196 + q];
+            a1_1 += v1 * weightsLocal[196 + q];
+            a0_2 += v0 * weightsLocal[200 + q];
+            a1_2 += v1 * weightsLocal[200 + q];
+            a0_3 += v0 * weightsLocal[204 + q];
+            a1_3 += v1 * weightsLocal[204 + q];
+            a0_4 += v0 * weightsLocal[208 + q];
+            a1_4 += v1 * weightsLocal[208 + q];
+            a0_5 += v0 * weightsLocal[212 + q];
+            a1_5 += v1 * weightsLocal[212 + q];
+            a0_6 += v0 * weightsLocal[216 + q];
+            a1_6 += v1 * weightsLocal[216 + q];
+            a0_7 += v0 * weightsLocal[220 + q];
+            a1_7 += v1 * weightsLocal[220 + q];
         }
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+        }
 
-    if (ok)
+        // tap (2, 1)
+        { const int pTap = (ty + 2) * 36 + tx * 2 + 1;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[224 + q];
+            a1_0 += v1 * weightsLocal[224 + q];
+            a0_1 += v0 * weightsLocal[228 + q];
+            a1_1 += v1 * weightsLocal[228 + q];
+            a0_2 += v0 * weightsLocal[232 + q];
+            a1_2 += v1 * weightsLocal[232 + q];
+            a0_3 += v0 * weightsLocal[236 + q];
+            a1_3 += v1 * weightsLocal[236 + q];
+            a0_4 += v0 * weightsLocal[240 + q];
+            a1_4 += v1 * weightsLocal[240 + q];
+            a0_5 += v0 * weightsLocal[244 + q];
+            a1_5 += v1 * weightsLocal[244 + q];
+            a0_6 += v0 * weightsLocal[248 + q];
+            a1_6 += v1 * weightsLocal[248 + q];
+            a0_7 += v0 * weightsLocal[252 + q];
+            a1_7 += v1 * weightsLocal[252 + q];
+        }
+        }
+
+        // tap (2, 2)
+        { const int pTap = (ty + 2) * 36 + tx * 2 + 2;
+        for (int q = 0; q < 4; q++)
+        {
+            const float4 v0 = inputLocal[q * 360 + pTap + 0];
+            const float4 v1 = inputLocal[q * 360 + pTap + 1];
+            a0_0 += v0 * weightsLocal[256 + q];
+            a1_0 += v1 * weightsLocal[256 + q];
+            a0_1 += v0 * weightsLocal[260 + q];
+            a1_1 += v1 * weightsLocal[260 + q];
+            a0_2 += v0 * weightsLocal[264 + q];
+            a1_2 += v1 * weightsLocal[264 + q];
+            a0_3 += v0 * weightsLocal[268 + q];
+            a1_3 += v1 * weightsLocal[268 + q];
+            a0_4 += v0 * weightsLocal[272 + q];
+            a1_4 += v1 * weightsLocal[272 + q];
+            a0_5 += v0 * weightsLocal[276 + q];
+            a1_5 += v1 * weightsLocal[276 + q];
+            a0_6 += v0 * weightsLocal[280 + q];
+            a1_6 += v1 * weightsLocal[280 + q];
+            a0_7 += v0 * weightsLocal[284 + q];
+            a1_7 += v1 * weightsLocal[284 + q];
+        }
+        }
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    if (ok && n0 + 0 < 12)
     {
-        float sum = (a0.x + a0.y) + (a0.z + a0.w) + bias[n0 + 0];
+        float sum = (a0_0.x + a0_0.y) + (a0_0.z + a0_0.w) + bias[n0 + 0];
 
         float value = sum;
         switch (activation)
@@ -3825,10 +5180,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 0;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 1 < 12)
     {
-        float sum = (a1.x + a1.y) + (a1.z + a1.w) + bias[n0 + 1];
+        float sum = (a0_1.x + a0_1.y) + (a0_1.z + a0_1.w) + bias[n0 + 1];
 
         float value = sum;
         switch (activation)
@@ -3842,10 +5196,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 1;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 2 < 12)
     {
-        float sum = (a2.x + a2.y) + (a2.z + a2.w) + bias[n0 + 2];
+        float sum = (a0_2.x + a0_2.y) + (a0_2.z + a0_2.w) + bias[n0 + 2];
 
         float value = sum;
         switch (activation)
@@ -3859,10 +5212,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 2;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 3 < 12)
     {
-        float sum = (a3.x + a3.y) + (a3.z + a3.w) + bias[n0 + 3];
+        float sum = (a0_3.x + a0_3.y) + (a0_3.z + a0_3.w) + bias[n0 + 3];
 
         float value = sum;
         switch (activation)
@@ -3876,10 +5228,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 3;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 4 < 12)
     {
-        float sum = (a4.x + a4.y) + (a4.z + a4.w) + bias[n0 + 4];
+        float sum = (a0_4.x + a0_4.y) + (a0_4.z + a0_4.w) + bias[n0 + 4];
 
         float value = sum;
         switch (activation)
@@ -3893,10 +5244,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 4;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 5 < 12)
     {
-        float sum = (a5.x + a5.y) + (a5.z + a5.w) + bias[n0 + 5];
+        float sum = (a0_5.x + a0_5.y) + (a0_5.z + a0_5.w) + bias[n0 + 5];
 
         float value = sum;
         switch (activation)
@@ -3910,10 +5260,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 5;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 6 < 12)
     {
-        float sum = (a6.x + a6.y) + (a6.z + a6.w) + bias[n0 + 6];
+        float sum = (a0_6.x + a0_6.y) + (a0_6.z + a0_6.w) + bias[n0 + 6];
 
         float value = sum;
         switch (activation)
@@ -3927,10 +5276,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 6;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 7 < 12)
     {
-        float sum = (a7.x + a7.y) + (a7.z + a7.w) + bias[n0 + 7];
+        float sum = (a0_7.x + a0_7.y) + (a0_7.z + a0_7.w) + bias[n0 + 7];
 
         float value = sum;
         switch (activation)
@@ -3944,10 +5292,9 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
         const int idx = (y * 128 + x) * 12 + n0 + 7;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 0 < 12)
     {
-        float sum = (a8.x + a8.y) + (a8.z + a8.w) + bias[n0 + 8];
+        float sum = (a1_0.x + a1_0.y) + (a1_0.z + a1_0.w) + bias[n0 + 0];
 
         float value = sum;
         switch (activation)
@@ -3958,13 +5305,12 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
             case None:    value = sum; break;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 8;
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 0;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 1 < 12)
     {
-        float sum = (a9.x + a9.y) + (a9.z + a9.w) + bias[n0 + 9];
+        float sum = (a1_1.x + a1_1.y) + (a1_1.z + a1_1.w) + bias[n0 + 1];
 
         float value = sum;
         switch (activation)
@@ -3975,13 +5321,12 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
             case None:    value = sum; break;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 9;
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 1;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 2 < 12)
     {
-        float sum = (a10.x + a10.y) + (a10.z + a10.w) + bias[n0 + 10];
+        float sum = (a1_2.x + a1_2.y) + (a1_2.z + a1_2.w) + bias[n0 + 2];
 
         float value = sum;
         switch (activation)
@@ -3992,13 +5337,12 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
             case None:    value = sum; break;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 10;
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 2;
         output[idx] = accumulate ? output[idx] + value : value;
     }
-
-    if (ok)
+    if (ok && n0 + 3 < 12)
     {
-        float sum = (a11.x + a11.y) + (a11.z + a11.w) + bias[n0 + 11];
+        float sum = (a1_3.x + a1_3.y) + (a1_3.z + a1_3.w) + bias[n0 + 3];
 
         float value = sum;
         switch (activation)
@@ -4009,10 +5353,73 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
             case None:    value = sum; break;
         }
 
-        const int idx = (y * 128 + x) * 12 + n0 + 11;
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 3;
         output[idx] = accumulate ? output[idx] + value : value;
     }
+    if (ok && n0 + 4 < 12)
+    {
+        float sum = (a1_4.x + a1_4.y) + (a1_4.z + a1_4.w) + bias[n0 + 4];
 
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 4;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok && n0 + 5 < 12)
+    {
+        float sum = (a1_5.x + a1_5.y) + (a1_5.z + a1_5.w) + bias[n0 + 5];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 5;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok && n0 + 6 < 12)
+    {
+        float sum = (a1_6.x + a1_6.y) + (a1_6.z + a1_6.w) + bias[n0 + 6];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 6;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
+    if (ok && n0 + 7 < 12)
+    {
+        float sum = (a1_7.x + a1_7.y) + (a1_7.z + a1_7.w) + bias[n0 + 7];
+
+        float value = sum;
+        switch (activation)
+        {
+            case ReLU:    value = max(sum, 0.0f); break;
+            case Sigmoid: value = 1.0f / (1.0f + exp(-sum)); break;
+            case Tanh:    value = tanh(sum); break;
+            case None:    value = sum; break;
+        }
+
+        const int idx = (y * 128 + x + 1) * 12 + n0 + 7;
+        output[idx] = accumulate ? output[idx] + value : value;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4020,27 +5427,58 @@ __kernel void cnn2dFilter_w128_h128_c256_f3_n12(
 // width=128 height=128 channels=3 upscale=2 -> 256x256
 // dims: in 128x128x12 -> out 256x256x3 | pixel shuffle x2, channels-last
 // out[y*2 + i][x*2 + j][c] = in[y][x][c*4 + i*2 + j]
+// plan: 49152 output float4(s) over global_id(0)
 // params: input, output
 // ---------------------------------------------------------------------------
 __kernel void cnn2dPixelShuffle_w128_h128_c3_r2(
     __global const float* input,
     __global float* output)
 {
-    const int x = get_global_id(0);
-    const int y = get_global_id(1);
-    if (x >= 256 || y >= 256) return;
+    const int f0 = get_global_id(0) * 4;
+    if (f0 >= 196608) return;
 
-    const int sub = (y % 2) * 2 + (x % 2);
-    const int src = ((y / 2) * 128 + (x / 2)) * 12 + sub;
-    const int dst = (y * 256 + x) * 3;
-    for (int c = 0; c < 3; c++)
-        output[dst + c] = input[src + c * 4];
+    float4 v;
+    {
+        const int f = f0;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 128 + (x / 2)) * 12 + sub + (f - (y * 256 + x) * 3) * 4;
+        v.x = input[src];
+    }
+    {
+        const int f = f0 + 1;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 128 + (x / 2)) * 12 + sub + (f - (y * 256 + x) * 3) * 4;
+        v.y = input[src];
+    }
+    {
+        const int f = f0 + 2;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 128 + (x / 2)) * 12 + sub + (f - (y * 256 + x) * 3) * 4;
+        v.z = input[src];
+    }
+    {
+        const int f = f0 + 3;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int sub = (y % 2) * 2 + (x % 2);
+        const int src = ((y / 2) * 128 + (x / 2)) * 12 + sub + (f - (y * 256 + x) * 3) * 4;
+        v.w = input[src];
+    }
+
+    *(__global float4*)(output + f0) = v;
 }
 
 // ---------------------------------------------------------------------------
 // cnn2dBilinear_w128_h128_c3_r2 -- generated by generateKernel.py (do not edit by hand)
 // width=128 height=128 channels=3 upscale=2 -> 256x256
 // dims: in 128x128x3 -> out 256x256x3 (bilinear x2, align_corners=false, channels-last)
+// plan: 49152 output float4(s) over global_id(0)
 // params: input, output, accumulate
 // ---------------------------------------------------------------------------
 __kernel void cnn2dBilinear_w128_h128_c3_r2(
@@ -4048,33 +5486,114 @@ __kernel void cnn2dBilinear_w128_h128_c3_r2(
     __global float* output,
     const int accumulate)
 {
-    const int x = get_global_id(0);
-    const int y = get_global_id(1);
-    if (x >= 256 || y >= 256) return;
+    const int f0 = get_global_id(0) * 4;
+    if (f0 >= 196608) return;
 
-    const float sx = max((x + 0.5f) / 2 - 0.5f, 0.0f);
-    const float sy = max((y + 0.5f) / 2 - 0.5f, 0.0f);
-    const int x0 = (int)sx;
-    const int y0 = (int)sy;
-    const int x1 = (x0 + 1 < 128) ? (x0 + 1) : x0;
-    const int y1 = (y0 + 1 < 128) ? (y0 + 1) : y0;
-    const float tx = sx - (float)x0;
-    const float ty = sy - (float)y0;
-
-    const int row0 = y0 * 128 * 3;
-    const int row1 = y1 * 128 * 3;
-    const int col0 = x0 * 3;
-    const int col1 = x1 * 3;
-    const int dst = (y * 256 + x) * 3;
-    for (int c = 0; c < 3; c++)
+    float4 v;
     {
+        const int f = f0;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int c = f - (y * 256 + x) * 3;
+        const float sx = max((x + 0.5f) / 2 - 0.5f, 0.0f);
+        const float sy = max((y + 0.5f) / 2 - 0.5f, 0.0f);
+        const int x0 = (int)sx;
+        const int y0 = (int)sy;
+        const int x1 = (x0 + 1 < 128) ? (x0 + 1) : x0;
+        const int y1 = (y0 + 1 < 128) ? (y0 + 1) : y0;
+        const float tx = sx - (float)x0;
+        const float ty = sy - (float)y0;
+
+        const int row0 = y0 * 384;
+        const int row1 = y1 * 384;
+        const int col0 = x0 * 3;
+        const int col1 = x1 * 3;
         const float v00 = input[row0 + col0 + c];
         const float v01 = input[row0 + col1 + c];
         const float v10 = input[row1 + col0 + c];
         const float v11 = input[row1 + col1 + c];
         const float top = v00 + (v01 - v00) * tx;
         const float bottom = v10 + (v11 - v10) * tx;
-        const float value = top + (bottom - top) * ty;
-        output[dst + c] = accumulate ? output[dst + c] + value : value;
+        v.x = top + (bottom - top) * ty;
     }
+    {
+        const int f = f0 + 1;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int c = f - (y * 256 + x) * 3;
+        const float sx = max((x + 0.5f) / 2 - 0.5f, 0.0f);
+        const float sy = max((y + 0.5f) / 2 - 0.5f, 0.0f);
+        const int x0 = (int)sx;
+        const int y0 = (int)sy;
+        const int x1 = (x0 + 1 < 128) ? (x0 + 1) : x0;
+        const int y1 = (y0 + 1 < 128) ? (y0 + 1) : y0;
+        const float tx = sx - (float)x0;
+        const float ty = sy - (float)y0;
+
+        const int row0 = y0 * 384;
+        const int row1 = y1 * 384;
+        const int col0 = x0 * 3;
+        const int col1 = x1 * 3;
+        const float v00 = input[row0 + col0 + c];
+        const float v01 = input[row0 + col1 + c];
+        const float v10 = input[row1 + col0 + c];
+        const float v11 = input[row1 + col1 + c];
+        const float top = v00 + (v01 - v00) * tx;
+        const float bottom = v10 + (v11 - v10) * tx;
+        v.y = top + (bottom - top) * ty;
+    }
+    {
+        const int f = f0 + 2;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int c = f - (y * 256 + x) * 3;
+        const float sx = max((x + 0.5f) / 2 - 0.5f, 0.0f);
+        const float sy = max((y + 0.5f) / 2 - 0.5f, 0.0f);
+        const int x0 = (int)sx;
+        const int y0 = (int)sy;
+        const int x1 = (x0 + 1 < 128) ? (x0 + 1) : x0;
+        const int y1 = (y0 + 1 < 128) ? (y0 + 1) : y0;
+        const float tx = sx - (float)x0;
+        const float ty = sy - (float)y0;
+
+        const int row0 = y0 * 384;
+        const int row1 = y1 * 384;
+        const int col0 = x0 * 3;
+        const int col1 = x1 * 3;
+        const float v00 = input[row0 + col0 + c];
+        const float v01 = input[row0 + col1 + c];
+        const float v10 = input[row1 + col0 + c];
+        const float v11 = input[row1 + col1 + c];
+        const float top = v00 + (v01 - v00) * tx;
+        const float bottom = v10 + (v11 - v10) * tx;
+        v.z = top + (bottom - top) * ty;
+    }
+    {
+        const int f = f0 + 3;
+        const int y = f / 768;
+        const int x = f / 3 - y * 256;
+        const int c = f - (y * 256 + x) * 3;
+        const float sx = max((x + 0.5f) / 2 - 0.5f, 0.0f);
+        const float sy = max((y + 0.5f) / 2 - 0.5f, 0.0f);
+        const int x0 = (int)sx;
+        const int y0 = (int)sy;
+        const int x1 = (x0 + 1 < 128) ? (x0 + 1) : x0;
+        const int y1 = (y0 + 1 < 128) ? (y0 + 1) : y0;
+        const float tx = sx - (float)x0;
+        const float ty = sy - (float)y0;
+
+        const int row0 = y0 * 384;
+        const int row1 = y1 * 384;
+        const int col0 = x0 * 3;
+        const int col1 = x1 * 3;
+        const float v00 = input[row0 + col0 + c];
+        const float v01 = input[row0 + col1 + c];
+        const float v10 = input[row1 + col0 + c];
+        const float v11 = input[row1 + col1 + c];
+        const float top = v00 + (v01 - v00) * tx;
+        const float bottom = v10 + (v11 - v10) * tx;
+        v.w = top + (bottom - top) * ty;
+    }
+
+    *(__global float4*)(output + f0) = accumulate ? *(__global const float4*)(output + f0) + v : v;
 }

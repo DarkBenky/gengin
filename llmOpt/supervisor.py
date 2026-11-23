@@ -1184,8 +1184,17 @@ def check_openrouter_model(config):
 
 
 def check_openrouter_credit(config):
-    """Account credit must cover the per-session limit (no key is created on failure)."""
+    """Account credit must cover the per-session limit (no key is created on failure).
+
+    A direct session (OPENROUTER_MODEL=deepseek/openai) never touches OpenRouter, so its
+    credit is irrelevant: failing here used to block every poll even when the upstream API
+    had credit.  Mirrors the early return in check_openrouter_model.
+    """
     import openrouter_keys as ork
+
+    if config.direct_session:
+        return ("openrouter_credit", True,
+                f"not used: {config.direct_upstream or 'deepseek'} direct session")
 
     try:
         client = ork.OpenRouterClient(config.management_key)

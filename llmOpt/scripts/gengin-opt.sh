@@ -6,6 +6,11 @@
 #   gengin-opt.sh openrouter [model]    force OpenRouter (optionally override model)
 #   gengin-opt.sh local [model]         local llama.cpp server on :8013; boots the
 #                                       dsh TUI (interactive terminal UI)
+#   gengin-opt.sh local small [flags]   same, but always the small model
+#                                       (router prefix /small/, no profile switch)
+#   gengin-opt.sh local deepseek [flags] same, but the request is forced to the
+#                                       DeepSeek API via the router (/ds/, no
+#                                       local fallback)
 #   gengin-opt.sh local --web           dsh Web UI instead (no browser popup; :3081)
 #   gengin-opt.sh local --headless      auto-run one-shot instead of a UI
 #   gengin-opt.sh deepseek [model]      direct DeepSeek API (needs DEEPSEEK_API_KEY)
@@ -13,6 +18,8 @@
 #   gengin-opt.sh openrouter PRIMARY --max-context 99K FALLBACK
 #                                       switch to FALLBACK at 99K prompt tokens
 #   gengin-opt.sh ml [local|openrouter|deepseek] [model]  ML layer objective
+#   gengin-opt.sh ml local small        ML objective, small model only (/small/)
+#   gengin-opt.sh ml local deepseek     ML objective, forced DeepSeek (/ds/)
 #   gengin-opt.sh --goal "speed up X"   append a session goal to the prompt
 #   gengin-opt.sh --headless            scripted oneshot (-z), no approvals, usage report
 #   gengin-opt.sh --harness hermes      run on Hermes Agent instead of dsh
@@ -29,6 +36,7 @@ PROMPT_FILE="$LLMOPT_DIR/prompts/optimize.md"
 PROVIDER_ARGS=()
 MODEL_ARGS=()
 PRESET=""
+LOCAL_BACKEND=""   # local preset only: "" = plain /v1, "small" = /small/, "deepseek" = /ds/
 HEADLESS=0
 WEB_MODE=0
 WEB_REQ=0
@@ -59,6 +67,8 @@ usage() {
   echo "       local boots the dsh TUI (interactive terminal UI); --web boots the"
   echo "       dsh Web UI instead (:3081, GENGIN_WEB_PORT overrides); --headless"
   echo "       keeps the auto-run one-shot; --hermes runs the Hermes TUI instead"
+  echo "       local small | local deepseek route through the router prefix"
+  echo "       (/small/ = small model only, /ds/ = forced DeepSeek); ml takes them too"
 }
 
 parse_tokens() {
@@ -126,8 +136,9 @@ ensure_tty_stdout() {
 discover_local_model() {
   # The router answers /v1/models in OpenAI shape when the big model is loaded
   # and in llama.cpp native shape otherwise; the id is display-only (the router
-  # ignores it when forwarding).
-  curl -fsS --max-time 5 "${LOCAL_LLM_BASE:-http://localhost:8013/v1}/models" 2>/dev/null | python3 -c '
+  # ignores it when forwarding). Discovery uses the router root - only POST
+  # strips the /small and /ds prefixes.
+  curl -fsS --max-time 5 "${LOCAL_LLM_DISCOVERY_BASE:-http://localhost:8013/v1}/models" 2>/dev/null | python3 -c '
 import sys, json
 d = json.load(sys.stdin)
 for m in (d.get("data") or []) + (d.get("models") or []):
@@ -270,7 +281,7 @@ render_local_dsh_profile() {
   esac
   model="$(discover_local_model)"
   if [[ -z "$model" ]]; then
-    echo "warning: no model from $base/models - is the local router up?" >&2
+    echo "warning: no model from ${LOCAL_LLM_DISCOVERY_BASE:-$base}/models - is the local router up?" >&2
     model="local-model"
   fi
   # Web sessions persist a per-session model selection that outlives patch
@@ -347,7 +358,7 @@ render_local_tui_overlay() {
   local home="$1" base="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
   local model python_bin display_value overlay
   if [[ -z "$(discover_local_model)" ]]; then
-    echo "warning: no model from $base/models - is the local router up?" >&2
+    echo "warning: no model from ${LOCAL_LLM_DISCOVERY_BASE:-$base}/models - is the local router up?" >&2
   fi
   model="${GENGIN_TUI_MODEL:-local-router}"
   python_bin="$(command -v python3 || true)"
@@ -455,7 +466,11 @@ while [[ $# -gt 0 ]]; do
       PRESET=openrouter
       PROVIDER_ARGS=(--provider openrouter); shift ;;
     deepseek|ds)
-      if [[ "$ROUTE_FLAG" -eq 1 && ${#MODEL_ARGS[@]} -gt 0 && -z "$ROUTE_FALLBACK" ]]; then
+      if [[ "$PRESET" == "local" && "$ROUTE_FLAG" -eq 0 ]]; then
+        # `local deepseek` = the router's /ds/ prefix (cloud only, no local
+        # fallback); a bare `deepseek` stays the direct DeepSeek API preset.
+        LOCAL_BACKEND=deepseek; shift
+      elif [[ "$ROUTE_FLAG" -eq 1 && ${#MODEL_ARGS[@]} -gt 0 && -z "$ROUTE_FALLBACK" ]]; then
         # Inside a chain the word names the fallback leg (direct DeepSeek API).
         ROUTE_FALLBACK="deepseek"; shift
       else
@@ -515,7 +530,12 @@ while [[ $# -gt 0 ]]; do
     -*)
       echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     *)
-      if [[ "$ROUTE_FLAG" -eq 1 && ${#MODEL_ARGS[@]} -gt 0 && -z "$ROUTE_FALLBACK" ]]; then
+      if [[ "$PRESET" == "local" && "$1" == "small" ]]; then
+        # `local small` = the router's /small/ prefix: always the small model,
+        # no profile switch, no cloud fallback. Elsewhere `small` stays a
+        # model id, so the word is only special directly after `local`.
+        LOCAL_BACKEND="$1"; shift
+      elif [[ "$ROUTE_FLAG" -eq 1 && ${#MODEL_ARGS[@]} -gt 0 && -z "$ROUTE_FALLBACK" ]]; then
         ROUTE_FALLBACK="$1"; shift  # second model in a chain = fallback leg
       else
         MODEL_ARGS=(-m "$1"); shift  # bare word = model id
@@ -530,6 +550,22 @@ esac
 
 # Exported for child processes (the MCP server banner names its setup script).
 export GENGIN_HARNESS="$HARNESS"
+
+# Local preset endpoint. LOCAL_LLM_BASE is the router root (any host/port);
+# `local small` and `local deepseek` insert the router's path prefix in front
+# of /v1, because the router selects the model from the prefix, not the body
+# (it rewrites/ignores the requested model id). Model discovery always asks
+# the root: only POST strips /small and /ds.
+LOCAL_LLM_ROOT="${LOCAL_LLM_BASE:-http://localhost:8013/v1}"
+LOCAL_LLM_ROOT="${LOCAL_LLM_ROOT%/v1}"
+local_prefix="$LOCAL_BACKEND"
+[[ "$local_prefix" == "deepseek" ]] && local_prefix="ds"
+if [[ -n "$local_prefix" ]]; then
+  export LOCAL_LLM_BASE="$LOCAL_LLM_ROOT/$local_prefix/v1"
+else
+  export LOCAL_LLM_BASE="$LOCAL_LLM_ROOT/v1"
+fi
+export LOCAL_LLM_DISCOVERY_BASE="$LOCAL_LLM_ROOT/v1"
 
 # dsh sandboxes shell commands (bwrap: no /dev, no X sockets) by default,
 # which breaks the GPU benches; optimizer sessions need the full host access
@@ -555,6 +591,14 @@ fi
 if [[ "$PRESET" == "openai" && ${#MODEL_ARGS[@]} -gt 0 && -z "${MODEL_ARGS[1]}" ]]; then
   echo "error: no OpenAI model resolved; set GENGIN_OPENAI_MODEL or run llmOpt/openai_pricing.py refresh" >&2
   exit 2
+fi
+
+# The small-model delegation tool exists only on local runs: the small
+# Qwen2.5-Coder lives on this box next to the local main model, so a call is
+# free. dsh passes GENGIN_* through to the MCP child untouched; Hermes filters
+# the child env, so hermes/config.yaml.template names this variable too.
+if [[ "$PRESET" == "local" ]]; then
+  export GENGIN_SMALL_MODEL_ENABLE=1
 fi
 
 # UI selection: `local` (dsh) is interactive by default -> the dsh TUI. The
@@ -705,6 +749,7 @@ if [[ "$ML_MODE" == "1" ]]; then
   fi
   echo "[ml] objective: machineLearning/generateKernel.py layer kernels (suites smoke/core/edges/upscale/srnet)"
   echo "[ml] provider: ${PRESET:-default} model: ${MODEL_ARGS[1]:-default}"
+  [[ -n "$LOCAL_BACKEND" ]] && echo "[ml] endpoint: $LOCAL_LLM_BASE (router prefix /${local_prefix}, model id ignored)"
 fi
 
 # Manual runs use the rendered harness home; supervised runs get their own
@@ -1179,6 +1224,7 @@ if [[ "$HARNESS" == "dsh" ]]; then
   echo "DSH_HOME:  $HARNESS_DIR"
   echo "Profile:   ${DSH_PROFILE:-headless}"
   echo "Query:     $QUERY_FILE"
+  [[ -n "$LOCAL_BACKEND" ]] && echo "Endpoint:  $LOCAL_LLM_BASE (router prefix /${local_prefix})"
   if [[ "$TUI_MODE" -eq 1 ]]; then
     echo "Mode:      dsh TUI (first launch shows its own setup wizard)"
     echo "Overlay:   $DSH_OVERLAY"

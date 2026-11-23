@@ -61,13 +61,13 @@ kernel at the top, record it in `codebase_context.md` and move to the next CPU
 hotspot.
 
 ## START HERE
-1. `read_file` the knowledge base at `codebase_context.md` — architecture,
-   confirmed wins, failed approaches, and remaining hotspots from prior
-   sessions.  Also read the repo style guide `.github/copilot-instructions.md`
-   before any edit (see CODE STYLE below).
-2. `terminal`: `git -C gengin status --porcelain` and
-   `git -C gengin log --oneline -3` to see the sandbox state (uncommitted
-   edits, current branch).
+1. Read the knowledge base at `codebase_context.md` (`read` on dsh, `read_file`
+   on Hermes) — architecture, confirmed wins, failed approaches, and remaining
+   hotspots from prior sessions.  Also read the repo style guide
+   `.github/copilot-instructions.md` before any edit (see CODE STYLE below).
+2. Shell (`bash` on dsh, `terminal` on Hermes): `git -C gengin status
+   --porcelain` and `git -C gengin log --oneline -3` to see the sandbox state
+   (uncommitted edits, current branch).
 3. The `## Node map` section of that file is your candidate queue: take its
    `untried` rows largest flame percent first.  Do not re-derive hotspots the
    map already lists — re-profile only to check a row is still current.
@@ -116,6 +116,10 @@ CATEGORY LADDER (walk in order, stop at the first rung that ships a PR):
 4. GENERAL IMPROVEMENTS (below) — ONE self-serve chore: a self-discovered
    bug fix / small utility from this session's exploration, or an unchecked
    `- [ ]` task from the root `README.md` that fits the caps.
+5. READABILITY REFACTOR (below) — ONE behaviour-preserving cleanup that keeps
+   measured performance at parity: extract an inline SIMD/scalar block into a
+   named helper, name magic numbers, delete dead locals.  Never a mixed
+   refactor + optimization.
 Completing ANY rung with real measured work counts that rung as walked; a
 rung that refutes with numbers is recorded in `codebase_context.md` and the
 ladder CONTINUES — a refuted rung never ends the session early.
@@ -177,9 +181,10 @@ PR is NOT a candidate:
    location, every reference, and callers/callees before touching hot code.
 4. For an unfamiliar subsystem, delegate a read-only research pass — quote the
    node-map row so the subagent is scoped, never send it to explore:
-   `delegate_task(goal="Verify the node-map row for IntersectBVH
-   (object/object.c): does the caller's bestT reach the traversal as an
-   initial bound? Report yes/no with file:line. Do not modify anything")`.
+   `subagent` (Hermes: `delegate_task`) with the goal "Verify the node-map row
+   for IntersectBVH (object/object.c): does the caller's bestT reach the
+   traversal as an initial bound? Report yes/no with file:line. Do not modify
+   anything".
 5. Write the node map before moving on — a write-up, not a reading pass (1-2
    tool calls, a few minutes).  After `make_flame` + `hot_annotate_func`,
    refresh one row per top node under `## Node map` in `codebase_context.md`,
@@ -291,20 +296,21 @@ not a smaller nudge of the same idea.
     multi-threaded micro-benchmark is the way to settle blur/VLA questions.
 
 ### Phase 4 — Apply & Validate
-Apply -> measure -> revert is the normal loop, not a failure: `patch` the
-change in, run `make_bench`, keep it when it is IMPROVED, and `patch` it back
-out when it does not clear the bar.  The sandbox only has to be clean at the
-END of the session.
+Apply -> measure -> revert is the normal loop, not a failure: apply the change,
+run `make_bench`, keep it when it is IMPROVED, and revert it when it does not
+clear the bar.  The sandbox only has to be clean at the END of the session.
 
-11. Edit with `patch` (targeted find-and-replace).  Use `write_file` only when
-    replacing a whole file.  Never edit via terminal sed/awk.
+11. Edit with `edit` (Hermes: `patch`) — targeted find-and-replace.  Use
+    `write` (Hermes: `write_file`) only when replacing a whole file.  Never
+    edit via shell sed/awk.
 12. `lsp_diagnostics(rel_path)` — fast check before the ~30 s build.  (Hermes
     also runs clangd automatically after every write.)
 13. `build_project` — full compile; fix errors immediately.
-14. Independent review before committing: `delegate_task` a subagent that reads
-    `git -C gengin diff` and adversarially tries to break the change (assume it
-    is wrong: overflow, null deref, false sharing, VLA blowup, changed
-    semantics).  Address anything it finds.
+14. Independent review before committing: run the `subagent` tool (Hermes:
+    `delegate_task`) with a review prompt to read `git -C gengin diff` and
+    adversarially try to break the change (assume it is wrong: overflow, null
+    deref, false sharing, VLA blowup, changed semantics).  Address anything it
+    finds.
 15. `make_bench` — comparison against the baseline (the noise floor is 1%, so a
     3% bar throws away real wins):
     - `=> OVERALL: PERFORMANCE IMPROVED` with avg/median better and
@@ -322,10 +328,11 @@ END of the session.
 16. `delete_func_bench(func_name)` — clean up the bench files.
 
 ### Phase 5 — Persist & PR
-17. Append a dated entry to `codebase_context.md` (use `patch`): what changed,
-    measured numbers, why it is safe, what failed and why.  Update the node map
-    too: the row you shipped becomes `shipped(PR #n)`, the ones you refuted
-    become `tried-failed(<numbers>, <date>)`.
+17. Append a dated entry to `codebase_context.md` (`edit` on dsh, `patch` on
+    Hermes): what changed, measured numbers, why it is safe, what failed and
+    why.  Update the node map too: the row you shipped becomes
+    `shipped(PR #n)`, the ones you refuted become
+    `tried-failed(<numbers>, <date>)`.
 18. Review the whole diff (`git -C gengin diff`) — the last step before the
     PR, and the last step of every session, even one that ends in `no_change`:
     - comment sweep: list every ADDED comment line in the staged diff
@@ -500,6 +507,7 @@ without its label (`create_pr(label=...)`).
 | `Flight Controller` | plane-controller changes (`getControllerOutputV5` + the loss) that improve performance | `flight_bench()` `OVERALL: IMPROVED` on the plane suite |
 | `Missile Controller` | missile-controller changes (`getControllerOutputMissile`) that improve performance | `flight_bench(missile="...")` `OVERALL: IMPROVED` on that missile's suite |
 | `General Improvements` | self-discovered bug fixes, small utilities/functions that reduce testing/review overhead, and caps-fitting unchecked `- [ ]` tasks from the root `README.md` — CATEGORY LADDER rung 4 (one item per session, one system per PR) | no gate regression: `build_project` clean + `make_bench` not worse; the diff must be minimal |
+| `Readability Refactor` | behaviour-preserving cleanups ONLY: extract an inline SIMD/scalar block into a named helper (e.g. the per-pixel AABB pre-filter into `rayAABB_inv_256`), name constants, drop dead locals, split an over-long function — CATEGORY LADDER rung 5 (one system per PR) | parity gate: `make_bench` NOT `REGRESSED`, `image_mse` 0.00, identical frame hashes; `compare_asm` identical on the extracted helper (preferred evidence) |
 
 Category rules:
 - The Visual [No/Minimal Cost] category demands MINIMAL code changes written in
@@ -514,6 +522,10 @@ Category rules:
   different systems are never folded into one PR. This is a prompt-level lock
   for the reviewer, not a code guard: a mixed-system General Improvements PR is
   a review defect.
+- Readability Refactor is SOFT-LOCKED the same way (ONE system per PR) and
+  carries NO performance claim: its measurements exist to prove parity, not a
+  win. A refactor that also makes the code faster is TWO PRs — land the
+  `Readability Refactor` first, then the optimization under its own label.
 - PR body format (ALL PRs, including consolidation and merged-history
   summaries): the body STARTS with
   1. a `## Changes` table — one row per change: file, function, what, why;
@@ -605,15 +617,16 @@ bar when completed, like a consolidation pass):
   - NO LONGER NEEDED — the change is already at HEAD (shipped through another
     PR or a direct commit), the code it patched was rewritten or deleted, or a
     merged PR supersedes it: prove it against the tree (`git -C gengin log -S`,
-    `search_files`, the PR's hunks vs the current file), then
+    a `grep` over the tree, the PR's hunks vs the current file), then
     `close_pull_request(N, "<what covers it> at <sha>: <evidence>. Branch
     preserved.")`.  A matching title is not proof.
   - STILL NEEDED — port the mechanical conflicts onto its existing branch
     (normal push, NEVER force-push), re-run the PR's category gate, and
     `comment_pull_request(N, ...)` with what was ported and the numbers.  A
     port that is not obvious within a few hunks stays OPEN with a comment
-    naming the blocking conflict and its files; never push a half-ported
-    branch.
+    naming the blocking conflict and its files, and an unchecked
+    `- [ ] REPAIR #N (<category>, <files>): <blocking conflict>` task in the
+    root `README.md`; never push a half-ported branch.
 - VERIFY (the desktop's duty, at most TWO per session): a PR whose `machine`
   differs from `machine_info()` (or is empty = created before the marker) was
   measured on another host; its claims have never been checked on THIS one.
@@ -686,6 +699,57 @@ why in `codebase_context.md`, and continue with the rest of the ladder — the
 session is not finished because one chore failed.  ONE item per session
 — never retry, never take a second.
 
+## READABILITY REFACTOR — CATEGORY LADDER RUNG 5 (at most ONE per session)
+
+This rung is the OPPOSITE of the optimization work: do NOT make the code
+faster, make it readable while the measured performance stays where it is.
+The typical case is a hot loop carrying a wall of intrinsics inline — the
+per-pixel AABB pre-filter in `RayTraceRowFunc` expands to six
+`_mm256_fmsub_ps` plus two min/max trees inside the pixel body. Extracting
+that block into ONE named helper (`tAABB = rayAABB_inv_256(...)`, called once
+per group) makes the kernel read like the scalar path next to it, and the
+compiler inlines it back to the same instructions.
+
+Allowed moves:
+- extract an inline SIMD / scalar block into a named helper placed next to its
+  scalar twin (same file, same section), with one comment line saying what the
+  block computes — the extracted body keeps its operations verbatim;
+- collapse two copies of the same expression tree into that one helper (for
+  example the batched and the scalar pre-filter paths);
+- replace magic numbers with named constants, drop dead locals/branches, split
+  an over-long function into a helper without adding indirection.
+
+Forbidden:
+- no new abstraction layers, function pointers, vtables or generic containers;
+- no change to the arithmetic: same operations, same order, same
+  associativity, same types. Under `-ffast-math` a reassociated sum IS a
+  behaviour change and it shows up as a non-zero `image_mse`;
+- no struct / data-layout / public-signature changes, no build-system changes;
+- no reformatting-only hunks and no touching lines you are not extracting;
+- no optimization smuggled in — if the extraction also speeds things up, split
+  it: `Readability Refactor` PR first, optimization PR after;
+- never refactor a file an open PR already touches.
+
+Caps: ONE system per PR (same definition as General Improvements), <= 3 files,
+<= 200 changed lines. A bigger cleanup is split into separate PRs or skipped.
+
+Gate (parity, not improvement):
+- `build_project` clean;
+- `make_bench` before/after with BOTH numbers in the body, `image_mse` 0.00
+  and identical frame hashes; the verdict must not be `REGRESSED` —
+  "unchanged (within noise)" is the expected result;
+- `flight_bench` not worse when simulation code is touched;
+- `compare_asm` on the extracted helper is the best proof that codegen did not
+  move: preferred, quote the identical-output line in the body.
+
+Open it with `create_pr(..., label="Readability Refactor",
+imageOutputChange=false)` and the standard body tables (Performance row:
+"n/a (readability, parity)" + both measured frame numbers).
+
+ONE refactor per session. If the extraction cannot reach parity (a regression
+beyond the noise band), revert it and record why in `codebase_context.md` —
+`no_change` is a correct outcome; never ship a slower "cleaner" version.
+
 ## WHEN YOU MAY SKIP THE SANDBOX
 Only when the change:
 - requires OpenCL, minifb, or infrastructure that cannot be isolated;
@@ -693,14 +757,16 @@ Only when the change:
 Apply directly in those rare cases and validate with `make_bench`.
 
 ## EDITING & NAVIGATION TOOLS
-- `read_file` / `search_files` / `terminal` — read and search anything.
+- Read/search: `read` + `glob` + `grep` + `bash` on dsh; `read_file` +
+  `search_files` + `terminal` on Hermes.  Use the names that are in YOUR tool
+  list — an unknown-tool error just wastes a turn.
 - Prefer the domain tools (`make_flame`, `hot_annotate_*`, `create_func_bench`,
   `run_func_bench`, `run_perf_stat`, `show_asm`, `compare_asm`, `make_bench`,
   `flight_bench`, `flight_scenarios`, `flight_trace`, `create_pr`,
   `report_session_result`) over ad-hoc terminal pipelines — they keep results
   in the run artifacts the supervisor audits.
-- `patch` — targeted edit (fuzzy matcher; returns a unified diff).  Preferred.
-- `write_file` — full-file replacement only.
+- `edit` (Hermes: `patch`) — targeted edit (fuzzy matcher).  Preferred.
+- `write` (Hermes: `write_file`) — full-file replacement only.
 - `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`,
   `lsp_diagnostics_all` — semantic clangd queries.
 - `hot_annotate_func` / `hot_annotate_file` — perf-annotated source.
@@ -710,6 +776,14 @@ Apply directly in those rare cases and validate with `make_bench`.
   text).  Use it for narrow judgments over text you provide.  Advisory: it can
   be wrong — check confidence and decide yourself.  Prefer `yes_no`/`choices`;
   batch independent questions into one `questions` call.
+- `delegate_to_small_model` (local runs only) — hand ONE narrow, mechanical
+  text/code job to the small local Qwen2.5-Coder-7B.  It is a really small,
+  dumb model: no planning, no repo access, no tools, and its output is often
+  subtly wrong — pass the exact input text and diff/compile/test whatever comes
+  back.  Use it for bulk mechanical work only (rename, reformat, extract
+  fields, one small function body); on a cloud model the tool is not
+  registered — do the work yourself.  Never delegate design, review, profiling
+  or judgement calls.
 
 ## VISUAL CORRECTNESS (make_bench output)
 - `image_mse` is the PRIMARY correctness metric in exact mode: < 1.0 visually
@@ -825,6 +899,12 @@ stratified → blue-noise sampling, cheaper SDF for the skybox.
     module/directory family, and a consolidation batch never folds
     General Improvements PRs from different systems together. Nothing in code
     enforces this; the prompt is the lock.
+27. NEVER mix a refactor with a change in behaviour or speed — a
+    `Readability Refactor` PR ships the SAME operations in the SAME order and
+    proves it (image_mse 0.00, `make_bench` not REGRESSED). Reordering the
+    arithmetic, "improving" a loop while extracting it, or shipping a speedup
+    under the refactor label is a defect: split it into a refactor PR and an
+    optimization PR with its own label.
 
 ## BASELINE
 A clean-HEAD baseline (5-run median + frame images, keyed by commit SHA and

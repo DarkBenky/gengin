@@ -30,23 +30,29 @@ static void cloudRendererDisable(CloudRenderer *cr, const char *why) {
 	cr->enabled = 0;
 }
 
-void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *kernelPath) {
+void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *kernelPath, CL_Context *sharedCtx) {
 	memset(cr, 0, sizeof(*cr)); // every early return must leave NULL handles, not stack garbage
 	cr->width = width;
 	cr->height = height;
 	cr->enabled = 1;
+	cr->ownsCtx = sharedCtx == NULL || sharedCtx->context == NULL;
 
 	if (envFlag("GENGIN_NO_CLOUDS")) {
 		cloudRendererDisable(cr, "GENGIN_NO_CLOUDS");
 		return;
 	}
 
-	cr->ctx = CL_Context_Create();
+	if (cr->ownsCtx)
+		cr->ctx = CL_Context_Create();
+	else
+		cr->ctx = *sharedCtx;
+
 	cr->pipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "renderClouds", NULL);
 	cr->godRayPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "godRays", NULL);
 	cr->godRaySrcPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "buildGodRaySource", NULL);
 	cr->compositePipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "compositeFrame", NULL);
 	cr->blurPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "blur", NULL);
+	cr->tonemapPipeline = CL_Pipeline_FromFile(&cr->ctx, kernelPath, "tonemapFrame", NULL);
 
 	// Pinned (page-locked) buffers — DMA-direct transfers, no driver staging copy
 	cr->outputBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
@@ -55,14 +61,16 @@ void CloudRenderer_Init(CloudRenderer *cr, int width, int height, const char *ke
 	cr->godRaySrcBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float), CL_MEM_READ_WRITE);
 	cr->framebufferBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
 	cr->outputBlurBuf = CL_Buffer_CreatePinned(&cr->ctx, (size_t)width * height * sizeof(float4), CL_MEM_READ_WRITE);
+	cr->ldrBuf = CL_Buffer_Create(&cr->ctx, (size_t)width * height * sizeof(uint32), CL_MEM_WRITE_ONLY);
 
 	if (cr->ctx.context == NULL || cr->ctx.queue == NULL ||
 		cr->pipeline.kernel == NULL || cr->godRayPipeline.kernel == NULL ||
 		cr->godRaySrcPipeline.kernel == NULL || cr->compositePipeline.kernel == NULL ||
-		cr->blurPipeline.kernel == NULL ||
+		cr->blurPipeline.kernel == NULL || cr->tonemapPipeline.kernel == NULL ||
 		cr->outputBuf.buf == NULL || cr->depthBuf.buf == NULL ||
 		cr->godRayBuf.buf == NULL || cr->godRaySrcBuf.buf == NULL ||
-		cr->framebufferBuf.buf == NULL || cr->outputBlurBuf.buf == NULL) {
+		cr->framebufferBuf.buf == NULL || cr->outputBlurBuf.buf == NULL ||
+		cr->ldrBuf.buf == NULL) {
 		cloudRendererDisable(cr, "OpenCL init failed (device busy or out of resources)");
 		return;
 	}
@@ -169,7 +177,7 @@ void CloudRenderer_Render(CloudRenderer *cr, Volume *vol, const Camera *cam, Clo
 	}
 }
 
-void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
+void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam, bool keepOnGpu) {
 	if (!cr->enabled)
 		return;
 
@@ -192,6 +200,10 @@ void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
 	CL_SetArgInt(&cr->compositePipeline, 4, cr->height);
 	CL_Dispatch2D(&cr->ctx, &cr->compositePipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
 
+	// Frame stays on device — the tonemap kernel picks it up from framebufferBuf
+	if (keepOnGpu)
+		return;
+
 	// Read blended framebuffer back via pinned map — DMA direct, no staging copy
 	fbPtr = CL_Buffer_Map(&cr->ctx, &cr->framebufferBuf, CL_MAP_READ);
 	if (fbPtr == NULL) {
@@ -202,15 +214,39 @@ void CloudRenderer_Composite(CloudRenderer *cr, Camera *cam) {
 	CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
 }
 
+int CloudRenderer_Tonemap(CloudRenderer *cr, Camera *cam) {
+	if (cr->tonemapPipeline.kernel == NULL || cr->ldrBuf.buf == NULL)
+		return 0;
+
+	// Composite pass disabled: upload the CPU framebuffer and tonemap from there
+	if (!cr->enabled) {
+		void *fbPtr = CL_Buffer_Map(&cr->ctx, &cr->framebufferBuf, CL_MAP_WRITE_INVALIDATE_REGION);
+		if (fbPtr == NULL)
+			return 0;
+		memcpy(fbPtr, cam->framebufferHdr, (size_t)cr->width * cr->height * sizeof(float4));
+		CL_Buffer_Unmap(&cr->ctx, &cr->framebufferBuf, fbPtr);
+	}
+
+	CL_SetArgBuffer(&cr->tonemapPipeline, 0, &cr->framebufferBuf);
+	CL_SetArgBuffer(&cr->tonemapPipeline, 1, &cr->ldrBuf);
+	CL_SetArgInt(&cr->tonemapPipeline, 2, cr->width);
+	CL_SetArgInt(&cr->tonemapPipeline, 3, cr->height);
+	CL_Dispatch2D(&cr->ctx, &cr->tonemapPipeline, (size_t)cr->width, (size_t)cr->height, 8, 8);
+	return 1;
+}
+
 void CloudRenderer_Destroy(CloudRenderer *cr) {
 	CL_Buffer_Destroy(&cr->outputBuf);
 	CL_Buffer_Destroy(&cr->depthBuf);
 	CL_Buffer_Destroy(&cr->godRayBuf);
 	CL_Buffer_Destroy(&cr->godRaySrcBuf);
 	CL_Buffer_Destroy(&cr->framebufferBuf);
+	CL_Buffer_Destroy(&cr->ldrBuf);
 	CL_Pipeline_Destroy(&cr->pipeline);
 	CL_Pipeline_Destroy(&cr->godRayPipeline);
 	CL_Pipeline_Destroy(&cr->godRaySrcPipeline);
 	CL_Pipeline_Destroy(&cr->compositePipeline);
-	CL_Context_Destroy(&cr->ctx);
+	CL_Pipeline_Destroy(&cr->tonemapPipeline);
+	if (cr->ownsCtx)
+		CL_Context_Destroy(&cr->ctx);
 }

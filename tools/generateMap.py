@@ -293,23 +293,24 @@ def save_map_to_bin(filename, Map):
     cell_x = WORLD_SIZE_X / (W - 1)
     cell_z = WORLD_SIZE_Z / (H - 1)
 
-    TRI_STRUCT_SIZE = 5*16 + 3*4   # 92 bytes — matches Go writeFile
+    TRI_STRUCT_SIZE = 5*16 + 3*4 + 16   # 108 bytes — matches LoadObj
     num_tris = (W - 1) * (H - 1) * 2
-    file_size = 8 + num_tris * TRI_STRUCT_SIZE
+    file_size = 20 + num_tris * TRI_STRUCT_SIZE
 
     def pack_tri(v1, v2, v3, color, roughness, metallic, emission):
         n = _cross_normal(v1, v2, v3)
-        return struct.pack('<23f',
+        return struct.pack('<23f6HI',
             v1[0], v1[1], v1[2], 0.0,
             v2[0], v2[1], v2[2], 0.0,
             v3[0], v3[1], v3[2], 0.0,
             n[0],  n[1],  n[2],  0.0,
             roughness, metallic, emission,
             color[0], color[1], color[2], 0.0,
+            0, 0, 0, 0, 0, 0, 0,
         )
 
     with open(filename, 'wb') as f:
-        f.write(struct.pack('<II', file_size, TRI_STRUCT_SIZE))
+        f.write(struct.pack('<5I', file_size, TRI_STRUCT_SIZE, num_tris, 0, 4096))
         for y in range(H - 1):
             for x in range(W - 1):
                 wx = CENTER_X - WORLD_SIZE_X * 0.5 + x * cell_x

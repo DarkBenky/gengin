@@ -14,9 +14,9 @@ typedef struct {
 	// A region is the work one poolWait() drains: poolAdd() appends to `queue`
 	// without publishing it, poolWait() releases the whole region at once.
 	// queue[i & mask] holds task i and the indices only ever grow, so the
-	// counters need no reset between regions; a region must fit in `capacity`.
+	// counters need no reset between regions; an oversized one is drained early.
 	Task *queue;
-	int capacity; // power of two, at least the largest region
+	int capacity; // power of two, bounds how far the producer runs ahead
 	int mask;
 	long long queued;		// next task index the producer appends at
 	atomic_llong pending;	// published tasks not finished yet

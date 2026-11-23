@@ -1,3 +1,4 @@
+// TODO: **Important** needs to be restructured
 /* Example input
 {
   "version": 1,
@@ -9,7 +10,7 @@
 	  "rotation": [0, 45, 0],
 	  "scale": [1, 1, 1],
 	  "color": [1.0, 0.2, 0.2],
-	  "emission": 0.0,
+	  "emission": 0.0, // TODO: **Important** Save emission maps needs to be implemented insted
 	  "roughness": 0.5,
 	  "metallic": 0.0
 	},
@@ -53,7 +54,7 @@ typedef struct {
 } ObjectMaterial;
 
 typedef struct {
-	ObjType type;
+	ObjType type; // custom object needed loading form file or build in shape
 	float3 position;
 	float3 rotation; // degrees, XYZ order
 	float3 scale;
@@ -103,6 +104,8 @@ static inline void spawnShape(Object *obj, const ShapeSpawnRecord *r, MaterialLi
 }
 
 // TODO: **Important** implement parsing of the json input
+
 // TODO: **Important** implement saving of the scene to json file
+Error SaveSceneToJson(const ObjectList *scene, const char *filename);
 
 #endif

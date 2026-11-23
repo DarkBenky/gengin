@@ -35,7 +35,7 @@ void Input_Poll(Input *inp, struct mfb_window *win) {
 	prevMouseX = mx;
 	prevMouseY = my;
 
-	// scroll (MiniFB resets these after each call)
+	// scroll (glWin resets these after each call)
 	inp->scrollX = mfb_get_mouse_scroll_x(win);
 	inp->scrollY = mfb_get_mouse_scroll_y(win);
 }

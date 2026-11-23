@@ -35,6 +35,57 @@ void clearBuffers(Camera *camera) {
 	// objectIdBuffer: fully overwritten by ray tracer each frame.
 }
 
+static void freeCameraBuffers(Camera *camera) {
+	free(camera->framebufferLdr);
+	free(camera->framebufferHdr);
+	free(camera->tempFramebufferHdr);
+	free(camera->normalBuffer);
+	free(camera->positionBuffer);
+	free(camera->reflectBuffer);
+	free(camera->bloomBuffer);
+	free(camera->bloomTemp);
+	free(camera->bloomDst);
+	free(camera->depthBuffer);
+	free(camera->ambientOcclusionBuffer);
+	free(camera->reflectCache);
+	free(camera->tempBuffer_1);
+	free(camera->tempBuffer_2);
+	free(camera->shadowCache);
+	free(camera->objectIdBuffer);
+	free(camera->uvBuffer);
+	free(camera->triangleIdBuffer);
+	free(camera->motionVectorBuffer);
+	camera->framebufferLdr = NULL;
+	camera->framebufferHdr = NULL;
+	camera->tempFramebufferHdr = NULL;
+	camera->normalBuffer = NULL;
+	camera->positionBuffer = NULL;
+	camera->reflectBuffer = NULL;
+	camera->bloomBuffer = NULL;
+	camera->bloomTemp = NULL;
+	camera->bloomDst = NULL;
+	camera->depthBuffer = NULL;
+	camera->ambientOcclusionBuffer = NULL;
+	camera->reflectCache = NULL;
+	camera->tempBuffer_1 = NULL;
+	camera->tempBuffer_2 = NULL;
+	camera->shadowCache = NULL;
+	camera->objectIdBuffer = NULL;
+	camera->uvBuffer = NULL;
+	camera->triangleIdBuffer = NULL;
+	camera->motionVectorBuffer = NULL;
+}
+
+static int cameraBuffersAllocated(const Camera *camera) {
+	return camera->framebufferLdr && camera->framebufferHdr && camera->tempFramebufferHdr &&
+		   camera->normalBuffer && camera->positionBuffer && camera->reflectBuffer &&
+		   camera->bloomBuffer && camera->bloomTemp && camera->bloomDst &&
+		   camera->depthBuffer && camera->ambientOcclusionBuffer && camera->reflectCache &&
+		   camera->tempBuffer_1 && camera->tempBuffer_2 && camera->shadowCache &&
+		   camera->objectIdBuffer && camera->uvBuffer && camera->triangleIdBuffer &&
+		   camera->motionVectorBuffer;
+}
+
 void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, float3 position, float3 forward, float3 lightDir) {
 	if (!camera) return;
 	camera->screenWidth = screenWidth;
@@ -62,6 +113,10 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->uvBuffer = (uvMap *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(uvMap)));
 	camera->triangleIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
 	camera->motionVectorBuffer = (float2 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float2)));
+	if (!cameraBuffersAllocated(camera)) {
+		freeCameraBuffers(camera);
+		return;
+	}
 	camera->frameCounter = 0;
 	camera->maxDepth = 0.0f;
 	camera->minDepth = DEPTH_FAR;
@@ -71,44 +126,7 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 
 void destroyCamera(Camera *camera) {
 	if (!camera || !camera->framebufferLdr) return;
-	free(camera->framebufferLdr);
-	free(camera->framebufferHdr);
-	free(camera->tempFramebufferHdr);
-	free(camera->normalBuffer);
-	free(camera->positionBuffer);
-	free(camera->reflectBuffer);
-	free(camera->depthBuffer);
-	free(camera->ambientOcclusionBuffer);
-	free(camera->reflectCache);
-	free(camera->tempBuffer_1);
-	free(camera->tempBuffer_2);
-	free(camera->shadowCache);
-	free(camera->objectIdBuffer);
-	free(camera->bloomBuffer);
-	free(camera->bloomTemp);
-	free(camera->bloomDst);
-	free(camera->uvBuffer);
-	free(camera->triangleIdBuffer);
-	free(camera->motionVectorBuffer);
-	camera->framebufferLdr = NULL;
-	camera->framebufferHdr = NULL;
-	camera->tempFramebufferHdr = NULL;
-	camera->normalBuffer = NULL;
-	camera->positionBuffer = NULL;
-	camera->reflectBuffer = NULL;
-	camera->depthBuffer = NULL;
-	camera->ambientOcclusionBuffer = NULL;
-	camera->reflectCache = NULL;
-	camera->tempBuffer_1 = NULL;
-	camera->tempBuffer_2 = NULL;
-	camera->shadowCache = NULL;
-	camera->objectIdBuffer = NULL;
-	camera->bloomBuffer = NULL;
-	camera->bloomTemp = NULL;
-	camera->bloomDst = NULL;
-	camera->uvBuffer = NULL;
-	camera->triangleIdBuffer = NULL;
-	camera->motionVectorBuffer = NULL;
+	freeCameraBuffers(camera);
 	camera->frameCounter = 0;
 	pthread_mutex_destroy(&camera->depthLock);
 }
@@ -131,19 +149,24 @@ void setMinDepth(Camera *camera, float minDepth) {
 	pthread_mutex_unlock(&camera->depthLock);
 }
 
+static float3 cameraRightFor(float3 forward) {
+	return Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, forward));
+}
+
+static void cameraTranslate(Camera *camera, float3 direction, float amount) {
+	camera->position.x += direction.x * amount;
+	camera->position.y += direction.y * amount;
+	camera->position.z += direction.z * amount;
+}
+
 void CameraMoveForward(Camera *camera, float amount) {
 	if (!camera) return;
-	camera->position.x += camera->forward.x * amount;
-	camera->position.y += camera->forward.y * amount;
-	camera->position.z += camera->forward.z * amount;
+	cameraTranslate(camera, camera->forward, amount);
 }
 
 void CameraMoveRight(Camera *camera, float amount) {
 	if (!camera) return;
-	float3 right = Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, camera->forward));
-	camera->position.x += right.x * amount;
-	camera->position.y += right.y * amount;
-	camera->position.z += right.z * amount;
+	cameraTranslate(camera, cameraRightFor(camera->forward), amount);
 }
 
 void CameraMoveUp(Camera *camera, float amount) {
@@ -163,7 +186,7 @@ void CameraRotate(Camera *camera, float pitch, float yaw) {
 		fwd.y,
 		fwd.x * sinYaw + fwd.z * cosYaw};
 	// pitch — rotate around camera's right axis
-	float3 right = Float3_Normalize(Float3_Cross((float3){0.0f, 1.0f, 0.0f}, fwd1));
+	float3 right = cameraRightFor(fwd1);
 	float3 camUp = Float3_Cross(right, fwd1); // points upward relative to forward
 	float cosPitch = cosf(pitch);
 	float sinPitch = sinf(pitch);

@@ -167,3 +167,32 @@ render/render.c:301,337-360,395-490,494 · object/object.c:233-245,828-830 · ra
 860-915,925-940,1137 · object/format.h:8-9,72 · object/object.h · object/material/material.h ·
 render/gpu/format.h · cloadrendering/cload.c · main.c:239,242,272,279,299,318,339 ·
 tools/parseObj.go:843-931 · load/loadObj.c
+
+## 11. Option B — real / fake frames
+The CPU ray tracer stays the reference renderer and owns the look; the OpenCL raster is the
+cheap frame producer used to raise the frame rate. One real frame every N, fake frames in
+between, and a small ML model pushes each fake frame toward the real one.
+
+- Geometry is not the model's job. The fake frame must be the same scene as the real one, and
+  depth / normal / position / objectId already match (Phase 1), so the model only fixes shading.
+- Shrink the residual before training anything. The raster already has shadows (light-space
+  depth map), AO, sky reflection, GGX specular and normal maps. Still missing: emissive
+  indirect (analytic, one point light per emitter) and scene reflections (reflection ray / SSR).
+  Those two are exactly the terms a raster cannot compute, so they are also the ones worth
+  asking a model for - but add them directly first and measure what is left.
+- Target = `realFrame - fakeFrame`, generated offline from any scene plus a scripted camera
+  path (the map/camera capture task planned for the upscaler gives this for free).
+- Model input is the G-buffer, not the image: albedo, world normal, view depth,
+  roughness/metallic, light dir and the raster's own shadow/reflection terms. A model that sees
+  only color can smear shadow edges, because a shadow is a visibility step, not a smooth layer.
+- Train offline, run every frame. No runtime key frame is needed if the model generalises:
+  cost is `T_raster + T_model`, with no stale-history ghosting. Keeping a runtime key frame for
+  adaptation would need motion vectors + a disocclusion mask first - `motionVectorBuffer` exists
+  but the row kernel does not fill it (only the unused column kernel does).
+- Budget: with real 15.8 ms and fake 6.0 ms (1080p, measured), one real frame every N costs
+  `(15.8 + N*6.0)/(N+1)` - 10.9 ms at N=1, 8.5 at N=3, 7.2 at N=7, always above 6.0. So this
+  buys quality, not speed. Its value is fake frames that look close to real ones while staying
+  near the fake-frame cost.
+- The I/P/B-frame analogy only goes so far: codecs interpolate a mostly continuous signal,
+  while the residual here is visibility (shadows/reflections), which changes in steps. That is
+  why the model needs geometry inputs and why so much of the gap is cheaper to just render.

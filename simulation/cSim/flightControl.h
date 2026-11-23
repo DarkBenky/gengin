@@ -1,3 +1,4 @@
+#pragma once
 // TODO: hand made algo to find good surface control to target point in 3d space
 // using iterative approaches where we try to minimize the loss based on this
 // 1. try to apply roll so the top of the plane will be facing the target
@@ -40,6 +41,7 @@ typedef struct {
     float3 targetVelocity;
     float3 targetAccel;
     int hasPrevTarget;
+    int targetMoved;
 } Controller;
 
 static void initController(Controller *ctrl, const Plane *plane) {
@@ -49,6 +51,7 @@ static void initController(Controller *ctrl, const Plane *plane) {
     ctrl->targetVelocity = (float3){0.0f, 0.0f, 0.0f, 0.0f};
     ctrl->targetAccel = (float3){0.0f, 0.0f, 0.0f, 0.0f};
     ctrl->hasPrevTarget = 0;
+    ctrl->targetMoved = 1;
 }
 
 typedef struct {

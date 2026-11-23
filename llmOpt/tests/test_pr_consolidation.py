@@ -149,7 +149,8 @@ class PrLabelsTests(unittest.TestCase):
                      "Render Improvements [Visual change / Performance]",
                      "Render Improvements Visual [No/Minimal Cost]",
                      "Flight Controller", "Missile Controller",
-                     "General Improvements", "ML Improvements"):
+                     "General Improvements", "Readability Refactor",
+                     "ML Improvements"):
             self.assertIn(name, main.PR_LABELS)
 
 

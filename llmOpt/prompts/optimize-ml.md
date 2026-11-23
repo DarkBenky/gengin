@@ -130,8 +130,9 @@ better or worse when a config clears its own noise band, so a `same` on a
    `ml_bench(suite="srnet")` — the reference point.  If a suite has no
    baseline, say so and capture it once (`capture_baseline=True`) on the clean
    tree before you change anything.
-3. `read_file("gengin/machineLearning/generateKernel.py")` — the emitter you are
-   tuning: `emitConv`, `emitPool`, `emitDense`, `emitSoftmax`,
+3. Read `gengin/machineLearning/generateKernel.py` (`read` on dsh, `read_file`
+   on Hermes) — the emitter you are tuning: `emitConv`, `emitPool`,
+   `emitDense`, `emitSoftmax`,
    `emitPixelShuffle`, `emitBilinear` and the generation-time shape math around them.
 4. Only then start changing code.
 
@@ -230,6 +231,12 @@ Do not re-derive what a previous session already recorded in
     (`llmopt/<7-40 hex sha>/<topic>`, e.g. `llmopt/<target-sha>/conv-interior`);
     the PR is opened from the sandbox, so only files you changed under `gengin/`
     are published.
+    Readability-only cleanups of kernel/bench code (extracting an inline block
+    into a named helper, naming constants) keep the `ML Improvements` label
+    here, but they claim NO speedup: the torch gate must stay clean, every
+    config must still pass, and reordering the arithmetic (sum order included)
+    is a behaviour change, not a refactor. Ship a refactor and a kernel change
+    as separate PRs.
 
 ## EVIDENCE RULES
 - Never claim a speedup you did not measure with `ml_bench` in this session.
@@ -319,15 +326,16 @@ pass):
   - NO LONGER NEEDED — the change is already at HEAD (shipped through another
     PR or a direct commit), the code it patched was rewritten or deleted, or a
     merged PR supersedes it: prove it against the tree (`git -C gengin log -S`,
-    `search_files`, the PR's hunks vs the current file), then
+    a `grep` over the tree, the PR's hunks vs the current file), then
     `close_pull_request(N, "<what covers it> at <sha>: <evidence>. Branch
     preserved.")`.  A matching title is not proof.
   - STILL NEEDED — port the mechanical conflicts onto its existing branch
     (normal push, NEVER force-push), re-run the PR's category gate, and
     `comment_pull_request(N, ...)` with what was ported and the numbers.  A
     port that is not obvious within a few hunks stays OPEN with a comment
-    naming the blocking conflict and its files; never push a half-ported
-    branch.
+    naming the blocking conflict and its files, and an unchecked
+    `- [ ] REPAIR #N (<category>, <files>): <blocking conflict>` task in the
+    root `README.md`; never push a half-ported branch.
 - VERIFY (the desktop's duty, at most TWO per session): an open ML PR whose
   `machine` differs from `machine_info()` (or is empty) was measured on
   another host. Re-run its suite on THIS machine (`ml_bench` plus `ml_parity`

@@ -1,3 +1,5 @@
+***AI generated code not sure if 100% correct***
+
 # llmOpt — MCP tool server for the gengin optimizer
 
 Build / bench / profile / PR tools for the `gengin` CPU ray tracer, exposed over
@@ -25,12 +27,22 @@ preview). Hermes itself: `curl -fsSL https://raw.githubusercontent.com/NousResea
     llmOpt/scripts/gengin-opt.sh local --headless      # auto-run one-shot, no UI
     llmOpt/scripts/gengin-opt.sh local --hermes        # Hermes TUI instead
     llmOpt/scripts/gengin-opt.sh local Qwen3.8-27B --goal "speed up rayTriangle"
+    llmOpt/scripts/gengin-opt.sh local small           # small model only (router /small/ prefix)
+    llmOpt/scripts/gengin-opt.sh local deepseek        # forced DeepSeek API (router /ds/ prefix)
     llmOpt/scripts/gengin-opt.sh deepseek              # direct DeepSeek API
     llmOpt/scripts/gengin-opt.sh openai                # direct OpenAI API
     llmOpt/scripts/gengin-opt.sh openrouter deepseek/deepseek-v4-pro
     llmOpt/scripts/gengin-opt.sh --headless            # unattended oneshot (-z)
     llmOpt/scripts/gengin-opt.sh --harness hermes      # same session on Hermes Agent (shorthand: --hermes)
     llmOpt/scripts/gengin-opt.sh ml [provider]         # ML/OpenCL-kernel objective (needs a GPU)
+
+The `small` / `deepseek` words directly after `local` select the router endpoint
+instead of a model: `http://localhost:8013/small/v1` always answers from the
+small local model (no profile switch, no cloud fallback) and
+`http://localhost:8013/ds/v1` forces the DeepSeek API (no local fallback, the
+router's own key and `DEEPSEEK_MODEL` apply). The prefix, not the model id, picks
+the backend — the router rewrites or ignores the id. `LOCAL_LLM_BASE` moves the
+router root. `ml local small` / `ml local deepseek` work the same way.
 
 Provider words (`local` / `deepseek` / `openai` / `openrouter <id>`) work in any order and
 default to the local server. They work on both harnesses: dsh renders a per-run
@@ -175,7 +187,7 @@ answers); `DSH_WEB_WAIT_SECONDS` controls the retry window:
 Secrets never live in the checkout. Never put the OpenRouter *management* key in
 `llmOpt/.env` on the VM — the agent could mint unlimited keys.
 
-## Tools (36)
+## Tools (36; 37 on local runs)
 
 | Group              | Tools |
 |--------------------|-------|
@@ -190,6 +202,7 @@ Secrets never live in the checkout. Never put the OpenRouter *management* key in
 | clangd             | `lsp_definition`, `lsp_references`, `lsp_call_hierarchy`, `lsp_diagnostics`, `lsp_diagnostics_all` |
 | Environment        | `machine_info` |
 | Advisory decisions | `quick_ask` |
+| Small local model  | `delegate_to_small_model` (local runs only; the 7B is weak, verify its output) |
 | Session control    | `report_session_result` (supervised only) |
 
 Visual changes are opt-in: `make_bench(allow_visual_change=true)` (SSIM gate) ->
@@ -201,7 +214,12 @@ Every PR carries exactly one category label (`create_pr(label=...)`,
 category (all `Render Improvements*` label variants count together) a session
 verifies them and folds survivors into one consolidation PR —
 never across categories. `General Improvements` is soft-locked to one system
-per PR (and per consolidation batch). Requires GITHUB_TOKEN with `Issues: write`
+per PR (and per consolidation batch). `Readability Refactor` is the parity
+category — behaviour-preserving cleanups (extracting an inline SIMD/scalar
+block into a named helper, naming constants, deleting dead locals) that ship
+`image_mse` 0.00 and a `make_bench` verdict that is not `REGRESSED`; it is
+soft-locked to one system per PR too, claims no speedup, and never mixes with
+an optimization. Requires GITHUB_TOKEN with `Issues: write`
 for labels.
 
 `create_pr` appends an `## Environment` section to every body: a
@@ -217,7 +235,9 @@ comment. See VERIFY in `prompts/optimize.md`.
 A PR that no longer merges is triaged by REPAIR: if the change is already at
 HEAD or the patched code is gone, the PR is closed with the evidence that
 covers it; if the change is still needed, its conflicts are ported onto the
-existing branch and its gate re-run. See REPAIR in `prompts/optimize.md`.
+existing branch and its gate re-run, and a port that is not obvious is left
+open with an unchecked `- [ ]` REPAIR task in the root `README.md`. See REPAIR
+in `prompts/optimize.md`.
 
 ## Files
 

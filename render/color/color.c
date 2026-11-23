@@ -32,6 +32,29 @@ static inline uint32 ConvertPixelToLdr(float3 c) {
 	return PackColorSafe(c.x, c.y, c.z);
 }
 
+static inline void ConvertPixelsToLdr4(const float3 *in, uint32 *out) {
+	const __m128 zero = _mm_setzero_ps();
+	const __m128 one = _mm_set1_ps(1.0f);
+	const __m128 s255 = _mm_set1_ps(255.0f);
+	const __m128i alpha = _mm_set1_epi32((int)0xFF000000u);
+	__m128 p0 = _mm_loadu_ps(&in[0].x);
+	__m128 p1 = _mm_loadu_ps(&in[1].x);
+	__m128 p2 = _mm_loadu_ps(&in[2].x);
+	__m128 p3 = _mm_loadu_ps(&in[3].x);
+	_MM_TRANSPOSE4_PS(p0, p1, p2, p3);
+	__m128 mx = _mm_max_ps(p0, _mm_max_ps(p1, p2));
+	__m128 e = _mm_sub_ps(mx, one);
+	__m128 add = _mm_and_ps(e, _mm_cmpgt_ps(e, zero));
+	__m128 x = _mm_min_ps(_mm_max_ps(_mm_add_ps(p0, add), zero), one);
+	__m128 y = _mm_min_ps(_mm_max_ps(_mm_add_ps(p1, add), zero), one);
+	__m128 z = _mm_min_ps(_mm_max_ps(_mm_add_ps(p2, add), zero), one);
+	__m128i xi = _mm_cvttps_epi32(_mm_mul_ps(x, s255));
+	__m128i yi = _mm_cvttps_epi32(_mm_mul_ps(y, s255));
+	__m128i zi = _mm_cvttps_epi32(_mm_mul_ps(z, s255));
+	__m128i packed = _mm_or_si128(_mm_or_si128(_mm_slli_epi32(xi, 16), _mm_slli_epi32(yi, 8)), zi);
+	_mm_storeu_si128((__m128i *)out, _mm_or_si128(packed, alpha));
+}
+
 void ConvertToLdr(const float3 *inHdr, uint32 *outLdr, int width, int height) {
 	if (!inHdr || !outLdr) return;
 	const int count = width * height;
@@ -52,28 +75,8 @@ static void ConvertToLdrRows(void *arg) {
 	const int start = task->startRow * task->width;
 	const int count = task->rows * task->width;
 	int i = 0;
-	const __m128 zero = _mm_setzero_ps();
-	const __m128 one = _mm_set1_ps(1.0f);
-	const __m128 s255 = _mm_set1_ps(255.0f);
-	const __m128i alpha = _mm_set1_epi32((int)0xFF000000u);
-	for (; i + 4 <= count; i += 4) {
-		__m128 p0 = _mm_loadu_ps(&task->inHdr[start + i + 0].x);
-		__m128 p1 = _mm_loadu_ps(&task->inHdr[start + i + 1].x);
-		__m128 p2 = _mm_loadu_ps(&task->inHdr[start + i + 2].x);
-		__m128 p3 = _mm_loadu_ps(&task->inHdr[start + i + 3].x);
-		_MM_TRANSPOSE4_PS(p0, p1, p2, p3);
-		__m128 mx = _mm_max_ps(p0, _mm_max_ps(p1, p2));
-		__m128 e = _mm_sub_ps(mx, one);
-		__m128 add = _mm_and_ps(e, _mm_cmpgt_ps(e, zero));
-		__m128 x = _mm_min_ps(_mm_max_ps(_mm_add_ps(p0, add), zero), one);
-		__m128 y = _mm_min_ps(_mm_max_ps(_mm_add_ps(p1, add), zero), one);
-		__m128 z = _mm_min_ps(_mm_max_ps(_mm_add_ps(p2, add), zero), one);
-		__m128i xi = _mm_cvttps_epi32(_mm_mul_ps(x, s255));
-		__m128i yi = _mm_cvttps_epi32(_mm_mul_ps(y, s255));
-		__m128i zi = _mm_cvttps_epi32(_mm_mul_ps(z, s255));
-		__m128i packed = _mm_or_si128(_mm_or_si128(_mm_slli_epi32(xi, 16), _mm_slli_epi32(yi, 8)), zi);
-		_mm_storeu_si128((__m128i *)&task->outLdr[start + i], _mm_or_si128(packed, alpha));
-	}
+	for (; i + 4 <= count; i += 4)
+		ConvertPixelsToLdr4(&task->inHdr[start + i], &task->outLdr[start + i]);
 	for (; i < count; i++)
 		task->outLdr[start + i] = ConvertPixelToLdr(task->inHdr[start + i]);
 }
@@ -259,13 +262,6 @@ Color BlendColors(Color c1, Color c2, float t) {
 		col1.y * (1.0f - t) + col2.y * t,
 		col1.z * (1.0f - t) + col2.z * t};
 	return PackColorF(blended);
-}
-
-float3 UnpackColor(Color c) {
-	float r = ((c >> 16) & 0xFF) / 255.0f;
-	float g = ((c >> 8) & 0xFF) / 255.0f;
-	float b = (c & 0xFF) / 255.0f;
-	return (float3){r, g, b, 0.0f};
 }
 
 int4 UnpackColorInt(Color c) {

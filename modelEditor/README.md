@@ -1,0 +1,1 @@
+# This is AI generated tool it works but can be buggy i dont care sorry not sorry
