@@ -86,6 +86,10 @@ static int cameraBuffersAllocated(const Camera *camera) {
 		   camera->motionVectorBuffer;
 }
 
+static void *allocCameraBuffer(size_t elementSize, size_t elementCount) {
+	return aligned_alloc(64, ALIGN64(elementSize * elementCount));
+}
+
 void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, float3 position, float3 forward, float3 lightDir) {
 	if (!camera) return;
 	camera->screenWidth = screenWidth;
@@ -94,25 +98,25 @@ void initCamera(Camera *camera, int screenWidth, int screenHeight, float fov, fl
 	camera->position = position;
 	camera->lightDir = lightDir;
 	camera->forward = forward;
-	camera->framebufferLdr = (uint32 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(uint32)));
-	camera->framebufferHdr = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->tempFramebufferHdr = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->normalBuffer = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->positionBuffer = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->reflectBuffer = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->bloomBuffer = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->bloomTemp = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->bloomDst = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->depthBuffer = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
-	camera->ambientOcclusionBuffer = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
-	camera->reflectCache = (float3 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float3)));
-	camera->tempBuffer_1 = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
-	camera->tempBuffer_2 = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
-	camera->shadowCache = (float *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float)));
-	camera->objectIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
-	camera->uvBuffer = (uvMap *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(uvMap)));
-	camera->triangleIdBuffer = (int *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(int)));
-	camera->motionVectorBuffer = (float2 *)aligned_alloc(64, ALIGN64(screenWidth * screenHeight * sizeof(float2)));
+	camera->framebufferLdr = (uint32 *)allocCameraBuffer(sizeof(uint32), screenWidth * screenHeight);
+	camera->framebufferHdr = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->tempFramebufferHdr = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->normalBuffer = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->positionBuffer = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->reflectBuffer = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->bloomBuffer = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->bloomTemp = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->bloomDst = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->depthBuffer = (float *)allocCameraBuffer(sizeof(float), screenWidth * screenHeight);
+	camera->ambientOcclusionBuffer = (float *)allocCameraBuffer(sizeof(float), screenWidth * screenHeight);
+	camera->reflectCache = (float3 *)allocCameraBuffer(sizeof(float3), screenWidth * screenHeight);
+	camera->tempBuffer_1 = (float *)allocCameraBuffer(sizeof(float), screenWidth * screenHeight);
+	camera->tempBuffer_2 = (float *)allocCameraBuffer(sizeof(float), screenWidth * screenHeight);
+	camera->shadowCache = (float *)allocCameraBuffer(sizeof(float), screenWidth * screenHeight);
+	camera->objectIdBuffer = (int *)allocCameraBuffer(sizeof(int), screenWidth * screenHeight);
+	camera->uvBuffer = (uvMap *)allocCameraBuffer(sizeof(uvMap), screenWidth * screenHeight);
+	camera->triangleIdBuffer = (int *)allocCameraBuffer(sizeof(int), screenWidth * screenHeight);
+	camera->motionVectorBuffer = (float2 *)allocCameraBuffer(sizeof(float2), screenWidth * screenHeight);
 	if (!cameraBuffersAllocated(camera)) {
 		freeCameraBuffers(camera);
 		return;
