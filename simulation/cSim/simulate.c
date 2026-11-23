@@ -378,6 +378,14 @@ float planeGetLeftElevatorNorm(const Plane *plane) {
 	return getSurfaceNorm(&plane->leftElevator);
 }
 
+static float surfaceDeflection(const Surface *surface) {
+	if (!surface->active) return 0.0f;
+	float neutral = (surface->minRotationAngle + surface->maxRotationAngle) * 0.5f;
+	float halfRange = (surface->maxRotationAngle - surface->minRotationAngle) * 0.5f;
+	if (halfRange > MIN_CONTROL_RANGE) return (surface->rotationAngle - neutral) / halfRange;
+	return 0.0f;
+}
+
 void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	// Lazy-init velocity — handles base plane copies and old structs without velocity field.
 	if (f3Len(plane->velocity) < 1.0f && plane->currentSpeed > 1.0f)
@@ -441,39 +449,12 @@ void updatePlane(Plane *plane, float deltaTime, float3 *newForwardDirection) {
 	float dampScale = fminf(q / 3500.0f, 2.5f);
 
 	// Resolve current surface deflections once — needed across multiple torque terms.
-	float ailDefl = 0.0f, rudDefl = 0.0f;
-	float leftElevDefl = 0.0f, rightElevDefl = 0.0f;
-	float leftFlapDefl = 0.0f, rightFlapDefl = 0.0f;
-	if (plane->rightAileron.active) {
-		float neutral = (plane->rightAileron.minRotationAngle + plane->rightAileron.maxRotationAngle) * 0.5f;
-		float halfRange = (plane->rightAileron.maxRotationAngle - plane->rightAileron.minRotationAngle) * 0.5f;
-		if (halfRange > MIN_CONTROL_RANGE) ailDefl = (plane->rightAileron.rotationAngle - neutral) / halfRange;
-	}
-	if (plane->leftElevator.active) {
-		float neutral = (plane->leftElevator.minRotationAngle + plane->leftElevator.maxRotationAngle) * 0.5f;
-		float halfRange = (plane->leftElevator.maxRotationAngle - plane->leftElevator.minRotationAngle) * 0.5f;
-		if (halfRange > MIN_CONTROL_RANGE) leftElevDefl = (plane->leftElevator.rotationAngle - neutral) / halfRange;
-	}
-	if (plane->rightElevator.active) {
-		float neutral = (plane->rightElevator.minRotationAngle + plane->rightElevator.maxRotationAngle) * 0.5f;
-		float halfRange = (plane->rightElevator.maxRotationAngle - plane->rightElevator.minRotationAngle) * 0.5f;
-		if (halfRange > MIN_CONTROL_RANGE) rightElevDefl = (plane->rightElevator.rotationAngle - neutral) / halfRange;
-	}
-	if (plane->leftFlap.active) {
-		float neutral = (plane->leftFlap.minRotationAngle + plane->leftFlap.maxRotationAngle) * 0.5f;
-		float halfRange = (plane->leftFlap.maxRotationAngle - plane->leftFlap.minRotationAngle) * 0.5f;
-		if (halfRange > MIN_CONTROL_RANGE) leftFlapDefl = (plane->leftFlap.rotationAngle - neutral) / halfRange;
-	}
-	if (plane->rightFlap.active) {
-		float neutral = (plane->rightFlap.minRotationAngle + plane->rightFlap.maxRotationAngle) * 0.5f;
-		float halfRange = (plane->rightFlap.maxRotationAngle - plane->rightFlap.minRotationAngle) * 0.5f;
-		if (halfRange > MIN_CONTROL_RANGE) rightFlapDefl = (plane->rightFlap.rotationAngle - neutral) / halfRange;
-	}
-	if (plane->rudder.active) {
-		float neutral = (plane->rudder.minRotationAngle + plane->rudder.maxRotationAngle) * 0.5f;
-		float halfRange = (plane->rudder.maxRotationAngle - plane->rudder.minRotationAngle) * 0.5f;
-		if (halfRange > MIN_CONTROL_RANGE) rudDefl = (plane->rudder.rotationAngle - neutral) / halfRange;
-	}
+	float ailDefl = surfaceDeflection(&plane->rightAileron);
+	float rudDefl = surfaceDeflection(&plane->rudder);
+	float leftElevDefl = surfaceDeflection(&plane->leftElevator);
+	float rightElevDefl = surfaceDeflection(&plane->rightElevator);
+	float leftFlapDefl = surfaceDeflection(&plane->leftFlap);
+	float rightFlapDefl = surfaceDeflection(&plane->rightFlap);
 	// Symmetric average drives pitch; differential drives roll.
 	float elevDefl = (leftElevDefl + rightElevDefl) * 0.5f;
 	float elevDiffDefl = rightElevDefl - leftElevDefl;
