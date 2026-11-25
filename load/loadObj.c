@@ -196,6 +196,14 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		uint32 emissionSizeFile = 0;
 		if (fread(&emissionSizeFile, sizeof(uint32), 1, file) != 1) {
 			fprintf(stderr, "Error: %s is truncated.\n", filename);
+			Object_Destroy(obj);
+			fclose(file);
+			return;
+		}
+		uint64 faceMapBytes = 2ull * sizeof(uint32) + 6ull * emissionSizeFile * emissionSizeFile * sizeof(float3);
+		if (emissionSizeFile == 0 || (uint64)FileSizeEmissionMap != faceMapBytes) {
+			fprintf(stderr, "Error: %s has an invalid emission face map size.\n", filename);
+			Object_Destroy(obj);
 			fclose(file);
 			return;
 		}
@@ -206,6 +214,16 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 		float3 *EmissionMap = (float3 *)malloc(sideSize * sizeof(float3));
 		float3 *EmissionMapTemp = (float3 *)malloc((size_t)sideSize * sizeof(float3));
 		float3 *EmissionMapOut = (float3 *)malloc((size_t)emissionMapSize);
+
+		if (!EmissionMap || !EmissionMapTemp || !EmissionMapOut) {
+			fprintf(stderr, "Error: Could not allocate memory for the emission face map.\n");
+			free(EmissionMap);
+			free(EmissionMapTemp);
+			free(EmissionMapOut);
+			Object_Destroy(obj);
+			fclose(file);
+			return;
+		}
 
 		memset(EmissionMap, 0, (size_t)sideSize * sizeof(float3));
 		memset(EmissionMapTemp, 0, (size_t)sideSize * sizeof(float3));
