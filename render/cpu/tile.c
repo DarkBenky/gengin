@@ -44,34 +44,46 @@ static int clipScaledTile(Tile tile, int dstWidth, int dstHeight, int x, int y, 
 	return scaledW > 0 && scaledH > 0;
 }
 
-void drawTile(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y) {
-	int srcX = 0, srcY = 0;
-	int copyW = tile.width;
-	int copyH = tile.height;
+static int clipTile(Tile tile, int dstWidth, int dstHeight, int x, int y, TileClip *clip) {
+	int srcX = 0;
+	int srcY = 0;
+	int width = tile.width;
+	int height = tile.height;
 
 	// Clip left/top against dst
 	if (x < 0) {
 		srcX -= x;
-		copyW += x;
+		width += x;
 		x = 0;
 	}
 	if (y < 0) {
 		srcY -= y;
-		copyH += y;
+		height += y;
 		y = 0;
 	}
 
 	// Clip right/bottom against dst
-	if (x + copyW > dstWidth) copyW = dstWidth - x;
-	if (y + copyH > dstHeight) copyH = dstHeight - y;
+	if (x + width > dstWidth) width = dstWidth - x;
+	if (y + height > dstHeight) height = dstHeight - y;
 
-	if (copyW <= 0 || copyH <= 0) return;
+	clip->dstX = x;
+	clip->dstY = y;
+	clip->srcX = srcX;
+	clip->srcY = srcY;
+	clip->width = width;
+	clip->height = height;
+	return width > 0 && height > 0;
+}
 
-	const size_t rowBytes = (size_t)copyW * sizeof(uint32);
-	for (int row = 0; row < copyH; row++) {
+void drawTile(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y) {
+	TileClip clip;
+	if (!clipTile(tile, dstWidth, dstHeight, x, y, &clip)) return;
+
+	const size_t rowBytes = (size_t)clip.width * sizeof(uint32);
+	for (int row = 0; row < clip.height; row++) {
 		memcpy(
-			dst + (y + row) * dstWidth + x,
-			tile.pixels + (srcY + row) * tile.width + srcX,
+			dst + (clip.dstY + row) * dstWidth + clip.dstX,
+			tile.pixels + (clip.srcY + row) * tile.width + clip.srcX,
 			rowBytes);
 	}
 }
@@ -90,30 +102,14 @@ void drawTileScaled(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, 
 }
 
 void drawTileColor(uint32 *dst, int dstWidth, int dstHeight, Tile tile, int x, int y, uint32 color) {
-	int srcX = 0, srcY = 0;
-	int copyW = tile.width;
-	int copyH = tile.height;
+	TileClip clip;
+	if (!clipTile(tile, dstWidth, dstHeight, x, y, &clip)) return;
 
-	if (x < 0) {
-		srcX -= x;
-		copyW += x;
-		x = 0;
-	}
-	if (y < 0) {
-		srcY -= y;
-		copyH += y;
-		y = 0;
-	}
-	if (x + copyW > dstWidth) copyW = dstWidth - x;
-	if (y + copyH > dstHeight) copyH = dstHeight - y;
-
-	if (copyW <= 0 || copyH <= 0) return;
-
-	for (int row = 0; row < copyH; row++) {
-		for (int col = 0; col < copyW; col++) {
-			uint32 src = tile.pixels[(srcY + row) * tile.width + (srcX + col)];
+	for (int row = 0; row < clip.height; row++) {
+		for (int col = 0; col < clip.width; col++) {
+			uint32 src = tile.pixels[(clip.srcY + row) * tile.width + (clip.srcX + col)];
 			if (src != 0x00000000)
-				dst[(y + row) * dstWidth + (x + col)] = color;
+				dst[(clip.dstY + row) * dstWidth + (clip.dstX + col)] = color;
 		}
 	}
 }
