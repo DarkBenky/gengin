@@ -163,80 +163,78 @@ void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
 	obj->BBmax = BBmax;
 
 	if (hasEmissionMap) {
-		fread(NULL, sizeof(uint32), 1, file); // skip the FileSizeEmissionMap field, we already read it
-		fread(NULL, sizeof(uint32), 1, file); // skip the SizeOfTexture field, we already read it
+		fseek(file, sizeof(uint32), SEEK_CUR); // skip FileSizeEmissionMap, already validated against the file length
 
-		int emissionMapSize = EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3);
+		uint32 emissionSizeFile = 0;
+		if (fread(&emissionSizeFile, sizeof(uint32), 1, file) != 1) {
+			fprintf(stderr, "Error: %s is truncated.\n", filename);
+			fclose(file);
+			return;
+		}
 
-		float3 *EmissionMap = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
-		float3 *EmissionMapTemp = (float3 *)malloc((size_t)textureSize * textureSize * sizeof(float3));
+		size_t sideSize = (size_t)emissionSizeFile * emissionSizeFile;
+		size_t emissionMapSize = EMISSION_RESOLUTION * EMISSION_RESOLUTION * sizeof(float3);
+
+		float3 *EmissionMap = (float3 *)malloc(sideSize * sizeof(float3));
+		float3 *EmissionMapTemp = (float3 *)malloc((size_t)sideSize * sizeof(float3));
 		float3 *EmissionMapOut = (float3 *)malloc((size_t)emissionMapSize);
 
-		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
-		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMap, 0, (size_t)sideSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)sideSize * sizeof(float3));
 		memset(EmissionMapOut, 0, (size_t)emissionMapSize);
 
-		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Front Side
-		if (textureSize != EMISSION_RESOLUTION) {
-		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
-		}
-		memcopy(obj->frontFaceEmission.emissionMap, EmissionMapOut, (size_t)emissionMapSize);
+		fread(EmissionMap, sizeof(float3), sideSize, file); // Read Front Side
+		ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, emissionSizeFile, emissionSizeFile, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
+		memcopy(obj->frontFaceEmission.emissionMap, EmissionMapOut, emissionMapSize);
 
 		// Not sure if needed add for safety
-		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
-		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMap, 0, (size_t)sideSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)sideSize * sizeof(float3));
 		memset(EmissionMapOut, 0, (size_t)emissionMapSize);
 
-		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Back Side
-		if (textureSize != EMISSION_RESOLUTION) {
-		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
-		}
-		memcopy(obj->backFaceEmission.emissionMap, EmissionMapOut, (size_t)emissionMapSize);
+		fread(EmissionMap, sizeof(float3), sideSize, file); // Read Back Side
+		ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, emissionSizeFile, emissionSizeFile, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
+		memcopy(obj->backFaceEmission.emissionMap, EmissionMapOut, emissionMapSize);
 
-		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
-		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMap, 0, (size_t)sideSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)sideSize * sizeof(float3));
 		memset(EmissionMapOut, 0, (size_t)emissionMapSize);
 
-		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Right Side
-		if (textureSize != EMISSION_RESOLUTION) {
-		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
-		}
-		memcopy(obj->rightFaceEmission.emissionMap, EmissionMapOut, (size_t)emissionMapSize);
+		fread(EmissionMap, sizeof(float3), sideSize, file); // Read Right Side
+		ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, emissionSizeFile, emissionSizeFile, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
+		memcopy(obj->rightFaceEmission.emissionMap, EmissionMapOut, emissionMapSize);
 
-		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
-		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMap, 0, (size_t)sideSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)sideSize * sizeof(float3));
 		memset(EmissionMapOut, 0, (size_t)emissionMapSize);
 
-		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Left Side
-		if (textureSize != EMISSION_RESOLUTION) {
-		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
-		}
-		memcopy(obj->leftFaceEmission.emissionMap, EmissionMapOut, (size_t)emissionMapSize);
+		fread(EmissionMap, sizeof(float3), sideSize, file); // Read Left Side
+		ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, emissionSizeFile, emissionSizeFile, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
+		memcopy(obj->leftFaceEmission.emissionMap, EmissionMapOut, emissionMapSize);
 
-		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
-		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMap, 0, (size_t)sideSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)sideSize * sizeof(float3));
 		memset(EmissionMapOut, 0, (size_t)emissionMapSize);
 
-		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Top Side
-		if (textureSize != EMISSION_RESOLUTION) {
-		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
-		}
-		memcopy(obj->topFaceEmission.emissionMap, EmissionMapOut, (size_t)emissionMapSize);
+		fread(EmissionMap, sizeof(float3), sideSize, file); // Read Top Side
+		ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, emissionSizeFile, emissionSizeFile, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
+		memcopy(obj->topFaceEmission.emissionMap, EmissionMapOut, emissionMapSize);
 
-		memset(EmissionMap, 0, (size_t)textureSize * textureSize * sizeof(float3));
-		memset(EmissionMapTemp, 0, (size_t)textureSize * textureSize * sizeof(float3));
+		memset(EmissionMap, 0, (size_t)sideSize * sizeof(float3));
+		memset(EmissionMapTemp, 0, (size_t)sideSize * sizeof(float3));
 		memset(EmissionMapOut, 0, (size_t)emissionMapSize);
 
-		fread(EmissionMap, sizeof(float3), (size_t)textureSize * textureSize, file); // Read Bottom Side
-		if (textureSize != EMISSION_RESOLUTION) {
-		    ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, textureSize, textureSize, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
-		}
-		memcopy(obj->bottomFaceEmission.emissionMap, EmissionMapOut, (size_t)emissionMapSize);
+		fread(EmissionMap, sizeof(float3), sideSize, file); // Read Bottom Side
+		ResizeImage(EmissionMap, EmissionMapTemp, EmissionMapOut, emissionSizeFile, emissionSizeFile, EMISSION_RESOLUTION, EMISSION_RESOLUTION);
+		memcopy(obj->bottomFaceEmission.emissionMap, EmissionMapOut, emissionMapSize);
 
 		free(EmissionMap);
 		free(EmissionMapTemp);
 		free(EmissionMapOut);
 	}
+
+	// a baked map is authoritative, Object_Init skips the rebake for it
+	obj->hasEmission = hasEmissionMap;
 
 	fclose(file);
 }

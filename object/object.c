@@ -97,7 +97,7 @@ void Object_Init(Object *obj, float3 position, float3 rotation, float3 scale, co
 	obj->prevScale = scale;
 	CreateObjectBVH(obj, &obj->bvh);
 	Object_UpdateWorldBounds(obj);
-	CalculateFaceEmissions(obj, lib);
+	if (!obj->hasEmission) CalculateFaceEmissions(obj, lib); // keep the six grids the file already carried
 }
 
 // color => [RED][GREEN][BLUE] and [EMISSION] in alpha

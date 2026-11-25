@@ -139,11 +139,18 @@ function readBinModel(arrayBuffer, fileName) {
 	};
 }
 
+// a baked but fully black map means no emitters, so drop it instead of writing zeros and
+// telling the engine the object emits
+function faceMapHasEmission(view) {
+	for (let i = BinFormat.faceMapHeaderSize; i < view.length; i++) if (view[i] !== 0) return true;
+	return false;
+}
+
 function buildBinBlob(model) {
 	const atlasBytes = model.atlasView ? model.textureSize * model.textureSize * BinFormat.bytesPerTexel : 0;
 	const triangleBytes = model.triCount * BinFormat.recordSize;
 	const modelBytes = BinFormat.headerSize + atlasBytes + triangleBytes;
-	const faceMap = model.faceMapView || null;
+	const faceMap = model.faceMapView && faceMapHasEmission(model.faceMapView) ? model.faceMapView : null;
 
 	const header = new Uint8Array(BinFormat.headerSize);
 	const outView = new DataView(header.buffer);
