@@ -3,6 +3,23 @@
 #include <string.h>
 #include <math.h>
 
+static inline float3 bilinearHdrFetch(const float3 *image, int width, int height, float sx, float sy) {
+	int x0 = (int)sx;
+	int y0 = (int)sy;
+	int x1 = x0 + 1 < width ? x0 + 1 : x0;
+	int y1 = y0 + 1 < height ? y0 + 1 : y0;
+	float fx = sx - (float)x0;
+	float fy = sy - (float)y0;
+
+	float3 c00 = image[y0 * width + x0];
+	float3 c10 = image[y0 * width + x1];
+	float3 c01 = image[y1 * width + x0];
+	float3 c11 = image[y1 * width + x1];
+	float3 top = {c00.x + (c10.x - c00.x) * fx, c00.y + (c10.y - c00.y) * fx, c00.z + (c10.z - c00.z) * fx};
+	float3 bot = {c01.x + (c11.x - c01.x) * fx, c01.y + (c11.y - c01.y) * fx, c01.z + (c11.z - c01.z) * fx};
+	return (float3){top.x + (bot.x - top.x) * fy, top.y + (bot.y - top.y) * fy, top.z + (bot.z - top.z) * fy};
+}
+
 static void SSRProcessRow(Camera *camera, int row) {
 	int W = camera->screenWidth;
 	int H = camera->screenHeight;
@@ -69,17 +86,7 @@ static void SSRProcessRow(Camera *camera, int row) {
 
 			if (sceneDepth > 0.01f && diff > 0.0f && diff < threshold) {
 				// Bilinear fetch from the stable pre-pass copy in tempFramebufferHdr
-				int x1 = px + 1 < W ? px + 1 : px;
-				int y1 = py + 1 < H ? py + 1 : py;
-				float fx = sx - px, fy = sy - py;
-
-				float3 c00 = camera->tempFramebufferHdr[py * W + px];
-				float3 c10 = camera->tempFramebufferHdr[py * W + x1];
-				float3 c01 = camera->tempFramebufferHdr[y1 * W + px];
-				float3 c11 = camera->tempFramebufferHdr[y1 * W + x1];
-				float3 top = {c00.x + (c10.x - c00.x) * fx, c00.y + (c10.y - c00.y) * fx, c00.z + (c10.z - c00.z) * fx};
-				float3 bot = {c01.x + (c11.x - c01.x) * fx, c01.y + (c11.y - c01.y) * fx, c01.z + (c11.z - c01.z) * fx};
-				float3 sr = {top.x + (bot.x - top.x) * fy, top.y + (bot.y - top.y) * fy, top.z + (bot.z - top.z) * fy};
+				float3 sr = bilinearHdrFetch(camera->tempFramebufferHdr, W, H, sx, sy);
 
 				if (sr.x + sr.y + sr.z <= (3.0f / 255.0f)) break; // black hit — no useful data
 
