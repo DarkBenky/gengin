@@ -1,6 +1,5 @@
 #include "loadObj.h"
 #include "../object/object.h"
-#include "../object/material/material.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include "../util/bbox.h"
@@ -8,8 +7,37 @@
 #include "../util/json.h"
 #include "../image/imgMethods.h"
 
-// TODO: **Important** Update for support of FaceMap
+// Binary layout:
+// Header (20 bytes):
+//   fileSize           uint32  — File size ignores FaceMap
+//   triangleStructSize uint32  — 108 bytes
+//   triangleCount      uint32
+//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces, bit2: has emission map
+//   textureSize        uint32  — texture edge length
+//
+// Texture data (if hasTextures):
+//   ColorMap     textureSize*textureSize*4 bytes (RGBA uint8)
+//   NormalMap    textureSize*textureSize*3 bytes (RGB uint8)
+//   MaterialMap  textureSize*textureSize*2 bytes ([roughness, metallic] uint8)
+//
+// Per triangle (108 bytes):
+//   v1 v2 v3 normal   4 × float3 padded to float4 = 4×16 = 64
+//   roughness metallic emission                    = 12
+//   color float3 padded                            = 16
+//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
+//
+// Face Map Layout if hasEmissionMap:
+//  FileSizeEmissionMap 	uint32
+//  SizeOfTexture 			uint32 —  based on the EMISSION_RESOLUTION defined in object.h
+//  FrontTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  BackTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  RightTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  LeftTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  TopTexture   			float3 *SizeOfTexture * SizeOfTexture
+//  BottomTexture 			float3 *SizeOfTexture * SizeOfTexture
+
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib) {
+
 	if (filename == NULL || obj == NULL) {
 		fprintf(stderr, "Error: Invalid filename or object pointer.\n");
 		return;
@@ -252,6 +280,35 @@ static inline float2 boostFactor(float boost) {
 }
 
 // One to one implementation of writeFile in parseObj.go
+// Binary layout:
+// Header (20 bytes):
+//   fileSize           uint32  — File size ignores FaceMap
+//   triangleStructSize uint32  — 108 bytes
+//   triangleCount      uint32
+//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces, bit2: has emission map
+//   textureSize        uint32  — texture edge length
+//
+// Texture data (if hasTextures):
+//   ColorMap     textureSize*textureSize*4 bytes (RGBA uint8)
+//   NormalMap    textureSize*textureSize*3 bytes (RGB uint8)
+//   MaterialMap  textureSize*textureSize*2 bytes ([roughness, metallic] uint8)
+//
+// Per triangle (108 bytes):
+//   v1 v2 v3 normal   4 × float3 padded to float4 = 4×16 = 64
+//   roughness metallic emission                    = 12
+//   color float3 padded                            = 16
+//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
+//
+// Face Map Layout if hasEmissionMap:
+//  FileSizeEmissionMap 	uint32
+//  SizeOfTexture 			uint32 —  based on the EMISSION_RESOLUTION defined in object.h
+//  FrontTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  BackTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  RightTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  LeftTexture  			float3 *SizeOfTexture * SizeOfTexture
+//  TopTexture   			float3 *SizeOfTexture * SizeOfTexture
+//  BottomTexture 			float3 *SizeOfTexture * SizeOfTexture
+
 Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) {
 	if (filename == NULL || obj == NULL || lib == NULL) {
 		fprintf(stderr, "Error: Invalid filename, object or material lib.\n");
@@ -263,35 +320,6 @@ Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost) 
 		fprintf(stderr, "Error: Could not open file %s\n", filename);
 		return Error_Make(E_FILE_OPEN_FAILED, "Could not open file");
 	}
-
-	// Binary layout:
-	// Header (20 bytes):
-	//   fileSize           uint32  — File size ignores FaceMap
-	//   triangleStructSize uint32  — 108 bytes
-	//   triangleCount      uint32
-	//   hasTextures        uint32  — bit0: textures present, bit1: cull backfaces, bit2: has emission map
-	//   textureSize        uint32  — texture edge length
-	//
-	// Texture data (if hasTextures):
-	//   ColorMap     textureSize*textureSize*4 bytes (RGBA uint8)
-	//   NormalMap    textureSize*textureSize*3 bytes (RGB uint8)
-	//   MaterialMap  textureSize*textureSize*2 bytes ([roughness, metallic] uint8)
-	//
-	// Per triangle (108 bytes):
-	//   v1 v2 v3 normal   4 × float3 padded to float4 = 4×16 = 64
-	//   roughness metallic emission                    = 12
-	//   color float3 padded                            = 16
-	//   uv1[2] uv2[2] uv3[2] + 4 byte pad              = 16
-	//
-	// Face Map Layout if hasEmissionMap:
-	//  FileSizeEmissionMap 	uint32
-	//  SizeOfTexture 			uint32 —  based on the EMISSION_RESOLUTION defined in object.h
-	//  FrontTexture  			float3 *SizeOfTexture * SizeOfTexture
-	//  BackTexture  			float3 *SizeOfTexture * SizeOfTexture
-	//  RightTexture  			float3 *SizeOfTexture * SizeOfTexture
-	//  LeftTexture  			float3 *SizeOfTexture * SizeOfTexture
-	//  TopTexture   			float3 *SizeOfTexture * SizeOfTexture
-	//  BottomTexture 			float3 *SizeOfTexture * SizeOfTexture
 
 	const uint32 triangleStructSize = 108;
 

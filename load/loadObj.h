@@ -3,6 +3,10 @@
 
 #include "../object/format.h"
 
+#include "../object/scene.h"
+#include "../object/material/material.h"
+
+
 typedef struct Object Object;
 typedef struct MaterialLib MaterialLib;
 
@@ -21,10 +25,9 @@ typedef struct FaceMap {
 } FaceMap;
 
 
-// TODO: **Important** load the FaceMap from same bin file
 void LoadObj(const char *filename, Object *obj, MaterialLib *lib);
-
-// TODO: **Important** save the FaceMap to same bin file as the Object
 Error SaveObj(const char *filename, Object *obj, MaterialLib *lib, float boost);
+
+Error SaveSceneToJson(const ObjectList *scene, const char *filename);
 
 #endif // LOADOBJ_H
