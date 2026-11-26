@@ -313,7 +313,8 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetVel, simDeltaTime));
+		float3 targetStepVel = Float3_Add(targetVel, Float3_Scale(ctrl->targetAccel, (float)(step + 1) * simDeltaTime));
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetStepVel, simDeltaTime));
 		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
 		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
 		float d = distanceToTarget(&simPlane, predictedTarget);
@@ -371,7 +372,8 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetVel, simDeltaTime));
+		float3 targetStepVel = Float3_Add(targetVel, Float3_Scale(ctrl->targetAccel, (float)(step + 1) * simDeltaTime));
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetStepVel, simDeltaTime));
 		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
 		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
 		const float bank = rollMisalignment(&simPlane, predictedTarget);
