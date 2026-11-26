@@ -69,38 +69,31 @@ void LoadAlphabet(struct Alphabet *alphabet, const char *dirname) {
 
 		FILE *file = fopen(filePath, "rb");
 		if (!file) continue;
+		defer(fclose, file);
 
 		uint32 width = 0;
 		uint32 height = 0;
-		if (fread(&width, sizeof(uint32), 1, file) != 1 || fread(&height, sizeof(uint32), 1, file) != 1) {
-			fclose(file);
+		if (fread(&width, sizeof(uint32), 1, file) != 1 || fread(&height, sizeof(uint32), 1, file) != 1)
 			continue;
-		}
 
-		if (width == 0 || height == 0 || width > 1024 || height > 1024) {
-			fclose(file);
+		if (width == 0 || height == 0 || width > 1024 || height > 1024)
 			continue;
-		}
 
 		size_t pixelCount = (size_t)width * (size_t)height;
-		if (pixelCount > (size_t)1 << 24) {
-			fclose(file);
+		if (pixelCount > (size_t)1 << 24)
 			continue;
-		}
 
 		uint32 *pixels = (uint32 *)malloc(pixelCount * sizeof(uint32));
-		if (!pixels) {
-			fclose(file);
+		if (!pixels)
 			continue;
-		}
 
 		size_t packedBytes = ((size_t)width + 7u) / 8u;
 		uint8 *rowData = (uint8 *)malloc(packedBytes);
 		if (!rowData) {
 			free(pixels);
-			fclose(file);
 			continue;
 		}
+		defer(free, rowData);
 
 		int valid = 1;
 		for (uint32 y = 0; y < height; y++) {
@@ -115,9 +108,6 @@ void LoadAlphabet(struct Alphabet *alphabet, const char *dirname) {
 				pixels[(size_t)y * width + x] = on ? 0xFFFFFFFFu : 0x00000000u;
 			}
 		}
-
-		free(rowData);
-		fclose(file);
 
 		if (!valid) {
 			free(pixels);
