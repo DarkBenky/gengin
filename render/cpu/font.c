@@ -40,6 +40,80 @@ static int parseLetterIndex(const char *filename) {
 	return -1;
 }
 
+static Tile loadLetterTile(const char *path) {
+	Tile tile = {0};
+
+	FILE *file = fopen(path, "rb");
+	if (!file) return tile;
+	defer(fclose, file);
+
+	uint32 width = 0;
+	uint32 height = 0;
+	if (fread(&width, sizeof(uint32), 1, file) != 1 || fread(&height, sizeof(uint32), 1, file) != 1)
+		return tile;
+
+	if (width == 0 || height == 0 || width > 1024 || height > 1024)
+		return tile;
+
+	size_t pixelCount = (size_t)width * (size_t)height;
+	if (pixelCount > (size_t)1 << 24)
+		return tile;
+
+	uint32 *pixels = (uint32 *)malloc(pixelCount * sizeof(uint32));
+	if (!pixels)
+		return tile;
+
+	size_t packedBytes = ((size_t)width + 7u) / 8u;
+	uint8 *rowData = (uint8 *)malloc(packedBytes);
+	if (!rowData) {
+		free(pixels);
+		return tile;
+	}
+	defer(free, rowData);
+
+	for (uint32 y = 0; y < height; y++) {
+		if (fread(rowData, 1, packedBytes, file) != packedBytes) {
+			free(pixels);
+			return tile;
+		}
+		for (uint32 x = 0; x < width; x++) {
+			size_t byteIndex = x / 8u;
+			int bit = 7 - (int)(x % 8u);
+			int on = (rowData[byteIndex] >> bit) & 1;
+			pixels[(size_t)y * width + x] = on ? 0xFFFFFFFFu : 0x00000000u;
+		}
+	}
+
+	tile.width = width;
+	tile.height = height;
+	tile.pixels = pixels;
+	return tile;
+}
+
+// Legacy character sets number the printable range from slot 0, so shift those glyphs up to
+// their ASCII codes; a set that already fills the high slots is left alone.
+static void remapLegacyAlphabet(struct Alphabet *alphabet) {
+	int legacyLowCount = 0;
+	int legacyHighCount = 0;
+	for (int i = 0; i < 32; i++) {
+		if (alphabet->letters[i].tile.pixels) legacyLowCount++;
+	}
+	for (int i = 224; i < 256; i++) {
+		if (alphabet->letters[i].tile.pixels) legacyHighCount++;
+	}
+
+	if (legacyLowCount > 0 && legacyHighCount == 0) {
+		for (int i = 255; i >= 32; i--) {
+			alphabet->letters[i].tile = alphabet->letters[i - 32].tile;
+		}
+		for (int i = 0; i < 32; i++) {
+			alphabet->letters[i].tile.width = 0;
+			alphabet->letters[i].tile.height = 0;
+			alphabet->letters[i].tile.pixels = NULL;
+		}
+	}
+}
+
 void LoadAlphabet(struct Alphabet *alphabet, const char *dirname) {
 	if (!alphabet || !dirname) return;
 
@@ -67,78 +141,14 @@ void LoadAlphabet(struct Alphabet *alphabet, const char *dirname) {
 		int pathLen = snprintf(filePath, sizeof(filePath), "%s/%s", dirname, entry->d_name);
 		if (pathLen < 0 || (size_t)pathLen >= sizeof(filePath)) continue;
 
-		FILE *file = fopen(filePath, "rb");
-		if (!file) continue;
-		defer(fclose, file);
-
-		uint32 width = 0;
-		uint32 height = 0;
-		if (fread(&width, sizeof(uint32), 1, file) != 1 || fread(&height, sizeof(uint32), 1, file) != 1)
-			continue;
-
-		if (width == 0 || height == 0 || width > 1024 || height > 1024)
-			continue;
-
-		size_t pixelCount = (size_t)width * (size_t)height;
-		if (pixelCount > (size_t)1 << 24)
-			continue;
-
-		uint32 *pixels = (uint32 *)malloc(pixelCount * sizeof(uint32));
-		if (!pixels)
-			continue;
-
-		size_t packedBytes = ((size_t)width + 7u) / 8u;
-		uint8 *rowData = (uint8 *)malloc(packedBytes);
-		if (!rowData) {
-			free(pixels);
-			continue;
-		}
-		defer(free, rowData);
-
-		int valid = 1;
-		for (uint32 y = 0; y < height; y++) {
-			if (fread(rowData, 1, packedBytes, file) != packedBytes) {
-				valid = 0;
-				break;
-			}
-			for (uint32 x = 0; x < width; x++) {
-				size_t byteIndex = x / 8u;
-				int bit = 7 - (int)(x % 8u);
-				int on = (rowData[byteIndex] >> bit) & 1;
-				pixels[(size_t)y * width + x] = on ? 0xFFFFFFFFu : 0x00000000u;
-			}
-		}
-
-		if (!valid) {
-			free(pixels);
-			continue;
-		}
+		Tile tile = loadLetterTile(filePath);
+		if (!tile.pixels) continue;
 
 		alphabet->letters[letterIndex].character = (char)letterIndex;
-		alphabet->letters[letterIndex].tile.width = width;
-		alphabet->letters[letterIndex].tile.height = height;
-		alphabet->letters[letterIndex].tile.pixels = pixels;
+		alphabet->letters[letterIndex].tile = tile;
 	}
 
-	int legacyLowCount = 0;
-	int legacyHighCount = 0;
-	for (int i = 0; i < 32; i++) {
-		if (alphabet->letters[i].tile.pixels) legacyLowCount++;
-	}
-	for (int i = 224; i < 256; i++) {
-		if (alphabet->letters[i].tile.pixels) legacyHighCount++;
-	}
-
-	if (legacyLowCount > 0 && legacyHighCount == 0) {
-		for (int i = 255; i >= 32; i--) {
-			alphabet->letters[i].tile = alphabet->letters[i - 32].tile;
-		}
-		for (int i = 0; i < 32; i++) {
-			alphabet->letters[i].tile.width = 0;
-			alphabet->letters[i].tile.height = 0;
-			alphabet->letters[i].tile.pixels = NULL;
-		}
-	}
+	remapLegacyAlphabet(alphabet);
 
 	closedir(dir);
 }
