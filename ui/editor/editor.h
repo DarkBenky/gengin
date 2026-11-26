@@ -236,6 +236,18 @@ void highlightTaskFunctionEdge(void *arg) {
 
 #define CURSOR_ARM 6
 
+static void drawCursor(Camera *cam, int px, int py, int width, int height) {
+	const float3 cursorColor = {1.0f, 1.0f, 1.0f};
+	if (px >= 0 && py >= 0 && px < width && py < height) {
+		for (int i = -CURSOR_ARM; i <= CURSOR_ARM; i++) {
+			int x = px + i;
+			if (x >= 0 && x < width) cam->framebufferHdr[py * width + x] = cursorColor;
+			int y = py + i;
+			if (y >= 0 && y < height) cam->framebufferHdr[y * width + px] = cursorColor;
+		}
+	}
+}
+
 void applyHighlight(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 	Camera *cam = ui->cam;
 	int width = cam->screenWidth;
@@ -258,16 +270,7 @@ void applyHighlight(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 		}
 	}
 
-	// draw cursor at px, py
-	const float3 cursorColor = {1.0f, 1.0f, 1.0f};
-	if (px >= 0 && py >= 0 && px < width && py < height) {
-		for (int i = -CURSOR_ARM; i <= CURSOR_ARM; i++) {
-			int x = px + i;
-			if (x >= 0 && x < width) cam->framebufferHdr[py * width + x] = cursorColor;
-			int y = py + i;
-			if (y >= 0 && y < height) cam->framebufferHdr[y * width + px] = cursorColor;
-		}
-	}
+	drawCursor(cam, px, py, width, height);
 }
 
 void applyHighlightV2(editorUi *ui, ThreadPool *threadPool, int px, int py) {
@@ -292,16 +295,7 @@ void applyHighlightV2(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 		}
 	}
 
-	// draw cursor at px, py
-	const float3 cursorColor = {1.0f, 1.0f, 1.0f};
-	if (px >= 0 && py >= 0 && px < width && py < height) {
-		for (int i = -CURSOR_ARM; i <= CURSOR_ARM; i++) {
-			int x = px + i;
-			if (x >= 0 && x < width) cam->framebufferHdr[py * width + x] = cursorColor;
-			int y = py + i;
-			if (y >= 0 && y < height) cam->framebufferHdr[y * width + px] = cursorColor;
-		}
-	}
+	drawCursor(cam, px, py, width, height);
 }
 
 void applyHighlightEdge(editorUi *ui, ThreadPool *threadPool, int px, int py) {
@@ -326,16 +320,7 @@ void applyHighlightEdge(editorUi *ui, ThreadPool *threadPool, int px, int py) {
 		}
 	}
 
-	// draw cursor at px, py
-	const float3 cursorColor = {1.0f, 1.0f, 1.0f};
-	if (px >= 0 && py >= 0 && px < width && py < height) {
-		for (int i = -CURSOR_ARM; i <= CURSOR_ARM; i++) {
-			int x = px + i;
-			if (x >= 0 && x < width) cam->framebufferHdr[py * width + x] = cursorColor;
-			int y = py + i;
-			if (y >= 0 && y < height) cam->framebufferHdr[y * width + px] = cursorColor;
-		}
-	}
+	drawCursor(cam, px, py, width, height);
 }
 
 static int fmtTriangles(char *buf, int size, int count) {
