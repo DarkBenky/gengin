@@ -66,10 +66,6 @@ Color AdjustSaturation(Color c, float saturation);
 Color QuantizeColor(Color c, int levels);
 Color DarkenColor(Color c, float amount);
 Color PackColorSafe(float r, float g, float b);
-Color AdjustSaturation(Color c, float saturation);
-Color QuantizeColor(Color c, int levels);
-Color DarkenColor(Color c, float amount);
-Color HueShiftColor(Color c, float shift);
 Color ApplyColorCorrection(Color c, float gamma, float exposure, float contrast, float saturation, float hueShift, float3 modulate);
 Color ScaleChannel(Color c, float rScale, float gScale, float bScale);
 // Single HDR -> LDR stage of the frame: tonemap (overflow spread + clamp) and pack to 0xFFRRGGBB.

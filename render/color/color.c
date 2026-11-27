@@ -280,12 +280,7 @@ Color ApplyGamma(Color c, float gamma) {
 }
 
 Color ApplyExposure(Color c, float exposure) {
-	float3 col = UnpackColor(c);
-	float expFactor = powf(2.0f, exposure);
-	col.x *= expFactor;
-	col.y *= expFactor;
-	col.z *= expFactor;
-	return PackColorF(col);
+	return ScaleColor(c, powf(2.0f, exposure));
 }
 
 Color ApplyToneMapping(Color c) {
@@ -324,13 +319,7 @@ Color ScaleChannel(Color c, float rScale, float gScale, float bScale) {
 }
 
 Color LerpColor(Color c1, Color c2, float t) {
-	float3 col1 = UnpackColor(c1);
-	float3 col2 = UnpackColor(c2);
-	float3 lerped = {
-		col1.x * (1.0f - t) + col2.x * t,
-		col1.y * (1.0f - t) + col2.y * t,
-		col1.z * (1.0f - t) + col2.z * t};
-	return PackColorF(lerped);
+	return BlendColors(c1, c2, t);
 }
 
 Color ClampColor(Color c) {
@@ -372,27 +361,15 @@ Color MultiplyColors(Color c1, Color c2) {
 }
 
 Color ScaleColor(Color c, float s) {
-	float3 col = UnpackColor(c);
-	col.x *= s;
-	col.y *= s;
-	col.z *= s;
-	return PackColorF(col);
+	return ScaleChannel(c, s, s, s);
 }
 
 Color ModulateColor(Color c, float r, float g, float b) {
-	float3 col = UnpackColor(c);
-	col.x *= r;
-	col.y *= g;
-	col.z *= b;
-	return PackColorF(col);
+	return ScaleChannel(c, r, g, b);
 }
 
 Color ModulateColorF(Color c, float3 mod) {
-	float3 col = UnpackColor(c);
-	col.x *= mod.x;
-	col.y *= mod.y;
-	col.z *= mod.z;
-	return PackColorF(col);
+	return ScaleChannel(c, mod.x, mod.y, mod.z);
 }
 
 Color InvertColor(Color c) {
@@ -403,15 +380,19 @@ Color InvertColor(Color c) {
 	return PackColorF(col);
 }
 
+static inline float ColorLuminance(float3 col) {
+	return 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
+}
+
 Color GrayscaleColor(Color c) {
 	float3 col = UnpackColor(c);
-	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
+	float gray = ColorLuminance(col);
 	return PackColor(gray, gray, gray);
 }
 
 Color DesaturateColor(Color c, float amount) {
 	float3 col = UnpackColor(c);
-	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
+	float gray = ColorLuminance(col);
 	col.x = col.x * (1.0f - amount) + gray * amount;
 	col.y = col.y * (1.0f - amount) + gray * amount;
 	col.z = col.z * (1.0f - amount) + gray * amount;
@@ -489,7 +470,7 @@ Color HueShiftColor(Color c, float shift) {
 
 Color AdjustSaturation(Color c, float saturation) {
 	float3 col = UnpackColor(c);
-	float gray = 0.299f * col.x + 0.587f * col.y + 0.114f * col.z;
+	float gray = ColorLuminance(col);
 	col.x = col.x * saturation + gray * (1.0f - saturation);
 	col.y = col.y * saturation + gray * (1.0f - saturation);
 	col.z = col.z * saturation + gray * (1.0f - saturation);
@@ -505,12 +486,7 @@ Color QuantizeColor(Color c, int levels) {
 }
 
 Color DarkenColor(Color c, float amount) {
-	float3 col = UnpackColor(c);
-	float factor = 1.0f - amount;
-	col.x *= factor;
-	col.y *= factor;
-	col.z *= factor;
-	return PackColorF(col);
+	return ScaleColor(c, 1.0f - amount);
 }
 
 // Operates on the .bin texel layout (R in bits 0-7, G 8-15, B 16-23, A 24-31)
