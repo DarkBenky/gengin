@@ -179,7 +179,7 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 	TextureSlot *slots = malloc(sizeof(TextureSlot) * (lib->count > 0 ? lib->count : 1));
 	for (int i = 0; i < lib->count; i++) {
 		Textures *tex = lib->entries[i].textures;
-		if (!tex || !tex->colorMap || !tex->MaterialMap) continue;
+		if (!tex || !tex->texels) continue;
 		if (findTextureSlot(slots, textureCount, tex) >= 0) continue;
 		slots[textureCount].tex = tex;
 		slots[textureCount].slot = textureCount;
@@ -209,14 +209,11 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 		Textures *tex = slots[s].tex;
 		size_t texels = (size_t)tex->size * tex->size;
 		texTable[s] = (RasterTexture){(int)cursor, (int)tex->size};
-		memcpy(colorMaps + cursor, tex->colorMap, texels * sizeof(uint));
-		memcpy(materialMaps + cursor, tex->MaterialMap, texels * sizeof(uint16));
-		// Primitives built in code can carry a material without a normal map; leave the
-		// slice at 0 so the decode yields a flat +Z tangent normal.
-		if (tex->normalMap)
-			memcpy(normalMaps + cursor, tex->normalMap, texels * sizeof(uint));
-		else
-			memset(normalMaps + cursor, 0, texels * sizeof(uint));
+		for (size_t i = 0; i < texels; i++) {
+			colorMaps[cursor + i] = tex->texels[i].color;
+			normalMaps[cursor + i] = tex->texels[i].normal;
+			materialMaps[cursor + i] = tex->texels[i].mat;
+		}
 		cursor += texels;
 	}
 
@@ -224,7 +221,7 @@ void Raster_UploadScene(RasterRenderer *rr, const ObjectList *scene, const Mater
 	RasterMaterial *matTable = malloc(sizeof(RasterMaterial) * (lib->count > 0 ? lib->count : 1));
 	for (int i = 0; i < lib->count; i++) {
 		const Material *m = &lib->entries[i];
-		int slot = (m->textures && m->textures->colorMap && m->textures->MaterialMap)
+		int slot = (m->textures && m->textures->texels)
 					   ? findTextureSlot(slots, textureCount, m->textures)
 					   : -1;
 		matTable[i] = (RasterMaterial){
