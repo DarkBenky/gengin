@@ -61,7 +61,6 @@
 // Partial lead: trusting the full target velocity over-commits the pass when a
 // jinking or reversing target turns out of the predicted point.
 #define TARGET_LEAD_GAIN 0.3f
-#define TARGET_ACCEL_GAIN 0.1f
 
 #define TERMINAL_MISS_WEIGHT 1.2f
 #define TERMINAL_MISS_RANGE_FRACTION 0.25f
@@ -311,13 +310,11 @@ static float evaluateLossV2PlusTuned2(const Controller *ctrl, float values[3], f
 	float runningAlignment = 0.0f;
 	float runningAlignVel = 0.0f;
 	float3 predictedTarget = target;
-	float3 targetAccel = Float3_Scale(ctrl->targetAccel, TARGET_ACCEL_GAIN);
-	float3 predictedTargetVel = targetVel;
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		predictedTargetVel = Float3_Add(predictedTargetVel, Float3_Scale(targetAccel, simDeltaTime));
-		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(predictedTargetVel, simDeltaTime));
+		float3 targetStepVel = Float3_Add(targetVel, Float3_Scale(ctrl->targetAccel, (float)(step + 1) * simDeltaTime));
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetStepVel, simDeltaTime));
 		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
 		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
 		float d = distanceToTarget(&simPlane, predictedTarget);
@@ -372,13 +369,11 @@ static float evaluateLossV2PlusTuned2Manoeuver(const Controller *ctrl, float val
 	float runningAlignVel = 0.0f;
 	float runningBank = 0.0f;
 	float3 predictedTarget = target;
-	float3 targetAccel = Float3_Scale(ctrl->targetAccel, TARGET_ACCEL_GAIN);
-	float3 predictedTargetVel = targetVel;
 
 	for (int step = 0; step < ctrl->LookaheadSteps; step++) {
 		updatePlane(&simPlane, simDeltaTime, NULL);
-		predictedTargetVel = Float3_Add(predictedTargetVel, Float3_Scale(targetAccel, simDeltaTime));
-		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(predictedTargetVel, simDeltaTime));
+		float3 targetStepVel = Float3_Add(targetVel, Float3_Scale(ctrl->targetAccel, (float)(step + 1) * simDeltaTime));
+		predictedTarget = Float3_Add(predictedTarget, Float3_Scale(targetStepVel, simDeltaTime));
 		runningAlignment += alignmentLoss(&simPlane, predictedTarget);
 		runningAlignVel += alignmentLossVelocity(&simPlane, predictedTarget);
 		const float bank = rollMisalignment(&simPlane, predictedTarget);
